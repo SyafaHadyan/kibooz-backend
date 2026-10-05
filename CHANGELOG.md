@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.1.0...v0.2.0) (2026-10-05)
+
+
+### Features
+
+* **docker:** publish the image to github container registry ([07ffd75](https://github.com/SyafaHadyan/kibooz-backend/commit/07ffd75a696f5de53a2fc3ebd8510402a2dadbb1))
+* **docker:** publish the image to github container registry ([#11](https://github.com/SyafaHadyan/kibooz-backend/issues/11)) ([0bfaf0e](https://github.com/SyafaHadyan/kibooz-backend/commit/0bfaf0e01d86a63e1b1dac51bf1f28bf98e570ed))
+
+
+### Bug Fixes
+
+* **release:** drop the component name from release tags ([f1d3e05](https://github.com/SyafaHadyan/kibooz-backend/commit/f1d3e051f6dd9a715391e1ffd5fe0fdc8eebd7b8))
+* **release:** drop the component name from release tags ([#9](https://github.com/SyafaHadyan/kibooz-backend/issues/9)) ([2ae2d64](https://github.com/SyafaHadyan/kibooz-backend/commit/2ae2d64be7c004ffe6f1c42ced2e588a0db8d77a))
+
 ## 0.1.0 (2026-10-05)
 
 
