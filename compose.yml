@@ -13,9 +13,9 @@ services:
     environment:
       APP_ENV: ${APP_ENV}
       DB_HOST: db
-      DB_PORT: ${DB_PORT}
+      DB_PORT: 5432
       REDIS_ADDRESS: redis
-      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PORT: 6379
     ports:
       - "${APP_PORT}:${APP_PORT}"
     depends_on:
