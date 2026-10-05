@@ -3,6 +3,7 @@ package redis
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log"
 	"strconv"
@@ -45,18 +46,7 @@ type Redis struct {
 
 // New never fails. A Redis that cannot be reached at startup only produces a warning.
 func New(cfg *env.Env) *Redis {
-	client := redis.NewClient(&redis.Options{
-		Addr:         cfg.RedisAddress + ":" + strconv.FormatUint(uint64(cfg.RedisPort), 10),
-		Username:     cfg.RedisUsername,
-		Password:     cfg.RedisPassword,
-		DB:           cfg.RedisDatabase,
-		DialTimeout:  500 * time.Millisecond,
-		ReadTimeout:  500 * time.Millisecond,
-		WriteTimeout: 500 * time.Millisecond,
-		MaxRetries:   1,
-	})
-
-	r := &Redis{Client: client}
+	r := &Redis{Client: redis.NewClient(newOptions(cfg))}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -65,6 +55,26 @@ func New(cfg *env.Env) *Redis {
 	_ = r.Ping(ctx)
 
 	return r
+}
+
+func newOptions(cfg *env.Env) *redis.Options {
+	opts := &redis.Options{
+		Addr:         cfg.RedisAddress + ":" + strconv.FormatUint(uint64(cfg.RedisPort), 10),
+		Username:     cfg.RedisUsername,
+		Password:     cfg.RedisPassword,
+		DB:           cfg.RedisDatabase,
+		DialTimeout:  500 * time.Millisecond,
+		ReadTimeout:  500 * time.Millisecond,
+		WriteTimeout: 500 * time.Millisecond,
+		MaxRetries:   1,
+	}
+
+	if cfg.RedisTLS {
+		// hosted Redis only accepts TLS, and the certificate is checked against the configured host
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.RedisAddress}
+	}
+
+	return opts
 }
 
 // allow returns ErrUnavailable while the breaker is open
