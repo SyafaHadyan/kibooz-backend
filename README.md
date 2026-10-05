@@ -139,10 +139,10 @@ Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review |
-| `docker.yaml` | push to main, tags, pull requests | Builds the image, and when Docker Hub is configured pushes, scans with Trivy, attaches an SBOM and signs with cosign |
+| `docker.yaml` | push to main, tags, pull requests | Builds the image, pushes it to GitHub Container Registry and to Docker Hub when configured, scans with Trivy, attaches an SBOM and signs with cosign |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
-Image tags are `latest` for main, `sha-<commit>` for every build, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. Pushing needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Without them the image is built but not pushed. All actions are pinned to commit SHAs and kept current by Dependabot.
+Image tags are `latest` for main, `sha-<commit>` for every build, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and Dependabot only build the image. All actions are pinned to commit SHAs and kept current by Dependabot.
 
 ### Releases
 

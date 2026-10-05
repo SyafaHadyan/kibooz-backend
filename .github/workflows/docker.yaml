@@ -20,17 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
       id-token: write
       attestations: write
       security-events: write
     env:
-      # Pushing needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret, without them the image is only built.
-      # Dependabot runs never get repository secrets, so they only build
-      PUSH: ${{ vars.DOCKERHUB_USERNAME != '' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-      IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/kibooz-backend
+      # Dependabot and fork runs get no write access or secrets, so they only build
+      PUSH: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      # Docker Hub is optional and needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret
+      HUB: ${{ vars.DOCKERHUB_USERNAME != '' }}
+      HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/kibooz-backend
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compute image names
+        run: echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Compute build version
         id: version
@@ -45,7 +50,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.HUB == 'true' && env.HUB_IMAGE || '' }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
@@ -54,8 +61,16 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
 
-      - name: Login to Docker Hub
+      - name: Login to GitHub Container Registry
         if: env.PUSH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: env.PUSH == 'true' && env.HUB == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
@@ -83,7 +98,7 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-image.sarif
           severity: CRITICAL,HIGH
@@ -99,17 +114,25 @@ jobs:
         if: env.PUSH == 'true'
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          image: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
           format: cyclonedx-json
           output-file: sbom.cdx.json
           upload-artifact: true
           upload-release-assets: false
 
-      - name: Attest SBOM
+      - name: Attest SBOM for GitHub Container Registry
         if: env.PUSH == 'true'
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-name: docker.io/${{ env.IMAGE }}
+          subject-name: ${{ env.GHCR_IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.cdx.json
+
+      - name: Attest SBOM for Docker Hub
+        if: env.PUSH == 'true' && env.HUB == 'true'
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: docker.io/${{ env.HUB_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           sbom-path: sbom.cdx.json
 
@@ -119,4 +142,8 @@ jobs:
 
       - name: Sign image (keyless)
         if: env.PUSH == 'true'
-        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+        run: |
+          cosign sign --yes "${GHCR_IMAGE}@${{ steps.build.outputs.digest }}"
+          if [ "$HUB" = "true" ]; then
+            cosign sign --yes "${HUB_IMAGE}@${{ steps.build.outputs.digest }}"
+          fi
