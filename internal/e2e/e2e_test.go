@@ -30,6 +30,9 @@ import (
 
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
+// credentials are generated for every run so no secret-looking value lives in the source
+var testPassword = "Pw-" + strings.ReplaceAll(uuid.NewString(), "-", "") + "!"
+
 const (
 	testBucket    = "kibooz-test"
 	testPublicURL = "https://cdn.example.test"
@@ -86,7 +89,7 @@ func app(t *testing.T) *fiber.App {
 		defaults := map[string]string{
 			"LIMITER_MAX":          "100000",
 			"AUTH_LIMITER_MAX":     "100000",
-			"JWT_SECRET_KEY":       "e2e-secret-key-with-more-than-32-characters",
+			"JWT_SECRET_KEY":       uuid.NewString() + uuid.NewString(),
 			"S3_ENDPOINT":          startMockS3().URL,
 			"S3_REGION":            "us-east-1",
 			"S3_BUCKET_NAME":       testBucket,
@@ -203,7 +206,7 @@ func registerGuru(t *testing.T, className string) account {
 	email := fmt.Sprintf("guru.%s@example.com", suffix())
 
 	res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-		"email": email, "password": "PasswordRahasia123!", "fullName": "Siti Rahayu, S.Pd.",
+		"email": email, "password": testPassword, "fullName": "Siti Rahayu, S.Pd.",
 		"role": "GURU", "nip": suffix(), "class": map[string]any{"name": className, "gradeLevel": "Kelas A"},
 	})
 	require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
@@ -212,7 +215,7 @@ func registerGuru(t *testing.T, className string) account {
 		Token:        res.data("token").(string),
 		RefreshToken: res.data("refreshToken").(string),
 		Email:        email,
-		Password:     "PasswordRahasia123!",
+		Password:     testPassword,
 	}
 }
 
@@ -222,7 +225,7 @@ func registerWali(t *testing.T, classCode string, childName string) (account, st
 	email := fmt.Sprintf("wali.%s@example.com", suffix())
 
 	res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-		"email": email, "password": "PasswordRahasia123!", "fullName": "Sarah Kartika, S.Pd.",
+		"email": email, "password": testPassword, "fullName": "Sarah Kartika, S.Pd.",
 		"role": "WALI", "classCode": classCode, "student": map[string]any{"nisn": nisn(), "fullName": childName},
 	})
 	require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
@@ -231,7 +234,7 @@ func registerWali(t *testing.T, classCode string, childName string) (account, st
 		Token:        res.data("token").(string),
 		RefreshToken: res.data("refreshToken").(string),
 		Email:        email,
-		Password:     "PasswordRahasia123!",
+		Password:     testPassword,
 	}
 
 	dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard", acc.Token, nil)
@@ -269,7 +272,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 
 	t.Run("duplicate email", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": strings.ToUpper(guru.Email), "password": "PasswordRahasia123!", "fullName": "Dobel",
+			"email": strings.ToUpper(guru.Email), "password": testPassword, "fullName": "Dobel",
 			"role": "GURU", "class": map[string]any{"name": "Melati"},
 		})
 		res.requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
@@ -277,7 +280,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 
 	t.Run("unknown class code", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": fmt.Sprintf("x.%s@example.com", suffix()), "password": "PasswordRahasia123!", "fullName": "Wali Baru",
+			"email": fmt.Sprintf("x.%s@example.com", suffix()), "password": testPassword, "fullName": "Wali Baru",
 			"role": "WALI", "classCode": "ZZZZZZ", "student": map[string]any{"nisn": nisn(), "fullName": "Anak"},
 		})
 		res.requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
@@ -287,7 +290,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 		sharedNISN := nisn()
 		body := func() map[string]any {
 			return map[string]any{
-				"email": fmt.Sprintf("n.%s@example.com", suffix()), "password": "PasswordRahasia123!", "fullName": "Wali",
+				"email": fmt.Sprintf("n.%s@example.com", suffix()), "password": testPassword, "fullName": "Wali",
 				"role": "WALI", "classCode": strings.ToLower(joinCode), "student": map[string]any{"nisn": sharedNISN, "fullName": "Anak"},
 			}
 		}
@@ -308,7 +311,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 		require.Contains(t, details, "role")
 
 		missingClass := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": fmt.Sprintf("g.%s@example.com", suffix()), "password": "PasswordRahasia123!", "fullName": "Guru", "role": "GURU",
+			"email": fmt.Sprintf("g.%s@example.com", suffix()), "password": testPassword, "fullName": "Guru", "role": "GURU",
 		})
 		missingClass.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		require.Contains(t, missingClass.Body["details"], "class")
@@ -334,7 +337,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 
 		call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
-			"email": "tidak.ada@example.com", "password": "PasswordRahasia123!", "role": "GURU",
+			"email": "tidak.ada@example.com", "password": testPassword, "role": "GURU",
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 	})
 }
@@ -891,7 +894,7 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 	email := fmt.Sprintf("guru.%s@example.com", suffix())
 
 	registered := callApp(t, noRedis, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-		"email": email, "password": "PasswordRahasia123!", "fullName": "Guru Tanpa Redis",
+		"email": email, "password": testPassword, "fullName": "Guru Tanpa Redis",
 		"role": "GURU", "class": map[string]any{"name": "Tanpa Redis"},
 	})
 	require.Equal(t, http.StatusCreated, registered.Status, "body %v", registered.Body)
@@ -900,7 +903,7 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 	refreshToken := registered.data("refreshToken").(string)
 
 	login := callApp(t, noRedis, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
-		"email": email, "password": "PasswordRahasia123!", "role": "GURU",
+		"email": email, "password": testPassword, "role": "GURU",
 	})
 	require.Equal(t, http.StatusOK, login.Status, "body %v", login.Body)
 
