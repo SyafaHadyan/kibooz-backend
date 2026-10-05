@@ -1,5 +1,7 @@
 # Kibooz Backend
 
+[![CI](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/ci.yaml) [![Security](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/security.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/security.yaml) [![Docker](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/docker.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/docker.yaml) [![Release](https://img.shields.io/github/v/release/SyafaHadyan/kibooz-backend?sort=semver)](https://github.com/SyafaHadyan/kibooz-backend/releases) [![Go version](https://img.shields.io/github/go-mod/go-version/SyafaHadyan/kibooz-backend)](go.mod) [![DeepSource](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend.svg/?label=active+issues&show_trend=true)](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend/) [![Docker pulls](https://img.shields.io/docker/pulls/syafa/kibooz-backend)](https://hub.docker.com/r/syafa/kibooz-backend)
+
 REST API for Kibooz, the kindergarten app that lets teachers record children's moods, lets parents follow them, and rewards trash sorting with points on a class leaderboard. The contract follows `docs/prd_and_roadmap/02_BACKEND_API_AND_DATABASE.md` of the Android app repository.
 
 ## Stack
