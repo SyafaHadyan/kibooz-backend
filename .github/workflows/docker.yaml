@@ -24,8 +24,9 @@ jobs:
       attestations: write
       security-events: write
     env:
-      # Pushing needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret, without them the image is only built
-      PUSH: ${{ vars.DOCKERHUB_USERNAME != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      # Pushing needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret, without them the image is only built.
+      # Dependabot runs never get repository secrets, so they only build
+      PUSH: ${{ vars.DOCKERHUB_USERNAME != '' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
       IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/kibooz-backend
     steps:
       - name: Checkout
