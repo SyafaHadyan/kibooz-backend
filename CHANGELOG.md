@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.2.0...v0.2.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **docker:** move the base image to distroless debian13 ([380e787](https://github.com/SyafaHadyan/kibooz-backend/commit/380e787a9e9bd204a87151c96e5e0a3a575255d0))
+* **docker:** move the base image to distroless debian13 ([#13](https://github.com/SyafaHadyan/kibooz-backend/issues/13)) ([60ec204](https://github.com/SyafaHadyan/kibooz-backend/commit/60ec2040467bcf2a1287d9681568a7bee55b4e08))
+
 ## [0.2.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.1.0...v0.2.0) (2026-10-05)
 
 
