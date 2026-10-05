@@ -29,6 +29,7 @@ type Env struct {
 	DBSSLMode                string `env:"DB_SSL_MODE" envDefault:"disable"`
 	RedisAddress             string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
 	RedisPort                uint   `env:"REDIS_PORT" envDefault:"6379"`
+	RedisTLS                 bool   `env:"REDIS_TLS" envDefault:"false"`
 	RedisUsername            string `env:"REDIS_USERNAME"`
 	RedisPassword            string `env:"REDIS_PASSWORD"`
 	RedisDatabase            int    `env:"REDIS_DATABASE" envDefault:"0"`

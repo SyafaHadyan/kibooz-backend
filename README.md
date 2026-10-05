@@ -45,7 +45,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `AUTH_LIMITER_MAX` | `10` | Rate limit per IP for `/auth/*` inside the same window |
 | `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header |
 | `DB_*` | see example | PostgreSQL connection, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD` are required |
-| `REDIS_*` | see example | Redis connection, the API starts and works without it. When `REDIS_USERNAME` is set, the bundled compose files also create that Redis user with `REDIS_PASSWORD` |
+| `REDIS_*` | see example | Redis connection, the API starts and works without it. Set `REDIS_TLS=true` for hosted Redis that requires TLS. When `REDIS_USERNAME` is set, the bundled compose files also create that Redis user with `REDIS_PASSWORD` |
 | `LEADERBOARD_CACHE_SECONDS` | `300` | Leaderboard cache lifetime, it is also cleared whenever the ranking changes |
 | `JWT_SECRET_KEY` | required | At least 32 characters |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
