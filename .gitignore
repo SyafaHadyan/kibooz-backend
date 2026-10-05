@@ -1,0 +1,23 @@
+# Binaries
+/bin/
+/kibooz-backend
+*.exe
+*.test
+*.out
+
+# Test and coverage output
+coverage.*
+*.coverprofile
+
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local development compose file
+compose.development.yml

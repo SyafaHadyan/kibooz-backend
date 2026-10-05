@@ -1,0 +1,33 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - unconvert
+    - usestdlibvars
+  settings:
+    gosec:
+      excludes:
+        # gorm builds queries with placeholders and the migration files are embedded
+        - G201
+        - G202
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - bodyclose
+
+formatters:
+  enable:
+    - gofmt
