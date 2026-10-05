@@ -150,7 +150,7 @@ Versions are decided by [release-please](https://github.com/googleapis/release-p
 
 1. Merge pull requests into `main` with a Conventional Commit title.
 2. release-please opens or updates a pull request named like `chore(main) release 0.2.0` with the new version and changelog.
-3. Merge that pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0` and `0.2` image tags (the major-only tag appears from 1.0.0).
+3. Merge that pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0`, `0.2` and `0` image tags.
 
 For the release pull request to run CI and for the tag to trigger the Docker workflow, add a repository secret named `RELEASE_PLEASE_TOKEN` holding a personal access token with contents and pull requests write access. GitHub does not start workflows for events created with the default token. Also allow GitHub Actions to create pull requests in the repository settings.
 
