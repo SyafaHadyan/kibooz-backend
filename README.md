@@ -136,7 +136,7 @@ Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 | Workflow | Trigger | What it does |
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services |
-| `security.yaml` | push, pull requests, weekly | CodeQL, govulncheck, dependency review |
+| `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image, and when Docker Hub is configured pushes, scans with Trivy, attaches an SBOM and signs with cosign |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
