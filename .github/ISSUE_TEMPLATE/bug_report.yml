@@ -1,0 +1,51 @@
+name: Bug report
+description: Something in the API behaves wrongly
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the wrong behaviour and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The requests or commands that trigger it, with any secrets removed.
+      placeholder: |
+        1. POST /api/v1/auth/login with ...
+        2. GET /api/v1/leaderboard
+        3. See the response
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release, image tag or commit you ran.
+      placeholder: 0.3.0, ghcr.io/syafahadyan/kibooz-backend:0.3.0 or a commit SHA
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: How you run it and the PostgreSQL and Redis versions.
+      placeholder: Docker Compose, PostgreSQL 15, Redis 7 (or no Redis)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and responses
+      description: Relevant output. Remove tokens, passwords and personal data first.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: This is not a security problem. Those go through the private report in SECURITY.md.
+          required: true
+        - label: I removed secrets and personal data from everything above.
+          required: true
