@@ -53,7 +53,7 @@ func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.Cache
 func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error) {
 	if len([]byte(req.Password)) > bcryptMaxBytes {
 		//nolint:gosec // this is a validation message and not a credential
-		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": "terlalu panjang, maksimal 72 byte"})
+		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": "too long, maximum 72 bytes"})
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -76,7 +76,7 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	case constants.RoleWali:
 		err = u.registerWali(ctx, user, req)
 	default:
-		return dto.AuthResponse{}, apperror.Validation(map[string]string{"role": "harus salah satu dari GURU WALI"})
+		return dto.AuthResponse{}, apperror.Validation(map[string]string{"role": "must be one of GURU WALI"})
 	}
 
 	if err != nil {

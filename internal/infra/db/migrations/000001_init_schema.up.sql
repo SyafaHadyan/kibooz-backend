@@ -1,5 +1,5 @@
--- Skema awal Kibooz mengikuti 02_BACKEND_API_AND_DATABASE.md dengan tambahan
--- class_teachers, kode gabung kelas, dan guidance_applications.
+-- Initial Kibooz schema following 02_BACKEND_API_AND_DATABASE.md with the addition of
+-- class_teachers, class join codes, and guidance_applications.
 
 CREATE TYPE user_role AS ENUM ('GURU', 'WALI', 'ADMIN');
 CREATE TYPE mood_enum AS ENUM ('SENANG', 'SEDIH', 'MARAH', 'BINGUNG');

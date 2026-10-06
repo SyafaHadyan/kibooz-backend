@@ -35,7 +35,7 @@ func (h *WaliHandler) Dashboard(c fiber.Ctx) error {
 	if raw := c.Query("studentId"); raw != "" {
 		parsed, err := uuid.Parse(raw)
 		if err != nil {
-			return apperror.Validation(map[string]string{"studentId": "format UUID tidak valid"})
+			return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
 		}
 
 		studentID = &parsed
@@ -62,5 +62,5 @@ func (h *WaliHandler) ApplyGuidance(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Status penanganan berhasil diteruskan ke guru kelas", nil)
+	return response.JSON(c, http.StatusOK, "Handling status forwarded to the class teacher", nil)
 }

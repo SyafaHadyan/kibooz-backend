@@ -51,7 +51,7 @@ func (h *UserHandler) UploadAvatar(c fiber.Ctx) error {
 	if raw := c.FormValue("studentId"); raw != "" {
 		parsed, err := uuid.Parse(raw)
 		if err != nil {
-			return apperror.Validation(map[string]string{"studentId": "format UUID tidak valid"})
+			return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
 		}
 
 		studentID = &parsed
@@ -59,7 +59,7 @@ func (h *UserHandler) UploadAvatar(c fiber.Ctx) error {
 
 	header, err := c.FormFile("file")
 	if err != nil {
-		return apperror.Validation(map[string]string{"file": "wajib diisi"})
+		return apperror.Validation(map[string]string{"file": "is required"})
 	}
 
 	if header.Size > constants.AvatarMaxBytes {
@@ -83,5 +83,5 @@ func (h *UserHandler) UploadAvatar(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Foto profil berhasil diperbarui", res)
+	return response.JSON(c, http.StatusOK, "Profile photo updated", res)
 }

@@ -104,7 +104,7 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 	case req.ConfidenceScore != nil:
 		confidence = *req.ConfidenceScore
 	case source == constants.SourceAICamera:
-		return dto.LogMoodResponse{}, apperror.Validation(map[string]string{"confidenceScore": "wajib diisi untuk sumber AI_CAMERA"})
+		return dto.LogMoodResponse{}, apperror.Validation(map[string]string{"confidenceScore": "is required for the AI_CAMERA source"})
 	}
 
 	student, err := u.repo.FindStudent(ctx, req.StudentID)
@@ -155,7 +155,7 @@ func (u *GuruUseCase) MoodAnalytics(
 	}
 
 	if rangeName != RangeWeekly && rangeName != RangeMonthly {
-		return dto.MoodAnalyticsResponse{}, apperror.Validation(map[string]string{"range": "harus salah satu dari weekly monthly"})
+		return dto.MoodAnalyticsResponse{}, apperror.Validation(map[string]string{"range": "must be one of weekly monthly"})
 	}
 
 	_, class, err := u.resolveClass(ctx, userID, classID)

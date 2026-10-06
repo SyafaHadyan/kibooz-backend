@@ -39,12 +39,12 @@ func get() *validator.Validate {
 func BindBody(c fiber.Ctx, dst any) error {
 	body := c.Body()
 	if len(body) == 0 {
-		return apperror.Validation(map[string]string{"body": "wajib diisi"})
+		return apperror.Validation(map[string]string{"body": "is required"})
 	}
 
 	err := json.Unmarshal(body, dst)
 	if err != nil {
-		return apperror.Validation(map[string]string{"body": "format JSON tidak valid"})
+		return apperror.Validation(map[string]string{"body": "invalid JSON format"})
 	}
 
 	return Struct(dst)
@@ -83,22 +83,22 @@ func fieldPath(fieldErr validator.FieldError) string {
 func describe(fieldErr validator.FieldError) string {
 	switch fieldErr.Tag() {
 	case "required", "required_if":
-		return "wajib diisi"
+		return "is required"
 	case "email":
-		return "format email tidak valid"
+		return "invalid email format"
 	case "min":
-		return "terlalu pendek atau terlalu kecil, minimal " + fieldErr.Param()
+		return "too short or too small, minimum " + fieldErr.Param()
 	case "max":
-		return "terlalu panjang atau terlalu besar, maksimal " + fieldErr.Param()
+		return "too long or too large, maximum " + fieldErr.Param()
 	case "oneof":
-		return "harus salah satu dari " + fieldErr.Param()
+		return "must be one of " + fieldErr.Param()
 	case "numeric":
-		return "hanya boleh berisi angka"
+		return "must contain digits only"
 	case "alphanum":
-		return "hanya boleh berisi huruf dan angka"
+		return "must contain letters and digits only"
 	case "gte", "lte":
-		return "di luar rentang yang diizinkan"
+		return "is outside the allowed range"
 	default:
-		return "tidak valid"
+		return "is invalid"
 	}
 }

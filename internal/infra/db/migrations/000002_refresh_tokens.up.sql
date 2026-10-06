@@ -1,5 +1,5 @@
--- Refresh token milik Postgres sebagai sumber kebenaran. Token mentah tidak disimpan,
--- hanya hash SHA-256 dalam heksadesimal.
+-- Postgres is the source of truth for refresh tokens. The raw token is not stored,
+-- only its SHA-256 hash in hexadecimal.
 
 CREATE TABLE refresh_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

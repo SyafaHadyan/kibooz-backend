@@ -207,7 +207,7 @@ func registerGuru(t *testing.T, className string) account {
 
 	res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
 		"email": email, "password": testPassword, "fullName": "Siti Rahayu, S.Pd.",
-		"role": "GURU", "nip": suffix(), "class": map[string]any{"name": className, "gradeLevel": "Kelas A"},
+		"role": "GURU", "nip": suffix(), "class": map[string]any{"name": className, "gradeLevel": "Class A"},
 	})
 	require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
 
@@ -280,7 +280,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 
 	t.Run("unknown class code", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": fmt.Sprintf("x.%s@example.com", suffix()), "password": testPassword, "fullName": "Wali Baru",
+			"email": fmt.Sprintf("x.%s@example.com", suffix()), "password": testPassword, "fullName": "New Parent",
 			"role": "WALI", "classCode": "ZZZZZZ", "student": map[string]any{"nisn": nisn(), "fullName": "Anak"},
 		})
 		res.requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
@@ -301,7 +301,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 
 	t.Run("validation", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": "bukan-email", "password": "pendek", "fullName": "A", "role": "ADMIN",
+			"email": "not-an-email", "password": "short", "fullName": "A", "role": "ADMIN",
 		})
 		res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 
@@ -323,7 +323,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 		})
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 		require.Equal(t, true, res.Body["success"])
-		require.Equal(t, "Login berhasil", res.Body["message"])
+		require.Equal(t, "Login successful", res.Body["message"])
 		require.Equal(t, "GURU", res.data("user", "role"))
 		require.NotEmpty(t, res.data("token"))
 		require.NotContains(t, res.Body["data"].(map[string]any)["user"], "passwordHash")
@@ -337,7 +337,7 @@ func TestRegistrationAndLogin(t *testing.T) {
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 
 		call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
-			"email": "tidak.ada@example.com", "password": testPassword, "role": "GURU",
+			"email": "not.found@example.com", "password": testPassword, "role": "GURU",
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 	})
 }
@@ -366,14 +366,14 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 func TestAccessControl(t *testing.T) {
 	guru := registerGuru(t, "Dahlia")
 	_, joinCode := classOf(t, guru)
-	wali, _ := registerWali(t, joinCode, "Anak Dahlia")
+	wali, _ := registerWali(t, joinCode, "Dahlia Child")
 
 	call(t, http.MethodGet, "/api/v1/guru/dashboard", "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
-	call(t, http.MethodGet, "/api/v1/guru/dashboard", "bukan.token.valid", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_INVALID")
+	call(t, http.MethodGet, "/api/v1/guru/dashboard", "not.a.valid.token", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_INVALID")
 	call(t, http.MethodGet, "/api/v1/guru/dashboard", wali.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 	call(t, http.MethodGet, "/api/v1/wali/dashboard", guru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 	call(t, http.MethodPost, "/api/v1/trash/scan-claim", guru.Token, map[string]any{}).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
-	call(t, http.MethodGet, "/api/v1/tidak-ada", "", nil).requireError(t, http.StatusNotFound, "NOT_FOUND")
+	call(t, http.MethodGet, "/api/v1/not-found", "", nil).requireError(t, http.StatusNotFound, "NOT_FOUND")
 }
 
 func TestMoodAndDashboards(t *testing.T) {
@@ -391,13 +391,13 @@ func TestMoodAndDashboards(t *testing.T) {
 		require.Nil(t, res.data("todayMood"))
 		require.Nil(t, res.data("recommendedGuidance"))
 		require.Equal(t, "Amelia Siti Zahra", res.data("student", "fullName"))
-		require.Contains(t, res.data("student", "className"), "Kelas A")
+		require.Contains(t, res.data("student", "className"), "Class A")
 	})
 
 	t.Run("log mood", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/guru/mood/log", guru.Token, map[string]any{
 			"studentId": ameliaID, "moodType": "BINGUNG", "source": "AI_CAMERA", "confidenceScore": 0.88,
-			"notes": "Ragu saat berpisah di gerbang.",
+			"notes": "Hesitant when parting at the gate.",
 		})
 		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
 		require.NotEmpty(t, res.data("logId"))
@@ -436,17 +436,17 @@ func TestMoodAndDashboards(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/wali/dashboard", amelia.Token, nil)
 		require.Equal(t, http.StatusOK, res.Status)
 		require.Equal(t, "BINGUNG", res.data("todayMood", "moodType"))
-		require.Equal(t, "Ragu / Perlu Pendampingan", res.data("todayMood", "label"))
+		require.Equal(t, "Unsure / Needs Support", res.data("todayMood", "label"))
 		require.InDelta(t, 0.88, res.data("todayMood", "confidence"), 0.001)
-		require.Equal(t, "Ragu saat berpisah di gerbang.", res.data("todayMood", "teacherNotes"))
+		require.Equal(t, "Hesitant when parting at the gate.", res.data("todayMood", "teacherNotes"))
 		require.Equal(t, "guidance-bingung-4step", res.data("recommendedGuidance", "id"))
-		require.Equal(t, "Berikan Rasa Aman Pada Anak", res.data("recommendedGuidance", "title"))
+		require.Equal(t, "Give Your Child a Sense of Safety", res.data("recommendedGuidance", "title"))
 	})
 
 	t.Run("wali cannot read someone else's child", func(t *testing.T) {
 		call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+farhanID, amelia.Token, nil).
 			requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
-		call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId=bukan-uuid", amelia.Token, nil).
+		call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId=not-a-uuid", amelia.Token, nil).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
 
@@ -455,7 +455,7 @@ func TestMoodAndDashboards(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.Status)
 		require.EqualValues(t, 2, res.data("classOverview", "totalStudents"))
 		require.EqualValues(t, 2, res.data("classOverview", "presentStudents"))
-		require.Equal(t, "Kelas A (Mawar)", res.data("classOverview", "className"))
+		require.Equal(t, "Class A (Mawar)", res.data("classOverview", "className"))
 		require.EqualValues(t, 1, res.data("dailyMoodDistribution", "senang"))
 		require.EqualValues(t, 1, res.data("dailyMoodDistribution", "bingung"))
 		require.EqualValues(t, 0, res.data("dailyMoodDistribution", "marah"))
@@ -495,13 +495,13 @@ func TestMoodAndDashboards(t *testing.T) {
 
 	t.Run("apply guidance", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/wali/guidance/apply", amelia.Token, map[string]any{
-			"guidanceId": "guidance-bingung-4step", "studentId": ameliaID, "parentNotes": "Sudah diajak berbicara pelan.",
+			"guidanceId": "guidance-bingung-4step", "studentId": ameliaID, "parentNotes": "Already talked to gently.",
 		})
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
-		require.Equal(t, "Status penanganan berhasil diteruskan ke guru kelas", res.Body["message"])
+		require.Equal(t, "Handling status forwarded to the class teacher", res.Body["message"])
 
 		call(t, http.MethodPost, "/api/v1/wali/guidance/apply", amelia.Token, map[string]any{
-			"guidanceId": "tidak-ada", "studentId": ameliaID,
+			"guidanceId": "not-found", "studentId": ameliaID,
 		}).requireError(t, http.StatusNotFound, "GUIDANCE_NOT_FOUND")
 
 		call(t, http.MethodPost, "/api/v1/wali/guidance/apply", amelia.Token, map[string]any{
@@ -519,7 +519,7 @@ func TestTrashClaimsAndLeaderboard(t *testing.T) {
 
 	outsiderGuru := registerGuru(t, "Lain")
 	outsiderClassID, outsiderCode := classOf(t, outsiderGuru)
-	outsider, _ := registerWali(t, outsiderCode, "Anak Kelas Lain")
+	outsider, _ := registerWali(t, outsiderCode, "Other Class Child")
 
 	claim := func(token string, studentID string, trashType string) result {
 		return call(t, http.MethodPost, "/api/v1/trash/scan-claim", token, map[string]any{
@@ -585,7 +585,7 @@ func TestTrashClaimsAndLeaderboard(t *testing.T) {
 		call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classID, outsider.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 		call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classID, outsiderGuru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 		require.Equal(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/leaderboard?classId="+outsiderClassID, outsider.Token, nil).Status)
-		call(t, http.MethodGet, "/api/v1/leaderboard?classId=bukan-uuid", amelia.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, "/api/v1/leaderboard?classId=not-a-uuid", amelia.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
 
 	t.Run("daily limit of five claims", func(t *testing.T) {
@@ -642,7 +642,7 @@ func dashboardStudentID(t *testing.T, wali account) string {
 func TestConcurrentClaimsNeverExceedDailyLimit(t *testing.T) {
 	guru := registerGuru(t, "Konkuren")
 	_, joinCode := classOf(t, guru)
-	wali, studentID := registerWali(t, joinCode, "Anak Cepat")
+	wali, studentID := registerWali(t, joinCode, "Fast Child")
 
 	const attempts = 12
 
@@ -733,8 +733,8 @@ func TestAvatarUpload(t *testing.T) {
 
 	guru := registerGuru(t, "Avatar")
 	classID, joinCode := classOf(t, guru)
-	wali, studentID := registerWali(t, joinCode, "Anak Berfoto")
-	otherWali, _ := registerWali(t, joinCode, "Anak Lain")
+	wali, studentID := registerWali(t, joinCode, "Child With Photo")
+	otherWali, _ := registerWali(t, joinCode, "Another Child")
 
 	t.Run("user avatar", func(t *testing.T) {
 		res := upload(t, guru.Token, nil, "foto.png", png)
@@ -789,7 +789,7 @@ func TestAvatarUpload(t *testing.T) {
 			requireError(t, http.StatusBadRequest, "INVALID_IMAGE")
 		upload(t, wali.Token, nil, "", nil).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
-		upload(t, wali.Token, map[string]string{"studentId": "bukan-uuid"}, "x.png", png).
+		upload(t, wali.Token, map[string]string{"studentId": "not-a-uuid"}, "x.png", png).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		upload(t, wali.Token, nil, "besar.png", append(png, make([]byte, 3*1024*1024)...)).
 			requireError(t, http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE")
@@ -819,7 +819,7 @@ func TestRefreshTokensDoNotDependOnRedis(t *testing.T) {
 	client := redisClient(t)
 
 	t.Run("a token still works after Redis loses its data", func(t *testing.T) {
-		guru := registerGuru(t, "Redis Hilang")
+		guru := registerGuru(t, "Redis Lost")
 
 		require.NoError(t, client.FlushAll(ctx).Err())
 
@@ -894,8 +894,8 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 	email := fmt.Sprintf("guru.%s@example.com", suffix())
 
 	registered := callApp(t, noRedis, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-		"email": email, "password": testPassword, "fullName": "Guru Tanpa Redis",
-		"role": "GURU", "class": map[string]any{"name": "Tanpa Redis"},
+		"email": email, "password": testPassword, "fullName": "Teacher Without Redis",
+		"role": "GURU", "class": map[string]any{"name": "Without Redis"},
 	})
 	require.Equal(t, http.StatusCreated, registered.Status, "body %v", registered.Body)
 
@@ -928,7 +928,7 @@ func registerWaliWith(t *testing.T, email string, studentNISN string, classCode 
 	t.Helper()
 
 	return call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-		"email": email, "password": testPassword, "fullName": "Wali Terdaftar Ulang",
+		"email": email, "password": testPassword, "fullName": "Re-registered Parent",
 		"role": "WALI", "classCode": classCode, "student": map[string]any{"nisn": studentNISN, "fullName": childName},
 	})
 }
@@ -961,7 +961,7 @@ func TestAccountSoftDelete(t *testing.T) {
 	require.EqualValues(t, 2, call(t, http.MethodGet, "/api/v1/guru/dashboard", guru.Token, nil).data("classOverview", "totalStudents"))
 
 	t.Run("a wrong or missing password deletes nothing", func(t *testing.T) {
-		deleteAccount(t, amelia.Token, "bukan-kata-sandi").requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
+		deleteAccount(t, amelia.Token, "not-the-password").requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
 		call(t, http.MethodDelete, "/api/v1/users/me", amelia.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		deleteAccount(t, "", testPassword).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 
@@ -1005,17 +1005,17 @@ func TestAccountSoftDelete(t *testing.T) {
 		reuseEmail := fmt.Sprintf("wali.%s@example.com", suffix())
 		reuseNISN := nisn()
 
-		first := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "Anak Pertama")
+		first := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "First Child")
 		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
 
 		// still unique among active accounts
-		registerWaliWith(t, reuseEmail, nisn(), joinCode, "Email Sama").requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
-		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), reuseNISN, joinCode, "NISN Sama").
+		registerWaliWith(t, reuseEmail, nisn(), joinCode, "Same Email").requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
+		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), reuseNISN, joinCode, "Same NISN").
 			requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")
 
 		require.Equal(t, http.StatusOK, deleteAccount(t, first.data("token").(string), testPassword).Status)
 
-		again := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "Anak Kembali")
+		again := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "Returning Child")
 		require.Equal(t, http.StatusCreated, again.Status, "body %v", again.Body)
 	})
 
@@ -1032,8 +1032,8 @@ func TestAccountSoftDelete(t *testing.T) {
 		require.NotEqual(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/guru/dashboard", teacher.Token, nil).Status)
 
 		again := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
-			"email": teacher.Email, "password": testPassword, "fullName": "Guru Kembali",
-			"role": "GURU", "class": map[string]any{"name": "Melati Baru", "gradeLevel": "Kelas B"},
+			"email": teacher.Email, "password": testPassword, "fullName": "Returning Teacher",
+			"role": "GURU", "class": map[string]any{"name": "New Melati", "gradeLevel": "Class B"},
 		})
 		require.Equal(t, http.StatusCreated, again.Status, "body %v", again.Body)
 	})

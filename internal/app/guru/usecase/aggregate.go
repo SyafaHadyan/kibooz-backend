@@ -12,7 +12,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 )
 
-var weekdayNames = []string{"Senin", "Selasa", "Rabu", "Kamis", "Jumat"}
+var weekdayNames = []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}
 
 // dayMood is the final mood of one student on one local calendar day
 type dayMood struct {

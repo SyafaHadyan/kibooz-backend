@@ -69,7 +69,7 @@ const (
 const (
 	AccessTokenIssuer = "kibooz"
 	DefaultSchoolName = "TK Pertiwi Harapan Bangsa"
-	DefaultGradeLevel = "Kelas A"
+	DefaultGradeLevel = "Class A"
 	DefaultAcademicYr = "2026/2027"
 
 	RefreshKeyPrefix     = "refresh:"
@@ -83,10 +83,10 @@ const (
 
 // MoodLabels are the parent facing captions shown on the wali dashboard
 var MoodLabels = map[Mood]string{
-	MoodSenang:  "Senang / Ceria",
-	MoodSedih:   "Sedih / Perlu Dihibur",
-	MoodMarah:   "Marah / Perlu Ditenangkan",
-	MoodBingung: "Ragu / Perlu Pendampingan",
+	MoodSenang:  "Happy / Cheerful",
+	MoodSedih:   "Sad / Needs Cheering Up",
+	MoodMarah:   "Angry / Needs Calming",
+	MoodBingung: "Unsure / Needs Support",
 }
 
 // MoodColors are the donut chart colors fixed by the API contract
