@@ -12,7 +12,7 @@ SET rank_position = ranked.position
 FROM (
     SELECT id, ROW_NUMBER() OVER (ORDER BY current_points DESC, full_name ASC, id ASC) AS position
     FROM students
-    WHERE class_id = ?
+    WHERE class_id = ? AND deleted_at IS NULL
 ) AS ranked
 WHERE s.id = ranked.id AND s.rank_position <> ranked.position`
 
