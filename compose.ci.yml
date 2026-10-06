@@ -1,5 +1,5 @@
 # Used with compose.yml by the Performance workflow, it builds the image from the pull request
-# and gives every service the same resource limits as the production stack.
+# and caps every service so a memory problem shows up as a killed container.
 services:
   api:
     image: kibooz-backend:ci
