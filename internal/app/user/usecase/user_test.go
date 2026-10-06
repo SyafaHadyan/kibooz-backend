@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +95,17 @@ func TestDeleteAccount(t *testing.T) {
 		appErr := apperror.As(err)
 		require.Equal(t, http.StatusForbidden, appErr.Status)
 		require.Equal(t, "AUTH_PASSWORD_INCORRECT", appErr.Code)
+		require.Zero(t, repo.deleted)
+	})
+
+	t.Run("a password longer than bcrypt reads cannot match a shorter one", func(t *testing.T) {
+		registered := strings.Repeat("a", 70) + "é"
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, registered)}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, registered+"z")
+
+		require.Equal(t, "AUTH_PASSWORD_INCORRECT", apperror.As(err).Code)
 		require.Zero(t, repo.deleted)
 	})
 

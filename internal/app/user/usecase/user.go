@@ -17,6 +17,8 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
 
+const bcryptMaxBytes = 72
+
 type UserUseCaseItf interface {
 	// UploadAvatar stores the image for the caller, or for one of their children when studentID is set
 	UploadAvatar(ctx context.Context, userID uuid.UUID, role constants.Role, studentID *uuid.UUID, data []byte) (dto.AvatarResponse, error)
@@ -124,6 +126,11 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 
 	if user.Role != role {
 		return apperror.ErrForbidden
+	}
+
+	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
+	if len([]byte(password)) > bcryptMaxBytes {
+		return apperror.ErrPasswordIncorrect
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))

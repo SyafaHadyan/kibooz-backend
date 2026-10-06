@@ -133,6 +133,11 @@ func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req d
 }
 
 func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.AuthResponse, error) {
+	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
+	if len([]byte(req.Password)) > bcryptMaxBytes {
+		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
+	}
+
 	user, err := u.repo.FindUserByEmail(ctx, normalizeEmail(req.Email))
 	if err != nil {
 		return dto.AuthResponse{}, apperror.Internal(err)
@@ -166,6 +171,9 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 
 	user, err := u.repo.RotateRefreshToken(ctx, hash, u.now(), next)
 	if err != nil {
+		// the database did not consume the token, so it must not stay flagged and block the client's retry
+		_ = u.cache.Del(ctx, refreshKey(hash))
+
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
 
