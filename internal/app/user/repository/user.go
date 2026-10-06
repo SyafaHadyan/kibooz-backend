@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -15,10 +16,12 @@ import (
 )
 
 type UserDBItf interface {
-	UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url string) error
+	// UpdateUserAvatar returns the avatar URL it replaced, and false when the account does not exist or is deleted
+	UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url string) (previous string, found bool, err error)
 	FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error)
-	// UpdateStudentAvatar returns the class of the child, or nil when the wali has no such child
-	UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, error)
+	// UpdateStudentAvatar returns the class of the child and the avatar URL it replaced, or a nil class when the
+	// wali has no such child
+	UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, string, error)
 	// FindUserByID returns nil when the account does not exist or is already deleted
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	// SoftDeleteAccount hides the account with its profile and children, revokes every session and
@@ -34,8 +37,38 @@ func NewUserDB(db *gorm.DB) UserDBItf {
 	return &UserDB{db: db}
 }
 
-func (r *UserDB) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url string) error {
-	return r.db.WithContext(ctx).Model(&entity.User{}).Where("id = ?", userID).Update("avatar_url", url).Error
+func (r *UserDB) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url string) (string, bool, error) {
+	var previous string
+
+	found := true
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var user entity.User
+
+		// the row lock makes two uploads at once replace each other one after the other, so no file is forgotten
+		err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+			Select("id", "avatar_url").Where("id = ?", userID).Take(&user).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			found = false
+
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if user.AvatarURL != nil {
+			previous = *user.AvatarURL
+		}
+
+		return tx.Model(&entity.User{}).Where("id = ?", userID).Update("avatar_url", url).Error
+	})
+	if err != nil {
+		return "", false, err
+	}
+
+	return previous, found, nil
 }
 
 func (r *UserDB) FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error) {
@@ -53,25 +86,46 @@ func (r *UserDB) FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uui
 	return &wali.ID, nil
 }
 
-func (r *UserDB) UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, error) {
-	var student entity.Student
+func (r *UserDB) UpdateStudentAvatar(
+	ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string,
+) (*uuid.UUID, string, error) {
+	var (
+		classID  *uuid.UUID
+		previous string
+	)
 
-	err := r.db.WithContext(ctx).Select("id", "class_id").
-		Where("id = ? AND wali_id = ?", studentID, waliID).Take(&student).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var student entity.Student
 
+		err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+			Select("id", "class_id", "avatar_url").
+			Where("id = ? AND wali_id = ?", studentID, waliID).Take(&student).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		err = tx.Model(&entity.Student{}).Where("id = ?", student.ID).Update("avatar_url", url).Error
+		if err != nil {
+			return err
+		}
+
+		classID = &student.ClassID
+
+		if student.AvatarURL != nil {
+			previous = *student.AvatarURL
+		}
+
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	err = r.db.WithContext(ctx).Model(&entity.Student{}).Where("id = ?", student.ID).Update("avatar_url", url).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return &student.ClassID, nil
+	return classID, previous, nil
 }
 
 func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {

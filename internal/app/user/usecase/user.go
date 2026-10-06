@@ -4,6 +4,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -91,17 +92,26 @@ func (u *UserUseCase) UploadAvatar(
 	}
 
 	if studentID == nil {
-		err = u.repo.UpdateUserAvatar(ctx, userID, url)
+		previous, found, err := u.repo.UpdateUserAvatar(ctx, userID, url)
 		if err != nil {
 			s3.Discard(ctx, u.storage, key)
 
 			return dto.AvatarResponse{}, apperror.Internal(err)
 		}
 
+		if !found {
+			// the account was deleted after the check above, so the file belongs to nobody
+			s3.Discard(ctx, u.storage, key)
+
+			return dto.AvatarResponse{}, apperror.ErrProfileNotFound
+		}
+
+		u.discardReplaced(ctx, previous)
+
 		return dto.AvatarResponse{AvatarURL: url}, nil
 	}
 
-	classID, err := u.repo.UpdateStudentAvatar(ctx, waliID, *studentID, url)
+	classID, previous, err := u.repo.UpdateStudentAvatar(ctx, waliID, *studentID, url)
 	if err != nil {
 		s3.Discard(ctx, u.storage, key)
 
@@ -115,10 +125,27 @@ func (u *UserUseCase) UploadAvatar(
 		return dto.AvatarResponse{}, apperror.ErrStudentNotFound
 	}
 
+	u.discardReplaced(ctx, previous)
+
 	// the cache is optional, entries also expire by themselves
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 
 	return dto.AvatarResponse{AvatarURL: url}, nil
+}
+
+// discardReplaced removes the file an avatar update replaced. It only touches files this storage serves under the
+// avatar directory, so an address that was set some other way is never deleted.
+func (u *UserUseCase) discardReplaced(ctx context.Context, previous string) {
+	if previous == "" {
+		return
+	}
+
+	key, ok := u.storage.KeyFromURL(previous)
+	if !ok || !strings.HasPrefix(key, string(constants.AvatarDirectory)+"/") {
+		return
+	}
+
+	s3.Discard(ctx, u.storage, key)
 }
 
 func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, password string) error {

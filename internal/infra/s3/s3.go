@@ -25,6 +25,8 @@ type StorageItf interface {
 	Upload(ctx context.Context, objectKey string, contentType string, data []byte) (string, error)
 	// Delete removes the object, and a key that does not exist is not an error
 	Delete(ctx context.Context, objectKey string) error
+	// KeyFromURL returns the object key of a public URL this storage handed out, and false for any other URL
+	KeyFromURL(url string) (string, bool)
 }
 
 // discardTimeout bounds the cleanup of one object
@@ -104,6 +106,15 @@ func (s *Storage) Upload(ctx context.Context, objectKey string, contentType stri
 	return s.publicURL + "/" + objectKey, nil
 }
 
+func (s *Storage) KeyFromURL(url string) (string, bool) {
+	key, found := strings.CutPrefix(url, s.publicURL+"/")
+	if !found || key == "" {
+		return "", false
+	}
+
+	return key, true
+}
+
 func (s *Storage) Delete(ctx context.Context, objectKey string) error {
 	_, err := s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -125,6 +136,10 @@ func (Disabled) Enabled() bool {
 
 func (Disabled) Upload(context.Context, string, string, []byte) (string, error) {
 	return "", apperror.ErrStorageDisabled
+}
+
+func (Disabled) KeyFromURL(string) (string, bool) {
+	return "", false
 }
 
 func (Disabled) Delete(context.Context, string) error {

@@ -786,6 +786,24 @@ func TestAvatarUpload(t *testing.T) {
 		require.True(t, avatars[url], "leaderboard %v", after.Body)
 	})
 
+	t.Run("a replaced avatar is removed from storage", func(t *testing.T) {
+		keyOf := func(res result) string {
+			return strings.TrimPrefix(res.data("avatarUrl").(string), testPublicURL+"/")
+		}
+
+		first := upload(t, guru.Token, nil, "one.png", png)
+		second := upload(t, guru.Token, nil, "two.png", png)
+		require.Equal(t, http.StatusOK, second.Status, "body %v", second.Body)
+		require.NotContains(t, uploaded("avatars/"), keyOf(first), "the first teacher avatar is gone")
+		require.Contains(t, uploaded("avatars/"), keyOf(second))
+
+		firstChild := upload(t, wali.Token, map[string]string{"studentId": studentID}, "one.png", png)
+		secondChild := upload(t, wali.Token, map[string]string{"studentId": studentID}, "two.png", png)
+		require.Equal(t, http.StatusOK, secondChild.Status, "body %v", secondChild.Body)
+		require.NotContains(t, uploaded("avatars/"), keyOf(firstChild), "the first child avatar is gone")
+		require.Contains(t, uploaded("avatars/"), keyOf(secondChild))
+	})
+
 	t.Run("rejections", func(t *testing.T) {
 		upload(t, wali.Token, map[string]string{"studentId": studentID}, "x.png", png)
 
