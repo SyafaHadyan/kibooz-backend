@@ -1,0 +1,119 @@
+name: Performance
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Daily at 21:00 UTC (04:00 WIB), after the security scan
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+    inputs:
+      script:
+        description: Which k6 script to run
+        type: choice
+        options: [smoke, load]
+        default: load
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  k6:
+    name: k6 performance test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # pull requests get the 30 second smoke test, the nightly run and manual runs get the load test
+      SCRIPT: ${{ github.event_name == 'workflow_dispatch' && inputs.script || (github.event_name == 'schedule' && 'load' || 'smoke') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create the environment file
+        run: |
+          {
+            echo "APP_ENV=production"
+            echo "APP_PORT=8080"
+            echo "DB_NAME=kibooz"
+            echo "DB_USERNAME=kibooz"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+            # the default limits would answer 429 and fail every claim during the test
+            echo "LIMITER_MAX=1000000"
+            echo "AUTH_LIMITER_MAX=1000000"
+            echo "TRASH_DAILY_LIMIT=1000000"
+            echo "KEEPALIVE_SECONDS=0"
+          } > .env
+
+      # compose.ci.yml builds the image from this pull request and applies the production resource limits
+      - name: Start the stack
+        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+
+      - name: Set up k6
+        uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+        with:
+          k6-version: "2.3.0"
+
+      - name: Run k6
+        env:
+          BASE_URL: http://127.0.0.1:8080
+        run: k6 run --summary-export=k6-summary.json "k6/${SCRIPT}.js"
+
+      - name: Check that no container was killed or restarted
+        if: ${{ !cancelled() }}
+        run: |
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' | tee stats.txt
+          failed=0
+          for name in kibooz-api kibooz-db kibooz-redis; do
+            oom="$(docker inspect -f '{{.State.OOMKilled}}' "$name")"
+            restarts="$(docker inspect -f '{{.RestartCount}}' "$name")"
+            if [ "$oom" != "false" ] || [ "$restarts" != "0" ]; then
+              echo "::error::$name was killed or restarted (OOMKilled=$oom, restarts=$restarts)"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+      - name: Write the summary
+        if: ${{ !cancelled() && hashFiles('k6-summary.json') != '' }}
+        run: |
+          {
+            echo "### k6 ${SCRIPT} results"
+            echo
+            echo "| Endpoint | p95 |"
+            echo "|:---|---:|"
+            jq -r '.metrics | to_entries[] | select(.key | test("^http_req_duration\\{endpoint:")) | "| \(.key | capture("endpoint:(?<name>[a-z_]+)").name) | \(.value["p(95)"] | floor) ms |"' k6-summary.json
+            echo
+            jq -r '"Failed requests \(.metrics.http_req_failed.value * 100 | . * 100 | round / 100) percent, checks passed \(.metrics.checks.value * 100 | . * 100 | round / 100) percent."' k6-summary.json
+            echo
+            echo '```'
+            cat stats.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect container logs
+        if: ${{ !cancelled() }}
+        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color > compose.log
+
+      - name: Upload the results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: k6-results
+          path: |
+            k6-summary.json
+            stats.txt
+            compose.log
+          if-no-files-found: ignore
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        run: docker compose -f compose.yml -f compose.ci.yml down -v
