@@ -140,3 +140,44 @@ func TestDeleteAccount(t *testing.T) {
 		require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
 	})
 }
+
+type fakeStorage struct{ uploads int }
+
+func (f *fakeStorage) Enabled() bool { return true }
+
+func (f *fakeStorage) Upload(context.Context, string, string, []byte) (string, error) {
+	f.uploads++
+
+	return "https://example.com/avatar.png", nil
+}
+
+// a 1x1 PNG, enough for the image check
+var tinyPNG = []byte{
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+	0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0xf8, 0x5f,
+	0x0f, 0x00, 0x02, 0x87, 0x01, 0x80, 0xeb, 0x47, 0xba, 0x92, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+	0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+}
+
+func TestUploadAvatarRefusesADeletedAccountBeforeStoring(t *testing.T) {
+	storage := &fakeStorage{}
+	useCase := usecase.NewUserUseCase(&fakeRepo{}, storage, &fakeCache{})
+
+	_, err := useCase.UploadAvatar(context.Background(), uuid.New(), constants.RoleGuru, nil, tinyPNG)
+
+	require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+	require.Zero(t, storage.uploads)
+}
+
+func TestUploadAvatarStoresForAnActiveAccount(t *testing.T) {
+	storage := &fakeStorage{}
+	repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "any-password")}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+	res, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+	require.NoError(t, err)
+	require.Equal(t, "https://example.com/avatar.png", res.AvatarURL)
+	require.Equal(t, 1, storage.uploads)
+}

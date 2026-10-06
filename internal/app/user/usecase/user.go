@@ -65,6 +65,17 @@ func (u *UserUseCase) UploadAvatar(
 		waliID = *found
 	}
 
+	if studentID == nil {
+		user, err := u.repo.FindUserByID(ctx, userID)
+		if err != nil {
+			return dto.AvatarResponse{}, apperror.Internal(err)
+		}
+
+		if user == nil {
+			return dto.AvatarResponse{}, apperror.ErrProfileNotFound
+		}
+	}
+
 	owner := userID
 	if studentID != nil {
 		owner = *studentID
