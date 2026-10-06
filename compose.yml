@@ -16,6 +16,7 @@ services:
       DB_PORT: 5432
       REDIS_ADDRESS: redis
       REDIS_PORT: 6379
+      GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
     ports:
       - "${APP_PORT}:${APP_PORT}"
     depends_on:
@@ -63,7 +64,7 @@ services:
       - sh
       - -c
       - |
-        set -- --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        set -- --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory "$$REDIS_MAXMEMORY" --maxmemory-policy volatile-lru
         if [ -n "$$REDIS_USERNAME" ]; then
           set -- "$$@" --user "$$REDIS_USERNAME" on ">$$REDIS_PASSWORD" "~*" "&*" "+@all"
         fi
@@ -71,6 +72,7 @@ services:
     environment:
       REDIS_USERNAME: ${REDIS_USERNAME}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-96mb}
       REDISCLI_AUTH: ${REDIS_PASSWORD}
     volumes:
       - kibooz-redis:/data
