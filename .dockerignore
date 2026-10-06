@@ -6,3 +6,5 @@
 bin
 *.md
 compose.yml
+k6
+compose.*.yml
