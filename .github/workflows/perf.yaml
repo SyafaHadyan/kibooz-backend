@@ -11,8 +11,12 @@ on:
       script:
         description: Which k6 script to run
         type: choice
-        options: [smoke, load, stress]
+        options: [smoke, load, stress, spike, soak]
         default: load
+      duration:
+        description: How long the soak test runs, for example 30m. Other scripts ignore it.
+        type: string
+        default: 30m
 
 concurrency:
   group: perf-${{ github.workflow }}-${{ github.ref }}
@@ -24,12 +28,14 @@ jobs:
   k6:
     name: k6 performance test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # the soak test holds its load for 30 minutes by default, so it needs more than the other scripts
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.script == 'soak' && 60 || 20 }}
     permissions:
       contents: read
     env:
       # pull requests get the 30 second smoke test, the nightly run and manual runs get the load test
       SCRIPT: ${{ github.event_name == 'workflow_dispatch' && inputs.script || (github.event_name == 'schedule' && 'load' || 'smoke') }}
+      DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.duration || '30m' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,7 +59,7 @@ jobs:
             echo "KEEPALIVE_SECONDS=0"
           } > .env
 
-      # compose.ci.yml builds the image from this pull request and applies the production resource limits
+      # compose.ci.yml builds the image from this pull request and caps the memory of every container
       - name: Start the stack
         run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
 
@@ -65,7 +71,21 @@ jobs:
       - name: Run k6
         env:
           BASE_URL: http://127.0.0.1:8080
-        run: k6 run --summary-export=k6-summary.json "k6/${SCRIPT}.js"
+        run: |
+          # one sample of the container memory every 30 seconds, so the summary can show whether it keeps growing
+          (
+            while true; do
+              docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | sed "s/^/$(date +%s) /"
+              sleep 30
+            done
+          ) > memory-timeline.txt &
+          sampler=$!
+
+          status=0
+          k6 run --summary-export=k6-summary.json "k6/${SCRIPT}.js" || status=$?
+
+          kill "$sampler" 2>/dev/null || true
+          exit "$status"
 
       - name: Check that no container was killed or restarted
         if: ${{ !cancelled() }}
@@ -90,13 +110,23 @@ jobs:
             echo
             echo "| Endpoint | p95 |"
             echo "|:---|---:|"
-            jq -r '.metrics | to_entries[] | select(.key | test("^http_req_duration\\{endpoint:")) | "| \(.key | capture("endpoint:(?<name>[a-z_]+)").name) | \(.value["p(95)"] | floor) ms |"' k6-summary.json
+            jq -r '.metrics | to_entries[] | select(.key | test("^http_req_duration\\{(endpoint|scenario):")) | "| \(.key | capture("(endpoint|scenario):(?<name>[a-z_]+)").name) | \(.value["p(95)"] | floor) ms |"' k6-summary.json
             echo
             jq -r '"Failed requests \(.metrics.http_req_failed.value * 100 | . * 100 | round / 100) percent, checks passed \(.metrics.checks.value * 100 | . * 100 | round / 100) percent."' k6-summary.json
             echo
             echo '```'
             cat stats.txt
             echo '```'
+            if [ -s memory-timeline.txt ]; then
+              echo
+              echo "| Container | First sample | Last sample |"
+              echo "|:---|---:|---:|"
+              for name in kibooz-api kibooz-db kibooz-redis; do
+                first="$(grep " ${name} " memory-timeline.txt | head -1 | awk '{print $3}')"
+                last="$(grep " ${name} " memory-timeline.txt | tail -1 | awk '{print $3}')"
+                echo "| ${name} | ${first} | ${last} |"
+              done
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect container logs
@@ -111,6 +141,7 @@ jobs:
           path: |
             k6-summary.json
             stats.txt
+            memory-timeline.txt
             compose.log
           if-no-files-found: ignore
 
