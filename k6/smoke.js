@@ -9,11 +9,11 @@ export const options = {
   thresholds: {
     http_req_failed: ['rate<0.01'],
     checks: ['rate>0.99'],
-    'http_req_duration{endpoint:wali_dashboard}': ['p(95)<500'],
-    'http_req_duration{endpoint:scan_claim}': ['p(95)<800'],
-    'http_req_duration{endpoint:leaderboard}': ['p(95)<400'],
-    'http_req_duration{endpoint:mood_log}': ['p(95)<500'],
-    'http_req_duration{endpoint:guru_dashboard}': ['p(95)<500'],
-    'http_req_duration{endpoint:mood_analytics}': ['p(95)<600'],
+    'http_req_duration{endpoint:wali_dashboard}': ['p(95)<250'],
+    'http_req_duration{endpoint:scan_claim}': ['p(95)<300'],
+    'http_req_duration{endpoint:leaderboard}': ['p(95)<250'],
+    'http_req_duration{endpoint:mood_log}': ['p(95)<250'],
+    'http_req_duration{endpoint:guru_dashboard}': ['p(95)<250'],
+    'http_req_duration{endpoint:mood_analytics}': ['p(95)<250'],
   },
 };

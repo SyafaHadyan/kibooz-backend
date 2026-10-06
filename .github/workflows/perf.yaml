@@ -11,7 +11,7 @@ on:
       script:
         description: Which k6 script to run
         type: choice
-        options: [smoke, load]
+        options: [smoke, load, stress]
         default: load
 
 concurrency:
