@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -23,11 +24,21 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-func New(cfg *env.Env) (*gorm.DB, error) {
-	dsn := fmt.Sprintf(
+// dsnValue quotes a value of a keyword/value connection string, so spaces, quotes and backslashes survive parsing
+func dsnValue(value string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
+}
+
+func buildDSN(cfg *env.Env) string {
+	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
-		cfg.DBHost, cfg.DBPort, cfg.DBUsername, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode,
+		dsnValue(cfg.DBHost), cfg.DBPort, dsnValue(cfg.DBUsername), dsnValue(cfg.DBPassword),
+		dsnValue(cfg.DBName), dsnValue(cfg.DBSSLMode),
 	)
+}
+
+func New(cfg *env.Env) (*gorm.DB, error) {
+	dsn := buildDSN(cfg)
 
 	gormLogger := logger.New(
 		log.New(os.Stdout, "", log.LstdFlags),
