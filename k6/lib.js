@@ -75,6 +75,9 @@ export function setup() {
     parents.push({ token: wali.token, email: wali.email, studentId: me.data.student.id });
   }
 
+  // open the database connections before the measured part starts, otherwise the first burst pays for them
+  http.batch(parents.map((item) => ['GET', `${api}/wali/dashboard`, null, tagged(item.token, 'warmup')]));
+
   return { guru, parents, password: pass };
 }
 
