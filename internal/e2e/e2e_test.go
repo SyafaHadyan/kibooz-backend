@@ -1047,7 +1047,7 @@ func TestAccountSoftDelete(t *testing.T) {
 
 	t.Run("deleting a teacher ends their sessions and frees the email and NIP", func(t *testing.T) {
 		teacher := registerGuru(t, "Melati")
-		teacherClassID, _ := classOf(t, teacher)
+		teacherClassID, teacherCode := classOf(t, teacher)
 
 		res := deleteAccount(t, teacher.Token, testPassword)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
@@ -1057,6 +1057,10 @@ func TestAccountSoftDelete(t *testing.T) {
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 		refresh(t, teacher.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 		requireLockedOut(t, teacher.Token, teacherClassID)
+
+		// the class keeps its code, but nobody teaches it any more
+		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), nisn(), teacherCode, "Late Child").
+			requireError(t, http.StatusConflict, "CLASS_NO_ACTIVE_TEACHER")
 
 		again := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
 			"email": teacher.Email, "password": testPassword, "fullName": "Returning Teacher",
