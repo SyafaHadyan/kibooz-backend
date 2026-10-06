@@ -34,16 +34,20 @@ type fakeRepo struct {
 	classes []uuid.UUID
 	err     error
 	deleted int
+
+	// waliID and studentClass drive the student avatar path, a nil studentClass means the child is not theirs
+	waliID       *uuid.UUID
+	studentClass *uuid.UUID
 }
 
 func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) error { return nil }
 
 func (f *fakeRepo) FindWaliIDByUserID(context.Context, uuid.UUID) (*uuid.UUID, error) {
-	return nil, nil
+	return f.waliID, nil
 }
 
 func (f *fakeRepo) UpdateStudentAvatar(context.Context, uuid.UUID, uuid.UUID, string) (*uuid.UUID, error) {
-	return nil, nil
+	return f.studentClass, nil
 }
 
 func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) {
@@ -153,14 +157,25 @@ func TestDeleteAccount(t *testing.T) {
 	})
 }
 
-type fakeStorage struct{ uploads int }
+type fakeStorage struct {
+	uploads int
+	keys    []string
+	deleted []string
+}
 
 func (f *fakeStorage) Enabled() bool { return true }
 
-func (f *fakeStorage) Upload(context.Context, string, string, []byte) (string, error) {
+func (f *fakeStorage) Upload(_ context.Context, key string, _ string, _ []byte) (string, error) {
 	f.uploads++
+	f.keys = append(f.keys, key)
 
 	return "https://example.com/avatar.png", nil
+}
+
+func (f *fakeStorage) Delete(_ context.Context, key string) error {
+	f.deleted = append(f.deleted, key)
+
+	return nil
 }
 
 // a 1x1 PNG, enough for the image check
@@ -192,4 +207,32 @@ func TestUploadAvatarStoresForAnActiveAccount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/avatar.png", res.AvatarURL)
 	require.Equal(t, 1, storage.uploads)
+}
+
+func TestUploadAvatarForAnotherParentsChildLeavesNoFile(t *testing.T) {
+	storage := &fakeStorage{}
+	waliID := uuid.New()
+	repo := &fakeRepo{waliID: &waliID}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+	studentID := uuid.New()
+
+	_, err := useCase.UploadAvatar(context.Background(), uuid.New(), constants.RoleWali, &studentID, tinyPNG)
+
+	require.Equal(t, "STUDENT_NOT_FOUND", apperror.As(err).Code)
+	require.Equal(t, 1, storage.uploads)
+	require.Equal(t, storage.keys, storage.deleted, "the stored file is removed again")
+}
+
+func TestUploadAvatarForOwnChildKeepsTheFile(t *testing.T) {
+	storage := &fakeStorage{}
+	waliID, classID := uuid.New(), uuid.New()
+	repo := &fakeRepo{waliID: &waliID, studentClass: &classID}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+	studentID := uuid.New()
+
+	_, err := useCase.UploadAvatar(context.Background(), uuid.New(), constants.RoleWali, &studentID, tinyPNG)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, storage.uploads)
+	require.Empty(t, storage.deleted)
 }

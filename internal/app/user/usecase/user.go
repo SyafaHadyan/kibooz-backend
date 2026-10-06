@@ -93,6 +93,8 @@ func (u *UserUseCase) UploadAvatar(
 	if studentID == nil {
 		err = u.repo.UpdateUserAvatar(ctx, userID, url)
 		if err != nil {
+			s3.Discard(ctx, u.storage, key)
+
 			return dto.AvatarResponse{}, apperror.Internal(err)
 		}
 
@@ -101,10 +103,15 @@ func (u *UserUseCase) UploadAvatar(
 
 	classID, err := u.repo.UpdateStudentAvatar(ctx, waliID, *studentID, url)
 	if err != nil {
+		s3.Discard(ctx, u.storage, key)
+
 		return dto.AvatarResponse{}, apperror.Internal(err)
 	}
 
 	if classID == nil {
+		// the child is not this parent's, so the file belongs to nobody
+		s3.Discard(ctx, u.storage, key)
+
 		return dto.AvatarResponse{}, apperror.ErrStudentNotFound
 	}
 

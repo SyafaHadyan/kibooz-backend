@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"net/textproto"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -52,9 +53,16 @@ func startMockS3() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 
-		if r.Method == http.MethodPut {
+		key := strings.TrimPrefix(r.URL.Path, "/"+testBucket+"/")
+
+		switch r.Method {
+		case http.MethodPut:
 			storedMu.Lock()
-			storedKeys = append(storedKeys, strings.TrimPrefix(r.URL.Path, "/"+testBucket+"/"))
+			storedKeys = append(storedKeys, key)
+			storedMu.Unlock()
+		case http.MethodDelete:
+			storedMu.Lock()
+			storedKeys = slices.DeleteFunc(storedKeys, func(stored string) bool { return stored == key })
 			storedMu.Unlock()
 		}
 
@@ -781,8 +789,11 @@ func TestAvatarUpload(t *testing.T) {
 	t.Run("rejections", func(t *testing.T) {
 		upload(t, wali.Token, map[string]string{"studentId": studentID}, "x.png", png)
 
+		storedBefore := len(uploaded("avatars/"))
+
 		upload(t, otherWali.Token, map[string]string{"studentId": studentID}, "x.png", png).
 			requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+		require.Len(t, uploaded("avatars/"), storedBefore, "a refused upload must not leave a file behind")
 		upload(t, guru.Token, map[string]string{"studentId": studentID}, "x.png", png).
 			requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 		upload(t, wali.Token, nil, "notes.png", []byte("plain text pretending to be an image")).
