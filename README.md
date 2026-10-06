@@ -153,6 +153,18 @@ E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./...
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
+### Performance tests
+
+The `k6/` folder holds the load scripts. `smoke.js` is a short check that runs on every pull request, and `load.js` ramps up arrivals to measure how the API behaves with a whole class claiming points at once. Both create their own accounts, so they only need a running API. The default rate limits and the daily claim limit would answer with errors during a load test, so the workflow raises them in its generated `.env`.
+
+```sh
+# set LIMITER_MAX, AUTH_LIMITER_MAX and TRASH_DAILY_LIMIT to large values in .env first
+docker compose -f compose.yml -f compose.ci.yml up -d --build --wait
+k6 run k6/smoke.js
+```
+
+The latency limits in the scripts are placeholders that were set from the first runs on a GitHub runner, so raise them when you move to slower hardware. Never point the scripts at a deployment you do not own, because they create accounts and write data.
+
 ## CI/CD
 
 | Workflow | Trigger | What it does |
@@ -160,6 +172,7 @@ Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile |
+| `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with the production resource limits, runs k6 (a 30 second smoke test on pull requests, a ramping load test nightly and on demand) and fails when a container was killed or restarted |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image, pushes it to GitHub Container Registry and to Docker Hub when configured, scans with Trivy, attaches an SBOM and signs with cosign |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
@@ -182,7 +195,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | DeepSource Docker, Go, SQL and Secrets | DeepSource |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
-OSSF Scorecard is not required because it only runs on `main`. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
+OSSF Scorecard is not required because it only runs on `main`, and the k6 performance test is not required yet while its limits are being calibrated. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
 
 ### Releases
 
