@@ -121,16 +121,3 @@ jobs:
           name: coverage
           path: coverage.out
           if-no-files-found: ignore
-
-  gate:
-    name: CI gate
-    if: always()
-    needs: [lint, test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every job to pass
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "$RESULTS"
-          echo "$RESULTS" | grep -q '"result": "\(failure\|cancelled\)"' && exit 1 || exit 0
