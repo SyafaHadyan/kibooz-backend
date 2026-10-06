@@ -119,6 +119,21 @@ func (r *AuthDB) CreateWali(
 
 		classID = class.ID
 
+		// a class whose teachers were all deleted keeps its code but must not take in new children
+		var teachers int64
+
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ?", class.ID).
+			Count(&teachers).Error
+		if err != nil {
+			return err
+		}
+
+		if teachers == 0 {
+			return apperror.ErrClassNoTeacher
+		}
+
 		err = tx.Create(user).Error
 		if err != nil {
 			return err

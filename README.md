@@ -119,6 +119,7 @@ When Redis is unreachable the API logs it once and keeps serving. Calls to Redis
 - A student can claim at most `TRASH_DAILY_LIMIT` times per local day. The check, the point update and the re-ranking run in one transaction guarded by a per class advisory lock, so parallel requests cannot exceed the limit.
 - Ranking is points descending, then name, then id. `students.rank_position` is kept in sync on every claim and registration.
 - Only the latest mood of a student per local day counts in dashboards and charts.
+- A class whose teachers were all deleted keeps its code, but registering a child with it fails with `CLASS_NO_ACTIVE_TEACHER`.
 - Deleting an account is a soft delete. The user, their profile and a parent's children get a `deleted_at` time and disappear from every query, login and refresh token, and the class ranking is renumbered. Moods, scans and guidance records stay in the database. Email, NIP and NISN are only unique among active rows, so they can be registered again, and permanent removal is not automated.
 - A teacher can only record and read moods of classes they teach. A parent can only read their own children. Cross class access returns 403 or 404.
 - Photos are decoded, size checked and type checked by content, not by file name. Raw face photos are never accepted because mood detection runs on the device.
