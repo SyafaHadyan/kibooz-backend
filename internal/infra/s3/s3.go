@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -21,6 +23,23 @@ type StorageItf interface {
 	Enabled() bool
 	// Upload stores the object and returns its public URL
 	Upload(ctx context.Context, objectKey string, contentType string, data []byte) (string, error)
+	// Delete removes the object, and a key that does not exist is not an error
+	Delete(ctx context.Context, objectKey string) error
+}
+
+// discardTimeout bounds the cleanup of one object
+const discardTimeout = 5 * time.Second
+
+// Discard removes an object that was uploaded for a request that then failed, so no file is left without a record.
+// It still runs when the client already gave up and only logs a failure, because the caller is returning another error.
+func Discard(ctx context.Context, storage StorageItf, objectKey string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), discardTimeout)
+	defer cancel()
+
+	err := storage.Delete(ctx, objectKey)
+	if err != nil {
+		log.Printf("storage cleanup of %s failed %v", objectKey, err)
+	}
 }
 
 type Storage struct {
@@ -85,6 +104,18 @@ func (s *Storage) Upload(ctx context.Context, objectKey string, contentType stri
 	return s.publicURL + "/" + objectKey, nil
 }
 
+func (s *Storage) Delete(ctx context.Context, objectKey string) error {
+	_, err := s.client.DeleteObject(ctx, &awss3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		return apperror.ErrStorageFailed.WithErr(err)
+	}
+
+	return nil
+}
+
 // Disabled is used when no bucket is configured
 type Disabled struct{}
 
@@ -94,4 +125,8 @@ func (Disabled) Enabled() bool {
 
 func (Disabled) Upload(context.Context, string, string, []byte) (string, error) {
 	return "", apperror.ErrStorageDisabled
+}
+
+func (Disabled) Delete(context.Context, string) error {
+	return apperror.ErrStorageDisabled
 }
