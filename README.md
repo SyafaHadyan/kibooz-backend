@@ -75,8 +75,8 @@ Every value is an environment variable. A `.env` file is read when present. See 
 All routes live under `/api/v1`. Responses use one envelope.
 
 ```json
-{ "success": true, "message": "Login berhasil", "data": {} }
-{ "success": false, "message": "Email atau kata sandi tidak cocok untuk peran yang dipilih", "errorCode": "AUTH_INVALID_CREDENTIALS" }
+{ "success": true, "message": "Login successful", "data": {} }
+{ "success": false, "message": "Email or password does not match the selected role", "errorCode": "AUTH_INVALID_CREDENTIALS" }
 ```
 
 Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
