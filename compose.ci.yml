@@ -1,0 +1,26 @@
+# Used with compose.yml by the Performance workflow, it builds the image from the pull request
+# and gives every service the same resource limits as the production stack.
+services:
+  api:
+    image: kibooz-backend:ci
+    build: .
+    pull_policy: never
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  db:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
