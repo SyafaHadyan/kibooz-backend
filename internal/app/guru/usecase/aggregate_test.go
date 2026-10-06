@@ -122,9 +122,9 @@ func TestWeeklyTrendScoresShareOfHappyStudents(t *testing.T) {
 	points := weeklyTrend(items, weekStart, loc)
 
 	require.Len(t, points, 5)
-	require.Equal(t, "Senin", points[0].Day)
+	require.Equal(t, "Monday", points[0].Day)
 	require.Equal(t, 50, points[0].AverageHappyScore)
 	require.Equal(t, 0, points[1].AverageHappyScore)
 	require.Equal(t, 100, points[2].AverageHappyScore)
-	require.Equal(t, "Jumat", points[4].Day)
+	require.Equal(t, "Friday", points[4].Day)
 }
