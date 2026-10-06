@@ -104,6 +104,8 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 		ScannedAt:       now.UTC(),
 	}
 
+	var photoKey string
+
 	if photo != nil && u.storage.Enabled() {
 		key := fmt.Sprintf("%s/%s/%s%s", constants.TrashDirectory, student.ID, scan.ID, photo.Extension)
 
@@ -113,10 +115,16 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 		}
 
 		scan.PhotoURL = &url
+		photoKey = key
 	}
 
 	result, err := u.repo.Claim(ctx, scan, student.ClassID, u.cfg.TrashDailyLimit, from, to)
 	if err != nil {
+		// the claim lost a race or failed, so nothing will ever point at the photo
+		if photoKey != "" {
+			s3.Discard(ctx, u.storage, photoKey)
+		}
+
 		return dto.ScanClaimResponse{}, apperror.As(err)
 	}
 
