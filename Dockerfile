@@ -16,7 +16,7 @@ COPY --from=build /out/kibooz-backend /kibooz-backend
 
 EXPOSE 8080
 
-USER nonroot:nonroot
+USER 65532:65532
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["/kibooz-backend", "healthcheck"]
 
