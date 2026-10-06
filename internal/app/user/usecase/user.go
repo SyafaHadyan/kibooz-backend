@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
@@ -19,6 +20,8 @@ import (
 type UserUseCaseItf interface {
 	// UploadAvatar stores the image for the caller, or for one of their children when studentID is set
 	UploadAvatar(ctx context.Context, userID uuid.UUID, role constants.Role, studentID *uuid.UUID, data []byte) (dto.AvatarResponse, error)
+	// DeleteAccount soft deletes the caller after checking their password. A parent's children are deleted with them.
+	DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, password string) error
 }
 
 type UserUseCase struct {
@@ -96,4 +99,36 @@ func (u *UserUseCase) UploadAvatar(
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 
 	return dto.AvatarResponse{AvatarURL: url}, nil
+}
+
+func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, password string) error {
+	user, err := u.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if user == nil {
+		return apperror.ErrProfileNotFound
+	}
+
+	if user.Role != role {
+		return apperror.ErrForbidden
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	if err != nil {
+		return apperror.ErrPasswordIncorrect
+	}
+
+	classIDs, err := u.repo.SoftDeleteAccount(ctx, userID, role)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	// the cache is optional, entries also expire by themselves
+	for _, classID := range classIDs {
+		_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+	}
+
+	return nil
 }
