@@ -939,6 +939,33 @@ func deleteAccount(t *testing.T, token string, password string) result {
 	return call(t, http.MethodDelete, "/api/v1/users/me", token, map[string]any{"password": password})
 }
 
+// requireLockedOut checks that an access token of a deleted account, which stays valid until it expires, reaches nothing
+func requireLockedOut(t *testing.T, token string, classID string) {
+	t.Helper()
+
+	png, err := base64.StdEncoding.DecodeString(tinyPNG)
+	require.NoError(t, err)
+
+	storedBefore := len(uploaded(""))
+
+	attempts := map[string]result{
+		"wali dashboard":       call(t, http.MethodGet, "/api/v1/wali/dashboard", token, nil),
+		"guru dashboard":       call(t, http.MethodGet, "/api/v1/guru/dashboard", token, nil),
+		"leaderboard":          call(t, http.MethodGet, "/api/v1/leaderboard", token, nil),
+		"leaderboard of class": call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classID, token, nil),
+		"avatar upload":        upload(t, token, nil, "foto.png", png),
+		"delete account again": deleteAccount(t, token, testPassword),
+		"mood log":             call(t, http.MethodPost, "/api/v1/guru/mood/log", token, map[string]any{"studentId": uuid.NewString(), "moodType": "SENANG"}),
+		"scan claim":           call(t, http.MethodPost, "/api/v1/trash/scan-claim", token, map[string]any{"studentId": uuid.NewString(), "trashType": "ORGANIK", "confidenceScore": 0.9}),
+	}
+
+	for name, res := range attempts {
+		require.GreaterOrEqual(t, res.Status, http.StatusBadRequest, "%s must be refused, body %v", name, res.Body)
+	}
+
+	require.Len(t, uploaded(""), storedBefore, "a deleted account must not leave an uploaded file")
+}
+
 func TestAccountSoftDelete(t *testing.T) {
 	guru := registerGuru(t, "Anggrek")
 	classID, joinCode := classOf(t, guru)
@@ -979,8 +1006,7 @@ func TestAccountSoftDelete(t *testing.T) {
 		refresh(t, amelia.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 
 		// the access token that is still valid no longer reaches any data
-		require.NotEqual(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/wali/dashboard", amelia.Token, nil).Status)
-		require.NotEqual(t, http.StatusOK, deleteAccount(t, amelia.Token, testPassword).Status)
+		requireLockedOut(t, amelia.Token, classID)
 	})
 
 	t.Run("the class forgets the child and the ranking closes the gap", func(t *testing.T) {
@@ -1021,6 +1047,7 @@ func TestAccountSoftDelete(t *testing.T) {
 
 	t.Run("deleting a teacher ends their sessions and frees the email and NIP", func(t *testing.T) {
 		teacher := registerGuru(t, "Melati")
+		teacherClassID, _ := classOf(t, teacher)
 
 		res := deleteAccount(t, teacher.Token, testPassword)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
@@ -1029,7 +1056,7 @@ func TestAccountSoftDelete(t *testing.T) {
 			"email": teacher.Email, "password": testPassword, "role": "GURU",
 		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 		refresh(t, teacher.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
-		require.NotEqual(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/guru/dashboard", teacher.Token, nil).Status)
+		requireLockedOut(t, teacher.Token, teacherClassID)
 
 		again := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
 			"email": teacher.Email, "password": testPassword, "fullName": "Returning Teacher",
