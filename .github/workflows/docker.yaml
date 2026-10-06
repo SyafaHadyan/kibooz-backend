@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Compute image names
         run: echo "GHCR_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
@@ -142,8 +144,10 @@ jobs:
 
       - name: Sign image (keyless)
         if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          cosign sign --yes "${GHCR_IMAGE}@${{ steps.build.outputs.digest }}"
+          cosign sign --yes "${GHCR_IMAGE}@${DIGEST}"
           if [ "$HUB" = "true" ]; then
-            cosign sign --yes "${HUB_IMAGE}@${{ steps.build.outputs.digest }}"
+            cosign sign --yes "${HUB_IMAGE}@${DIGEST}"
           fi
