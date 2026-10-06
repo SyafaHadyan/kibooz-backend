@@ -19,26 +19,26 @@ type Guidance struct {
 var catalogue = map[constants.Mood]Guidance{
 	constants.MoodSenang: {
 		ID:         "guidance-senang-4step",
-		Title:      "Rayakan Hari Ceria Bersama Anak",
-		Category:   "Senang / Ceria",
+		Title:      "Celebrate a Cheerful Day With Your Child",
+		Category:   "Happy / Cheerful",
 		BannerPath: "guidance/banner_ceria.png",
 	},
 	constants.MoodSedih: {
 		ID:         "guidance-sedih-4step",
-		Title:      "Temani Anak Saat Merasa Sedih",
-		Category:   "Sedih",
+		Title:      "Be There for Your Child When They Feel Sad",
+		Category:   "Sad",
 		BannerPath: "guidance/banner_temani.png",
 	},
 	constants.MoodMarah: {
 		ID:         "guidance-marah-4step",
-		Title:      "Bantu Anak Menenangkan Diri",
-		Category:   "Marah",
+		Title:      "Help Your Child Calm Down",
+		Category:   "Angry",
 		BannerPath: "guidance/banner_tenang.png",
 	},
 	constants.MoodBingung: {
 		ID:         "guidance-bingung-4step",
-		Title:      "Berikan Rasa Aman Pada Anak",
-		Category:   "Bingung / Ragu",
+		Title:      "Give Your Child a Sense of Safety",
+		Category:   "Confused / Unsure",
 		BannerPath: "guidance/banner_aman.png",
 	},
 }

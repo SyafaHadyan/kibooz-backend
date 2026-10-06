@@ -57,7 +57,7 @@ func (h *GuruHandler) LogMood(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusCreated, "Catatan emosi siswa berhasil disimpan", res)
+	return response.JSON(c, http.StatusCreated, "Student mood log saved", res)
 }
 
 func (h *GuruHandler) MoodAnalytics(c fiber.Ctx) error {
@@ -82,7 +82,7 @@ func optionalUUID(c fiber.Ctx, name string) (*uuid.UUID, error) {
 
 	parsed, err := uuid.Parse(raw)
 	if err != nil {
-		return nil, apperror.Validation(map[string]string{name: "format UUID tidak valid"})
+		return nil, apperror.Validation(map[string]string{name: "invalid UUID format"})
 	}
 
 	return &parsed, nil

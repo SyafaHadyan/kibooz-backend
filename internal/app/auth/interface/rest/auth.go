@@ -40,7 +40,7 @@ func (h *AuthHandler) Register(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusCreated, "Registrasi berhasil", res)
+	return response.JSON(c, http.StatusCreated, "Registration successful", res)
 }
 
 func (h *AuthHandler) Login(c fiber.Ctx) error {
@@ -56,7 +56,7 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Login berhasil", res)
+	return response.JSON(c, http.StatusOK, "Login successful", res)
 }
 
 func (h *AuthHandler) Refresh(c fiber.Ctx) error {
@@ -72,7 +72,7 @@ func (h *AuthHandler) Refresh(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Token berhasil diperbarui", res)
+	return response.JSON(c, http.StatusOK, "Token refreshed", res)
 }
 
 func (h *AuthHandler) Logout(c fiber.Ctx) error {
@@ -88,5 +88,5 @@ func (h *AuthHandler) Logout(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Logout berhasil", nil)
+	return response.JSON(c, http.StatusOK, "Logout successful", nil)
 }

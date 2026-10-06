@@ -40,7 +40,7 @@ func (h *TrashHandler) ScanClaim(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Poin pilah sampah berhasil diklaim!", res)
+	return response.JSON(c, http.StatusOK, "Trash sorting points claimed!", res)
 }
 
 func (h *TrashHandler) Leaderboard(c fiber.Ctx) error {
@@ -49,7 +49,7 @@ func (h *TrashHandler) Leaderboard(c fiber.Ctx) error {
 	if raw := c.Query("classId"); raw != "" {
 		parsed, err := uuid.Parse(raw)
 		if err != nil {
-			return apperror.Validation(map[string]string{"classId": "format UUID tidak valid"})
+			return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
 		}
 
 		classID = &parsed

@@ -43,7 +43,7 @@ func Validation(details map[string]string) *Error {
 	return &Error{
 		Status:  http.StatusBadRequest,
 		Code:    "VALIDATION_ERROR",
-		Message: "Data yang dikirim tidak valid",
+		Message: "The submitted data is invalid",
 		Details: details,
 	}
 }
@@ -53,7 +53,7 @@ func Internal(err error) *Error {
 	return &Error{
 		Status:  http.StatusInternalServerError,
 		Code:    "INTERNAL_ERROR",
-		Message: "Terjadi kesalahan pada server",
+		Message: "An internal server error occurred",
 		Err:     err,
 	}
 }
@@ -69,25 +69,25 @@ func As(err error) *Error {
 }
 
 var (
-	ErrInvalidCredentials = New(http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "Email atau kata sandi tidak cocok untuk peran yang dipilih")
-	ErrTokenMissing       = New(http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "Token autentikasi tidak ditemukan")
-	ErrTokenInvalid       = New(http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "Token autentikasi tidak valid atau sudah kedaluwarsa")
-	ErrRefreshInvalid     = New(http.StatusUnauthorized, "AUTH_REFRESH_INVALID", "Sesi telah berakhir, silakan masuk kembali")
-	ErrForbidden          = New(http.StatusForbidden, "AUTH_FORBIDDEN", "Anda tidak memiliki akses ke sumber daya ini")
+	ErrInvalidCredentials = New(http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "Email or password does not match the selected role")
+	ErrTokenMissing       = New(http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "Authentication token not found")
+	ErrTokenInvalid       = New(http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "Authentication token is invalid or has expired")
+	ErrRefreshInvalid     = New(http.StatusUnauthorized, "AUTH_REFRESH_INVALID", "Your session has ended, please sign in again")
+	ErrForbidden          = New(http.StatusForbidden, "AUTH_FORBIDDEN", "You do not have access to this resource")
 	ErrPasswordIncorrect  = New(http.StatusForbidden, "AUTH_PASSWORD_INCORRECT", "Incorrect password")
-	ErrEmailTaken         = New(http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email sudah terdaftar")
-	ErrNIPTaken           = New(http.StatusConflict, "NIP_ALREADY_REGISTERED", "NIP sudah terdaftar")
-	ErrNISNTaken          = New(http.StatusConflict, "NISN_ALREADY_REGISTERED", "NISN sudah terdaftar")
-	ErrClassNotFound      = New(http.StatusNotFound, "CLASS_NOT_FOUND", "Kelas tidak ditemukan")
-	ErrClassCodeNotFound  = New(http.StatusNotFound, "CLASS_CODE_NOT_FOUND", "Kode kelas tidak ditemukan")
-	ErrStudentNotFound    = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Siswa tidak ditemukan")
-	ErrProfileNotFound    = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "Profil pengguna tidak ditemukan")
-	ErrGuidanceNotFound   = New(http.StatusNotFound, "GUIDANCE_NOT_FOUND", "Panduan penanganan tidak ditemukan")
-	ErrDailyLimitReached  = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Batas klaim poin pilah sampah hari ini sudah tercapai")
-	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "Berkas harus berupa gambar JPEG, PNG, atau WebP")
-	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "Ukuran berkas melebihi batas yang diizinkan")
-	ErrStorageDisabled    = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "Penyimpanan berkas belum dikonfigurasi")
-	ErrStorageFailed      = New(http.StatusBadGateway, "STORAGE_ERROR", "Gagal menyimpan berkas")
-	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Terlalu banyak permintaan, coba lagi nanti")
-	ErrNotFound           = New(http.StatusNotFound, "NOT_FOUND", "Sumber daya tidak ditemukan")
+	ErrEmailTaken         = New(http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email is already registered")
+	ErrNIPTaken           = New(http.StatusConflict, "NIP_ALREADY_REGISTERED", "NIP is already registered")
+	ErrNISNTaken          = New(http.StatusConflict, "NISN_ALREADY_REGISTERED", "NISN is already registered")
+	ErrClassNotFound      = New(http.StatusNotFound, "CLASS_NOT_FOUND", "Class not found")
+	ErrClassCodeNotFound  = New(http.StatusNotFound, "CLASS_CODE_NOT_FOUND", "Class code not found")
+	ErrStudentNotFound    = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Student not found")
+	ErrProfileNotFound    = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "User profile not found")
+	ErrGuidanceNotFound   = New(http.StatusNotFound, "GUIDANCE_NOT_FOUND", "Guidance not found")
+	ErrDailyLimitReached  = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Today's limit for trash sorting point claims has been reached")
+	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
+	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
+	ErrStorageDisabled    = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is not configured")
+	ErrStorageFailed      = New(http.StatusBadGateway, "STORAGE_ERROR", "Failed to store the file")
+	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")
+	ErrNotFound           = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
 )

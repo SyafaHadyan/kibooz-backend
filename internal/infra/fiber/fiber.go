@@ -103,10 +103,10 @@ func errorHandler(c fiber.Ctx, err error) error {
 		case http.StatusRequestEntityTooLarge:
 			return response.Error(c, apperror.ErrFileTooLarge)
 		case http.StatusMethodNotAllowed:
-			return response.Error(c, apperror.New(fiberErr.Code, "METHOD_NOT_ALLOWED", "Metode HTTP tidak diizinkan"))
+			return response.Error(c, apperror.New(fiberErr.Code, "METHOD_NOT_ALLOWED", "HTTP method not allowed"))
 		default:
 			if fiberErr.Code < http.StatusInternalServerError {
-				return response.Error(c, apperror.New(fiberErr.Code, "BAD_REQUEST", "Permintaan tidak dapat diproses"))
+				return response.Error(c, apperror.New(fiberErr.Code, "BAD_REQUEST", "The request could not be processed"))
 			}
 		}
 	}
