@@ -6,7 +6,6 @@ const base = __ENV.BASE_URL || 'http://127.0.0.1:8080';
 
 export const api = `${base}/api/v1`;
 
-const password = 'k6-performance-password';
 const parentCount = 20;
 
 function digits(length) {
@@ -16,6 +15,11 @@ function digits(length) {
   }
 
   return out;
+}
+
+// every run creates its own accounts with a throwaway password that only lives in memory
+function newPassword() {
+  return `k6${digits(24)}`;
 }
 
 export function json(res) {
@@ -33,10 +37,10 @@ export function tagged(token, endpoint) {
   return { headers, tags: { endpoint } };
 }
 
-export function register(body) {
+export function register(body, pass) {
   const res = http.post(
     `${api}/auth/register`,
-    JSON.stringify({ email: `k6.${digits(14)}@example.com`, password, fullName: 'K6 Account', ...body }),
+    JSON.stringify({ email: `k6.${digits(14)}@example.com`, password: pass, fullName: 'K6 Account', ...body }),
     tagged('', 'register'),
   );
 
@@ -50,24 +54,28 @@ export function register(body) {
 // setup creates one teacher with a class and many parents in it once, because bcrypt makes registering slow.
 // Every virtual user then reuses these accounts.
 export function setup() {
-  const guru = register({ role: 'GURU', class: { name: 'k6', gradeLevel: 'Class K' } });
+  const pass = newPassword();
+  const guru = register({ role: 'GURU', class: { name: 'k6', gradeLevel: 'Class K' } }, pass);
   const dashboard = json(http.get(`${api}/guru/dashboard`, tagged(guru.token, 'guru_dashboard')));
   const code = dashboard.data.classOverview.joinCode;
 
   const parents = [];
 
   for (let i = 0; i < parentCount; i++) {
-    const wali = register({
-      role: 'WALI',
-      classCode: code,
-      student: { nisn: digits(12), fullName: `Child ${i}` },
-    });
+    const wali = register(
+      {
+        role: 'WALI',
+        classCode: code,
+        student: { nisn: digits(12), fullName: `Child ${i}` },
+      },
+      pass,
+    );
     const me = json(http.get(`${api}/wali/dashboard`, tagged(wali.token, 'wali_dashboard')));
 
     parents.push({ token: wali.token, email: wali.email, studentId: me.data.student.id });
   }
 
-  return { guru, parents };
+  return { guru, parents, password: pass };
 }
 
 function pick(list) {
@@ -123,7 +131,7 @@ export function login(data) {
   check(
     http.post(
       `${api}/auth/login`,
-      JSON.stringify({ email: me.email, password, role: 'WALI' }),
+      JSON.stringify({ email: me.email, password: data.password, role: 'WALI' }),
       tagged('', 'login'),
     ),
     { 'login is 200': (r) => r.status === 200 },
