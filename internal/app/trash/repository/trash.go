@@ -43,15 +43,15 @@ func NewTrashDB(db *gorm.DB) TrashDBItf {
 }
 
 func (r *TrashDB) FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error) {
-	return r.firstID(ctx, "SELECT id FROM walis WHERE user_id = ? LIMIT 1", userID)
+	return r.firstID(ctx, "SELECT id FROM walis WHERE user_id = ? AND deleted_at IS NULL LIMIT 1", userID)
 }
 
 func (r *TrashDB) FindGuruIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error) {
-	return r.firstID(ctx, "SELECT id FROM gurus WHERE user_id = ? LIMIT 1", userID)
+	return r.firstID(ctx, "SELECT id FROM gurus WHERE user_id = ? AND deleted_at IS NULL LIMIT 1", userID)
 }
 
 func (r *TrashDB) FirstWaliClass(ctx context.Context, waliID uuid.UUID) (*uuid.UUID, error) {
-	return r.firstID(ctx, "SELECT class_id FROM students WHERE wali_id = ? ORDER BY created_at ASC, id ASC LIMIT 1", waliID)
+	return r.firstID(ctx, "SELECT class_id FROM students WHERE wali_id = ? AND deleted_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 1", waliID)
 }
 
 func (r *TrashDB) FirstGuruClass(ctx context.Context, guruID uuid.UUID) (*uuid.UUID, error) {
@@ -122,11 +122,16 @@ func (r *TrashDB) Claim(
 			return err
 		}
 
-		err = tx.Model(&entity.Student{}).
+		update := tx.Model(&entity.Student{}).
 			Where("id = ?", scan.StudentID).
-			UpdateColumn("current_points", gorm.Expr("current_points + ?", scan.PointsAwarded)).Error
-		if err != nil {
-			return err
+			UpdateColumn("current_points", gorm.Expr("current_points + ?", scan.PointsAwarded))
+		if update.Error != nil {
+			return update.Error
+		}
+
+		// the child was deleted after the ownership check, the transaction drops the scan again
+		if update.RowsAffected == 0 {
+			return apperror.ErrStudentNotFound
 		}
 
 		err = ranking.Recompute(tx, classID)
