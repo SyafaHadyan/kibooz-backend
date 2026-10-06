@@ -34,6 +34,7 @@ type Env struct {
 	RedisPassword            string `env:"REDIS_PASSWORD"`
 	RedisDatabase            int    `env:"REDIS_DATABASE" envDefault:"0"`
 	LeaderboardCacheSeconds  int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
+	KeepaliveSeconds         int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
 	JWTSecretKey             string `env:"JWT_SECRET_KEY,required"`
 	JWTAccessExpiredMinutes  int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
 	JWTRefreshExpiredDays    int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`

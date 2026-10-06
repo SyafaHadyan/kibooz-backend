@@ -31,6 +31,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"gorm.io/gorm"
 )
@@ -40,6 +41,8 @@ type Bootstrap struct {
 	Config   *env.Env
 	Database *gorm.DB
 	Redis    *redis.Redis
+
+	stopKeepalive func()
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -101,11 +104,23 @@ func Start(version string) (*Bootstrap, error) {
 
 	log.Printf("startup time %v", time.Since(startTime))
 
-	return &Bootstrap{App: app, Config: cfg, Database: database, Redis: cache}, nil
+	stopKeepalive := keepalive.Start(
+		time.Duration(cfg.KeepaliveSeconds)*time.Second,
+		keepalive.Target{Name: "database", Ping: func(ctx context.Context) error {
+			_, err := sqlDB.ExecContext(ctx, "SELECT 1")
+
+			return err
+		}},
+		keepalive.Target{Name: "redis", Ping: cache.Ping},
+	)
+
+	return &Bootstrap{App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive}, nil
 }
 
-// Close releases the database and Redis connections
+// Close stops the keepalive, then releases the database and Redis connections
 func (b *Bootstrap) Close() {
+	b.stopKeepalive()
+
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()
 	}
