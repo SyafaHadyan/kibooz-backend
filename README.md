@@ -184,7 +184,8 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 
 | Check | Reported by |
 |:---|:---|
-| CI gate (covers lint and the unit and end to end tests) | GitHub Actions |
+| Lint | GitHub Actions |
+| Unit and end to end tests | GitHub Actions |
 | Build, scan and push image | GitHub Actions |
 | Go vulnerability check | GitHub Actions |
 | Dependency review | GitHub Actions |
