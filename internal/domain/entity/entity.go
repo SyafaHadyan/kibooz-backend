@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 )
@@ -19,20 +20,24 @@ type User struct {
 	AvatarURL    *string
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
+	// DeletedAt hides the row from every GORM query once it is set
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 type Guru struct {
-	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserID     uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`
-	NIP        *string   `gorm:"column:nip;size:50;uniqueIndex"`
-	SchoolName string    `gorm:"size:150;not null"`
+	ID         uuid.UUID      `gorm:"type:uuid;primaryKey"`
+	UserID     uuid.UUID      `gorm:"type:uuid;not null;uniqueIndex"`
+	NIP        *string        `gorm:"column:nip;size:50;uniqueIndex"`
+	SchoolName string         `gorm:"size:150;not null"`
+	DeletedAt  gorm.DeletedAt `gorm:"index"`
 }
 
 type Wali struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
 	UserID         uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`
 	Address        *string
-	WhatsappNumber *string `gorm:"size:30"`
+	WhatsappNumber *string        `gorm:"size:30"`
+	DeletedAt      gorm.DeletedAt `gorm:"index"`
 }
 
 type Class struct {
@@ -58,9 +63,10 @@ type Student struct {
 	NISN          string    `gorm:"column:nisn;size:30;not null;uniqueIndex"`
 	FullName      string    `gorm:"size:150;not null"`
 	AvatarURL     *string
-	CurrentPoints int       `gorm:"not null;default:0"`
-	RankPosition  int       `gorm:"not null;default:0"`
-	CreatedAt     time.Time `gorm:"autoCreateTime"`
+	CurrentPoints int            `gorm:"not null;default:0"`
+	RankPosition  int            `gorm:"not null;default:0"`
+	CreatedAt     time.Time      `gorm:"autoCreateTime"`
+	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
 type MoodLog struct {

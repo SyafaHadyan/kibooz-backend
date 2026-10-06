@@ -53,7 +53,7 @@ func (r *GuruDB) FindGuruByUserID(ctx context.Context, userID uuid.UUID) (*GuruR
 		Table("gurus AS g").
 		Select("g.*, u.full_name AS full_name, u.avatar_url AS avatar_url").
 		Joins("JOIN users AS u ON u.id = g.user_id").
-		Where("g.user_id = ?", userID).
+		Where("g.user_id = ? AND g.deleted_at IS NULL AND u.deleted_at IS NULL", userID).
 		Limit(1).
 		Scan(&rows).Error
 	if err != nil {
@@ -107,7 +107,7 @@ func (r *GuruDB) ListMoodRecords(ctx context.Context, classID uuid.UUID, from ti
 		Table("mood_logs AS m").
 		Select("m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at").
 		Joins("JOIN students AS s ON s.id = m.student_id").
-		Where("s.class_id = ? AND m.recorded_at >= ? AND m.recorded_at < ?", classID, from, to).
+		Where("s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?", classID, from, to).
 		Order("m.recorded_at ASC").
 		Scan(&records).Error
 

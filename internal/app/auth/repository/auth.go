@@ -244,6 +244,11 @@ func (r *AuthDB) RotateRefreshToken(
 		var found entity.User
 
 		err = tx.Where("id = ?", userIDs[0]).Take(&found).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// the account was deleted, the token stays consumed and the caller gets no session
+			return nil
+		}
+
 		if err != nil {
 			return err
 		}
