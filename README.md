@@ -154,6 +154,12 @@ E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./...
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
+The code that takes untrusted input has fuzz tests, namely image decoding, access token validation and request body validation. A normal `go test` runs their seed cases. To search for new failing inputs, fuzz one target at a time.
+
+```sh
+go test ./internal/imageutil/ -run '^$' -fuzz FuzzDecodeBase64 -fuzztime 30s
+```
+
 ### Performance tests
 
 The `k6/` folder holds the load scripts. `smoke.js` is a short check that runs on every pull request, and `load.js` holds a steady arrival rate below the ceiling to measure how the API behaves with a whole class claiming points at once, and `stress.js` ramps past the ceiling on demand to find where the API slows down. Both create their own accounts, so they only need a running API. The default rate limits and the daily claim limit would answer with errors during a load test, so the workflow raises them in its generated `.env`.
