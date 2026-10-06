@@ -52,7 +52,7 @@ export const options = {
   thresholds: {
     http_req_failed: ['rate<0.01'],
     checks: ['rate>0.99'],
-    'http_req_duration{scenario:before}': ['p(95)<1000'],
-    'http_req_duration{scenario:recovery}': ['p(95)<1000'],
+    'http_req_duration{scenario:before}': ['p(95)<200'],
+    'http_req_duration{scenario:recovery}': ['p(95)<200'],
   },
 };
