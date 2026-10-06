@@ -74,6 +74,7 @@ var (
 	ErrTokenInvalid       = New(http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "Token autentikasi tidak valid atau sudah kedaluwarsa")
 	ErrRefreshInvalid     = New(http.StatusUnauthorized, "AUTH_REFRESH_INVALID", "Sesi telah berakhir, silakan masuk kembali")
 	ErrForbidden          = New(http.StatusForbidden, "AUTH_FORBIDDEN", "Anda tidak memiliki akses ke sumber daya ini")
+	ErrPasswordIncorrect  = New(http.StatusForbidden, "AUTH_PASSWORD_INCORRECT", "Incorrect password")
 	ErrEmailTaken         = New(http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email sudah terdaftar")
 	ErrNIPTaken           = New(http.StatusConflict, "NIP_ALREADY_REGISTERED", "NIP sudah terdaftar")
 	ErrNISNTaken          = New(http.StatusConflict, "NISN_ALREADY_REGISTERED", "NISN sudah terdaftar")

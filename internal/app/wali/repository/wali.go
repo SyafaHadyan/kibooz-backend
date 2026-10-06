@@ -58,7 +58,7 @@ func (r *WaliDB) FindStudent(ctx context.Context, waliID uuid.UUID, studentID *u
 		Table("students AS s").
 		Select("s.*, c.name AS class_name, c.grade_level AS grade_level, c.school_name AS school_name").
 		Joins("JOIN classes AS c ON c.id = s.class_id").
-		Where("s.wali_id = ?", waliID)
+		Where("s.wali_id = ? AND s.deleted_at IS NULL", waliID)
 
 	if studentID != nil {
 		query = query.Where("s.id = ?", *studentID)

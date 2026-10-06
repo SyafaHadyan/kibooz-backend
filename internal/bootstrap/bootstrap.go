@@ -98,7 +98,7 @@ func Start(version string) (*Bootstrap, error) {
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, storage, cfg,
 	))
-	userhandler.NewUserHandler(app.Router, mw, userusecase.NewUserUseCase(
+	userhandler.NewUserHandler(app.Router, app.AuthLimiter, mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache,
 	))
 

@@ -923,3 +923,118 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 		"refreshToken": rotated.data("refreshToken"),
 	}).Status)
 }
+
+func registerWaliWith(t *testing.T, email string, studentNISN string, classCode string, childName string) result {
+	t.Helper()
+
+	return call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+		"email": email, "password": testPassword, "fullName": "Wali Terdaftar Ulang",
+		"role": "WALI", "classCode": classCode, "student": map[string]any{"nisn": studentNISN, "fullName": childName},
+	})
+}
+
+func deleteAccount(t *testing.T, token string, password string) result {
+	t.Helper()
+
+	return call(t, http.MethodDelete, "/api/v1/users/me", token, map[string]any{"password": password})
+}
+
+func TestAccountSoftDelete(t *testing.T) {
+	guru := registerGuru(t, "Anggrek")
+	classID, joinCode := classOf(t, guru)
+
+	amelia, ameliaID := registerWali(t, joinCode, "Amelia Siti Zahra")
+	farhan, farhanID := registerWali(t, joinCode, "Farhan Al-Fatih")
+
+	claim := func(token string, studentID string) {
+		res := call(t, http.MethodPost, "/api/v1/trash/scan-claim", token, map[string]any{
+			"studentId": studentID, "trashType": "ANORGANIK", "confidenceScore": 0.9,
+		})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+	}
+
+	claim(amelia.Token, ameliaID)
+	claim(amelia.Token, ameliaID)
+	claim(farhan.Token, farhanID)
+
+	require.EqualValues(t, 2, call(t, http.MethodGet, "/api/v1/wali/dashboard", farhan.Token, nil).data("pointsSummary", "classRank"))
+	require.EqualValues(t, 2, call(t, http.MethodGet, "/api/v1/guru/dashboard", guru.Token, nil).data("classOverview", "totalStudents"))
+
+	t.Run("a wrong or missing password deletes nothing", func(t *testing.T) {
+		deleteAccount(t, amelia.Token, "bukan-kata-sandi").requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
+		call(t, http.MethodDelete, "/api/v1/users/me", amelia.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		deleteAccount(t, "", testPassword).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/wali/dashboard", amelia.Token, nil).Status)
+	})
+
+	t.Run("deleting a parent hides the account and the child", func(t *testing.T) {
+		res := deleteAccount(t, amelia.Token, testPassword)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		// no new session, however it is asked for
+		call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+			"email": amelia.Email, "password": testPassword, "role": "WALI",
+		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
+		refresh(t, amelia.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+
+		// the access token that is still valid no longer reaches any data
+		require.NotEqual(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/wali/dashboard", amelia.Token, nil).Status)
+		require.NotEqual(t, http.StatusOK, deleteAccount(t, amelia.Token, testPassword).Status)
+	})
+
+	t.Run("the class forgets the child and the ranking closes the gap", func(t *testing.T) {
+		require.EqualValues(t, 1, call(t, http.MethodGet, "/api/v1/wali/dashboard", farhan.Token, nil).data("pointsSummary", "classRank"))
+		require.EqualValues(t, 1, call(t, http.MethodGet, "/api/v1/guru/dashboard", guru.Token, nil).data("classOverview", "totalStudents"))
+
+		board := call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classID, guru.Token, nil)
+		require.Equal(t, http.StatusOK, board.Status, "body %v", board.Body)
+
+		podium := board.data("podium").([]any)
+		require.Len(t, podium, 1)
+		require.Equal(t, "Farhan Al-Fatih", dig(podium[0], "studentName"))
+		require.EqualValues(t, 1, dig(podium[0], "rank"))
+
+		// the teacher can no longer record a mood for the hidden child
+		call(t, http.MethodPost, "/api/v1/guru/mood/log", guru.Token, map[string]any{
+			"studentId": ameliaID, "moodType": "SENANG",
+		}).requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+	})
+
+	t.Run("the email and the NISN can be registered again", func(t *testing.T) {
+		reuseEmail := fmt.Sprintf("wali.%s@example.com", suffix())
+		reuseNISN := nisn()
+
+		first := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "Anak Pertama")
+		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
+
+		// still unique among active accounts
+		registerWaliWith(t, reuseEmail, nisn(), joinCode, "Email Sama").requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
+		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), reuseNISN, joinCode, "NISN Sama").
+			requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")
+
+		require.Equal(t, http.StatusOK, deleteAccount(t, first.data("token").(string), testPassword).Status)
+
+		again := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "Anak Kembali")
+		require.Equal(t, http.StatusCreated, again.Status, "body %v", again.Body)
+	})
+
+	t.Run("deleting a teacher ends their sessions and frees the email and NIP", func(t *testing.T) {
+		teacher := registerGuru(t, "Melati")
+
+		res := deleteAccount(t, teacher.Token, testPassword)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+			"email": teacher.Email, "password": testPassword, "role": "GURU",
+		}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
+		refresh(t, teacher.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+		require.NotEqual(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/guru/dashboard", teacher.Token, nil).Status)
+
+		again := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": teacher.Email, "password": testPassword, "fullName": "Guru Kembali",
+			"role": "GURU", "class": map[string]any{"name": "Melati Baru", "gradeLevel": "Kelas B"},
+		})
+		require.Equal(t, http.StatusCreated, again.Status, "body %v", again.Body)
+	})
+}
