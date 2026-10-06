@@ -58,6 +58,8 @@ type recordingStorage struct {
 
 func (s *recordingStorage) Enabled() bool { return true }
 
+func (s *recordingStorage) KeyFromURL(string) (string, bool) { return "", false }
+
 func (s *recordingStorage) Upload(_ context.Context, key string, _ string, _ []byte) (string, error) {
 	s.uploaded = append(s.uploaded, key)
 

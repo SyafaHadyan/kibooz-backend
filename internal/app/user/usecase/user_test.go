@@ -38,16 +38,23 @@ type fakeRepo struct {
 	// waliID and studentClass drive the student avatar path, a nil studentClass means the child is not theirs
 	waliID       *uuid.UUID
 	studentClass *uuid.UUID
+
+	// previous is the avatar URL the update replaces, userGone means the account vanished before the update
+	previous  string
+	userGone  bool
+	updateErr error
 }
 
-func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) error { return nil }
+func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) (string, bool, error) {
+	return f.previous, !f.userGone, f.updateErr
+}
 
 func (f *fakeRepo) FindWaliIDByUserID(context.Context, uuid.UUID) (*uuid.UUID, error) {
 	return f.waliID, nil
 }
 
-func (f *fakeRepo) UpdateStudentAvatar(context.Context, uuid.UUID, uuid.UUID, string) (*uuid.UUID, error) {
-	return f.studentClass, nil
+func (f *fakeRepo) UpdateStudentAvatar(context.Context, uuid.UUID, uuid.UUID, string) (*uuid.UUID, string, error) {
+	return f.studentClass, f.previous, f.updateErr
 }
 
 func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) {
@@ -172,6 +179,11 @@ func (f *fakeStorage) Upload(_ context.Context, key string, _ string, _ []byte) 
 	return "https://example.com/avatar.png", nil
 }
 
+// KeyFromURL knows the one public base URL the fake hands out
+func (f *fakeStorage) KeyFromURL(url string) (string, bool) {
+	return strings.CutPrefix(url, "https://example.com/")
+}
+
 func (f *fakeStorage) Delete(_ context.Context, key string) error {
 	f.deleted = append(f.deleted, key)
 
@@ -235,4 +247,81 @@ func TestUploadAvatarForOwnChildKeepsTheFile(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, storage.uploads)
 	require.Empty(t, storage.deleted)
+}
+
+func TestUploadAvatarDeletesTheReplacedFile(t *testing.T) {
+	userID := uuid.New()
+	old := "avatars/" + userID.String() + "/old.png"
+
+	t.Run("user avatar", func(t *testing.T) {
+		storage := &fakeStorage{}
+		repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "any-password"), previous: "https://example.com/" + old}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{old}, storage.deleted)
+	})
+
+	t.Run("child avatar", func(t *testing.T) {
+		storage := &fakeStorage{}
+		waliID, classID := uuid.New(), uuid.New()
+		repo := &fakeRepo{waliID: &waliID, studentClass: &classID, previous: "https://example.com/" + old}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+		studentID := uuid.New()
+
+		_, err := useCase.UploadAvatar(context.Background(), uuid.New(), constants.RoleWali, &studentID, tinyPNG)
+
+		require.NoError(t, err)
+		require.Equal(t, []string{old}, storage.deleted)
+	})
+}
+
+func TestUploadAvatarKeepsFilesItDoesNotOwn(t *testing.T) {
+	tests := map[string]string{
+		"no previous avatar":           "",
+		"another bucket":               "https://cdn.other.example/avatars/x/old.png",
+		"outside the avatar directory": "https://example.com/trash-scans/x/old.png",
+		"directory only":               "https://example.com/avatars",
+	}
+
+	for name, previous := range tests {
+		t.Run(name, func(t *testing.T) {
+			storage := &fakeStorage{}
+			repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "any-password"), previous: previous}
+			useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+			_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+			require.NoError(t, err)
+			require.Empty(t, storage.deleted)
+		})
+	}
+}
+
+func TestUploadAvatarKeepsTheOldFileWhenTheUpdateFails(t *testing.T) {
+	storage := &fakeStorage{}
+	repo := &fakeRepo{
+		user:      accountOf(t, constants.RoleGuru, "any-password"),
+		previous:  "https://example.com/avatars/x/old.png",
+		updateErr: errors.New("boom"),
+	}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+	_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+	require.Error(t, err)
+	require.Equal(t, storage.keys, storage.deleted, "only the new file is removed again")
+}
+
+func TestUploadAvatarForAnAccountDeletedMeanwhileLeavesNoFile(t *testing.T) {
+	storage := &fakeStorage{}
+	repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "any-password"), userGone: true}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+	_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+	require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+	require.Equal(t, storage.keys, storage.deleted)
 }

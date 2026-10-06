@@ -74,3 +74,31 @@ func TestDiscardNeverPanicsOrBlocksOnFailure(t *testing.T) {
 	s3.Discard(context.Background(), brokenStorage{}, "avatars/abc/def.png")
 	s3.Discard(context.Background(), s3.Disabled{}, "avatars/abc/def.png")
 }
+
+func TestKeyFromURL(t *testing.T) {
+	storage, _ := storageFor(t, http.StatusNoContent)
+
+	tests := map[string]struct {
+		url string
+		key string
+		ok  bool
+	}{
+		"own object":                     {"https://cdn.example.com/avatars/a/b.png", "avatars/a/b.png", true},
+		"another host":                   {"https://other.example.com/avatars/a/b.png", "", false},
+		"host that only starts the same": {"https://cdn.example.com.evil.test/avatars/a/b.png", "", false},
+		"base url only":                  {"https://cdn.example.com/", "", false},
+		"empty":                          {"", "", false},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			key, ok := storage.KeyFromURL(tt.url)
+
+			require.Equal(t, tt.ok, ok)
+			require.Equal(t, tt.key, key)
+		})
+	}
+
+	_, ok := s3.Disabled{}.KeyFromURL("https://cdn.example.com/avatars/a/b.png")
+	require.False(t, ok)
+}
