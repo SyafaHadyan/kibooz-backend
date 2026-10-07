@@ -1,0 +1,84 @@
+name: DAST
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Monday at 22:00 UTC (05:00 WIB Tuesday), so new ZAP rules are tried against main
+    - cron: "0 22 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: dast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  zap:
+    name: ZAP baseline scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create the environment file
+        run: |
+          {
+            echo "APP_ENV=production"
+            echo "APP_PORT=8080"
+            echo "DB_NAME=kibooz"
+            echo "DB_USERNAME=kibooz"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+            # the scan sends many requests and the default limits would answer 429 and hide the real responses
+            echo "LIMITER_MAX=1000000"
+            echo "AUTH_LIMITER_MAX=1000000"
+            echo "KEEPALIVE_SECONDS=0"
+          } > .env
+
+      - name: Start the stack
+        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+
+      # The scan runs the ZAP image directly, pinned by digest, because it only needs the container and the report files
+      - name: Run the ZAP baseline scan
+        run: |
+          mkdir -p zap-out
+          cp .zap/rules.tsv .zap/hook.py zap-out/
+          .zap/seed.sh zap-out/requests.json
+          # the container user is not the runner user, so it needs write access to the shared folder
+          chmod -R a+rwX zap-out
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef \
+            zap-baseline.py -t http://127.0.0.1:8080 -c rules.tsv --hook /zap/wrk/hook.py --autooff \
+            -m 1 -T 10 -r report.html -w report.md -J report.json
+
+      - name: Write the summary
+        if: ${{ !cancelled() && hashFiles('zap-out/report.md') != '' }}
+        run: cat zap-out/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      # requests.json holds the tokens of the throwaway accounts, so only the reports are uploaded
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zap-reports
+          path: |
+            zap-out/report.html
+            zap-out/report.md
+            zap-out/report.json
+          if-no-files-found: ignore
+
+      - name: Collect container logs
+        if: ${{ failure() }}
+        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        run: docker compose -f compose.yml -f compose.ci.yml down -v
