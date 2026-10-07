@@ -11,6 +11,7 @@ info:
     `details` object with one message per field.
 
     Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`.
+    They count requests per signed-in user, and login, registration and token routes per account, never per IP address.
   license:
     name: GNU General Public License v3.0
     url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
@@ -491,8 +492,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
-        "429":
-          $ref: "#/components/responses/RateLimited"
         "503":
           description: The database is down
           content:
@@ -548,7 +547,7 @@ components:
           schema:
             $ref: "#/components/schemas/Failure"
     RateLimited:
-      description: Too many requests from this address (`RATE_LIMITED`)
+      description: Too many requests from this user or for this account (`RATE_LIMITED`)
       content:
         application/json:
           schema:

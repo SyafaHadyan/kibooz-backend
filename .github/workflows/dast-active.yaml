@@ -37,7 +37,7 @@ jobs:
             echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
             echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
             # the scan sends thousands of requests and the default limits would answer 429 and hide the real responses
-            echo "LIMITER_MAX=10000000"
+            echo "USER_LIMITER_MAX=10000000"
             echo "AUTH_LIMITER_MAX=10000000"
             echo "KEEPALIVE_SECONDS=0"
           } > .env

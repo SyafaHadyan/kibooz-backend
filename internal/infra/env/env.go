@@ -16,7 +16,7 @@ type Env struct {
 	AppPort                  uint   `env:"APP_PORT" envDefault:"8080"`
 	AppTimezone              string `env:"APP_TIMEZONE" envDefault:"Asia/Jakarta"`
 	BodyLimitMB              int    `env:"BODY_LIMIT_MB" envDefault:"8"`
-	LimiterMax               int    `env:"LIMITER_MAX" envDefault:"90"`
+	UserLimiterMax           int    `env:"USER_LIMITER_MAX" envDefault:"120"`
 	LimiterExpirationSeconds int    `env:"LIMITER_EXPIRATION_SECONDS" envDefault:"60"`
 	AuthLimiterMax           int    `env:"AUTH_LIMITER_MAX" envDefault:"10"`
 	TrustProxy               bool   `env:"TRUST_PROXY" envDefault:"false"`

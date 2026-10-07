@@ -1,0 +1,88 @@
+package fiber
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strings"
+
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+)
+
+// None of these limits looks at the IP address. A school network or an ISP puts many people behind one public address,
+// so the address says little about who is asking and one noisy person would throttle everyone else on it.
+// Signed-in requests are limited per user and the public auth routes per account.
+
+func (f *Fiber) newLimiter(max int, key func(fiber.Ctx) string, skip func(fiber.Ctx) bool) fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:               max,
+		Expiration:        f.window,
+		Storage:           f.storage,
+		KeyGenerator:      key,
+		Next:              skip,
+		LimiterMiddleware: limiter.SlidingWindow{},
+		LimitReached: func(fiber.Ctx) error {
+			return apperror.ErrRateLimited
+		},
+	})
+}
+
+// UserLimiter gives every signed-in user USER_LIMITER_MAX requests per window. userKey names the user
+// and the limiter has to run after authentication, which is why the middleware package calls it.
+func (f *Fiber) UserLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
+	return f.newLimiter(f.userMax, func(c fiber.Ctx) string { return "user:" + userKey(c) }, nil)
+}
+
+// PasswordLimiter gives every signed-in user AUTH_LIMITER_MAX attempts per window at a request that confirms the
+// password, so a stolen access token cannot be used to guess it. It runs after authentication as well.
+func (f *Fiber) PasswordLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
+	return f.newLimiter(f.authMax, func(c fiber.Ctx) string { return "confirm:" + userKey(c) }, nil)
+}
+
+// EmailLimiter gives every email AUTH_LIMITER_MAX requests per window on each route it guards, which are the routes
+// that take an email, so guessing the password of one account is stopped from any number of addresses.
+// A request that names no email is not limited.
+func (f *Fiber) EmailLimiter() fiber.Handler {
+	return f.accountLimiter("email", func(body accountRequest) string {
+		return strings.ToLower(strings.TrimSpace(body.Email))
+	})
+}
+
+// TokenLimiter gives every refresh token AUTH_LIMITER_MAX requests per window on each route it guards. Those routes
+// read only the token, so an email in the same body must not give a caller a new budget.
+func (f *Fiber) TokenLimiter() fiber.Handler {
+	return f.accountLimiter("token", func(body accountRequest) string {
+		return body.RefreshToken
+	})
+}
+
+type accountRequest struct {
+	Email        string `json:"email"`
+	RefreshToken string `json:"refreshToken"`
+}
+
+// accountLimiter limits by the identifier that one field of the body holds, and each route keeps its own budget.
+// The identifier is hashed so that neither an email nor a refresh token is kept in clear in the limiter storage.
+// A request without an identifier is not limited, because it is rejected before it touches the database.
+func (f *Fiber) accountLimiter(kind string, identify func(accountRequest) string) fiber.Handler {
+	key := func(c fiber.Ctx) string {
+		var body accountRequest
+		if err := json.Unmarshal(c.Body(), &body); err != nil {
+			return ""
+		}
+
+		identifier := identify(body)
+		if identifier == "" {
+			return ""
+		}
+
+		sum := sha256.Sum256([]byte(identifier))
+
+		return kind + ":" + c.Path() + ":" + hex.EncodeToString(sum[:])
+	}
+
+	return f.newLimiter(f.authMax, key, func(c fiber.Ctx) bool { return key(c) == "" })
+}

@@ -25,11 +25,18 @@ type MiddlewareItf interface {
 }
 
 type Middleware struct {
-	jwt jwt.JWTItf
+	jwt   jwt.JWTItf
+	limit fiber.Handler
 }
 
-func NewMiddleware(jwt jwt.JWTItf) MiddlewareItf {
-	return &Middleware{jwt: jwt}
+// NewMiddleware builds the authentication and role checks. The limit handler runs right after a request is
+// authenticated, so it can use UserKey, and a nil limit lets every authenticated request through.
+func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler) MiddlewareItf {
+	if limit == nil {
+		limit = func(c fiber.Ctx) error { return c.Next() }
+	}
+
+	return &Middleware{jwt: jwt, limit: limit}
 }
 
 func (m *Middleware) Authentication(c fiber.Ctx) error {
@@ -56,7 +63,7 @@ func (m *Middleware) Authentication(c fiber.Ctx) error {
 	fiber.Locals(c, userIDKey, userID)
 	fiber.Locals(c, roleKey, claims.Role)
 
-	return c.Next()
+	return m.limit(c)
 }
 
 func (m *Middleware) RequireRole(roles ...constants.Role) fiber.Handler {
@@ -76,6 +83,11 @@ func (m *Middleware) RequireRole(roles ...constants.Role) fiber.Handler {
 // UserIDFrom returns the authenticated user id set by Authentication
 func UserIDFrom(c fiber.Ctx) uuid.UUID {
 	return fiber.Locals[uuid.UUID](c, userIDKey)
+}
+
+// UserKey names the authenticated user for the rate limiters, it is only set after Authentication
+func UserKey(c fiber.Ctx) string {
+	return UserIDFrom(c).String()
 }
 
 // RoleFrom returns the authenticated role set by Authentication

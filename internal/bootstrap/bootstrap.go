@@ -82,11 +82,11 @@ func Start(version string) (*Bootstrap, error) {
 
 	jwtService := jwt.New(cfg)
 	app := fiberapp.New(cfg, redis.NewLimiterStorage(cache, "limiter:"))
-	mw := middleware.NewMiddleware(jwtService)
+	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey))
 
 	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, storage.Enabled(), version))
 
-	authhandler.NewAuthHandler(app.Router, app.AuthLimiter, authusecase.NewAuthUseCase(
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg,
 	))
 	walihandler.NewWaliHandler(app.Router, mw, waliusecase.NewWaliUseCase(
@@ -98,7 +98,7 @@ func Start(version string) (*Bootstrap, error) {
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, storage, cfg,
 	))
-	userhandler.NewUserHandler(app.Router, app.AuthLimiter, mw, userusecase.NewUserUseCase(
+	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache,
 	))
 

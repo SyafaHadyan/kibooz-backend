@@ -16,15 +16,16 @@ type AuthHandler struct {
 	useCase usecase.AuthUseCaseItf
 }
 
-func NewAuthHandler(router fiber.Router, authLimiter fiber.Handler, useCase usecase.AuthUseCaseItf) {
+// NewAuthHandler registers the public auth routes. Register and login are limited per email, refresh and logout per refresh token.
+func NewAuthHandler(router fiber.Router, emailLimiter fiber.Handler, tokenLimiter fiber.Handler, useCase usecase.AuthUseCaseItf) {
 	handler := AuthHandler{useCase: useCase}
 
-	group := router.Group("/auth", authLimiter)
+	group := router.Group("/auth")
 
-	group.Post("/register", handler.Register)
-	group.Post("/login", handler.Login)
-	group.Post("/refresh-token", handler.Refresh)
-	group.Post("/logout", handler.Logout)
+	group.Post("/register", emailLimiter, handler.Register)
+	group.Post("/login", emailLimiter, handler.Login)
+	group.Post("/refresh-token", tokenLimiter, handler.Refresh)
+	group.Post("/logout", tokenLimiter, handler.Logout)
 }
 
 func (h *AuthHandler) Register(c fiber.Ctx) error {
