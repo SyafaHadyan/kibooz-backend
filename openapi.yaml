@@ -53,7 +53,7 @@ paths:
                 summary: A teacher with a new class
                 value:
                   email: teacher@example.com
-                  password: a-long-password
+                  password: "{{password}}"
                   fullName: Ibu Siti
                   role: GURU
                   class:
@@ -63,7 +63,7 @@ paths:
                 summary: A parent with a child
                 value:
                   email: parent@example.com
-                  password: a-long-password
+                  password: "{{password}}"
                   fullName: Bapak Budi
                   role: WALI
                   classCode: ABC123
