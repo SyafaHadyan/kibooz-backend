@@ -4,7 +4,10 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Weekly on Monday at 22:00 UTC (05:00 WIB Tuesday), so new ZAP rules are tried against main
+    # Weekly on Monday at 22:00 UTC (05:00 WIB Tuesday), after the daily jobs. The image is pinned by digest, so this
+    # run does not pick up new ZAP rules (a Dependabot bump does that, and its pull request is scanned). It catches
+    # drift in main, such as a header that disappeared, when no pull request has run the scan for a while.
+    # GitHub often starts scheduled runs a few hours late.
     - cron: "0 22 * * 1"
   workflow_dispatch:
 
