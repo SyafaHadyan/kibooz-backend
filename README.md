@@ -189,6 +189,8 @@ The `dast.yaml` workflow starts the compose stack and runs the ZAP baseline scan
 
 The scan is passive, so it checks headers and information leaks but does not try injections. The ZAP image is pinned by digest and has to be bumped by hand in the workflow, because Dependabot does not read images inside shell steps.
 
+The `dast-active.yaml` workflow runs a ZAP active scan, which does attack the API with injection and fuzzing payloads. It runs weekly on Sunday evening UTC and on demand from the Actions tab, and never on pull requests because it is slow and noisy. It reuses `.zap/seed.sh` for the throwaway accounts and replays the same requests with an Automation Framework plan, `.zap/active.yaml`, which also caps the scan at 30 minutes. The run summary lists the alerts and how many requests the API answered by status code, and the reports are uploaded as the `zap-active-reports` artifact. For now it only reports. Medium and high alerts show up as annotations and the run stays green, and it can become a gate for high alerts once a few runs have stayed quiet. The image digest is the same one as the baseline scan, so bump both together.
+
 ## CI/CD
 
 | Workflow | Trigger | What it does |
@@ -198,6 +200,7 @@ The scan is passive, so it checks headers and information leaks but does not try
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
 | `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
+| `dast-active.yaml` | weekly on Sunday, manual | Builds the compose stack, registers throwaway accounts, replays the API requests and runs the ZAP active scan with an Automation Framework plan. It only reports and is not a required check |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image, pushes it to GitHub Container Registry and to Docker Hub when configured, scans with Trivy, attaches an SBOM and signs with cosign |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
