@@ -1,6 +1,7 @@
 package env
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -47,4 +48,43 @@ func TestTheOtherRulesStillApply(t *testing.T) {
 	limit := valid()
 	limit.TrashDailyLimit = 0
 	require.ErrorContains(t, limit.validate(), "TRASH_DAILY_LIMIT")
+}
+
+// setRequired gives New the variables it cannot start without, and removes the one under test so that its default applies
+func setRequired(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("JWT_SECRET_KEY", strings.Repeat("k", 32))
+	t.Setenv("DB_NAME", "kibooz")
+	t.Setenv("DB_USERNAME", "kibooz")
+	t.Setenv("DB_PASSWORD", strings.Repeat("d", 12))
+
+	// Setenv first so that the original value comes back when the test ends
+	t.Setenv("DEVICE_TOKEN_TTL_DAYS", "")
+	require.NoError(t, os.Unsetenv("DEVICE_TOKEN_TTL_DAYS"))
+}
+
+func TestTheDeviceTokenLifetimeDefaultsToNinetyDays(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, 90, cfg.DeviceTokenTTLDays)
+}
+
+func TestTheDeviceTokenLifetimeCanBeSet(t *testing.T) {
+	setRequired(t)
+	t.Setenv("DEVICE_TOKEN_TTL_DAYS", "30")
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, 30, cfg.DeviceTokenTTLDays)
+}
+
+func TestStartupFailsForADeviceTokenLifetimeOfZero(t *testing.T) {
+	setRequired(t)
+	t.Setenv("DEVICE_TOKEN_TTL_DAYS", "0")
+
+	_, err := New()
+	require.ErrorContains(t, err, "DEVICE_TOKEN_TTL_DAYS")
 }
