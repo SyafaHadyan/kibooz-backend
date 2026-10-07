@@ -1,0 +1,9 @@
+{
+  // The API documentation site. Cloudflare Workers Builds runs the build command that turns openapi.yaml into
+  // dist/index.html, then deploys that folder as static assets. The name has to match the Workers project.
+  "name": "kibooz-api-docs",
+  "compatibility_date": "2026-10-07",
+  "assets": {
+    "directory": "./dist"
+  }
+}

@@ -89,7 +89,7 @@ All routes live under `/api/v1`. Responses use one envelope.
 
 Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
 
-The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it.
+The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it. Cloudflare builds it into a documentation page on every push to `main`, using `wrangler.jsonc` and the build command `npx @redocly/cli@2.59.0 build-docs openapi.yaml -o dist/index.html`.
 
 | Method and path | Role | Purpose |
 |:---|:---|:---|

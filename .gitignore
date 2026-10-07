@@ -21,3 +21,6 @@ coverage.*
 
 # Local development compose file
 compose.development.yml
+
+# Output of the API documentation build
+dist/
