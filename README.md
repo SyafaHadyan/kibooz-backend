@@ -21,6 +21,7 @@
 
 [![DeepSource](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend.svg/?label=active+issues&show_trend=true)](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend/)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SyafaHadyan/kibooz-backend/badge)](https://scorecard.dev/viewer/?uri=github.com/SyafaHadyan/kibooz-backend)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15283/badge)](https://www.bestpractices.dev/projects/15283)
 
 REST API for Kibooz, the kindergarten app that lets teachers record children's moods, lets parents follow them, and rewards trash sorting with points on a class leaderboard. The contract follows `docs/prd_and_roadmap/02_BACKEND_API_AND_DATABASE.md` of the Android app repository.
 
