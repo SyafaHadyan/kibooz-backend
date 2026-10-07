@@ -98,7 +98,7 @@ jobs:
             echo "| Status | Requests |"
             echo "|:---|---:|"
             grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* [0-9]{3} ' zap-out/api.log | awk '{print $NF}' | sort | uniq -c | awk '{print "| " $2 " | " $1 " |"}'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       # plan.yaml and requests.json hold the tokens of the throwaway accounts, so only the reports are uploaded
       - name: Upload the reports
