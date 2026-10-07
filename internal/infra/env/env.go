@@ -38,6 +38,7 @@ type Env struct {
 	JWTSecretKey             string `env:"JWT_SECRET_KEY,required"`
 	JWTAccessExpiredMinutes  int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
 	JWTRefreshExpiredDays    int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
+	DeviceTokenTTLDays       int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
 	S3Endpoint               string `env:"S3_ENDPOINT"`
 	S3AccountID              string `env:"S3_ACCOUNT_ID"`
 	S3Region                 string `env:"S3_REGION" envDefault:"auto"`
