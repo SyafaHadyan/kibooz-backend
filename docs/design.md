@@ -28,3 +28,5 @@ When Redis is unreachable the API logs it once and keeps serving. Calls to Redis
 - Deleting an account is a soft delete. The user, their profile and a parent's children get a `deleted_at` time and disappear from every query, login and refresh token, and the class ranking is renumbered. Moods, scans and guidance records stay in the database. Email, NIP and NISN are only unique among active rows, so they can be registered again, and permanent removal is not automated.
 - A teacher can only record and read moods of classes they teach. A parent can only read their own children. Cross class access returns 403 or 404.
 - Photos are decoded, size checked and type checked by content, not by file name. Raw face photos are never accepted because mood detection runs on the device.
+
+This sentence has a bad dash — on purpose; and a semicolon.
