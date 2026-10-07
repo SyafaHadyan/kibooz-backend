@@ -19,15 +19,23 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 |:---|:---|:---|
 | Every route that needs a signed-in user | user id | `USER_LIMITER_MAX`, 120 by default |
 | Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
-| Login and register | email | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
+| Login and register | email, or the device when the login carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | `/healthz` | nothing | not limited |
 
-Each route is limited by the one field it actually reads, so adding a second field to the body, such as an email on a refresh request, does not give a caller a new budget. The email is trimmed and lower-cased the same way the sign in does it, so changing the letter case does not either. Both are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
+Each route is limited by the one field it actually reads, so adding a second field to the body, such as an email on a refresh request, does not give a caller a new budget. The email is trimmed and lower-cased the same way the sign in does it, so changing the letter case does not either. The identifiers are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
 
 The counters live in Redis when it is reachable, so every instance of the API shares them. Without Redis each process counts for itself.
 
-Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
+### Trusted devices
+
+Anyone who knows an email can use up its shared login budget, so a limit per email alone would let a stranger keep the owner from signing in. To prevent that, registration and login return a `deviceToken` that the app keeps and sends in the next login request. A login that carries a valid token for its email is counted in a bucket of that device, and every other login is counted in the shared bucket of the email. A stranger can only fill the shared bucket, so the devices that have signed in before keep working.
+
+The token is not a credential and never replaces the password. It is signed with a key derived from `JWT_SECRET_KEY`, bound to the email, valid for `DEVICE_TOKEN_TTL_DAYS` (90 by default) and renewed by every login, and a token refresh does not return one. A forged, expired or foreign token is rejected by the signature alone, without a database lookup, and the request falls back to the shared bucket. A stolen token only gives the thief the same `AUTH_LIMITER_MAX` attempts per window in the bucket of that one device, and the password is still needed.
+
+A new device, or one that cleared its data, has no token and uses the shared bucket. While someone is using it up, that device cannot sign in until the window passes.
+
+Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block new devices for that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
 
 ## Redis is optional
 
