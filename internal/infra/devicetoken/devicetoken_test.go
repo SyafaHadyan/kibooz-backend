@@ -11,10 +11,14 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 )
 
-const secret = "a-secret-key-that-is-long-enough-for-the-tests"
+// the keys are built and not written out, because they are only test values
+var (
+	signer      = strings.Repeat("s", 40)
+	otherSigner = strings.Repeat("o", 40)
+)
 
-func newTokens(secretKey string, days int) *devicetoken.Tokens {
-	return devicetoken.New(&env.Env{JWTSecretKey: secretKey, DeviceTokenTTLDays: days})
+func newTokens(signingKey string, days int) *devicetoken.Tokens {
+	return devicetoken.New(&env.Env{JWTSecretKey: signingKey, DeviceTokenTTLDays: days})
 }
 
 func issue(t *testing.T, tokens *devicetoken.Tokens, email string, presented string) string {
@@ -27,7 +31,7 @@ func issue(t *testing.T, tokens *devicetoken.Tokens, email string, presented str
 }
 
 func TestAnIssuedTokenVerifiesForItsEmail(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	token := issue(t, tokens, "teacher@example.com", "")
 
 	id, ok := tokens.Verify(token, "teacher@example.com")
@@ -36,7 +40,7 @@ func TestAnIssuedTokenVerifiesForItsEmail(t *testing.T) {
 }
 
 func TestTheLetterCaseAndSpacesOfTheEmailDoNotMatter(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	token := issue(t, tokens, "Teacher@Example.com", "")
 
 	_, ok := tokens.Verify(token, "  teacher@example.COM ")
@@ -44,7 +48,7 @@ func TestTheLetterCaseAndSpacesOfTheEmailDoNotMatter(t *testing.T) {
 }
 
 func TestATokenIsOnlyValidForTheEmailItWasIssuedFor(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	token := issue(t, tokens, "attacker@example.com", "")
 
 	_, ok := tokens.Verify(token, "victim@example.com")
@@ -52,29 +56,29 @@ func TestATokenIsOnlyValidForTheEmailItWasIssuedFor(t *testing.T) {
 }
 
 func TestATokenSignedWithAnotherSecretIsRejected(t *testing.T) {
-	token := issue(t, newTokens("another-secret-key-that-is-long-enough-here", 90), "a@example.com", "")
+	token := issue(t, newTokens(otherSigner, 90), "a@example.com", "")
 
-	_, ok := newTokens(secret, 90).Verify(token, "a@example.com")
+	_, ok := newTokens(signer, 90).Verify(token, "a@example.com")
 	require.False(t, ok)
 }
 
 func TestInstancesWithTheSameConfigAcceptEachOthersTokens(t *testing.T) {
-	token := issue(t, newTokens(secret, 90), "a@example.com", "")
+	token := issue(t, newTokens(signer, 90), "a@example.com", "")
 
-	_, ok := newTokens(secret, 90).Verify(token, "a@example.com")
+	_, ok := newTokens(signer, 90).Verify(token, "a@example.com")
 	require.True(t, ok, "the limiter and the use case build their own instances")
 }
 
 func TestAnExpiredTokenIsRejected(t *testing.T) {
 	// a one day lifetime that is already over can be built by issuing with a negative one
-	expired := issue(t, newTokens(secret, -1), "a@example.com", "")
+	expired := issue(t, newTokens(signer, -1), "a@example.com", "")
 
-	_, ok := newTokens(secret, 90).Verify(expired, "a@example.com")
+	_, ok := newTokens(signer, 90).Verify(expired, "a@example.com")
 	require.False(t, ok)
 }
 
 func TestATokenThatIsTamperedWithIsRejected(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	token := issue(t, tokens, "a@example.com", "")
 	parts := strings.Split(token, ".")
 
@@ -93,7 +97,7 @@ func TestATokenThatIsTamperedWithIsRejected(t *testing.T) {
 }
 
 func TestMalformedTokensAreRejected(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 
 	for _, token := range []string{"", "x", "v1", "v1..", "v1.a.b", "v2.a.b", "a.b.c.d", "v1.!!!.???", strings.Repeat("a", 5000)} {
 		_, ok := tokens.Verify(token, "a@example.com")
@@ -102,7 +106,7 @@ func TestMalformedTokensAreRejected(t *testing.T) {
 }
 
 func TestADeviceKeepsItsIdWhenItSignsInAgain(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	first := issue(t, tokens, "a@example.com", "")
 	second := issue(t, tokens, "a@example.com", first)
 
@@ -115,7 +119,7 @@ func TestADeviceKeepsItsIdWhenItSignsInAgain(t *testing.T) {
 }
 
 func TestAPresentedTokenOfAnotherEmailOrFromNowhereGivesANewDevice(t *testing.T) {
-	tokens := newTokens(secret, 90)
+	tokens := newTokens(signer, 90)
 	other := issue(t, tokens, "other@example.com", "")
 
 	mine := issue(t, tokens, "a@example.com", other)
@@ -130,7 +134,7 @@ func TestAPresentedTokenOfAnotherEmailOrFromNowhereGivesANewDevice(t *testing.T)
 }
 
 func TestTokensStayWellInsideTheRequestSizeLimit(t *testing.T) {
-	token := issue(t, newTokens(secret, 90), "a@example.com", "")
+	token := issue(t, newTokens(signer, 90), "a@example.com", "")
 
 	require.Less(t, len(token), 256)
 }
