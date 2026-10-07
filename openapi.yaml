@@ -1,0 +1,1156 @@
+openapi: 3.0.3
+info:
+  title: Kibooz API
+  version: "1"
+  description: |
+    REST API of Kibooz, the kindergarten app where teachers record the mood of children and parents follow it and
+    earn points for sorting trash.
+
+    Every JSON response uses one envelope. A success has `success: true` with an optional `message` and `data`.
+    A failure has `success: false`, a `message` and a stable `errorCode`, and validation failures also carry a
+    `details` object with one message per field.
+
+    Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`.
+  license:
+    name: MIT
+    url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
+servers:
+  - url: /api/v1
+    description: Same host as this document
+tags:
+  - name: Auth
+    description: Registration, login and sessions
+  - name: Parent
+    description: Routes for the WALI role
+  - name: Teacher
+    description: Routes for the GURU role
+  - name: Trash
+    description: Claiming points and the leaderboard
+  - name: Account
+    description: Profile photo and account deletion
+  - name: Operations
+    description: Health check
+security:
+  - bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Create an account
+      description: |
+        A GURU registers together with a new class and becomes its teacher. A WALI registers with the class code of
+        the teacher and the details of the child. A class whose teachers were all deleted cannot accept new children.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            examples:
+              teacher:
+                summary: A teacher with a new class
+                value:
+                  email: teacher@example.com
+                  password: "{{password}}"
+                  fullName: Ibu Siti
+                  role: GURU
+                  class:
+                    name: Bunga
+                    gradeLevel: Class A
+              parent:
+                summary: A parent with a child
+                value:
+                  email: parent@example.com
+                  password: "{{password}}"
+                  fullName: Bapak Budi
+                  role: WALI
+                  classCode: ABC123
+                  student:
+                    nisn: "1234567890"
+                    fullName: Ani
+      responses:
+        "201":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The email, NIP or NISN is already registered (`EMAIL_ALREADY_REGISTERED`, `NIP_ALREADY_REGISTERED`,
+            `NISN_ALREADY_REGISTERED`), or the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The email or password does not match the selected role (`AUTH_INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: Exchange a refresh token for a new pair
+      description: The refresh token is single use, so the old one stops working as soon as this call succeeds.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The session has ended, so the user has to sign in again (`AUTH_REFRESH_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke a refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutRequest"
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /wali/dashboard:
+    get:
+      tags: [Parent]
+      operationId: waliDashboard
+      summary: Dashboard of a child
+      description: The child, today's mood, the points summary and the recommended guidance. Without `studentId` the oldest child is used.
+      parameters:
+        - name: studentId
+          in: query
+          description: A child of the signed in parent
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaliDashboardEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /wali/guidance/apply:
+    post:
+      tags: [Parent]
+      operationId: applyGuidance
+      summary: Tell the teacher that a guidance was applied at home
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyGuidanceRequest"
+      responses:
+        "200":
+          description: The status was forwarded to the class teacher
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/dashboard:
+    get:
+      tags: [Teacher]
+      operationId: guruDashboard
+      summary: Overview of a class
+      description: The class overview and the distribution of today's moods. Without `classId` the first class of the teacher is used.
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+      responses:
+        "200":
+          description: The dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuruDashboardEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/mood/log:
+    post:
+      tags: [Teacher]
+      operationId: logMood
+      summary: Record the mood of a child
+      description: Only the latest mood of a child per local day counts in the dashboards and charts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogMoodRequest"
+      responses:
+        "201":
+          description: Student mood log saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogMoodEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/mood/analytics:
+    get:
+      tags: [Teacher]
+      operationId: moodAnalytics
+      summary: Mood charts of a class
+      description: The donut summary and the Monday to Friday trend. The monthly range adds the distribution of the month.
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+        - name: range
+          in: query
+          schema:
+            type: string
+            enum: [weekly, monthly]
+            default: weekly
+      responses:
+        "200":
+          description: The analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoodAnalyticsEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /trash/scan-claim:
+    post:
+      tags: [Trash]
+      operationId: scanClaim
+      summary: Claim points for sorted trash
+      description: |
+        A child can claim a limited number of times per local day. The optional photo is stored as evidence and has to
+        be a JPEG, PNG or WebP image of at most 4 MiB, given as base64 or as a data URI.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanClaimRequest"
+      responses:
+        "200":
+          description: Trash sorting points claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanClaimEnvelope"
+        "400":
+          description: The input is invalid, or the photo is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/FileTooLarge"
+        "429":
+          description: Rate limited (`RATE_LIMITED`), or the daily claim limit of the child is reached (`TRASH_DAILY_LIMIT_REACHED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+  /leaderboard:
+    get:
+      tags: [Trash]
+      operationId: leaderboard
+      summary: Podium and ranking of a class
+      description: Ranked by points, then name. A parent sees the class of their child and a teacher sees a class they teach.
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+      responses:
+        "200":
+          description: The leaderboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /users/avatar:
+    post:
+      tags: [Account]
+      operationId: uploadAvatar
+      summary: Upload a profile photo
+      description: |
+        Sets the photo of the signed in user, or of one of their children when `studentId` is given by a parent. The
+        file has to be a JPEG, PNG or WebP image of at most 2 MiB. The previous photo is deleted from storage.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                studentId:
+                  type: string
+                  format: uuid
+                  description: A child of the signed in parent
+      responses:
+        "200":
+          description: Profile photo updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvatarEnvelope"
+        "400":
+          description: The input is invalid, or the file is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/FileTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+        "503":
+          description: File storage is not configured (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /users/me:
+    delete:
+      tags: [Account]
+      operationId: deleteAccount
+      summary: Delete the own account
+      description: |
+        Soft deletes the account after the password is confirmed. The sessions are revoked, the account can no longer
+        sign in, and the children of a parent are deleted with it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteAccountRequest"
+      responses:
+        "200":
+          description: Account deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /healthz:
+    get:
+      tags: [Operations]
+      operationId: health
+      summary: Health of the service and its dependencies
+      description: |
+        Answers `200` when the database works, with `degraded` when Redis is down, and `503` when the database is down.
+        This route lives at the root and not under `/api/v1`.
+      security: []
+      servers:
+        - url: /
+      responses:
+        "200":
+          description: Healthy or degraded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: The database is down
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The `token` returned by login or registration
+  parameters:
+    ClassId:
+      name: classId
+      in: query
+      description: A class of the signed in user
+      schema:
+        type: string
+        format: uuid
+  responses:
+    ValidationError:
+      description: The input is invalid (`VALIDATION_ERROR`), with one message per field in `details`
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+          example:
+            success: false
+            message: The submitted data is invalid
+            errorCode: VALIDATION_ERROR
+            details:
+              email: must be a valid email address
+    Unauthorized:
+      description: The access token is missing, invalid or expired (`AUTH_TOKEN_MISSING`, `AUTH_TOKEN_INVALID`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    Forbidden:
+      description: The role or the data is not allowed for this user (`AUTH_FORBIDDEN`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    NotFound:
+      description: |
+        The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
+        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    RateLimited:
+      description: Too many requests from this address (`RATE_LIMITED`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    FileTooLarge:
+      description: The file or body is over the allowed size (`FILE_TOO_LARGE`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    StorageFailed:
+      description: The file could not be stored (`STORAGE_ERROR`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+  schemas:
+    Role:
+      type: string
+      enum: [GURU, WALI, ADMIN]
+      description: Teacher, parent or administrator. ADMIN cannot be registered.
+    Mood:
+      type: string
+      enum: [SENANG, SEDIH, MARAH, BINGUNG]
+      description: Happy, sad, angry or confused
+    TrashType:
+      type: string
+      enum: [ORGANIK, ANORGANIK, B3]
+    Failure:
+      type: object
+      required: [success, message, errorCode]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        message:
+          type: string
+        errorCode:
+          type: string
+          description: A stable code for the client to branch on
+        details:
+          type: object
+          description: One message per invalid field
+          additionalProperties:
+            type: string
+    EmptyEnvelope:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+    RegisterClass:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+        gradeLevel:
+          type: string
+          maxLength: 20
+        academicYear:
+          type: string
+          maxLength: 20
+        schoolName:
+          type: string
+          maxLength: 150
+    RegisterStudent:
+      type: object
+      required: [nisn, fullName]
+      properties:
+        nisn:
+          type: string
+          pattern: "^[0-9]+$"
+          minLength: 5
+          maxLength: 30
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+    RegisterRequest:
+      type: object
+      required: [email, password, fullName, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          description: At most 72 bytes, which is the limit of bcrypt
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        role:
+          type: string
+          enum: [GURU, WALI]
+        phoneNumber:
+          type: string
+          maxLength: 30
+        nip:
+          type: string
+          maxLength: 50
+        schoolName:
+          type: string
+          maxLength: 150
+        address:
+          type: string
+          maxLength: 1000
+        whatsappNumber:
+          type: string
+          maxLength: 30
+        class:
+          allOf:
+            - $ref: "#/components/schemas/RegisterClass"
+          description: Required for a GURU
+        classCode:
+          type: string
+          pattern: "^[A-Za-z0-9]+$"
+          minLength: 4
+          maxLength: 12
+          description: Required for a WALI, the join code from the dashboard of the teacher
+        student:
+          allOf:
+            - $ref: "#/components/schemas/RegisterStudent"
+          description: Required for a WALI
+    LoginRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          maxLength: 72
+        role:
+          $ref: "#/components/schemas/Role"
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 128
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          maxLength: 128
+    User:
+      type: object
+      required: [id, email, fullName, role, avatarUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    AuthData:
+      type: object
+      required: [token, refreshToken, user]
+      properties:
+        token:
+          type: string
+          description: The access token, valid for 60 minutes by default
+        refreshToken:
+          type: string
+          description: Single use, valid for 30 days by default
+        user:
+          $ref: "#/components/schemas/User"
+    AuthEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/AuthData"
+    WaliStudent:
+      type: object
+      required: [id, fullName, className, avatarUrl, nisn]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        className:
+          type: string
+          description: The grade level and the school
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        nisn:
+          type: string
+    TodayMood:
+      type: object
+      nullable: true
+      description: The latest mood of today, null until the teacher records one
+      required: [moodType, label, confidence, recordedAt, teacherNotes]
+      properties:
+        moodType:
+          $ref: "#/components/schemas/Mood"
+        label:
+          type: string
+          description: A readable name of the mood
+          example: Happy / Cheerful
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        recordedAt:
+          type: string
+          format: date-time
+        teacherNotes:
+          type: string
+          nullable: true
+    PointsSummary:
+      type: object
+      required: [totalPoints, classRank, organicCount, anorganicCount]
+      properties:
+        totalPoints:
+          type: integer
+        classRank:
+          type: integer
+        organicCount:
+          type: integer
+        anorganicCount:
+          type: integer
+    RecommendedGuidance:
+      type: object
+      nullable: true
+      description: The guidance that fits today's mood, null while there is no mood
+      required: [id, title, category, bannerUrl]
+      properties:
+        id:
+          type: string
+          description: Send this as `guidanceId` when the guidance was applied
+        title:
+          type: string
+        category:
+          type: string
+        bannerUrl:
+          type: string
+    WaliDashboard:
+      type: object
+      required: [student, todayMood, pointsSummary, recommendedGuidance]
+      properties:
+        student:
+          $ref: "#/components/schemas/WaliStudent"
+        todayMood:
+          $ref: "#/components/schemas/TodayMood"
+        pointsSummary:
+          $ref: "#/components/schemas/PointsSummary"
+        recommendedGuidance:
+          $ref: "#/components/schemas/RecommendedGuidance"
+    WaliDashboardEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/WaliDashboard"
+    ApplyGuidanceRequest:
+      type: object
+      required: [guidanceId, studentId]
+      properties:
+        guidanceId:
+          type: string
+          maxLength: 64
+        studentId:
+          type: string
+          format: uuid
+        parentNotes:
+          type: string
+          maxLength: 2000
+    GuruTeacher:
+      type: object
+      required: [fullName, nip, avatarUrl]
+      properties:
+        fullName:
+          type: string
+        nip:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    ClassOverview:
+      type: object
+      required: [classId, className, joinCode, totalStudents, presentStudents, dominantMood]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        joinCode:
+          type: string
+          description: Six characters that a parent uses to register a child into the class
+        totalStudents:
+          type: integer
+        presentStudents:
+          type: integer
+          description: Children with a mood recorded today
+        dominantMood:
+          type: string
+          enum: [SENANG, SEDIH, MARAH, BINGUNG, null]
+          nullable: true
+          description: The most frequent mood today, null when nobody has one
+    DailyMoodDistribution:
+      type: object
+      required: [senang, sedih, marah, bingung]
+      properties:
+        senang:
+          type: integer
+        sedih:
+          type: integer
+        marah:
+          type: integer
+        bingung:
+          type: integer
+    GuruDashboard:
+      type: object
+      required: [teacher, classOverview, dailyMoodDistribution]
+      properties:
+        teacher:
+          $ref: "#/components/schemas/GuruTeacher"
+        classOverview:
+          $ref: "#/components/schemas/ClassOverview"
+        dailyMoodDistribution:
+          $ref: "#/components/schemas/DailyMoodDistribution"
+    GuruDashboardEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/GuruDashboard"
+    LogMoodRequest:
+      type: object
+      required: [studentId, moodType]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        moodType:
+          $ref: "#/components/schemas/Mood"
+        source:
+          type: string
+          enum: [AI_CAMERA, MANUAL_INPUT]
+          default: MANUAL_INPUT
+        confidenceScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Required for the AI_CAMERA source, 1 by default otherwise
+        notes:
+          type: string
+          maxLength: 2000
+    LogMoodData:
+      type: object
+      required: [logId, recordedAt]
+      properties:
+        logId:
+          type: string
+          format: uuid
+        recordedAt:
+          type: string
+          format: date-time
+    LogMoodEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/LogMoodData"
+    DonutSlice:
+      type: object
+      required: [mood, percentage, colorHex]
+      properties:
+        mood:
+          $ref: "#/components/schemas/Mood"
+        percentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Whole percentages that add up to 100 when there is data
+        colorHex:
+          type: string
+          description: Fixed per mood, SENANG #34C759, BINGUNG #FF9500, SEDIH #5856D6 and MARAH #FF3B30
+          example: "#34C759"
+    TrendPoint:
+      type: object
+      required: [day, averageHappyScore]
+      properties:
+        day:
+          type: string
+          enum: [Monday, Tuesday, Wednesday, Thursday, Friday]
+        averageHappyScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: The share of happy children of that day
+    MoodCount:
+      type: object
+      required: [mood, count]
+      properties:
+        mood:
+          $ref: "#/components/schemas/Mood"
+        count:
+          type: integer
+    MoodAnalytics:
+      type: object
+      required: [donutSummary, weeklyTrend]
+      properties:
+        donutSummary:
+          type: array
+          items:
+            $ref: "#/components/schemas/DonutSlice"
+        weeklyTrend:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrendPoint"
+        monthlyDistribution:
+          type: array
+          description: Only present for the monthly range
+          items:
+            $ref: "#/components/schemas/MoodCount"
+    MoodAnalyticsEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/MoodAnalytics"
+    ScanClaimRequest:
+      type: object
+      required: [studentId, trashType]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        trashType:
+          $ref: "#/components/schemas/TrashType"
+        confidenceScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          default: 0
+        photoBase64:
+          type: string
+          description: Optional evidence photo as base64 or a data URI, at most 4 MiB once decoded
+    ScanClaimData:
+      type: object
+      required: [pointsAdded, totalPoints, newRank, remainingDailyScans]
+      properties:
+        pointsAdded:
+          type: integer
+        totalPoints:
+          type: integer
+        newRank:
+          type: integer
+        remainingDailyScans:
+          type: integer
+    ScanClaimEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ScanClaimData"
+    LeaderboardEntry:
+      type: object
+      required: [rank, studentName, points, avatarUrl]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        studentName:
+          type: string
+        points:
+          type: integer
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    Leaderboard:
+      type: object
+      required: [podium, rankings]
+      properties:
+        podium:
+          type: array
+          maxItems: 3
+          description: The top three
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+        rankings:
+          type: array
+          description: Everyone after the podium
+          items:
+            $ref: "#/components/schemas/LeaderboardEntry"
+    LeaderboardEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/Leaderboard"
+    AvatarData:
+      type: object
+      required: [avatarUrl]
+      properties:
+        avatarUrl:
+          type: string
+          format: uri
+    AvatarEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/AvatarData"
+    DeleteAccountRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+          maxLength: 72
+    Health:
+      type: object
+      required: [success, status, version, checks]
+      properties:
+        success:
+          type: boolean
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        version:
+          type: string
+        checks:
+          type: object
+          required: [database, redis, storage]
+          properties:
+            database:
+              type: string
+              enum: [ok, down]
+            redis:
+              type: string
+              enum: [ok, down]
+            storage:
+              type: string
+              enum: [ok, disabled]
