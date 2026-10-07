@@ -8,3 +8,5 @@ bin
 compose.yml
 k6
 compose.*.yml
+dist
+wrangler.jsonc
