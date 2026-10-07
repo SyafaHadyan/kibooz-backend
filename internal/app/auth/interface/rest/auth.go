@@ -16,10 +16,10 @@ type AuthHandler struct {
 	useCase usecase.AuthUseCaseItf
 }
 
-func NewAuthHandler(router fiber.Router, authLimiter fiber.Handler, useCase usecase.AuthUseCaseItf) {
+func NewAuthHandler(router fiber.Router, accountLimiter fiber.Handler, useCase usecase.AuthUseCaseItf) {
 	handler := AuthHandler{useCase: useCase}
 
-	group := router.Group("/auth", authLimiter)
+	group := router.Group("/auth", accountLimiter)
 
 	group.Post("/register", handler.Register)
 	group.Post("/login", handler.Login)

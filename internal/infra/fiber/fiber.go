@@ -9,7 +9,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
-	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
@@ -20,9 +19,14 @@ import (
 )
 
 type Fiber struct {
-	Fiber       *fiber.App
-	Router      fiber.Router
-	AuthLimiter fiber.Handler
+	Fiber  *fiber.App
+	Router fiber.Router
+
+	// the rate limiters in limits.go are built from these
+	storage fiber.Storage
+	window  time.Duration
+	userMax int
+	authMax int
 }
 
 func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
@@ -47,8 +51,6 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 
 	app := fiber.New(config)
 
-	expiration := time.Duration(cfg.LimiterExpirationSeconds) * time.Second
-
 	app.Use(
 		recover.New(),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
@@ -61,34 +63,15 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 		logger.New(logger.Config{
 			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
 		}),
-		limiter.New(limiter.Config{
-			Max:               cfg.LimiterMax,
-			Expiration:        expiration,
-			Storage:           limiterStorage,
-			LimiterMiddleware: limiter.SlidingWindow{},
-			LimitReached: func(fiber.Ctx) error {
-				return apperror.ErrRateLimited
-			},
-		}),
 	)
 
-	authLimiter := limiter.New(limiter.Config{
-		Max:        cfg.AuthLimiterMax,
-		Expiration: expiration,
-		Storage:    limiterStorage,
-		KeyGenerator: func(c fiber.Ctx) string {
-			return "auth:" + c.IP()
-		},
-		LimiterMiddleware: limiter.SlidingWindow{},
-		LimitReached: func(fiber.Ctx) error {
-			return apperror.ErrRateLimited
-		},
-	})
-
 	return &Fiber{
-		Fiber:       app,
-		Router:      app.Group("/api/v1"),
-		AuthLimiter: authLimiter,
+		Fiber:   app,
+		Router:  app.Group("/api/v1"),
+		storage: limiterStorage,
+		window:  time.Duration(cfg.LimiterExpirationSeconds) * time.Second,
+		userMax: cfg.UserLimiterMax,
+		authMax: cfg.AuthLimiterMax,
 	}
 }
 

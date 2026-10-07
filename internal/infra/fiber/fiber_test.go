@@ -3,6 +3,7 @@ package fiber_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,10 +14,14 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
 )
 
-func newServer(limiterMax int) *gofiber.App {
-	server := fiber.New(&env.Env{LimiterMax: limiterMax, LimiterExpirationSeconds: 60, AuthLimiterMax: 100, BodyLimitMB: 1}, nil)
+// newServer has one public route that is limited per account, with the given number of requests per account
+func newServer(accountMax int) *gofiber.App {
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: accountMax, BodyLimitMB: 1}, nil)
 
-	server.Fiber.Get("/ping", func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) })
+	ok := func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) }
+
+	server.Fiber.Get("/ping", ok)
+	server.Router.Post("/public", server.AccountLimiter(), ok)
 
 	return server.Fiber
 }
@@ -28,6 +33,20 @@ func get(t *testing.T, app *gofiber.App, path string, headers map[string]string)
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
+
+	res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = res.Body.Close() })
+
+	return res
+}
+
+func post(t *testing.T, app *gofiber.App, path string, body string) *http.Response {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 
 	res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
 	require.NoError(t, err)
@@ -71,9 +90,9 @@ func TestSecurityHeadersOnEveryKindOfResponse(t *testing.T) {
 
 	t.Run("rate limited response", func(t *testing.T) {
 		app := newServer(1)
-		get(t, app, "/ping", nil)
+		post(t, app, "/api/v1/public", `{"email":"someone@example.com"}`)
 
-		res := get(t, app, "/ping", nil)
+		res := post(t, app, "/api/v1/public", `{"email":"someone@example.com"}`)
 
 		require.Equal(t, http.StatusTooManyRequests, res.StatusCode)
 		requireSecurityHeaders(t, res)

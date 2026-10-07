@@ -95,7 +95,7 @@ func app(t *testing.T) *fiber.App {
 
 	once.Do(func() {
 		defaults := map[string]string{
-			"LIMITER_MAX":          "100000",
+			"USER_LIMITER_MAX":     "100000",
 			"AUTH_LIMITER_MAX":     "100000",
 			"JWT_SECRET_KEY":       uuid.NewString() + uuid.NewString(),
 			"S3_ENDPOINT":          startMockS3().URL,

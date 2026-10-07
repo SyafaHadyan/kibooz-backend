@@ -21,12 +21,12 @@ type UserHandler struct {
 	useCase usecase.UserUseCaseItf
 }
 
-func NewUserHandler(router fiber.Router, authLimiter fiber.Handler, mw middleware.MiddlewareItf, useCase usecase.UserUseCaseItf) {
+func NewUserHandler(router fiber.Router, passwordLimiter fiber.Handler, mw middleware.MiddlewareItf, useCase usecase.UserUseCaseItf) {
 	handler := UserHandler{useCase: useCase}
 
 	router.Post("/users/avatar", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.UploadAvatar)
-	// the password is checked here, so the same strict limit as the login route applies
-	router.Delete("/users/me", authLimiter, mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.DeleteAccount)
+	// the password is checked here, so the same strict limit as the login route applies per user, and it needs the user to be known
+	router.Delete("/users/me", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.DeleteAccount)
 }
 
 func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
