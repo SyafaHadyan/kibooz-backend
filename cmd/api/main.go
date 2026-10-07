@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	"github.com/SyafaHadyan/kibooz-backend/internal/healthcheck"
 )
 
 // version is set at build time with -ldflags
@@ -20,7 +21,7 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		os.Exit(runHealthcheck())
+		os.Exit(healthcheck.Run(os.Getenv("APP_PORT")))
 	}
 
 	log.Printf("starting kibooz-backend %s", version)
