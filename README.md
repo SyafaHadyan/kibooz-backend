@@ -161,7 +161,7 @@ E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./...
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
-CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. Its checks are not required yet, so a Codecov outage never blocks a merge. Dependabot pull requests upload too, using a `CODECOV_TOKEN` stored in the Dependabot secrets. The thresholds are in `codecov.yml`.
+CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. `codecov/patch` is a required check, so new code needs coverage. Codecov posts it a few minutes after CI finishes, so a merge has to wait for it. `codecov/project` is not required. Dependabot pull requests upload too, using a `CODECOV_TOKEN` stored in the Dependabot secrets. The thresholds are in `codecov.yml`.
 
 The code that takes untrusted input has fuzz tests, namely image decoding, access token validation and request body validation. A normal `go test` runs their seed cases. To search for new failing inputs, fuzz one target at a time.
 
@@ -218,6 +218,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
 | DeepSource Docker, Go, SQL and Secrets | DeepSource |
+| codecov/patch | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
 OSSF Scorecard is not required because it only runs on `main`, and the k6 performance test is not required yet while its limits are being calibrated. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
