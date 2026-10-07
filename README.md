@@ -90,6 +90,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 - [Design notes](docs/design.md) covers how accounts work, the rate limits, why Redis is optional and the business rules.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
+- [Client guide](docs/client-guide.md) covers what an app has to do with the tokens, the device token and the rate limits.
 - [Differences from the PRD](docs/prd-differences.md) lists where this implementation fills gaps in the PRD.
 
 ## Project layout
