@@ -19,7 +19,7 @@ The README has the quick start and the full list of settings. The `docs/` folder
 2. Keep one pull request to one concern. Unrelated changes go into separate branches and pull requests.
 3. Write commits in the [Conventional Commits](https://www.conventionalcommits.org/) style, as `type(scope): summary`. The summary is the whole message, so do not add a body. The types are `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `build` and `chore`.
 4. Sign your commits. The `main` branch only accepts verified signatures.
-5. Write code, comments, log lines, documentation and API messages in English. Match the style of the code around your change.
+5. Write code, comments, log lines, documentation and API messages in English. Match the style of the code around your change. Prose is checked by Vale, so write without em dashes and semicolons, as described in [docs/ci-cd.md](docs/ci-cd.md).
 
 Releases are automated by release-please from the commit messages that reach `main`. Do not edit `CHANGELOG.md`, `.release-please-manifest.json` or version numbers by hand.
 
