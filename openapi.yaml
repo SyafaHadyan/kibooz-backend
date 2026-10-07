@@ -696,6 +696,12 @@ components:
           maxLength: 72
         role:
           $ref: "#/components/schemas/Role"
+        deviceToken:
+          type: string
+          maxLength: 256
+          description: >-
+            The `deviceToken` that an earlier registration or login on this device returned. It is never needed to sign in,
+            and it only gives this device its own rate limit for the email. Send it whenever the app has one.
     RefreshRequest:
       type: object
       required: [refreshToken]
@@ -738,6 +744,11 @@ components:
         refreshToken:
           type: string
           description: Single use, valid for 30 days by default
+        deviceToken:
+          type: string
+          description: >-
+            Returned by registration and login, and not by a token refresh. Keep it on the device and send it in the next
+            login request. It is signed for this email, valid for 90 days by default and renewed by every login.
         user:
           $ref: "#/components/schemas/User"
     AuthEnvelope:

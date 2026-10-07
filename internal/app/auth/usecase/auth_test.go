@@ -19,6 +19,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
 )
@@ -111,7 +112,7 @@ func build(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache) us
 
 	repo.user = user
 
-	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30})
+	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
 }
 
 func accountWith(t *testing.T, password string) *entity.User {
@@ -173,4 +174,57 @@ func hash(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 
 	return hex.EncodeToString(sum[:])
+}
+
+func deviceTokens() *devicetoken.Tokens {
+	return devicetoken.New(&env.Env{JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+}
+
+func TestLoginHandsTheDeviceATokenForItsEmail(t *testing.T) {
+	useCase := build(t, accountWith(t, "correct horse"), &fakeRepo{}, newFakeCache())
+
+	res, err := useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: "correct horse", Role: constants.RoleWali})
+	require.NoError(t, err)
+	require.NotEmpty(t, res.DeviceToken)
+
+	_, ok := deviceTokens().Verify(res.DeviceToken, "a@example.com")
+	require.True(t, ok)
+
+	_, ok = deviceTokens().Verify(res.DeviceToken, "someone.else@example.com")
+	require.False(t, ok)
+}
+
+func TestLoginKeepsTheDeviceIdOfAValidTokenAndIgnoresOthers(t *testing.T) {
+	useCase := build(t, accountWith(t, "correct horse"), &fakeRepo{}, newFakeCache())
+	login := func(presented string) string {
+		res, err := useCase.Login(context.Background(), dto.LoginRequest{
+			Email: "a@example.com", Password: "correct horse", Role: constants.RoleWali, DeviceToken: presented,
+		})
+		require.NoError(t, err)
+
+		return res.DeviceToken
+	}
+
+	first := login("")
+	id := func(token string) []byte {
+		device, ok := deviceTokens().Verify(token, "a@example.com")
+		require.True(t, ok)
+
+		return device
+	}
+
+	require.Equal(t, id(first), id(login(first)), "signing in again on the same device keeps its id")
+	require.NotEqual(t, id(first), id(login("not-a-token")), "an invalid token is ignored")
+
+	foreign, err := deviceTokens().Issue("other@example.com", "")
+	require.NoError(t, err)
+	require.NotEqual(t, id(first), id(login(foreign)), "the token of another email is ignored")
+}
+
+func TestAFailedLoginHandsOutNoToken(t *testing.T) {
+	useCase := build(t, accountWith(t, "correct horse"), &fakeRepo{}, newFakeCache())
+
+	res, err := useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: "wrong", Role: constants.RoleWali})
+	require.Error(t, err)
+	require.Empty(t, res.DeviceToken)
 }

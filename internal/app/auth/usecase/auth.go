@@ -16,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
@@ -44,10 +45,12 @@ type AuthUseCase struct {
 	cache redis.CacheItf
 	cfg   *env.Env
 	now   func() time.Time
+
+	devices *devicetoken.Tokens
 }
 
 func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.CacheItf, cfg *env.Env) AuthUseCaseItf {
-	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now}
+	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg)}
 }
 
 func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error) {
@@ -83,7 +86,7 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		return dto.AuthResponse{}, err
 	}
 
-	return u.issueSession(ctx, user)
+	return u.startSession(ctx, user, "")
 }
 
 func (u *AuthUseCase) registerGuru(ctx context.Context, user *entity.User, req dto.RegisterRequest) error {
@@ -154,7 +157,23 @@ func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.Auth
 		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
 	}
 
-	return u.issueSession(ctx, user)
+	return u.startSession(ctx, user, req.DeviceToken)
+}
+
+// startSession opens a session and hands the device a token for the rate limiter. A device that sent a valid token
+// for this email gets one with the same device id, so it keeps its own bucket.
+func (u *AuthUseCase) startSession(ctx context.Context, user *entity.User, presented string) (dto.AuthResponse, error) {
+	res, err := u.issueSession(ctx, user)
+	if err != nil {
+		return dto.AuthResponse{}, err
+	}
+
+	res.DeviceToken, err = u.devices.Issue(user.Email, presented)
+	if err != nil {
+		return dto.AuthResponse{}, apperror.Internal(err)
+	}
+
+	return res, nil
 }
 
 // Refresh swaps a refresh token for a new session. Postgres alone decides whether the token is valid,

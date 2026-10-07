@@ -131,3 +131,85 @@ func TestRateLimitsFollowUsersAndAccounts(t *testing.T) {
 		}
 	})
 }
+
+// TestTrustedDeviceIsNotLockedOut shows what the device token is for. Someone who only knows an email can use up the
+// shared login budget of that email, but the device that signed in before keeps its own.
+func TestTrustedDeviceIsNotLockedOut(t *testing.T) {
+	app(t) // makes sure the shared environment defaults are set
+
+	t.Setenv("AUTH_LIMITER_MAX", "3")
+
+	started, err := bootstrap.Start("e2e-device")
+	require.NoError(t, err)
+
+	t.Cleanup(started.Close)
+
+	limited := started.App.Fiber
+	email := fmt.Sprintf("device.%s@example.com", suffix())
+
+	registered := callApp(t, limited, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+		"email": email, "password": testPassword, "fullName": "Device Teacher",
+		"role": "GURU", "class": map[string]any{"name": "Devices"},
+	})
+	require.Equal(t, http.StatusCreated, registered.Status, "body %v", registered.Body)
+
+	deviceToken, ok := registered.data("deviceToken").(string)
+	require.True(t, ok, "registration must hand the device a token, body %v", registered.Body)
+	require.NotEmpty(t, deviceToken)
+
+	login := func(password string, token string) result {
+		body := map[string]any{"email": email, "password": password, "role": "GURU"}
+		if token != "" {
+			body["deviceToken"] = token
+		}
+
+		return callApp(t, limited, http.MethodPost, "/api/v1/auth/login", "", body)
+	}
+
+	// someone without the token guesses until the shared budget of the email is gone
+	for i := range 3 {
+		res := login(testPassword+"x", "")
+		require.Equal(t, http.StatusUnauthorized, res.Status, "guess %d body %v", i+1, res.Body)
+	}
+
+	login(testPassword, "").requireError(t, http.StatusTooManyRequests, "RATE_LIMITED")
+
+	t.Run("the device that signed in before still can", func(t *testing.T) {
+		res := login(testPassword, deviceToken)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		renewed, ok := res.data("deviceToken").(string)
+		require.True(t, ok)
+		require.NotEmpty(t, renewed)
+
+		deviceToken = renewed
+	})
+
+	t.Run("a token for another email gives no budget of its own", func(t *testing.T) {
+		other := callApp(t, limited, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": fmt.Sprintf("device.other.%s@example.com", suffix()), "password": testPassword, "fullName": "Other Teacher",
+			"role": "GURU", "class": map[string]any{"name": "Others"},
+		})
+		require.Equal(t, http.StatusCreated, other.Status, "body %v", other.Body)
+
+		login(testPassword, other.data("deviceToken").(string)).requireError(t, http.StatusTooManyRequests, "RATE_LIMITED")
+		login(testPassword, "not-a-token").requireError(t, http.StatusTooManyRequests, "RATE_LIMITED")
+	})
+
+	t.Run("a trusted device is limited as well, so the token cannot be used to guess", func(t *testing.T) {
+		for i := range 2 {
+			res := login(testPassword+"x", deviceToken)
+			require.Equal(t, http.StatusUnauthorized, res.Status, "guess %d body %v", i+1, res.Body)
+		}
+
+		login(testPassword+"x", deviceToken).requireError(t, http.StatusTooManyRequests, "RATE_LIMITED")
+	})
+
+	t.Run("a token refresh hands out no device token", func(t *testing.T) {
+		res := callApp(t, limited, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{
+			"refreshToken": registered.data("refreshToken"),
+		})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Nil(t, res.data("deviceToken"))
+	})
+}

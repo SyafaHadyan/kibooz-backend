@@ -39,6 +39,9 @@ type LoginRequest struct {
 	Email    string         `json:"email" validate:"required,email,max=255"`
 	Password string         `json:"password" validate:"required,max=72"`
 	Role     constants.Role `json:"role" validate:"required,oneof=GURU WALI ADMIN"`
+
+	// DeviceToken is the one that an earlier register or login on this device returned, it only affects the rate limit
+	DeviceToken string `json:"deviceToken" validate:"omitempty,max=256"`
 }
 
 type RefreshRequest struct {
@@ -61,4 +64,7 @@ type AuthResponse struct {
 	Token        string       `json:"token"`
 	RefreshToken string       `json:"refreshToken"`
 	User         UserResponse `json:"user"`
+
+	// DeviceToken is set by register and login, and is empty for a token refresh
+	DeviceToken string `json:"deviceToken,omitempty"`
 }

@@ -16,6 +16,7 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
 )
@@ -275,4 +276,101 @@ func TestLimitersAreSharedThroughTheStorage(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, status(t, first, "/login", `{"email":"a@example.com"}`))
 	require.Equal(t, http.StatusTooManyRequests, status(t, second, "/login", `{"email":"a@example.com"}`), "a second instance must see the first one's requests")
+}
+
+func tokensFor(email string) (string, string) {
+	tokens := devicetoken.New(&env.Env{JWTSecretKey: "", DeviceTokenTTLDays: 90})
+	other := devicetoken.New(&env.Env{JWTSecretKey: "another-secret-key-that-is-long-enough-here", DeviceTokenTTLDays: 90})
+
+	good, _ := tokens.Issue(email, "")
+	forged, _ := other.Issue(email, "")
+
+	return good, forged
+}
+
+func login(email string, token string) string {
+	return `{"email":"` + email + `","deviceToken":"` + token + `"}`
+}
+
+// This is the lockout that the device token exists for. Everyone who has no token shares the budget of the email,
+// so someone who knows the email can use it up, but a device that has signed in before is not affected.
+func TestADeviceWithAValidTokenIsNotLockedOutByThoseWithout(t *testing.T) {
+	app := publicServer(2, nil)
+	token, _ := tokensFor("teacher@example.com")
+
+	for range 2 {
+		require.Equal(t, http.StatusOK, status(t, app, "/login", login("teacher@example.com", "")))
+	}
+
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", login("teacher@example.com", "")), "the shared budget is used up")
+
+	for i := range 2 {
+		require.Equal(t, http.StatusOK, status(t, app, "/login", login("teacher@example.com", token)), "trusted attempt %d", i+1)
+	}
+
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", login("teacher@example.com", token)), "a trusted device is limited too")
+}
+
+func TestATrustedDeviceCannotBeUsedToGuessWithoutLimit(t *testing.T) {
+	app := publicServer(3, nil)
+	token, _ := tokensFor("teacher@example.com")
+
+	got := make([]int, 0, 6)
+	for range 6 {
+		got = append(got, status(t, app, "/login", login("teacher@example.com", token)))
+	}
+
+	require.Equal(t, []int{200, 200, 200, 429, 429, 429}, got)
+}
+
+func TestAttackersCannotGetAFreshBudgetWithATokenThatIsNotValid(t *testing.T) {
+	app := publicServer(1, nil)
+	_, forged := tokensFor("teacher@example.com")
+	attackersOwn, _ := tokensFor("attacker@example.com")
+
+	expired, err := devicetoken.New(&env.Env{JWTSecretKey: "", DeviceTokenTTLDays: -1}).Issue("teacher@example.com", "")
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", login("teacher@example.com", "")))
+
+	for name, token := range map[string]string{
+		"signed with another secret": forged,
+		"issued for another email":   attackersOwn,
+		"not a token":                "v1.abc.def",
+		"a random string":            "hello",
+		"expired":                    expired,
+	} {
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", login("teacher@example.com", token)), name)
+	}
+}
+
+func TestEveryDeviceHasItsOwnBudget(t *testing.T) {
+	app := publicServer(1, nil)
+	tokens := devicetoken.New(&env.Env{JWTSecretKey: "", DeviceTokenTTLDays: 90})
+
+	phone, err := tokens.Issue("teacher@example.com", "")
+	require.NoError(t, err)
+
+	tablet, err := tokens.Issue("teacher@example.com", "")
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", login("teacher@example.com", phone)))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", login("teacher@example.com", phone)))
+	require.Equal(t, http.StatusOK, status(t, app, "/login", login("teacher@example.com", tablet)))
+}
+
+func TestTheDeviceBucketKeyIsAHashAndNeverTheTokenOrTheEmail(t *testing.T) {
+	storage := newRecordingStorage()
+	app := publicServer(5, storage)
+	tokens := devicetoken.New(&env.Env{JWTSecretKey: "", DeviceTokenTTLDays: 90})
+
+	token, err := tokens.Issue("private.person@example.com", "")
+	require.NoError(t, err)
+
+	status(t, app, "/login", login("Private.Person@example.com", token))
+
+	deviceID, ok := tokens.Verify(token, "private.person@example.com")
+	require.True(t, ok)
+
+	require.ElementsMatch(t, []string{"device:/api/v1/login:" + sha(hex.EncodeToString(deviceID))}, storage.keys())
 }

@@ -75,6 +75,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
 | `JWT_SECRET_KEY` | required | At least 32 characters |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
+| `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |

@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/response"
 )
@@ -27,6 +28,7 @@ type Fiber struct {
 	window  time.Duration
 	userMax int
 	authMax int
+	devices *devicetoken.Tokens
 }
 
 func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
@@ -72,6 +74,7 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 		window:  time.Duration(cfg.LimiterExpirationSeconds) * time.Second,
 		userMax: cfg.UserLimiterMax,
 		authMax: cfg.AuthLimiterMax,
+		devices: devicetoken.New(cfg),
 	}
 }
 
