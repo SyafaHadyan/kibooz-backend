@@ -2,7 +2,10 @@ package e2e
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -25,11 +28,12 @@ var (
 	specOnce sync.Once
 	specDoc  *openapi3.T
 	specErr  error
+
+	exercisedMu sync.Mutex
+	exercised   = map[string]bool{}
 )
 
-func spec(t *testing.T) *openapi3.T {
-	t.Helper()
-
+func loadSpec() (*openapi3.T, error) {
 	specOnce.Do(func() {
 		doc, err := openapi3.NewLoader().LoadFromFile(specFile)
 		if err != nil {
@@ -42,9 +46,81 @@ func spec(t *testing.T) *openapi3.T {
 		specDoc = doc
 	})
 
-	require.NoError(t, specErr)
+	return specDoc, specErr
+}
 
-	return specDoc
+func spec(t *testing.T) *openapi3.T {
+	t.Helper()
+
+	doc, err := loadSpec()
+	require.NoError(t, err)
+
+	return doc
+}
+
+// operationKey names an operation the way the spec does, without the prefix of the server
+func operationKey(method string, specPath string) string {
+	return method + " " + specPath
+}
+
+// unexercised returns the operations of the spec that no response was checked against, in a stable order
+func unexercised(doc *openapi3.T, seen map[string]bool) []string {
+	var missing []string
+
+	for path, item := range doc.Paths.Map() {
+		for method := range item.Operations() {
+			if !seen[operationKey(method, path)] {
+				missing = append(missing, operationKey(method, path))
+			}
+		}
+	}
+
+	slices.Sort(missing)
+
+	return missing
+}
+
+// wholeSuiteRan tells whether the guard can judge, which it cannot when the tests were filtered or skipped
+func wholeSuiteRan() bool {
+	if os.Getenv("E2E_ENABLED") != "true" || testing.Short() {
+		return false
+	}
+
+	for _, name := range []string{"test.run", "test.skip"} {
+		if f := flag.Lookup(name); f == nil || f.Value.String() != "" {
+			return false
+		}
+	}
+
+	return true
+}
+
+// TestMain fails the run when the whole suite passed and still left a documented operation without a single
+// response checked against the spec. Such an operation would be documented without anything to keep it true.
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	if code == 0 && wholeSuiteRan() {
+		doc, err := loadSpec()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "load the spec for the coverage check", err)
+
+			os.Exit(1)
+		}
+
+		exercisedMu.Lock()
+		missing := unexercised(doc, exercised)
+		exercisedMu.Unlock()
+
+		if len(missing) > 0 {
+			fmt.Fprintf(os.Stderr, "FAIL these operations of openapi.yaml were never exercised by the end to end tests\n  %s\n",
+				strings.Join(missing, "\n  "))
+
+			code = 1
+		}
+	}
+
+	os.Exit(code)
 }
 
 // documentedPath turns a path of the spec into the path the server answers on, only /healthz lives outside the prefix
@@ -88,6 +164,10 @@ func requireContract(t *testing.T, req *http.Request, status int, header http.He
 	if route == nil {
 		return
 	}
+
+	exercisedMu.Lock()
+	exercised[operationKey(route.Method, route.Path)] = true
+	exercisedMu.Unlock()
 
 	input := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{Request: req, Route: route},
