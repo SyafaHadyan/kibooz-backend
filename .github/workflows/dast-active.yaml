@@ -65,12 +65,13 @@ jobs:
           # the container user is not the runner user, so it needs write access to the shared folder
           chmod -R a+rwX zap-out
 
-      # The scan runs the ZAP image directly, pinned by digest like the baseline scan
+      # The scan runs the ZAP image directly, pinned by digest like the baseline scan.
+      # ZAP listens on 8090 for itself, because with host networking its default port 8080 is the one the API uses.
       - name: Run the active scan
         run: |
           docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
             ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef \
-            zap.sh -cmd -autorun /zap/wrk/plan.yaml
+            zap.sh -cmd -port 8090 -autorun /zap/wrk/plan.yaml
 
       # The scan only reports for now, so the run stays green and the findings show as annotations and in the summary
       - name: Write the summary
