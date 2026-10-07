@@ -6,6 +6,7 @@
 [![Config lint](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/config.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/config.yaml)
 [![Performance](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/perf.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/perf.yaml)
 [![DAST](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml)
+[![codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/SyafaHadyan/kibooz-backend)
 
 [![Release](https://img.shields.io/github/v/release/SyafaHadyan/kibooz-backend?sort=semver)](https://github.com/SyafaHadyan/kibooz-backend/releases)
 [![License](https://img.shields.io/github/license/SyafaHadyan/kibooz-backend)](LICENSE)
@@ -158,6 +159,8 @@ E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./...
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
+CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. Its checks inform the review and are not required, because Dependabot pull requests cannot read the upload token. The thresholds are in `codecov.yml`.
+
 The code that takes untrusted input has fuzz tests, namely image decoding, access token validation and request body validation. A normal `go test` runs their seed cases. To search for new failing inputs, fuzz one target at a time.
 
 ```sh
@@ -186,7 +189,7 @@ The scan is passive, so it checks headers and information leaks but does not try
 
 | Workflow | Trigger | What it does |
 |:---|:---|:---|
-| `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services |
+| `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
