@@ -12,7 +12,7 @@ info:
 
     Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`.
   license:
-    name: MIT
+    name: GNU General Public License v3.0
     url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
 servers:
   - url: /api/v1
