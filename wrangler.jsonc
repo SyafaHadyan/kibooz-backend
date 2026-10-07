@@ -8,5 +8,13 @@
   },
   // The site is served on docs.kibooz.syafahadyan.com only, so the workers.dev address and the version URLs are off
   "workers_dev": false,
-  "preview_urls": false
+  "preview_urls": false,
+  // The domain is already attached to this Worker in the dashboard. Declaring it keeps this file and Cloudflare in step,
+  // and a deploy attaches it again if it is ever removed. It needs the zone to be on the same Cloudflare account
+  "routes": [
+    {
+      "pattern": "docs.kibooz.syafahadyan.com",
+      "custom_domain": true
+    }
+  ]
 }
