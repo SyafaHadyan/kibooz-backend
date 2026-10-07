@@ -96,6 +96,21 @@ func TestRateLimitsFollowUsersAndAccounts(t *testing.T) {
 		require.Equal(t, http.StatusOK, other.Status, "body %v", other.Body)
 	})
 
+	t.Run("a refresh token cannot get a fresh budget by adding an email", func(t *testing.T) {
+		token := "00000000-0000-4000-8000-000000000000"
+
+		for i := range 3 {
+			res := callApp(t, limited, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{
+				"refreshToken": token, "email": fmt.Sprintf("other.%d.%s@example.com", i, suffix()),
+			})
+			require.Equal(t, http.StatusUnauthorized, res.Status, "attempt %d body %v", i+1, res.Body)
+		}
+
+		callApp(t, limited, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{
+			"refreshToken": token, "email": fmt.Sprintf("another.%s@example.com", suffix()),
+		}).requireError(t, http.StatusTooManyRequests, "RATE_LIMITED")
+	})
+
 	t.Run("confirming the password to delete an account has its own limit per user", func(t *testing.T) {
 		attempt := func() result {
 			return callApp(t, limited, http.MethodDelete, "/api/v1/users/me", guruToken, map[string]any{"password": testPassword + "x"})

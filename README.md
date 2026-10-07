@@ -45,7 +45,7 @@ go run ./cmd/api
 
 ## Production deployment
 
-`compose.yml` is the production stack with the API, PostgreSQL and Redis, all restarting automatically. PostgreSQL and Redis are not published to the host. The API is published on port 8080, so put a reverse proxy with TLS in front of it and set `TRUST_PROXY=true` so rate limiting sees real client IPs.
+`compose.yml` is the production stack with the API, PostgreSQL and Redis, all restarting automatically. PostgreSQL and Redis are not published to the host. The API is published on port 8080, so put a reverse proxy with TLS in front of it and set `TRUST_PROXY=true` so the access log shows real client IPs.
 
 Every response carries security headers (`nosniff`, `X-Frame-Options: DENY`, a `default-src 'none'` content security policy, `no-referrer` and same-origin cross-origin policies). `Strict-Transport-Security` is not set by the API, so enable it on the proxy that ends TLS, where you know which subdomains are HTTPS only.
 

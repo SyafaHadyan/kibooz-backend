@@ -96,15 +96,18 @@ func (s *recordingStorage) Close() error {
 	return nil
 }
 
-// publicServer has two public routes limited per account, with the given number of requests per account
+// publicServer has two routes limited per email and two limited per refresh token, with the given number of requests each
 func publicServer(accountMax int, storage gofiber.Storage) *gofiber.App {
 	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: accountMax, BodyLimitMB: 1}, storage)
 
 	ok := func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) }
-	limit := server.AccountLimiter()
+	byEmail := server.EmailLimiter()
+	byToken := server.TokenLimiter()
 
-	server.Router.Post("/login", limit, ok)
-	server.Router.Post("/refresh", limit, ok)
+	server.Router.Post("/login", byEmail, ok)
+	server.Router.Post("/register", byEmail, ok)
+	server.Router.Post("/refresh", byToken, ok)
+	server.Router.Post("/logout", byToken, ok)
 
 	return server.Fiber
 }
@@ -117,7 +120,7 @@ func status(t *testing.T, app *gofiber.App, path string, body string) int {
 	return res.StatusCode
 }
 
-func TestAccountLimiterCountsRequestsPerAccount(t *testing.T) {
+func TestEmailLimiterCountsRequestsPerEmail(t *testing.T) {
 	app := publicServer(2, nil)
 
 	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com"}`))
@@ -136,12 +139,12 @@ func TestAccountLimiterCountsRequestsPerAccount(t *testing.T) {
 		require.NotEmpty(t, res.Header.Get("Retry-After"))
 	})
 
-	t.Run("another account is not affected", func(t *testing.T) {
+	t.Run("another email is not affected", func(t *testing.T) {
 		require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"b@example.com"}`))
 	})
 }
 
-func TestAccountLimiterNormalizesTheEmail(t *testing.T) {
+func TestEmailLimiterNormalizesTheEmail(t *testing.T) {
 	app := publicServer(1, nil)
 
 	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"Teacher@Example.com"}`))
@@ -149,15 +152,19 @@ func TestAccountLimiterNormalizesTheEmail(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", `{"email":"TEACHER@EXAMPLE.COM"}`))
 }
 
-func TestAccountLimiterKeepsEveryRouteSeparate(t *testing.T) {
+func TestEveryRouteKeepsItsOwnBudget(t *testing.T) {
 	app := publicServer(1, nil)
 
 	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com"}`))
-	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"email":"a@example.com"}`))
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"a@example.com"}`))
 	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", `{"email":"a@example.com"}`))
+
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
+	require.Equal(t, http.StatusOK, status(t, app, "/logout", `{"refreshToken":"token-one"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
 }
 
-func TestAccountLimiterLimitsARefreshTokenButNotOtherTokens(t *testing.T) {
+func TestTokenLimiterLimitsARefreshTokenButNotOtherTokens(t *testing.T) {
 	app := publicServer(1, nil)
 
 	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
@@ -165,17 +172,51 @@ func TestAccountLimiterLimitsARefreshTokenButNotOtherTokens(t *testing.T) {
 	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-two"}`))
 }
 
-func TestAccountLimiterIgnoresRequestsThatNameNoAccount(t *testing.T) {
+// The refresh and logout routes read only the token, so an email in the same body must not buy a fresh budget
+func TestTokenLimiterIgnoresAnEmailInTheBody(t *testing.T) {
 	app := publicServer(1, nil)
 
-	for _, body := range []string{``, `{}`, `not json`, `{"email":""}`, `{"email":"   "}`, `[]`} {
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one","email":"first@example.com"}`))
+
+	for _, email := range []string{"second@example.com", "third@example.com", "first@example.com", ""} {
+		body := `{"refreshToken":"token-one","email":"` + email + `"}`
+
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", body), "email %q", email)
+	}
+
+	// logout keeps its own budget of one for the same token, and a different email does not renew it either
+	require.Equal(t, http.StatusOK, status(t, app, "/logout", `{"refreshToken":"token-one","email":"first@example.com"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/logout", `{"refreshToken":"token-one","email":"second@example.com"}`))
+
+	t.Run("a body with only an email names no token", func(t *testing.T) {
 		for range 3 {
-			require.Equal(t, http.StatusOK, status(t, app, "/login", body), "body %q", body)
+			require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"email":"someone@example.com"}`))
+		}
+	})
+}
+
+// The login and register routes read only the email, so a refresh token in the same body must not buy a fresh budget
+func TestEmailLimiterIgnoresARefreshTokenInTheBody(t *testing.T) {
+	app := publicServer(1, nil)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com","refreshToken":"one"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", `{"email":"a@example.com","refreshToken":"two"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", `{"email":"a@example.com"}`))
+}
+
+func TestLimitersIgnoreRequestsThatNameNoAccount(t *testing.T) {
+	app := publicServer(1, nil)
+
+	for _, path := range []string{"/login", "/refresh"} {
+		for _, body := range []string{``, `{}`, `not json`, `{"email":""}`, `{"email":"   "}`, `{"refreshToken":""}`, `[]`} {
+			for range 3 {
+				require.Equal(t, http.StatusOK, status(t, app, path, body), "%s body %q", path, body)
+			}
 		}
 	}
 }
 
-func TestAccountLimiterNeverLimitsByAddress(t *testing.T) {
+func TestEmailLimiterNeverLimitsByAddress(t *testing.T) {
 	app := publicServer(1, nil)
 
 	// many different accounts behind one address, such as a whole class on the school network
@@ -194,16 +235,16 @@ func sha(value string) string {
 
 // The keys are pinned exactly. Anything added to them, such as the address of the client, or anything dropped from
 // them, such as the lower casing of the email, changes who shares a budget and has to fail here.
-func TestAccountLimiterKeysAreTheRouteAndAHashOfTheAccount(t *testing.T) {
+func TestLimiterKeysAreTheRouteAndAHashOfTheIdentifier(t *testing.T) {
 	storage := newRecordingStorage()
 	app := publicServer(5, storage)
 
 	status(t, app, "/login", `{"email":"Private.Person@example.com"}`)
-	status(t, app, "/refresh", `{"refreshToken":"secret-refresh-token"}`)
+	status(t, app, "/refresh", `{"refreshToken":"secret-refresh-token","email":"ignored@example.com"}`)
 
 	require.ElementsMatch(t, []string{
-		"account:/api/v1/login:" + sha("private.person@example.com"),
-		"account:/api/v1/refresh:" + sha("secret-refresh-token"),
+		"email:/api/v1/login:" + sha("private.person@example.com"),
+		"token:/api/v1/refresh:" + sha("secret-refresh-token"),
 	}, storage.keys(), "neither an email, a token nor an address may be in a key")
 }
 
@@ -226,7 +267,7 @@ func TestUserAndPasswordLimitersKeyOnlyTheUser(t *testing.T) {
 	require.ElementsMatch(t, []string{"user:user-1", "confirm:user-1"}, storage.keys())
 }
 
-func TestAccountLimiterIsSharedThroughTheStorage(t *testing.T) {
+func TestLimitersAreSharedThroughTheStorage(t *testing.T) {
 	storage := newRecordingStorage()
 
 	first := publicServer(1, storage)

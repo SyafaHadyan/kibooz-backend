@@ -21,7 +21,7 @@ func newServer(accountMax int) *gofiber.App {
 	ok := func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) }
 
 	server.Fiber.Get("/ping", ok)
-	server.Router.Post("/public", server.AccountLimiter(), ok)
+	server.Router.Post("/public", server.EmailLimiter(), ok)
 
 	return server.Fiber
 }

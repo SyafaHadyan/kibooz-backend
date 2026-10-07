@@ -86,7 +86,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, storage.Enabled(), version))
 
-	authhandler.NewAuthHandler(app.Router, app.AccountLimiter(), authusecase.NewAuthUseCase(
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg,
 	))
 	walihandler.NewWaliHandler(app.Router, mw, waliusecase.NewWaliUseCase(
