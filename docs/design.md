@@ -23,7 +23,7 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | `/healthz` | nothing | not limited |
 
-Each route is limited by the one field it actually reads, so adding a second field to the body, such as an email on a refresh request, does not give a caller a new budget. The email is trimmed and lower cased the same way the sign in does it, so changing the letter case does not either. Both are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
+Each route is limited by the one field it actually reads, so adding a second field to the body, such as an email on a refresh request, does not give a caller a new budget. The email is trimmed and lower-cased the same way the sign in does it, so changing the letter case does not either. Both are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
 
 The counters live in Redis when it is reachable, so every instance of the API shares them. Without Redis each process counts for itself.
 
