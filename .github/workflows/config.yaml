@@ -82,3 +82,10 @@ jobs:
 
       - name: Lint the API description
         run: npm run lint
+
+      # Cloudflare runs the same script to publish the documentation, so a broken build is caught here before it reaches main
+      - name: Build the documentation site
+        run: |
+          npm run build
+          test -s dist/index.html
+          test -s dist/_headers
