@@ -18,16 +18,16 @@ get() {
 
 guru="$(post /auth/register "$(jq -n --arg e "zap.teacher.$suffix@example.com" --arg p "$pass" \
   '{email: $e, password: $p, fullName: "ZAP Teacher", role: "GURU", class: {name: "zap", gradeLevel: "Class Z"}}')")"
-guru_token="$(jq -r '.data.token' <<<"$guru")"
-code="$(get /guru/dashboard "$guru_token" | jq -r '.data.classOverview.joinCode')"
+guru_session="$(jq -r '.data.token' <<<"$guru")"
+code="$(get /guru/dashboard "$guru_session" | jq -r '.data.classOverview.joinCode')"
 
 wali_email="zap.parent.$suffix@example.com"
 wali="$(post /auth/register "$(jq -n --arg e "$wali_email" --arg p "$pass" --arg c "$code" \
   '{email: $e, password: $p, fullName: "ZAP Parent", role: "WALI", classCode: $c, student: {nisn: "123456789012", fullName: "ZAP Child"}}')")"
-wali_token="$(jq -r '.data.token' <<<"$wali")"
-student="$(get /wali/dashboard "$wali_token" | jq -r '.data.student.id')"
+wali_session="$(jq -r '.data.token' <<<"$wali")"
+student="$(get /wali/dashboard "$wali_session" | jq -r '.data.student.id')"
 
-jq -n --arg gt "$guru_token" --arg wt "$wali_token" --arg s "$student" --arg e "$wali_email" --arg p "$pass" '[
+jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg e "$wali_email" --arg p "$pass" --arg w "$pass-wrong" '[
   {method: "GET", path: "/healthz"},
   {method: "GET", path: "/api/v1/guru/dashboard", token: $gt},
   {method: "GET", path: "/api/v1/guru/mood/analytics?range=monthly", token: $gt},
@@ -36,7 +36,7 @@ jq -n --arg gt "$guru_token" --arg wt "$wali_token" --arg s "$student" --arg e "
   {method: "POST", path: "/api/v1/trash/scan-claim", token: $wt, body: {studentId: $s, trashType: "ORGANIK", confidenceScore: 0.9}},
   {method: "GET", path: "/api/v1/leaderboard", token: $wt},
   {method: "POST", path: "/api/v1/auth/login", body: {email: $e, password: $p, role: "WALI"}},
-  {method: "POST", path: "/api/v1/auth/login", body: {email: $e, password: "wrong-password", role: "WALI"}},
+  {method: "POST", path: "/api/v1/auth/login", body: {email: $e, password: $w, role: "WALI"}},
   {method: "GET", path: "/api/v1/guru/dashboard"},
   {method: "GET", path: "/api/v1/guru/dashboard", token: $wt},
   {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {}},
