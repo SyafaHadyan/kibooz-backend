@@ -37,6 +37,32 @@ A new device, or one that cleared its data, has no token and uses the shared buc
 
 Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block new devices for that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
 
+### A flood limit in the proxy
+
+The proxy limit is a ceiling for floods and not a throttle for people. Set it far above what one school network sends, because many users can share one address and the API already limits every user and account on its own. This nginx example allows each address 30 requests a second with a burst of 60 on the four public auth routes and leaves every other route to the API.
+
+```nginx
+# http block
+limit_req_zone $binary_remote_addr zone=kibooz_auth:10m rate=30r/s;
+limit_req_status 429;
+
+# server block
+location ~ ^/api/v1/auth/(register|login|refresh-token|logout)$ {
+    limit_req zone=kibooz_auth burst=60 nodelay;
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+If a CDN or load balancer sits in front of nginx, restore the visitor address first with `set_real_ip_from` and `real_ip_header`. Without that, every request arrives from the address of the CDN, all visitors share one budget and the limit blocks everyone at once. A request that nginx limits gets a plain `429` without the `RATE_LIMITED` body, so the apps treat any `429` as a signal to wait. A CDN rule on the same four routes works the same way and stops the flood before it reaches your server.
+
 ## Redis is optional
 
 PostgreSQL is the only authority for sessions. Refresh tokens live in the `refresh_tokens` table as SHA-256 hashes, and a token is consumed by a single atomic `DELETE ... RETURNING`, so it can be used exactly once even under concurrent requests.
