@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    # Daily at 21:00 UTC (04:00 WIB), after the security scan
+    # Daily at 21:00 UTC (04:00 WIB), after the security scan. GitHub often starts scheduled runs a few hours late.
     - cron: "0 21 * * *"
   workflow_dispatch:
     inputs:
