@@ -87,6 +87,7 @@ The API reference, with every route, field, limit, status code and error code, i
 
 Cloudflare rebuilds the site on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
+- [Architecture](docs/architecture.md) covers the parts, the layers of the code and the path of a request.
 - [Design notes](docs/design.md) covers how accounts work, the rate limits, why Redis is optional and the business rules.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
