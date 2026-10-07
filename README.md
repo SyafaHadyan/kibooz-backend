@@ -216,6 +216,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Dependency review | GitHub Actions |
 | Secret scan (gitleaks) | GitHub Actions |
 | ZAP baseline scan | GitHub Actions |
+| k6 performance test | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
@@ -223,7 +224,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | codecov/patch | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
-OSSF Scorecard is not required because it only runs on `main`, and the k6 performance test is not required yet while its limits are being calibrated. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
+OSSF Scorecard is not required because it only runs on `main`, and the Cloudflare docs build is not required because it can be missing on pull requests from forks. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
 
 ### Releases
 
