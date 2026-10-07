@@ -11,7 +11,7 @@ cp .env.example .env              # fill in DB_* and JWT_SECRET_KEY
 go run ./cmd/api
 ```
 
-The README has the quick start, the full list of settings and the API overview.
+The README has the quick start and the full list of settings. The `docs/` folder has the design notes, the testing guide and the CI/CD guide, and the API reference is at <https://docs.kibooz.syafahadyan.com>.
 
 ## Making a change
 
@@ -48,7 +48,7 @@ Add tests with every behaviour change. A bug fix should come with a test that fa
 - The body is only the list of commits in the pull request, one bullet per commit.
 - Add one label, `bug` for fixes, `enhancement` for features and `documentation` for documentation only.
 - Pull requests are merged with a merge commit, never squashed or rebased.
-- Every required check must pass. They are listed in the repository rules and described in the README under CI/CD.
+- Every required check must pass. They are listed in the repository rules and described in [docs/ci-cd.md](docs/ci-cd.md).
 - Read the bot comments on your pull request. DeepSource and code scanning report findings there.
 
 ## Reporting problems
