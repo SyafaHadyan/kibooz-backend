@@ -10,3 +10,4 @@ k6
 compose.*.yml
 dist
 wrangler.jsonc
+docs
