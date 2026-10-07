@@ -65,9 +65,9 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
 | `BODY_LIMIT_MB` | `8` | Maximum request body size |
-| `LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `90`, `60` | Global rate limit per IP |
-| `AUTH_LIMITER_MAX` | `10` | Rate limit per IP for `/auth/*` inside the same window |
-| `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header |
+| `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
+| `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
+| `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header, it is only used in the access log because no rate limit looks at the IP |
 | `DB_*` | see example | PostgreSQL connection, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD` are required |
 | `REDIS_*` | see example | Redis connection, the API starts and works without it. Set `REDIS_TLS=true` for hosted Redis that requires TLS. When `REDIS_USERNAME` is set, the bundled compose files also create that Redis user with `REDIS_PASSWORD` |
 | `GOMEMLIMIT`, `REDIS_MAXMEMORY` | `200MiB`, `96mb` | Only read by the bundled compose files. A soft memory limit for the Go runtime and a cap for the bundled Redis that evicts only keys with an expiry |
@@ -85,7 +85,7 @@ The API reference, with every route, field, limit, status code and error code, i
 
 Cloudflare rebuilds the site on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
-- [Design notes](docs/design.md) covers how accounts work, why Redis is optional and the business rules.
+- [Design notes](docs/design.md) covers how accounts work, the rate limits, why Redis is optional and the business rules.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Differences from the PRD](docs/prd-differences.md) lists where this implementation fills gaps in the PRD.

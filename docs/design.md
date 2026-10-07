@@ -1,6 +1,6 @@
 # Design notes
 
-How accounts, sessions, Redis and the business rules behave. The routes, fields and error codes are in the API reference at <https://docs.kibooz.syafahadyan.com>.
+How accounts, sessions, rate limits, Redis and the business rules behave. The routes, fields and error codes are in the API reference at <https://docs.kibooz.syafahadyan.com>.
 
 ## Accounts
 
@@ -10,6 +10,23 @@ There is no seed data. Accounts come from `POST /auth/register`.
 - A WALI registers with the teacher's `classCode` and the child's `student.nisn` and `student.fullName`.
 - A GURU cannot join an existing class, so knowing a class code never gives access to its children's data.
 - ADMIN exists in the role enum but cannot be registered.
+
+## Rate limits
+
+No rate limit looks at the IP address. A school network or an ISP puts many people behind one public address, so an address says little about who is asking and one noisy person would throttle everyone else on it. The `TRUST_PROXY` setting only decides which address the access log shows. Every limit is a sliding window of `LIMITER_EXPIRATION_SECONDS` and answers `429` with `RATE_LIMITED` and a `Retry-After` header.
+
+| Where | Counted per | Allowance |
+|:---|:---|:---|
+| Every route that needs a signed-in user | user id | `USER_LIMITER_MAX`, 120 by default |
+| Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
+| Login, register, refresh token and logout | account, which is the email for login and register and the refresh token for refresh and logout | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
+| `/healthz` | nothing | not limited |
+
+The email is trimmed and lower cased the same way the sign in does it, so changing the letter case does not give an attacker a new budget, and a refresh token is checked with the same count however its owner sends it. Both are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
+
+The counters live in Redis when it is reachable, so every instance of the API shares them. Without Redis each process counts for itself.
+
+Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
 
 ## Redis is optional
 

@@ -27,7 +27,7 @@ go test ./internal/imageutil/ -run '^$' -fuzz FuzzDecodeBase64 -fuzztime 30s
 The `k6/` folder holds the load scripts. `smoke.js` is a short check that runs on every pull request, and `load.js` holds a steady arrival rate below the ceiling to measure how the API behaves with a whole class claiming points at once, and `stress.js` ramps past the ceiling on demand to find where the API slows down. `spike.js` sends a sudden burst above the ceiling and checks that the API recovers afterwards, and `soak.js` holds a steady load for 30 minutes to catch leaks, so its summary also lists the memory of every container at the start and at the end. All of them create their own accounts, so they only need a running API. The default rate limits and the daily claim limit would answer with errors during a load test, so the workflow raises them in its generated `.env`.
 
 ```sh
-# set LIMITER_MAX, AUTH_LIMITER_MAX and TRASH_DAILY_LIMIT to large values in .env first
+# set USER_LIMITER_MAX, AUTH_LIMITER_MAX and TRASH_DAILY_LIMIT to large values in .env first
 docker compose -f compose.yml -f compose.ci.yml up -d --build --wait
 k6 run k6/smoke.js
 ```
