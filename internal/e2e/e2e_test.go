@@ -179,8 +179,20 @@ func callApp(t *testing.T, target *fiber.App, method string, path string, token 
 
 	defer res.Body.Close()
 
+	return decodeChecked(t, req, res)
+}
+
+// decodeChecked reads a response, checks it against openapi.yaml and returns the decoded body
+func decodeChecked(t *testing.T, req *http.Request, res *http.Response) result {
+	t.Helper()
+
+	raw, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	requireContract(t, req, res.StatusCode, res.Header, raw)
+
 	parsed := map[string]any{}
-	_ = json.NewDecoder(res.Body).Decode(&parsed)
+	_ = json.Unmarshal(raw, &parsed)
 
 	return result{Status: res.StatusCode, Body: parsed}
 }
@@ -265,12 +277,12 @@ func TestHealth(t *testing.T) {
 
 	res, err := app(t).Test(req, fiber.TestConfig{Timeout: 30 * time.Second})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, res.StatusCode)
 
-	var body map[string]any
+	defer res.Body.Close()
 
-	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
-	require.Equal(t, "ok", dig(body, "checks", "storage"))
+	health := decodeChecked(t, req, res)
+	require.Equal(t, http.StatusOK, health.Status)
+	require.Equal(t, "ok", dig(health.Body, "checks", "storage"))
 }
 
 func TestRegistrationAndLogin(t *testing.T) {
@@ -729,10 +741,7 @@ func upload(t *testing.T, token string, fields map[string]string, filename strin
 
 	defer res.Body.Close()
 
-	parsed := map[string]any{}
-	_ = json.NewDecoder(res.Body).Decode(&parsed)
-
-	return result{Status: res.StatusCode, Body: parsed}
+	return decodeChecked(t, req, res)
 }
 
 func TestAvatarUpload(t *testing.T) {

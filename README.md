@@ -89,7 +89,7 @@ All routes live under `/api/v1`. Responses use one envelope.
 
 Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
 
-The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it. The documentation page is at <https://docs.kibooz.syafahadyan.com>. Cloudflare rebuilds it on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
+The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it and the end to end tests fail when a response or a route differs from it. Any OpenAPI viewer can browse it. The documentation page is at <https://docs.kibooz.syafahadyan.com>. Cloudflare rebuilds it on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
 | Method and path | Role | Purpose |
 |:---|:---|:---|
@@ -158,6 +158,8 @@ The end to end suite drives the real HTTP stack against PostgreSQL and Redis, wi
 ```sh
 E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./... -race -count=1
 ```
+
+Every response that suite sees is also checked against `openapi.yaml`, so a field, status code or error that the code changes without the spec fails the build. `TestSpecMatchesRoutes` fails when an endpoint exists in only one of the code and the spec. Both checks run inside the required `Unit and end to end tests` job, so there is no extra CI job.
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
