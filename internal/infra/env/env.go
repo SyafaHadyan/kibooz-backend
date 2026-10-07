@@ -88,6 +88,11 @@ func (e *Env) validate() error {
 		return errors.New("TRASH_DAILY_LIMIT must be at least 1")
 	}
 
+	// a device token that is already over when it is issued gives nobody a bucket of their own
+	if e.DeviceTokenTTLDays < 1 {
+		return errors.New("DEVICE_TOKEN_TTL_DAYS must be at least 1")
+	}
+
 	return nil
 }
 
