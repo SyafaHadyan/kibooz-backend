@@ -78,36 +78,13 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
 
-## API
+## Documentation
 
-All routes live under `/api/v1`. Responses use one envelope.
+The API reference, with every route, field, limit, status code and error code, is at <https://docs.kibooz.syafahadyan.com> and is built from [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change the spec in the same pull request as an endpoint, because CI lints it and the end to end tests fail when a response or a route differs from it.
 
-```json
-{ "success": true, "message": "Login successful", "data": {} }
-{ "success": false, "message": "Email or password does not match the selected role", "errorCode": "AUTH_INVALID_CREDENTIALS" }
-```
+Cloudflare rebuilds the site on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
-Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
-
-The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it and the end to end tests fail when a response or a route differs from it. Any OpenAPI viewer can browse it. The documentation page is at <https://docs.kibooz.syafahadyan.com>. Cloudflare rebuilds it on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
-
-| Method and path | Role | Purpose |
-|:---|:---|:---|
-| `POST /auth/register` | public | Create a GURU with a new class, or a WALI with a child |
-| `POST /auth/login` | public | Login with email, password and role |
-| `POST /auth/refresh-token` | public | Exchange a refresh token for a new pair, the old one stops working |
-| `POST /auth/logout` | public | Revoke a refresh token |
-| `GET /wali/dashboard` | WALI | Child, today's mood, points summary and recommended guidance, optional `studentId` |
-| `POST /wali/guidance/apply` | WALI | Tell the teacher a guidance was applied at home |
-| `GET /guru/dashboard` | GURU | Class overview and today's mood distribution, optional `classId` |
-| `POST /guru/mood/log` | GURU | Record a child's mood |
-| `GET /guru/mood/analytics` | GURU | Donut summary and Monday to Friday trend, `range` is `weekly` or `monthly` |
-| `POST /trash/scan-claim` | WALI | Claim points for sorted trash |
-| `GET /leaderboard` | GURU, WALI | Podium and ranking of a class, optional `classId` |
-| `POST /users/avatar` | GURU, WALI | Multipart upload, field `file` and optional `studentId` for a child |
-| `DELETE /users/me` | GURU, WALI | Delete the own account after confirming the password in the JSON body, a parent's children are deleted with it |
-
-### Accounts
+## Accounts
 
 There is no seed data. Accounts come from `POST /auth/register`.
 
@@ -116,7 +93,7 @@ There is no seed data. Accounts come from `POST /auth/register`.
 - A GURU cannot join an existing class, so knowing a class code never gives access to its children's data.
 - ADMIN exists in the role enum but cannot be registered.
 
-### Redis is optional
+## Redis is optional
 
 PostgreSQL is the only authority for sessions. Refresh tokens live in the `refresh_tokens` table as SHA-256 hashes, and a token is consumed by a single atomic `DELETE ... RETURNING`, so it can be used exactly once even under concurrent requests.
 
@@ -124,7 +101,7 @@ Redis never decides that a token is valid. It only remembers consumed tokens for
 
 When Redis is unreachable the API logs it once and keeps serving. Calls to Redis are skipped for a few seconds after a failure so there is no added latency, rate limiting falls back to per-process counters, the leaderboard is read from PostgreSQL, and `/healthz` reports `degraded`. When Redis returns, it is picked up again automatically.
 
-### Business rules
+## Business rules
 
 - A student can claim at most `TRASH_DAILY_LIMIT` times per local day. The check, the point update and the re-ranking run in one transaction guarded by a per class advisory lock, so parallel requests cannot exceed the limit.
 - Ranking is points descending, then name, then id. `students.rank_position` is kept in sync on every claim and registration.
