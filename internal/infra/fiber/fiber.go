@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/helmet"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
@@ -50,6 +51,12 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 
 	app.Use(
 		recover.New(),
+		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
+		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
+		helmet.New(helmet.Config{
+			XFrameOptions:         "DENY",
+			ContentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'",
+		}),
 		requestid.New(),
 		logger.New(logger.Config{
 			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
