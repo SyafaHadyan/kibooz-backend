@@ -159,7 +159,7 @@ E2E_ENABLED=true DB_NAME=kibooz DB_USERNAME=kibooz DB_PASSWORD=... go test ./...
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
-CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. Its checks inform the review and are not required, because Dependabot pull requests cannot read the upload token. The thresholds are in `codecov.yml`.
+CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. Its checks are not required yet, so a Codecov outage never blocks a merge. Dependabot pull requests upload too, using a `CODECOV_TOKEN` stored in the Dependabot secrets. The thresholds are in `codecov.yml`.
 
 The code that takes untrusted input has fuzz tests, namely image decoding, access token validation and request body validation. A normal `go test` runs their seed cases. To search for new failing inputs, fuzz one target at a time.
 

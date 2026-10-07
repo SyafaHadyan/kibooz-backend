@@ -114,10 +114,10 @@ jobs:
             echo "Total statement coverage is $total" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Dependabot cannot read the Actions secrets, so its pull requests skip the upload. A failed upload only fails
-      # the build on main, because a Codecov outage must not block a pull request.
+      # Dependabot pull requests read CODECOV_TOKEN from the Dependabot secrets. A failed upload only fails the build
+      # on main, because a Codecov outage must not block a pull request.
       - name: Upload coverage to Codecov
-        if: ${{ !cancelled() && github.actor != 'dependabot[bot]' && hashFiles('coverage.out') != '' }}
+        if: ${{ !cancelled() && hashFiles('coverage.out') != '' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
