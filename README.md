@@ -89,7 +89,7 @@ All routes live under `/api/v1`. Responses use one envelope.
 
 Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
 
-The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it. The documentation page is at <https://docs.kibooz.syafahadyan.com>. Cloudflare rebuilds it on every push to `main` with `sh docs/build.sh`, which uses the pinned Redocly version and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`.
+The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it. The documentation page is at <https://docs.kibooz.syafahadyan.com>. Cloudflare rebuilds it on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json` and the security headers in `docs/_headers`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
 | Method and path | Role | Purpose |
 |:---|:---|:---|

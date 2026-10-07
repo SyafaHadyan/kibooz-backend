@@ -71,6 +71,14 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      # The lockfile pins every package with an integrity hash, and the install scripts are not needed for linting
+      - name: Install the tools
+        run: npm ci --ignore-scripts
+
       - name: Lint the API description
-        run: |
-          docker run --rm -v "$PWD:/spec" redocly/cli:2.59.0@sha256:7d59c058210751c94409404c2d63506524f96d7164e6b29cdb660120ff418461 lint openapi.yaml
+        run: npm run lint

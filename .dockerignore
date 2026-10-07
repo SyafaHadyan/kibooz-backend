@@ -11,3 +11,7 @@ compose.*.yml
 dist
 wrangler.jsonc
 docs
+node_modules
+package.json
+package-lock.json
+.node-version

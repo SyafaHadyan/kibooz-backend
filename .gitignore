@@ -24,3 +24,4 @@ compose.development.yml
 
 # Output of the API documentation build
 dist/
+node_modules/
