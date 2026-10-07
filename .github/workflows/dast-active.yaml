@@ -1,0 +1,105 @@
+name: DAST active
+
+on:
+  # Temporary while the scan is being tried out, removed before the pull request is merged
+  pull_request:
+    paths:
+      - .github/workflows/dast-active.yaml
+      - .zap/active.yaml
+      - .zap/seed.sh
+  schedule:
+    # Weekly on Sunday at 18:00 UTC (01:00 WIB Monday), so the result is waiting at the start of the week.
+    # GitHub often starts scheduled runs a few hours late.
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: dast-active-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  zap:
+    name: ZAP active scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Create the environment file
+        run: |
+          {
+            echo "APP_ENV=production"
+            echo "APP_PORT=8080"
+            echo "DB_NAME=kibooz"
+            echo "DB_USERNAME=kibooz"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+            # the scan sends thousands of requests and the default limits would answer 429 and hide the real responses
+            echo "LIMITER_MAX=10000000"
+            echo "AUTH_LIMITER_MAX=10000000"
+            echo "KEEPALIVE_SECONDS=0"
+          } > .env
+
+      - name: Start the stack
+        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+
+      - name: Build the scan plan
+        run: |
+          mkdir -p zap-out
+          .zap/seed.sh zap-out/requests.json
+          # the placeholder in the plan takes one line holding the whole list of requests
+          jq -c --arg base "http://127.0.0.1:8080" '[.[] | {
+              url: ($base + .path),
+              method: .method,
+              headers: ((if .token then ["Authorization: Bearer " + .token] else [] end) + (if has("body") then ["Content-Type: application/json"] else [] end))
+            } + (if has("body") then {data: (.body | tojson)} else {} end)]' zap-out/requests.json | sed 's/^/      /' > zap-out/requests.flow
+          sed -e '/@@REQUESTS@@/{r zap-out/requests.flow' -e 'd}' .zap/active.yaml > zap-out/plan.yaml
+          # the container user is not the runner user, so it needs write access to the shared folder
+          chmod -R a+rwX zap-out
+
+      # The scan runs the ZAP image directly, pinned by digest like the baseline scan
+      - name: Run the active scan
+        run: |
+          docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef \
+            zap.sh -cmd -autorun /zap/wrk/plan.yaml
+
+      # The scan only reports for now, so the run stays green and the findings show as annotations and in the summary
+      - name: Write the summary
+        if: ${{ !cancelled() && hashFiles('zap-out/active-report.json') != '' }}
+        run: |
+          {
+            echo "### ZAP active scan"
+            echo
+            echo "| Risk | Alert | Instances |"
+            echo "|:---|:---|---:|"
+            jq -r '[.site[].alerts[]] | sort_by(-(.riskcode | tonumber)) | .[] | "| \(.riskdesc) | \(.name) | \(.count) |"' zap-out/active-report.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          jq -r '[.site[].alerts[]] | .[] | select((.riskcode | tonumber) >= 2) | "::warning title=ZAP active scan::\(.name) (\(.riskdesc)), \(.count) instance(s)"' zap-out/active-report.json
+
+      # plan.yaml and requests.json hold the tokens of the throwaway accounts, so only the reports are uploaded
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zap-active-reports
+          path: |
+            zap-out/active-report.html
+            zap-out/active-report.json
+          if-no-files-found: ignore
+
+      - name: Collect container logs
+        if: ${{ failure() }}
+        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        run: docker compose -f compose.yml -f compose.ci.yml down -v
