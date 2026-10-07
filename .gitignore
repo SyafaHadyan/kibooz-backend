@@ -25,3 +25,7 @@ compose.development.yml
 # Output of the API documentation build
 dist/
 node_modules/
+
+# Vale downloads the Google style here, only the Kibooz rules are committed
+.github/vale/styles/*
+!.github/vale/styles/Kibooz/
