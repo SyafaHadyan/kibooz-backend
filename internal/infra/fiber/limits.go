@@ -39,7 +39,7 @@ func (f *Fiber) UserLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
 // PasswordLimiter gives every signed-in user AUTH_LIMITER_MAX attempts per window at a request that confirms the
 // password, so a stolen access token cannot be used to guess it. It runs after authentication as well.
 func (f *Fiber) PasswordLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
-	return f.newLimiter(f.authMax, func(c fiber.Ctx) string { return "password:" + userKey(c) }, nil)
+	return f.newLimiter(f.authMax, func(c fiber.Ctx) string { return "confirm:" + userKey(c) }, nil)
 }
 
 // AccountLimiter gives every account AUTH_LIMITER_MAX requests per window on each public auth route, so guessing

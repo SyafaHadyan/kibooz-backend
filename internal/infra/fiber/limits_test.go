@@ -223,7 +223,7 @@ func TestUserAndPasswordLimitersKeyOnlyTheUser(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, res.Body.Close())
 
-	require.ElementsMatch(t, []string{"user:user-1", "password:user-1"}, storage.keys())
+	require.ElementsMatch(t, []string{"user:user-1", "confirm:user-1"}, storage.keys())
 }
 
 func TestAccountLimiterIsSharedThroughTheStorage(t *testing.T) {
