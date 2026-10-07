@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.3.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.2.1...v0.3.0) (2026-10-07)
+
+
+### Features
+
+* **compose:** add a soft Go memory limit and a Redis memory cap ([dc9dadb](https://github.com/SyafaHadyan/kibooz-backend/commit/dc9dadbe34a28c6a8c3b0fd021ed76af44af6434))
+* **compose:** add memory settings for the API and Redis ([#32](https://github.com/SyafaHadyan/kibooz-backend/issues/32)) ([fcf4069](https://github.com/SyafaHadyan/kibooz-backend/commit/fcf40695dc300aed6a6b4c349418f76286a76d36))
+* **db:** add soft delete columns and active-only unique indexes ([5fa3362](https://github.com/SyafaHadyan/kibooz-backend/commit/5fa3362eae21e940c1a02a9e5fa0f056b3fc93ed))
+* **docs:** add security headers and a build script for the documentation site ([e84e1a6](https://github.com/SyafaHadyan/kibooz-backend/commit/e84e1a65c610bdaa30571c54fe422712d4a366e7))
+* **docs:** harden and publish the documentation site ([#45](https://github.com/SyafaHadyan/kibooz-backend/issues/45)) ([a042e04](https://github.com/SyafaHadyan/kibooz-backend/commit/a042e0459556043156a14ac5bf381d5e744a9ad9))
+* **docs:** serve the documentation site on its own domain only ([03ef63e](https://github.com/SyafaHadyan/kibooz-backend/commit/03ef63e410f12afd2dccad6032b9e373f96d00ed))
+* **http:** add security headers to every response ([e9578d7](https://github.com/SyafaHadyan/kibooz-backend/commit/e9578d7780f81d8e31ba60c1db1f54a07d0bc90d))
+* **http:** add security headers to every response ([#36](https://github.com/SyafaHadyan/kibooz-backend/issues/36)) ([7f76f1d](https://github.com/SyafaHadyan/kibooz-backend/commit/7f76f1d1b561670b872af17e626955a84365757a))
+* **keepalive:** ping the database and Redis on a timer ([26ce29d](https://github.com/SyafaHadyan/kibooz-backend/commit/26ce29db9d51a71fdf8dcddcf570e5dd9d9f8686))
+* **keepalive:** ping the database and Redis on a timer ([#20](https://github.com/SyafaHadyan/kibooz-backend/issues/20)) ([8e28644](https://github.com/SyafaHadyan/kibooz-backend/commit/8e2864415d39e97399376666a0c936873e1f37a6))
+* **storage:** add object deletion and a best-effort discard helper ([15525db](https://github.com/SyafaHadyan/kibooz-backend/commit/15525db38d52f51383a236cc41655d22a2808a57))
+* **user:** add account deletion endpoint ([b2641af](https://github.com/SyafaHadyan/kibooz-backend/commit/b2641af5f65529fcc485c1248f0d0f62676bdca5))
+* **user:** add soft delete and account deletion ([#19](https://github.com/SyafaHadyan/kibooz-backend/issues/19)) ([8bf9a42](https://github.com/SyafaHadyan/kibooz-backend/commit/8bf9a42254d2a8995ba9e52ab19fe1c783e4f736))
+
+
+### Bug Fixes
+
+* **api:** correct the license in the OpenAPI description ([eb0f221](https://github.com/SyafaHadyan/kibooz-backend/commit/eb0f221fceccdba70bc5a180c8532a8f183ea11d))
+* **api:** correct the license in the OpenAPI description ([#46](https://github.com/SyafaHadyan/kibooz-backend/issues/46)) ([d06143f](https://github.com/SyafaHadyan/kibooz-backend/commit/d06143fed604192ad230ae921adb284be06e5446))
+* **auth:** block joining a class without an active teacher ([5312129](https://github.com/SyafaHadyan/kibooz-backend/commit/5312129417398fa070414e5fef01b92ee9dfb543))
+* **auth:** block joining a class without an active teacher ([#24](https://github.com/SyafaHadyan/kibooz-backend/issues/24)) ([2f09d0e](https://github.com/SyafaHadyan/kibooz-backend/commit/2f09d0ece6cce1b45b645ee9f852b563b97d7b34))
+* **auth:** keep refresh retryable after a database error and reject overlong passwords ([b84410f](https://github.com/SyafaHadyan/kibooz-backend/commit/b84410f53251f376025474feb80b75dc7341329a))
+* **auth:** keep refresh retryable after a database error and reject overlong passwords ([#23](https://github.com/SyafaHadyan/kibooz-backend/issues/23)) ([05630d3](https://github.com/SyafaHadyan/kibooz-backend/commit/05630d3f6149dcd33a36be4701602bb35e9eb3d0))
+* **db:** quote the postgres connection string values ([635d2de](https://github.com/SyafaHadyan/kibooz-backend/commit/635d2de008be63c02cf5f464960015ef274aae83))
+* **db:** quote the postgres connection string values ([#17](https://github.com/SyafaHadyan/kibooz-backend/issues/17)) ([d38749b](https://github.com/SyafaHadyan/kibooz-backend/commit/d38749b2cbd7def77900ad0f37f0c889722bdca6))
+* **docker:** use the numeric uid for the non-root user ([d9deabd](https://github.com/SyafaHadyan/kibooz-backend/commit/d9deabd707123cea8f2f50eacb679330d742a86a))
+* **perf:** generate the k6 account password at runtime ([d0b07b2](https://github.com/SyafaHadyan/kibooz-backend/commit/d0b07b251ed3cd3b3d99b74cde5864c30273a347))
+* **trash:** ignore deleted accounts and children in raw lookups ([6e59503](https://github.com/SyafaHadyan/kibooz-backend/commit/6e59503cf4a075512e4c644da83cb3463da0d8ae))
+* **trash:** ignore deleted accounts and children in raw lookups ([#22](https://github.com/SyafaHadyan/kibooz-backend/issues/22)) ([a7c427a](https://github.com/SyafaHadyan/kibooz-backend/commit/a7c427af7e67dcb9b2630daf8b41e548c67d1566))
+* **trash:** remove the uploaded photo when the claim fails ([c918673](https://github.com/SyafaHadyan/kibooz-backend/commit/c918673f58ed8bbb41256292c6fca7efeaeca15f))
+* **trash:** remove uploaded photos when the request fails ([#28](https://github.com/SyafaHadyan/kibooz-backend/issues/28)) ([6425fcb](https://github.com/SyafaHadyan/kibooz-backend/commit/6425fcbc6136478d5ff8bd41d3742dc1c259f759))
+* **user:** delete the avatar file a new upload replaces ([84c5ce3](https://github.com/SyafaHadyan/kibooz-backend/commit/84c5ce3e770d95357925be29346d59eb49be00b7))
+* **user:** delete the avatar file a new upload replaces ([#34](https://github.com/SyafaHadyan/kibooz-backend/issues/34)) ([02f16f3](https://github.com/SyafaHadyan/kibooz-backend/commit/02f16f35ae3f26d0061314978f20d0d8e48a1702))
+* **user:** refuse avatar uploads from a deleted account ([bafdf5f](https://github.com/SyafaHadyan/kibooz-backend/commit/bafdf5fd21ed31d4c62e777fa7bdcc28940d0d6f))
+* **user:** reject overlong passwords when deleting an account ([69a4059](https://github.com/SyafaHadyan/kibooz-backend/commit/69a40595b372d31cebe6f874bf8d77a5f18b878f))
+* **user:** remove the uploaded avatar when the update is refused ([02a2953](https://github.com/SyafaHadyan/kibooz-backend/commit/02a2953d6ce026051db04fdc63950264681c335f))
+
 ## [0.2.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.2.0...v0.2.1) (2026-10-05)
 
 
