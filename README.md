@@ -89,6 +89,8 @@ All routes live under `/api/v1`. Responses use one envelope.
 
 Validation failures use `VALIDATION_ERROR` and add a `details` object with one message per field. Protected routes need the access token as a bearer token in the `Authorization` header.
 
+The full contract, with every field, limit, status code and error code, is in [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change it in the same pull request as an endpoint, because CI lints it. Any OpenAPI viewer can browse it.
+
 | Method and path | Role | Purpose |
 |:---|:---|:---|
 | `POST /auth/register` | public | Create a GURU with a new class, or a WALI with a child |
@@ -191,7 +193,7 @@ The scan is passive, so it checks headers and information leaks but does not try
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
-| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile |
+| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, Redocly lint for `openapi.yaml` |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
 | `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image, pushes it to GitHub Container Registry and to Docker Hub when configured, scans with Trivy, attaches an SBOM and signs with cosign |
@@ -213,7 +215,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Secret scan (gitleaks) | GitHub Actions |
 | ZAP baseline scan | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
-| Actionlint, Zizmor and Hadolint | GitHub Actions |
+| Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
 | DeepSource Docker, Go, SQL and Secrets | DeepSource |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |

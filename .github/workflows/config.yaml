@@ -59,3 +59,18 @@ jobs:
       - name: Lint Dockerfile
         run: |
           docker run --rm -i hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d < Dockerfile
+
+  openapi:
+    name: OpenAPI lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the API description
+        run: |
+          docker run --rm -v "$PWD:/spec" redocly/cli:2.59.0@sha256:7d59c058210751c94409404c2d63506524f96d7164e6b29cdb660120ff418461 lint openapi.yaml
