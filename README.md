@@ -5,6 +5,7 @@
 [![Docker](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/docker.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/docker.yaml)
 [![Config lint](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/config.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/config.yaml)
 [![Performance](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/perf.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/perf.yaml)
+[![DAST](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml)
 
 [![Release](https://img.shields.io/github/v/release/SyafaHadyan/kibooz-backend?sort=semver)](https://github.com/SyafaHadyan/kibooz-backend/releases)
 [![License](https://img.shields.io/github/license/SyafaHadyan/kibooz-backend)](LICENSE)
@@ -175,6 +176,12 @@ k6 run k6/smoke.js
 
 The latency limits in the scripts are placeholders that were set from the first runs on a GitHub runner, so raise them when you move to slower hardware. Never point the scripts at a deployment you do not own, because they create accounts and write data.
 
+### Security scan with ZAP
+
+The `dast.yaml` workflow starts the compose stack and runs the ZAP baseline scan, which is a passive scan that only reads responses and never attacks. The API is plain JSON without links, so the spider finds almost nothing by itself. `.zap/seed.sh` therefore registers a teacher and a parent with throwaway credentials and `.zap/hook.py` replays a dozen requests through ZAP, including authenticated, rejected and unknown routes. Every warning fails the build. A rule that does not apply can be set to `IGNORE` with a reason in `.zap/rules.tsv`. The report is uploaded as the `zap-reports` artifact.
+
+The scan is passive, so it checks headers and information leaks but does not try injections. The ZAP image is pinned by digest and has to be bumped by hand in the workflow, because Dependabot does not read images inside shell steps.
+
 ## CI/CD
 
 | Workflow | Trigger | What it does |
@@ -183,6 +190,7 @@ The latency limits in the scripts are placeholders that were set from the first 
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
+| `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image, pushes it to GitHub Container Registry and to Docker Hub when configured, scans with Trivy, attaches an SBOM and signs with cosign |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
@@ -200,6 +208,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Go vulnerability check | GitHub Actions |
 | Dependency review | GitHub Actions |
 | Secret scan (gitleaks) | GitHub Actions |
+| ZAP baseline scan | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
 | Actionlint, Zizmor and Hadolint | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
