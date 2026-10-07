@@ -1,4 +1,5 @@
-FROM golang:1.27-alpine AS build
+# The build runs on the machine that builds the image and cross-compiles for the target, so an arm64 image needs no emulation
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 
 WORKDIR /src
 
@@ -8,7 +9,9 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/kibooz-backend ./cmd/api
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/kibooz-backend ./cmd/api
 
 FROM gcr.io/distroless/static-debian13:nonroot
 

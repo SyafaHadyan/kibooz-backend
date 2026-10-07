@@ -87,7 +87,7 @@ jobs:
         with:
           context: .
           push: ${{ env.PUSH == 'true' }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -95,22 +95,55 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trivy image scan
+      # The build digest is the one of the index of both platforms. Each platform has an image of its own with its own
+      # digest, and scanning that digest is the only way to be sure which of them Trivy looked at
+      - name: Find the image of each platform
+        id: platforms
+        if: env.PUSH == 'true'
+        env:
+          INDEX: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+        run: |
+          manifest="$(docker buildx imagetools inspect "$INDEX" --raw)"
+          for arch in amd64 arm64; do
+            digest="$(jq -r --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' <<< "$manifest")"
+            test -n "$digest"
+            echo "$arch $digest"
+            echo "$arch=$digest" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Trivy image scan (amd64)
         if: env.PUSH == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: image
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.platforms.outputs.amd64 }}
           format: sarif
           output: trivy-image.sarif
           severity: CRITICAL,HIGH
 
-      - name: Upload Trivy results to code scanning
+      - name: Upload Trivy results to code scanning (amd64)
         if: ${{ env.PUSH == 'true' && always() }}
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      - name: Trivy image scan (arm64)
+        if: env.PUSH == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.platforms.outputs.arm64 }}
+          format: sarif
+          output: trivy-image-arm64.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy results to code scanning (arm64)
+        if: ${{ env.PUSH == 'true' && always() }}
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: trivy-image-arm64.sarif
+          category: trivy-image-arm64
 
       - name: Generate SBOM
         if: env.PUSH == 'true'
