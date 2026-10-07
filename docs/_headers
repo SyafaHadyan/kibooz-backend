@@ -1,0 +1,9 @@
+# Cloudflare applies these to every file of the documentation site, see https://developers.cloudflare.com/workers/static-assets/headers/
+# The page loads the Redoc script from cdn.redocly.com (with an integrity hash) and its fonts from Google Fonts.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.redocly.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin

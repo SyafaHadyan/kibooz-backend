@@ -1,0 +1,19 @@
+{
+  "name": "kibooz-api-docs",
+  "private": true,
+  "description": "Tooling for the API documentation site, built from openapi.yaml and served by Cloudflare Workers",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "lint": "redocly lint openapi.yaml",
+    "build": "rm -rf dist && redocly build-docs openapi.yaml -o dist/index.html && cp docs/_headers dist/_headers"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.59.0",
+    "wrangler": "4.148.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  }
+}
