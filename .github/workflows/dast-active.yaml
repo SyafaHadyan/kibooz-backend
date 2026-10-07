@@ -1,12 +1,6 @@
 name: DAST active
 
 on:
-  # Temporary while the scan is being tried out, removed before the pull request is merged
-  pull_request:
-    paths:
-      - .github/workflows/dast-active.yaml
-      - .zap/active.yaml
-      - .zap/seed.sh
   schedule:
     # Weekly on Sunday at 18:00 UTC (01:00 WIB Monday), so the result is waiting at the start of the week.
     # GitHub often starts scheduled runs a few hours late.
