@@ -95,15 +95,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The digest is the one of the multi-platform index, and Trivy scans one platform of it at a time
+      # The build digest is the one of the index of both platforms. Each platform has an image of its own with its own
+      # digest, and scanning that digest is the only way to be sure which of them Trivy looked at
+      - name: Find the image of each platform
+        id: platforms
+        if: env.PUSH == 'true'
+        env:
+          INDEX: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+        run: |
+          manifest="$(docker buildx imagetools inspect "$INDEX" --raw)"
+          for arch in amd64 arm64; do
+            digest="$(jq -r --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' <<< "$manifest")"
+            test -n "$digest"
+            echo "$arch $digest"
+            echo "$arch=$digest" >> "$GITHUB_OUTPUT"
+          done
+
       - name: Trivy image scan (amd64)
         if: env.PUSH == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        env:
-          TRIVY_PLATFORM: linux/amd64
         with:
           scan-type: image
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.platforms.outputs.amd64 }}
           format: sarif
           output: trivy-image.sarif
           severity: CRITICAL,HIGH
@@ -118,11 +131,9 @@ jobs:
       - name: Trivy image scan (arm64)
         if: env.PUSH == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        env:
-          TRIVY_PLATFORM: linux/arm64
         with:
           scan-type: image
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.platforms.outputs.arm64 }}
           format: sarif
           output: trivy-image-arm64.sarif
           severity: CRITICAL,HIGH
