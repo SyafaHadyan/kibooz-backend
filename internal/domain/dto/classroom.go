@@ -79,3 +79,18 @@ type ForumReplyList struct {
 	Replies []ForumReply `json:"replies"`
 	PageInfo
 }
+
+type ClassStudent struct {
+	ID            uuid.UUID       `json:"id"`
+	FullName      string          `json:"fullName"`
+	NISN          string          `json:"nisn"`
+	AvatarURL     *string         `json:"avatarUrl"`
+	CurrentPoints int             `json:"currentPoints"`
+	ClassRank     int             `json:"classRank"`
+	TodayMood     *constants.Mood `json:"todayMood"`
+}
+
+type ClassStudentList struct {
+	Students []ClassStudent `json:"students"`
+	PageInfo
+}

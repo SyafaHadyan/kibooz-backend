@@ -102,7 +102,7 @@ func Start(version string) (*Bootstrap, error) {
 		trashrepository.NewTrashDB(database), cache, storage, cfg,
 	))
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
-		classroomrepository.NewClassroomDB(database),
+		classroomrepository.NewClassroomDB(database), cfg,
 	))
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache,

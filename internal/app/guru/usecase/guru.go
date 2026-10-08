@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
 const (
@@ -22,10 +24,19 @@ const (
 	RangeMonthly = "monthly"
 )
 
+// phonePattern accepts 6 to 30 characters of digits with an optional leading plus, and spaces, dashes and brackets between them
+var phonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
+
 type GuruUseCaseItf interface {
 	Dashboard(ctx context.Context, userID uuid.UUID, classID *uuid.UUID) (dto.GuruDashboardResponse, error)
 	LogMood(ctx context.Context, userID uuid.UUID, req dto.LogMoodRequest) (dto.LogMoodResponse, error)
 	MoodAnalytics(ctx context.Context, userID uuid.UUID, classID *uuid.UUID, rangeName string) (dto.MoodAnalyticsResponse, error)
+	ListClasses(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ClassList, error)
+	Class(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassDetail, error)
+	CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error)
+	Profile(ctx context.Context, userID uuid.UUID) (dto.GuruProfile, error)
+	ProfileDetail(ctx context.Context, userID uuid.UUID) (dto.GuruProfileDetail, error)
+	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateGuruProfileRequest) (dto.GuruProfileDetail, error)
 }
 
 type GuruUseCase struct {
@@ -246,4 +257,203 @@ func maxTime(a time.Time, b time.Time) time.Time {
 	}
 
 	return b
+}
+
+func (u *GuruUseCase) ListClasses(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ClassList, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.ClassList{}, err
+	}
+
+	rows, total, err := u.repo.ListTaughtClasses(ctx, guru.ID, page.Limit, page.Offset())
+	if err != nil {
+		return dto.ClassList{}, apperror.Internal(err)
+	}
+
+	res := dto.ClassList{
+		Classes:  make([]dto.ClassSummary, 0, len(rows)),
+		PageInfo: dto.PageInfo{Page: page.Page, Limit: page.Limit, Total: total},
+	}
+
+	for i := range rows {
+		res.Classes = append(res.Classes, classSummary(&rows[i]))
+	}
+
+	return res, nil
+}
+
+func (u *GuruUseCase) Class(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassDetail, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.ClassDetail{}, err
+	}
+
+	row, err := u.repo.FindClassRow(ctx, guru.ID, classID)
+	if err != nil {
+		return dto.ClassDetail{}, apperror.Internal(err)
+	}
+
+	if row == nil {
+		return dto.ClassDetail{}, apperror.ErrClassNotFound
+	}
+
+	videos, threads, err := u.repo.CountClassContent(ctx, classID)
+	if err != nil {
+		return dto.ClassDetail{}, apperror.Internal(err)
+	}
+
+	return dto.ClassDetail{ClassSummary: classSummary(row), TotalVideos: videos, TotalThreads: threads}, nil
+}
+
+func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.ClassSummary{}, err
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		return dto.ClassSummary{}, apperror.Validation(map[string]string{"name": "is required"})
+	}
+
+	class := &entity.Class{
+		ID:           uuid.New(),
+		SchoolName:   firstNonEmpty(req.SchoolName, guru.SchoolName),
+		Name:         name,
+		GradeLevel:   firstNonEmpty(req.GradeLevel, constants.DefaultGradeLevel),
+		AcademicYear: firstNonEmpty(req.AcademicYear, constants.DefaultAcademicYr),
+	}
+
+	err = u.repo.CreateClass(ctx, guru.ID, class)
+	if err != nil {
+		return dto.ClassSummary{}, apperror.Internal(err)
+	}
+
+	return classSummary(&repository.ClassRow{Class: *class}), nil
+}
+
+func (u *GuruUseCase) Profile(ctx context.Context, userID uuid.UUID) (dto.GuruProfile, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.GuruProfile{}, err
+	}
+
+	return profileResponse(guru), nil
+}
+
+func (u *GuruUseCase) ProfileDetail(ctx context.Context, userID uuid.UUID) (dto.GuruProfileDetail, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.GuruProfileDetail{}, err
+	}
+
+	return detailResponse(guru), nil
+}
+
+func (u *GuruUseCase) UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateGuruProfileRequest) (dto.GuruProfileDetail, error) {
+	guru, err := u.findGuru(ctx, userID)
+	if err != nil {
+		return dto.GuruProfileDetail{}, err
+	}
+
+	update, err := profileUpdate(req)
+	if err != nil {
+		return dto.GuruProfileDetail{}, err
+	}
+
+	err = u.repo.UpdateProfile(ctx, userID, guru.ID, update)
+	if err != nil {
+		return dto.GuruProfileDetail{}, apperror.Internal(err)
+	}
+
+	return u.ProfileDetail(ctx, userID)
+}
+
+func (u *GuruUseCase) findGuru(ctx context.Context, userID uuid.UUID) (*repository.GuruRow, error) {
+	guru, err := u.repo.FindGuruByUserID(ctx, userID)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	if guru == nil {
+		return nil, apperror.ErrProfileNotFound
+	}
+
+	return guru, nil
+}
+
+// profileUpdate checks the changed fields. An empty text clears a field and a missing one is left alone.
+func profileUpdate(req dto.UpdateGuruProfileRequest) (repository.ProfileUpdate, error) {
+	var update repository.ProfileUpdate
+
+	if req.PhoneNumber == nil && req.Address == nil {
+		return update, apperror.Validation(map[string]string{"body": "provide phoneNumber or address"})
+	}
+
+	if req.PhoneNumber != nil {
+		phone := strings.TrimSpace(*req.PhoneNumber)
+		if phone != "" && !phonePattern.MatchString(phone) {
+			return update, apperror.Validation(map[string]string{"phoneNumber": "must be a valid phone number"})
+		}
+
+		update.SetPhone, update.Phone = true, optionalText(phone)
+	}
+
+	if req.Address != nil {
+		update.SetAddress, update.Address = true, optionalText(*req.Address)
+	}
+
+	return update, nil
+}
+
+func classSummary(row *repository.ClassRow) dto.ClassSummary {
+	return dto.ClassSummary{
+		ID:            row.ID,
+		Name:          row.Name,
+		GradeLevel:    row.GradeLevel,
+		SchoolName:    row.SchoolName,
+		AcademicYear:  row.AcademicYear,
+		JoinCode:      row.JoinCode,
+		TotalStudents: row.TotalStudents,
+		CreatedAt:     row.CreatedAt.UTC(),
+	}
+}
+
+func profileResponse(guru *repository.GuruRow) dto.GuruProfile {
+	return dto.GuruProfile{
+		ID:         guru.UserID,
+		FullName:   guru.FullName,
+		NIP:        guru.NIP,
+		SchoolName: guru.SchoolName,
+		AvatarURL:  guru.AvatarURL,
+	}
+}
+
+func detailResponse(guru *repository.GuruRow) dto.GuruProfileDetail {
+	return dto.GuruProfileDetail{
+		GuruProfile: profileResponse(guru),
+		Email:       guru.Email,
+		PhoneNumber: guru.PhoneNumber,
+		Address:     guru.Address,
+		JoinedAt:    guru.JoinedAt.UTC(),
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
+}
+
+func optionalText(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+
+	return &value
 }
