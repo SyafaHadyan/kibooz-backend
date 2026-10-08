@@ -1321,6 +1321,7 @@ components:
           type: string
         bannerUrl:
           type: string
+          description: The public address of the banner image, empty while file storage has no public address configured
     WaliDashboard:
       type: object
       required: [student, todayMood, pointsSummary, recommendedGuidance]
