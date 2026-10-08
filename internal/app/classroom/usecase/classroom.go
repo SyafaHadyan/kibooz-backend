@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -28,6 +29,12 @@ const DeletedAuthorName = "Deleted account"
 type ClassroomUseCaseItf interface {
 	ListVideos(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.VideoList, error)
 	AddVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddVideoRequest) (dto.Video, error)
+	// UpdateVideo changes the details of a video, any teacher of the class may do it
+	UpdateVideo(
+		ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID, req dto.UpdateVideoRequest,
+	) (dto.Video, error)
+	// DeleteVideo removes a video and the file behind it when it was uploaded and no other video uses it
+	DeleteVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID) error
 	// CreateVideoUpload signs a URL the teacher sends a video file to, the file is then registered with AddVideo
 	CreateVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest) (dto.VideoUpload, error)
 	ListThreads(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.ForumThreadList, error)
@@ -119,17 +126,169 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 		return dto.Video{}, apperror.Validation(details)
 	}
 
-	err = u.checkUploadedVideo(ctx, classID, video.VideoURL)
+	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
+		// the file is checked and the video stored under one lock, so the file cannot be deleted in between
+		checkErr := u.checkUploadedVideo(ctx, classID, video.VideoURL)
+		if checkErr != nil {
+			return checkErr
+		}
+
+		return repo.CreateVideo(ctx, video)
+	})
+	if err != nil {
+		return dto.Video{}, asAppError(err)
+	}
+
+	return videoResponse(video), nil
+}
+
+// withFileLock runs fn under the lock of an uploaded file, and without a lock for a link to another site
+func (u *ClassroomUseCase) withFileLock(ctx context.Context, videoURL string, fn func(repo repository.ClassroomDBItf) error) error {
+	_, ours := u.storage.KeyFromURL(videoURL)
+	if !ours {
+		return fn(u.repo)
+	}
+
+	return u.repo.WithVideoFileLock(ctx, videoURL, fn)
+}
+
+// asAppError keeps a typed error as it is and turns anything else into an internal error
+func asAppError(err error) error {
+	var appErr *apperror.Error
+
+	if errors.As(err, &appErr) {
+		return err
+	}
+
+	return apperror.Internal(err)
+}
+
+func (u *ClassroomUseCase) UpdateVideo(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID, req dto.UpdateVideoRequest,
+) (dto.Video, error) {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return dto.Video{}, err
 	}
 
-	err = u.repo.CreateVideo(ctx, video)
+	if req.Title == nil && req.Description == nil && req.ThumbnailURL == nil && req.DurationSeconds == nil {
+		return dto.Video{}, apperror.Validation(map[string]string{"body": "provide title, description, thumbnailUrl or durationSeconds"})
+	}
+
+	video, err := u.repo.FindVideo(ctx, classID, videoID)
+	if err != nil {
+		return dto.Video{}, apperror.Internal(err)
+	}
+
+	if video == nil {
+		return dto.Video{}, apperror.ErrVideoNotFound
+	}
+
+	err = applyVideoChanges(video, req)
+	if err != nil {
+		return dto.Video{}, err
+	}
+
+	err = u.repo.SaveVideoDetails(ctx, video)
 	if err != nil {
 		return dto.Video{}, apperror.Internal(err)
 	}
 
 	return videoResponse(video), nil
+}
+
+func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID) error {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return err
+	}
+
+	video, err := u.repo.FindVideo(ctx, classID, videoID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if video == nil {
+		return apperror.ErrVideoNotFound
+	}
+
+	// the video, the count and the file are handled under one lock, so no new video can be added for a file that is about to go
+	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
+		deleted, deleteErr := repo.DeleteVideo(ctx, classID, videoID)
+		if deleteErr != nil {
+			return deleteErr
+		}
+
+		// another request removed it first
+		if !deleted {
+			return apperror.ErrVideoNotFound
+		}
+
+		u.removeUploadedFile(ctx, repo, video.VideoURL)
+
+		return nil
+	})
+	if err != nil {
+		return asAppError(err)
+	}
+
+	return nil
+}
+
+// removeUploadedFile deletes the file of an uploaded video once no video points at it any more.
+// A file that stays behind is only unused storage, so a failure here never fails the request.
+func (u *ClassroomUseCase) removeUploadedFile(ctx context.Context, repo repository.ClassroomDBItf, videoURL string) {
+	key, ours := u.storage.KeyFromURL(videoURL)
+	if !ours {
+		return
+	}
+
+	remaining, err := repo.CountVideosByURL(ctx, videoURL)
+	if err != nil || remaining > 0 {
+		return
+	}
+
+	s3.Discard(ctx, u.storage, key)
+}
+
+// applyVideoChanges checks the changed fields and writes them to the video
+func applyVideoChanges(video *entity.LearningVideo, req dto.UpdateVideoRequest) error {
+	details := map[string]string{}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			details["title"] = "cannot be empty"
+		} else {
+			video.Title = title
+		}
+	}
+
+	if req.Description != nil {
+		video.Description = optional(*req.Description)
+	}
+
+	if req.ThumbnailURL != nil {
+		thumbnail := optional(*req.ThumbnailURL)
+		if thumbnail != nil && !isHTTPSURL(*thumbnail) {
+			details["thumbnailUrl"] = "must be an https address"
+		} else {
+			video.ThumbnailURL = thumbnail
+		}
+	}
+
+	if req.DurationSeconds != nil {
+		video.DurationSeconds = nil
+		if *req.DurationSeconds > 0 {
+			video.DurationSeconds = req.DurationSeconds
+		}
+	}
+
+	if len(details) > 0 {
+		return apperror.Validation(details)
+	}
+
+	return nil
 }
 
 func (u *ClassroomUseCase) CreateVideoUpload(
