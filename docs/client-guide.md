@@ -24,4 +24,4 @@ A token refresh does not return a device token, so leave the stored one as it is
 
 A request over a limit gets `429` with the code `RATE_LIMITED` and a `Retry-After` header. Wait that long before the next try and show the person a short message. Do not retry in a loop, because every retry counts against the same limit. A `429` that has no JSON body comes from a proxy in front of the API and means the same thing.
 
-The limits are per signed in user and per account, never per network address, so a whole classroom on one network does not slow each other down. The numbers and the reasons are in the [design notes](design.md#rate-limits).
+The limits in the API are per signed in user and per account and never per network address, so a whole classroom on one network does not slow each other down. A proxy or CDN in front of the API can add its own limit per address, and a very busy shared network can still get a `429` from that. The numbers and the reasons are in the [design notes](design.md#rate-limits).
