@@ -12,6 +12,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
@@ -152,4 +153,115 @@ func TestVideoKeyPrefixBelongsToTheClass(t *testing.T) {
 	id := uuid.MustParse("3f2a9b1c-6d4e-4f70-8a12-9c0d1e2f3a4b")
 
 	require.Equal(t, "videos/3f2a9b1c-6d4e-4f70-8a12-9c0d1e2f3a4b/", videoKeyPrefix(id))
+}
+
+func TestApplyVideoChanges(t *testing.T) {
+	text := func(value string) *string { return &value }
+	number := func(value int) *int { return &value }
+
+	start := func() *entity.LearningVideo {
+		return &entity.LearningVideo{
+			Title: "Old title", Description: text("Old description"), ThumbnailURL: text("https://img.example.com/a.png"),
+			DurationSeconds: number(60),
+		}
+	}
+
+	t.Run("a missing field stays", func(t *testing.T) {
+		video := start()
+
+		require.NoError(t, applyVideoChanges(video, dto.UpdateVideoRequest{Title: text("  New title ")}))
+		require.Equal(t, "New title", video.Title)
+		require.Equal(t, "Old description", *video.Description)
+		require.Equal(t, "https://img.example.com/a.png", *video.ThumbnailURL)
+		require.Equal(t, 60, *video.DurationSeconds)
+	})
+
+	t.Run("an empty text clears and zero clears the duration", func(t *testing.T) {
+		video := start()
+
+		require.NoError(t, applyVideoChanges(video, dto.UpdateVideoRequest{
+			Description: text(" "), ThumbnailURL: text(""), DurationSeconds: number(0),
+		}))
+		require.Nil(t, video.Description)
+		require.Nil(t, video.ThumbnailURL)
+		require.Nil(t, video.DurationSeconds)
+		require.Equal(t, "Old title", video.Title)
+	})
+
+	t.Run("new values replace the old ones", func(t *testing.T) {
+		video := start()
+
+		require.NoError(t, applyVideoChanges(video, dto.UpdateVideoRequest{
+			Description: text("Newer"), ThumbnailURL: text("https://img.example.com/b.png"), DurationSeconds: number(90),
+		}))
+		require.Equal(t, "Newer", *video.Description)
+		require.Equal(t, "https://img.example.com/b.png", *video.ThumbnailURL)
+		require.Equal(t, 90, *video.DurationSeconds)
+	})
+
+	t.Run("bad values are refused and leave the video as it was", func(t *testing.T) {
+		video := start()
+
+		err := applyVideoChanges(video, dto.UpdateVideoRequest{Title: text("  "), ThumbnailURL: text("http://img.example.com/a.png")})
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "cannot be empty", appErr.Details["title"])
+		require.Equal(t, "must be an https address", appErr.Details["thumbnailUrl"])
+		require.Equal(t, "Old title", video.Title)
+		require.Equal(t, "https://img.example.com/a.png", *video.ThumbnailURL)
+	})
+}
+
+// countingRepo answers the one question the file cleanup asks
+type countingRepo struct {
+	repository.ClassroomDBItf
+
+	remaining int
+	failure   error
+}
+
+func (r countingRepo) CountVideosByURL(context.Context, string) (int, error) {
+	return r.remaining, r.failure
+}
+
+// removalBucket records which objects were deleted
+type removalBucket struct {
+	bucket
+
+	deleted *[]string
+}
+
+func (b removalBucket) Delete(_ context.Context, key string) error {
+	*b.deleted = append(*b.deleted, key)
+
+	return nil
+}
+
+func TestRemoveUploadedFile(t *testing.T) {
+	ours := "https://cdn.example.test/videos/c/f.mp4"
+
+	tests := map[string]struct {
+		url  string
+		repo countingRepo
+		want []string
+	}{
+		"the last video of an uploaded file": {ours, countingRepo{}, []string{"videos/c/f.mp4"}},
+		"another video uses the same file":   {ours, countingRepo{remaining: 1}, nil},
+		"a link to another site":             {"https://videos.example.com/a.mp4", countingRepo{}, nil},
+		"the count fails":                    {ours, countingRepo{failure: context.DeadlineExceeded}, nil},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var deleted []string
+
+			u := &ClassroomUseCase{repo: tt.repo, storage: removalBucket{deleted: &deleted}}
+
+			u.removeUploadedFile(context.Background(), tt.url)
+
+			require.Equal(t, tt.want, deleted)
+		})
+	}
 }

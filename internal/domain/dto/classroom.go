@@ -23,6 +23,15 @@ type AddVideoRequest struct {
 	DurationSeconds *int   `json:"durationSeconds" validate:"omitempty,gte=1,lte=86400"`
 }
 
+// UpdateVideoRequest changes the details of a video. A missing field stays, an empty text clears the description or the thumbnail
+// and 0 clears the duration. The address of the video itself cannot change, so a different file is a new video.
+type UpdateVideoRequest struct {
+	Title           *string `json:"title" validate:"omitempty,max=150"`
+	Description     *string `json:"description" validate:"omitempty,max=2000"`
+	ThumbnailURL    *string `json:"thumbnailUrl" validate:"omitempty,max=2048"`
+	DurationSeconds *int    `json:"durationSeconds" validate:"omitempty,gte=0,lte=86400"`
+}
+
 type VideoUploadRequest struct {
 	ContentType string `json:"contentType" validate:"required,oneof=video/mp4 video/webm"`
 	SizeBytes   int64  `json:"sizeBytes" validate:"required,gte=1"`

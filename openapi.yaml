@@ -590,6 +590,68 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /classes/{classId}/videos/{videoId}:
+    patch:
+      tags: [Classroom]
+      operationId: updateVideo
+      summary: Change the details of a learning video
+      description: >-
+        Any teacher of the class can change it. A missing field stays as it is, an empty `description` or `thumbnailUrl` clears it and
+        a `durationSeconds` of 0 clears the duration. At least one field is required. The address of the video cannot change, so a
+        different file is a new video.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/VideoPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVideoRequest"
+      responses:
+        "200":
+          description: Learning video updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Classroom]
+      operationId: deleteVideo
+      summary: Delete a learning video
+      description: >-
+        Any teacher of the class can delete it. When the video was uploaded and no other video uses the same file, the file is removed
+        from storage too. A link to another site is only forgotten.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/VideoPath"
+      responses:
+        "200":
+          description: Learning video deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /classes/{classId}/students:
     get:
       tags: [Classroom]
@@ -959,6 +1021,14 @@ components:
       schema:
         type: string
         format: uuid
+    VideoPath:
+      name: videoId
+      in: path
+      required: true
+      description: A learning video of the class
+      schema:
+        type: string
+        format: uuid
     PostPath:
       name: postId
       in: path
@@ -1028,7 +1098,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -1670,6 +1740,27 @@ components:
           type: integer
           minimum: 1
           maximum: 86400
+    UpdateVideoRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+          description: An empty text clears the description
+        thumbnailUrl:
+          type: string
+          maxLength: 2048
+          description: An https address of a preview image, an empty text clears it
+        durationSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: 0 clears the duration
     VideoUploadRequest:
       type: object
       required: [contentType, sizeBytes]

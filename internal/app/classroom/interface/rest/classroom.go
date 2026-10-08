@@ -31,6 +31,8 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group.Get("/videos", members, handler.ListVideos)
 	group.Post("/videos", mw.RequireRole(constants.RoleGuru), handler.AddVideo)
 	group.Post("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.CreateVideoUpload)
+	group.Patch("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.UpdateVideo)
+	group.Delete("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.DeleteVideo)
 	group.Get("/forum", members, handler.ListThreads)
 	group.Post("/forum", members, handler.CreateThread)
 	group.Get("/forum/:postId/replies", members, handler.ListReplies)
@@ -77,6 +79,41 @@ func (h *ClassroomHandler) AddVideo(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusCreated, "Learning video added", res)
+}
+
+func (h *ClassroomHandler) UpdateVideo(c fiber.Ctx) error {
+	classID, videoID, err := classAndVideo(c)
+	if err != nil {
+		return err
+	}
+
+	var req dto.UpdateVideoRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateVideo(c.Context(), middleware.UserIDFrom(c), classID, videoID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Learning video updated", res)
+}
+
+func (h *ClassroomHandler) DeleteVideo(c fiber.Ctx) error {
+	classID, videoID, err := classAndVideo(c)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.DeleteVideo(c.Context(), middleware.UserIDFrom(c), classID, videoID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Learning video deleted", nil)
 }
 
 func (h *ClassroomHandler) CreateVideoUpload(c fiber.Ctx) error {
@@ -197,6 +234,20 @@ func (h *ClassroomHandler) ListStudents(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func classAndVideo(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	videoID, err := pathUUID(c, "videoId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, err
+	}
+
+	return classID, videoID, nil
 }
 
 func classAndPost(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
