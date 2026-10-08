@@ -165,6 +165,8 @@ func TestDeleteAccount(t *testing.T) {
 }
 
 type fakeStorage struct {
+	s3.Disabled
+
 	uploads int
 	keys    []string
 	deleted []string
