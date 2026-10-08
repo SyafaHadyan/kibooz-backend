@@ -60,6 +60,7 @@ func TestAConcretePathIsMatchedToItsTemplate(t *testing.T) {
 		"/classes/" + id + "/forum":                    "/classes/{classId}/forum",
 		"/classes/" + id + "/forum/" + id + "/replies": "/classes/{classId}/forum/{postId}/replies",
 		"/classes/{classId}/videos":                    "/classes/{classId}/videos",
+		"/classes/" + id + "/videos/" + id:             "/classes/{classId}/videos/{videoId}",
 	}
 
 	for concrete, want := range tests {
@@ -72,7 +73,7 @@ func TestAConcretePathIsMatchedToItsTemplate(t *testing.T) {
 func TestAPathOutsideTheSpecIsNotMatched(t *testing.T) {
 	doc := spec(t)
 
-	for _, path := range []string{"/classes//videos", "/classes/x/videos/extra", "/classes/x", "/not-documented", ""} {
+	for _, path := range []string{"/classes//videos", "/classes/x/videos/extra/more", "/classes/x", "/not-documented", ""} {
 		got, item := findPath(doc, path)
 		require.Empty(t, got, path)
 		require.Nil(t, item, path)
