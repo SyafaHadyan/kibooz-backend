@@ -17,6 +17,11 @@ concurrency:
 
 permissions: {}
 
+env:
+  # go.mod stays on the oldest Go release the code supports because Snyk cannot read a newer go directive or a toolchain line.
+  # This makes the go command fetch at least this release, which carries the fix for GO-2026-6617 in the standard library.
+  GOTOOLCHAIN: go1.27.2+auto
+
 jobs:
   codeql:
     name: CodeQL
@@ -33,9 +38,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
-          # always the newest 1.27 patch release, so a fixed standard library vulnerability reaches CI without a change here
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -62,9 +65,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
-          # always the newest 1.27 patch release, so a fixed standard library vulnerability reaches CI without a change here
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Run govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
