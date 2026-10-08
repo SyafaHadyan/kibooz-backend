@@ -520,7 +520,10 @@ paths:
       tags: [Classroom]
       operationId: addVideo
       summary: Add a learning video to a class
-      description: Only a teacher of the class can add one. The video is an https address, the file itself is not uploaded.
+      description: >-
+        Only a teacher of the class can add one. The video is an https address. For a file the teacher recorded, first ask for a signed
+        address with `POST /classes/{classId}/videos/upload-url`, send the file there, then add the video with the `videoUrl` of that
+        answer. The file must have arrived by then, it must belong to this class, and it must be an accepted video.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
@@ -544,6 +547,49 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+  /classes/{classId}/videos/upload-url:
+    post:
+      tags: [Classroom]
+      operationId: createVideoUpload
+      summary: Get a signed address to upload a video file to
+      description: >-
+        Only a teacher of the class can ask for one. Send the file with a PUT request to `uploadUrl` before `expiresAt`, with exactly
+        `sizeBytes` bytes and the headers of the answer, and no other header is needed. The bucket refuses a file of another size or
+        type. Then add the video with `POST /classes/{classId}/videos` and the `videoUrl` of this answer. A file that is never added
+        stays in the bucket until a lifecycle rule removes it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoUploadRequest"
+      responses:
+        "200":
+          description: Upload address created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoUploadEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+        "503":
+          description: File storage is not configured (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /classes/{classId}/students:
     get:
       tags: [Classroom]
@@ -1624,6 +1670,54 @@ components:
           type: integer
           minimum: 1
           maximum: 86400
+    VideoUploadRequest:
+      type: object
+      required: [contentType, sizeBytes]
+      properties:
+        contentType:
+          type: string
+          enum: [video/mp4, video/webm]
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The exact size of the file, the server refuses a larger file than `VIDEO_MAX_MB`
+    VideoUpload:
+      type: object
+      required: [uploadUrl, method, headers, videoUrl, expiresAt]
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: The signed address to send the file to
+        method:
+          type: string
+          enum: [PUT]
+        headers:
+          type: object
+          description: Headers the upload request must carry
+          required: [Content-Type]
+          properties:
+            Content-Type:
+              type: string
+        videoUrl:
+          type: string
+          format: uri
+          description: The public address of the file, to add as the video once the upload is done
+        expiresAt:
+          type: string
+          format: date-time
+    VideoUploadEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/VideoUpload"
     Video:
       type: object
       required: [id, title, description, videoUrl, thumbnailUrl, durationSeconds, createdAt]

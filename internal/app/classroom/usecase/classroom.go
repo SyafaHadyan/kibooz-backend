@@ -3,6 +3,8 @@ package usecase
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -25,6 +28,8 @@ const DeletedAuthorName = "Deleted account"
 type ClassroomUseCaseItf interface {
 	ListVideos(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.VideoList, error)
 	AddVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddVideoRequest) (dto.Video, error)
+	// CreateVideoUpload signs a URL the teacher sends a video file to, the file is then registered with AddVideo
+	CreateVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest) (dto.VideoUpload, error)
 	ListThreads(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.ForumThreadList, error)
 	CreateThread(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, req dto.CreateThreadRequest) (dto.ForumThread, error)
 	ListReplies(
@@ -37,14 +42,20 @@ type ClassroomUseCaseItf interface {
 	ListStudents(ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params) (dto.ClassStudentList, error)
 }
 
+// videoTypes maps each accepted video type to the extension of its object key
+var videoTypes = map[string]string{"video/mp4": ".mp4", "video/webm": ".webm"}
+
+const bytesPerMB = 1024 * 1024
+
 type ClassroomUseCase struct {
-	repo repository.ClassroomDBItf
-	cfg  *env.Env
-	now  func() time.Time
+	repo    repository.ClassroomDBItf
+	storage s3.StorageItf
+	cfg     *env.Env
+	now     func() time.Time
 }
 
-func NewClassroomUseCase(repo repository.ClassroomDBItf, cfg *env.Env) ClassroomUseCaseItf {
-	return &ClassroomUseCase{repo: repo, cfg: cfg, now: time.Now}
+func NewClassroomUseCase(repo repository.ClassroomDBItf, storage s3.StorageItf, cfg *env.Env) ClassroomUseCaseItf {
+	return &ClassroomUseCase{repo: repo, storage: storage, cfg: cfg, now: time.Now}
 }
 
 func (u *ClassroomUseCase) ListVideos(
@@ -108,12 +119,82 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 		return dto.Video{}, apperror.Validation(details)
 	}
 
+	err = u.checkUploadedVideo(ctx, classID, video.VideoURL)
+	if err != nil {
+		return dto.Video{}, err
+	}
+
 	err = u.repo.CreateVideo(ctx, video)
 	if err != nil {
 		return dto.Video{}, apperror.Internal(err)
 	}
 
 	return videoResponse(video), nil
+}
+
+func (u *ClassroomUseCase) CreateVideoUpload(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest,
+) (dto.VideoUpload, error) {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return dto.VideoUpload{}, err
+	}
+
+	maxBytes := int64(u.cfg.VideoMaxMB) * bytesPerMB
+	if req.SizeBytes > maxBytes {
+		return dto.VideoUpload{}, apperror.Validation(map[string]string{
+			"sizeBytes": fmt.Sprintf("must be at most %d bytes", maxBytes),
+		})
+	}
+
+	// every file gets its own key under the class, so a later registration can tell which class it was made for
+	key := fmt.Sprintf("%s%s%s", videoKeyPrefix(classID), uuid.New(), videoTypes[req.ContentType])
+	ttl := time.Duration(u.cfg.VideoUploadURLSeconds) * time.Second
+
+	uploadURL, err := u.storage.PresignUpload(ctx, key, req.ContentType, req.SizeBytes, ttl)
+	if err != nil {
+		return dto.VideoUpload{}, err
+	}
+
+	return dto.VideoUpload{
+		UploadURL: uploadURL,
+		Method:    http.MethodPut,
+		Headers:   map[string]string{"Content-Type": req.ContentType},
+		VideoURL:  u.storage.PublicURL(key),
+		ExpiresAt: u.now().Add(ttl).UTC(),
+	}, nil
+}
+
+// checkUploadedVideo makes sure a video address that points into our own bucket is a finished upload made for this class,
+// any other address is the teacher's own link and is left alone
+func (u *ClassroomUseCase) checkUploadedVideo(ctx context.Context, classID uuid.UUID, videoURL string) error {
+	key, ours := u.storage.KeyFromURL(videoURL)
+	if !ours {
+		return nil
+	}
+
+	if !strings.HasPrefix(key, videoKeyPrefix(classID)) {
+		return apperror.Validation(map[string]string{"videoUrl": "is not a file uploaded for this class"})
+	}
+
+	object, err := u.storage.Stat(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	if object == nil {
+		return apperror.Validation(map[string]string{"videoUrl": "has no uploaded file yet"})
+	}
+
+	if _, accepted := videoTypes[object.ContentType]; !accepted || object.Size > int64(u.cfg.VideoMaxMB)*bytesPerMB {
+		return apperror.Validation(map[string]string{"videoUrl": "is not an accepted video file"})
+	}
+
+	return nil
+}
+
+func videoKeyPrefix(classID uuid.UUID) string {
+	return "videos/" + classID.String() + "/"
 }
 
 func (u *ClassroomUseCase) ListThreads(

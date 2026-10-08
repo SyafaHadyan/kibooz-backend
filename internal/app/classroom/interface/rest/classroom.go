@@ -30,6 +30,7 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 
 	group.Get("/videos", members, handler.ListVideos)
 	group.Post("/videos", mw.RequireRole(constants.RoleGuru), handler.AddVideo)
+	group.Post("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.CreateVideoUpload)
 	group.Get("/forum", members, handler.ListThreads)
 	group.Post("/forum", members, handler.CreateThread)
 	group.Get("/forum/:postId/replies", members, handler.ListReplies)
@@ -76,6 +77,27 @@ func (h *ClassroomHandler) AddVideo(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusCreated, "Learning video added", res)
+}
+
+func (h *ClassroomHandler) CreateVideoUpload(c fiber.Ctx) error {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return err
+	}
+
+	var req dto.VideoUploadRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.CreateVideoUpload(c.Context(), middleware.UserIDFrom(c), classID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Upload URL created", res)
 }
 
 func (h *ClassroomHandler) ListThreads(c fiber.Ctx) error {
