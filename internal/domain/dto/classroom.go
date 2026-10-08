@@ -23,6 +23,20 @@ type AddVideoRequest struct {
 	DurationSeconds *int   `json:"durationSeconds" validate:"omitempty,gte=1,lte=86400"`
 }
 
+type VideoUploadRequest struct {
+	ContentType string `json:"contentType" validate:"required,oneof=video/mp4 video/webm"`
+	SizeBytes   int64  `json:"sizeBytes" validate:"required,gte=1"`
+}
+
+// VideoUpload tells the app where to send the file and which address to register afterwards
+type VideoUpload struct {
+	UploadURL string            `json:"uploadUrl"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers"`
+	VideoURL  string            `json:"videoUrl"`
+	ExpiresAt time.Time         `json:"expiresAt"`
+}
+
 type Video struct {
 	ID              uuid.UUID `json:"id"`
 	Title           string    `json:"title"`

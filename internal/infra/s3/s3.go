@@ -4,15 +4,19 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -27,6 +31,19 @@ type StorageItf interface {
 	Delete(ctx context.Context, objectKey string) error
 	// KeyFromURL returns the object key of a public URL this storage handed out, and false for any other URL
 	KeyFromURL(url string) (string, bool)
+	// PublicURL returns the public URL of an object key
+	PublicURL(objectKey string) string
+	// PresignUpload returns a URL that accepts one PUT of exactly size bytes of the content type until the ttl passes,
+	// so a large file goes straight to the bucket and not through this API
+	PresignUpload(ctx context.Context, objectKey string, contentType string, size int64, ttl time.Duration) (string, error)
+	// Stat describes a stored object and returns nil when the object does not exist
+	Stat(ctx context.Context, objectKey string) (*Object, error)
+}
+
+// Object describes a stored object
+type Object struct {
+	Size        int64
+	ContentType string
 }
 
 // discardTimeout bounds the cleanup of one object
@@ -46,6 +63,7 @@ func Discard(ctx context.Context, storage StorageItf, objectKey string) {
 
 type Storage struct {
 	client    *awss3.Client
+	presigner *awss3.PresignClient
 	bucket    string
 	publicURL string
 }
@@ -82,6 +100,7 @@ func New(cfg *env.Env) (StorageItf, error) {
 
 	return &Storage{
 		client:    client,
+		presigner: awss3.NewPresignClient(client),
 		bucket:    cfg.S3BucketName,
 		publicURL: strings.TrimRight(cfg.S3PublicURL, "/"),
 	}, nil
@@ -104,6 +123,47 @@ func (s *Storage) Upload(ctx context.Context, objectKey string, contentType stri
 	}
 
 	return s.publicURL + "/" + objectKey, nil
+}
+
+func (s *Storage) PublicURL(objectKey string) string {
+	return s.publicURL + "/" + objectKey
+}
+
+func (s *Storage) PresignUpload(
+	ctx context.Context, objectKey string, contentType string, size int64, ttl time.Duration,
+) (string, error) {
+	// the type and the length are signed, so the bucket refuses any other file than the one that was announced
+	req, err := s.presigner.PresignPutObject(ctx, &awss3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(objectKey),
+		ContentType:   aws.String(contentType),
+		ContentLength: aws.Int64(size),
+	}, awss3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", apperror.ErrStorageFailed.WithErr(err)
+	}
+
+	return req.URL, nil
+}
+
+func (s *Storage) Stat(ctx context.Context, objectKey string) (*Object, error) {
+	head, err := s.client.HeadObject(ctx, &awss3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
+	})
+	if err != nil {
+		var missing *types.NotFound
+
+		var response *awshttp.ResponseError
+
+		if errors.As(err, &missing) || (errors.As(err, &response) && response.HTTPStatusCode() == http.StatusNotFound) {
+			return nil, nil
+		}
+
+		return nil, apperror.ErrStorageFailed.WithErr(err)
+	}
+
+	return &Object{Size: aws.ToInt64(head.ContentLength), ContentType: aws.ToString(head.ContentType)}, nil
 }
 
 func (s *Storage) KeyFromURL(url string) (string, bool) {
@@ -140,6 +200,18 @@ func (Disabled) Upload(context.Context, string, string, []byte) (string, error) 
 
 func (Disabled) KeyFromURL(string) (string, bool) {
 	return "", false
+}
+
+func (Disabled) PublicURL(string) string {
+	return ""
+}
+
+func (Disabled) PresignUpload(context.Context, string, string, int64, time.Duration) (string, error) {
+	return "", apperror.ErrStorageDisabled
+}
+
+func (Disabled) Stat(context.Context, string) (*Object, error) {
+	return nil, apperror.ErrStorageDisabled
 }
 
 func (Disabled) Delete(context.Context, string) error {

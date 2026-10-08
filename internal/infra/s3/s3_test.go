@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -101,4 +103,75 @@ func TestKeyFromURL(t *testing.T) {
 
 	_, ok := s3.Disabled{}.KeyFromURL("https://cdn.example.com/avatars/a/b.png")
 	require.False(t, ok)
+}
+
+func TestPublicURL(t *testing.T) {
+	storage, _ := storageFor(t, http.StatusNoContent)
+
+	require.Equal(t, "https://cdn.example.com/videos/a/b.mp4", storage.PublicURL("videos/a/b.mp4"))
+	require.Empty(t, s3.Disabled{}.PublicURL("videos/a/b.mp4"))
+}
+
+func TestPresignUploadSignsTheTypeAndTheLength(t *testing.T) {
+	storage, requests := storageFor(t, http.StatusNoContent)
+
+	signed, err := storage.PresignUpload(context.Background(), "videos/a/b.mp4", "video/mp4", 1234, 15*time.Minute)
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(signed)
+	require.NoError(t, err)
+
+	query := parsed.Query()
+
+	require.Equal(t, "/bucket/videos/a/b.mp4", parsed.Path)
+	require.Equal(t, "900", query.Get("X-Amz-Expires"))
+	require.NotEmpty(t, query.Get("X-Amz-Signature"))
+	require.Contains(t, query.Get("X-Amz-SignedHeaders"), "content-type")
+	require.Contains(t, query.Get("X-Amz-SignedHeaders"), "content-length")
+	require.Empty(t, requests(), "signing never calls the bucket")
+}
+
+func TestDisabledStorageSignsNothing(t *testing.T) {
+	_, err := s3.Disabled{}.PresignUpload(context.Background(), "videos/a/b.mp4", "video/mp4", 1, time.Minute)
+	require.Error(t, err)
+
+	_, err = s3.Disabled{}.Stat(context.Background(), "videos/a/b.mp4")
+	require.Error(t, err)
+}
+
+func TestStat(t *testing.T) {
+	tests := map[string]struct {
+		status  int
+		want    *s3.Object
+		wantErr bool
+	}{
+		"an object":         {http.StatusOK, &s3.Object{Size: 2048, ContentType: "video/mp4"}, false},
+		"a missing object":  {http.StatusNotFound, nil, false},
+		"a refused request": {http.StatusForbidden, nil, true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tt.status == http.StatusOK {
+					w.Header().Set("Content-Type", "video/mp4")
+					w.Header().Set("Content-Length", "2048")
+				}
+
+				w.WriteHeader(tt.status)
+			}))
+			t.Cleanup(server.Close)
+
+			storage, err := s3.New(&env.Env{
+				S3Endpoint: server.URL, S3Region: "us-east-1", S3BucketName: "bucket",
+				S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
+			})
+			require.NoError(t, err)
+
+			got, err := storage.Stat(context.Background(), "videos/a/b.mp4")
+
+			require.Equal(t, tt.wantErr, err != nil)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

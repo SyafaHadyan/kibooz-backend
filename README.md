@@ -30,7 +30,7 @@ REST API for Kibooz, the kindergarten app that lets teachers record children's m
 - Go with Fiber v3 and GORM
 - PostgreSQL 15 for data, with SQL migrations embedded in the binary and applied on startup
 - Redis 7 as an optional accelerator for replay rejection, shared rate limits and the leaderboard cache
-- Any S3 compatible bucket (Cloudflare R2 by default) for avatars and trash photos
+- Any S3 compatible bucket (Cloudflare R2 by default) for avatars, trash photos and class videos
 - JWT (HS256) access tokens with rotating opaque refresh tokens stored hashed in PostgreSQL, bcrypt password hashes
 
 ## Quick start
@@ -66,6 +66,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
 | `BODY_LIMIT_MB` | `8` | Maximum request body size |
+| `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
 | `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header, it is only used in the access log because no rate limit looks at the IP |

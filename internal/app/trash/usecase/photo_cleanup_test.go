@@ -16,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
 
 // a 1x1 PNG as a data URI
@@ -51,6 +52,8 @@ type quietCache struct{ redis.CacheItf }
 func (quietCache) Del(context.Context, ...string) error { return nil }
 
 type recordingStorage struct {
+	s3.Disabled
+
 	uploaded  []string
 	deleted   []string
 	deleteErr error

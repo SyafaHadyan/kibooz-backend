@@ -16,6 +16,7 @@ import (
 	"net/textproto"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -44,14 +45,22 @@ var (
 	testApp *fiber.App
 	initErr error
 
-	storedMu   sync.Mutex
-	storedKeys []string
+	storedMu      sync.Mutex
+	storedKeys    []string
+	storedObjects = map[string]storedObject{}
 )
 
-// startMockS3 accepts every PutObject and remembers the object keys, so uploads can be asserted
+// storedObject is what the mock bucket remembers of an uploaded file
+type storedObject struct {
+	size        int64
+	contentType string
+}
+
+// startMockS3 accepts every PutObject and remembers the object keys, so uploads can be asserted.
+// It also answers HEAD requests from what it stored, so a file that was never sent is a 404.
 func startMockS3() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
+		size, _ := io.Copy(io.Discard, r.Body)
 
 		key := strings.TrimPrefix(r.URL.Path, "/"+testBucket+"/")
 
@@ -59,11 +68,25 @@ func startMockS3() *httptest.Server {
 		case http.MethodPut:
 			storedMu.Lock()
 			storedKeys = append(storedKeys, key)
+			storedObjects[key] = storedObject{size: size, contentType: r.Header.Get("Content-Type")}
 			storedMu.Unlock()
 		case http.MethodDelete:
 			storedMu.Lock()
 			storedKeys = slices.DeleteFunc(storedKeys, func(stored string) bool { return stored == key })
+			delete(storedObjects, key)
 			storedMu.Unlock()
+		case http.MethodHead:
+			storedMu.Lock()
+			object, found := storedObjects[key]
+			storedMu.Unlock()
+
+			if !found {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+
+			w.Header().Set("Content-Type", object.contentType)
+			w.Header().Set("Content-Length", strconv.FormatInt(object.size, 10))
 		}
 
 		w.Header().Set("ETag", `"mock"`)
