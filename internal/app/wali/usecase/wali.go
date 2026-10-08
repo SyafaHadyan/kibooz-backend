@@ -19,9 +19,16 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 )
 
+// trashTypes fixes the order of the categories in the statistics
+var trashTypes = []constants.TrashType{constants.TrashOrganik, constants.TrashAnorganik, constants.TrashB3}
+
 type WaliUseCaseItf interface {
 	Dashboard(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.WaliDashboardResponse, error)
 	ApplyGuidance(ctx context.Context, userID uuid.UUID, req dto.ApplyGuidanceRequest) error
+	// Child shows the registered details of one child of the caller
+	Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error)
+	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
+	TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error)
 }
 
 type WaliUseCase struct {
@@ -122,6 +129,81 @@ func (u *WaliUseCase) ApplyGuidance(ctx context.Context, userID uuid.UUID, req d
 	}
 
 	return nil
+}
+
+func (u *WaliUseCase) Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error) {
+	student, err := u.resolveStudent(ctx, userID, &studentID)
+	if err != nil {
+		return dto.ChildProfile{}, err
+	}
+
+	guardian, err := u.repo.FindGuardian(ctx, userID)
+	if err != nil {
+		return dto.ChildProfile{}, apperror.Internal(err)
+	}
+
+	if guardian == nil {
+		return dto.ChildProfile{}, apperror.ErrProfileNotFound
+	}
+
+	return dto.ChildProfile{
+		ID:            student.ID,
+		FullName:      student.FullName,
+		NISN:          student.NISN,
+		AvatarURL:     student.AvatarURL,
+		ClassID:       student.ClassID,
+		ClassName:     student.ClassName,
+		GradeLevel:    student.GradeLevel,
+		SchoolName:    student.SchoolName,
+		AcademicYear:  student.AcademicYear,
+		CurrentPoints: student.CurrentPoints,
+		ClassRank:     student.RankPosition,
+		Guardian: dto.Guardian{
+			FullName:       guardian.FullName,
+			Email:          guardian.Email,
+			PhoneNumber:    guardian.PhoneNumber,
+			WhatsappNumber: guardian.WhatsappNumber,
+			Address:        guardian.Address,
+		},
+	}, nil
+}
+
+func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error) {
+	student, err := u.resolveStudent(ctx, userID, studentID)
+	if err != nil {
+		return dto.TrashStatsResponse{}, err
+	}
+
+	totals, err := u.repo.SumTrashByType(ctx, student.ID)
+	if err != nil {
+		return dto.TrashStatsResponse{}, apperror.Internal(err)
+	}
+
+	from, to := clock.DayBounds(u.now(), u.cfg.Location())
+
+	today, err := u.repo.CountScans(ctx, student.ID, from, to)
+	if err != nil {
+		return dto.TrashStatsResponse{}, apperror.Internal(err)
+	}
+
+	res := dto.TrashStatsResponse{
+		Student:             dto.TrashStatsStudent{ID: student.ID, FullName: student.FullName},
+		TotalPoints:         student.CurrentPoints,
+		ClassRank:           student.RankPosition,
+		Breakdown:           make([]dto.TrashTypeStat, 0, len(trashTypes)),
+		TodayScans:          today,
+		DailyLimit:          u.cfg.TrashDailyLimit,
+		RemainingDailyScans: max(u.cfg.TrashDailyLimit-today, 0),
+	}
+
+	for _, trashType := range trashTypes {
+		item := totals[trashType]
+
+		res.Breakdown = append(res.Breakdown, dto.TrashTypeStat{TrashType: trashType, Scans: item.Scans, Points: item.Points})
+		res.TotalScans += item.Scans
+	}
+
+	return res, nil
 }
 
 // resolveStudent only ever returns a child that belongs to the caller

@@ -51,3 +51,26 @@ type ApplyGuidanceRequest struct {
 	StudentID   uuid.UUID `json:"studentId" validate:"required"`
 	ParentNotes string    `json:"parentNotes" validate:"omitempty,max=2000"`
 }
+
+type Guardian struct {
+	FullName       string  `json:"fullName"`
+	Email          string  `json:"email"`
+	PhoneNumber    *string `json:"phoneNumber"`
+	WhatsappNumber *string `json:"whatsappNumber"`
+	Address        *string `json:"address"`
+}
+
+type ChildProfile struct {
+	ID            uuid.UUID `json:"id"`
+	FullName      string    `json:"fullName"`
+	NISN          string    `json:"nisn"`
+	AvatarURL     *string   `json:"avatarUrl"`
+	ClassID       uuid.UUID `json:"classId"`
+	ClassName     string    `json:"className"`
+	GradeLevel    string    `json:"gradeLevel"`
+	SchoolName    string    `json:"schoolName"`
+	AcademicYear  string    `json:"academicYear"`
+	CurrentPoints int       `json:"currentPoints"`
+	ClassRank     int       `json:"classRank"`
+	Guardian      Guardian  `json:"guardian"`
+}
