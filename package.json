@@ -7,7 +7,7 @@
   },
   "scripts": {
     "lint": "redocly lint openapi.yaml",
-    "build": "rm -rf dist && redocly build-docs openapi.yaml -o dist/index.html && cp docs/_headers dist/_headers"
+    "build": "rm -rf dist && redocly build-docs openapi.yaml -o dist/index.html && cp docs/_headers dist/_headers && cp docs/favicon.ico dist/favicon.ico"
   },
   "devDependencies": {
     "@redocly/cli": "2.59.0",
