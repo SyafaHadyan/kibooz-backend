@@ -184,3 +184,22 @@ jobs:
           if [ "$HUB" = "true" ]; then
             cosign sign --yes "${HUB_IMAGE}@${DIGEST}"
           fi
+
+      # A signing step that did nothing useful would pass unnoticed, so check every signature against the identity of this workflow
+      - name: Verify the signature
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          identity="^https://github\.com/${REPOSITORY}/\.github/workflows/docker\.yaml@refs/(heads/main|tags/v.+|pull/[0-9]+/merge)$"
+          verify() {
+            cosign verify \
+              --certificate-identity-regexp "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$1@${DIGEST}" > /dev/null
+          }
+          verify "$GHCR_IMAGE"
+          if [ "$HUB" = "true" ]; then
+            verify "$HUB_IMAGE"
+          fi
