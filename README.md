@@ -106,7 +106,7 @@ internal/middleware/      authentication and role checks
 internal/e2e/             end to end tests
 ```
 
-Modules are `auth`, `wali`, `guru`, `trash` (claims and leaderboard) and `user` (avatars).
+Modules are `auth`, `wali`, `guru`, `classroom` (learning videos and the class forum), `trash` (claims and leaderboard) and `user` (avatars).
 
 ## Contributing and security
 

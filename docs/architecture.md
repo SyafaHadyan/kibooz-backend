@@ -22,7 +22,7 @@ Every feature is a folder under `internal/app` with the same three layers, so a 
 2. `usecase` holds the business rules, such as the daily claim limit and who may see which student.
 3. `repository` is the only code that talks to the database.
 
-The features are `auth` for registration, login and tokens, `user` for the profile and avatar, `guru` for the teacher side, `wali` for the parent side and `trash` for photo scans and points. Shared code lives next to them.
+The features are `auth` for registration, login and tokens, `user` for the profile and avatar, `guru` for the teacher side, `wali` for the parent side, `classroom` for the learning videos and the forum of a class and `trash` for photo scans and points. Shared code lives next to them.
 
 | Folder | Purpose |
 |:---|:---|
