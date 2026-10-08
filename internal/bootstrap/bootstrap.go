@@ -13,6 +13,9 @@ import (
 	authhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/interface/rest"
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	authusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
+	classroomhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/interface/rest"
+	classroomrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
+	classroomusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/usecase"
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
@@ -97,6 +100,9 @@ func Start(version string) (*Bootstrap, error) {
 	))
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, storage, cfg,
+	))
+	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
+		classroomrepository.NewClassroomDB(database),
 	))
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache,
