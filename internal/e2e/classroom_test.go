@@ -478,3 +478,129 @@ func TestVideoUpload(t *testing.T) {
 		sign("", classID, body).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 	})
 }
+
+func TestEditAndDeleteVideos(t *testing.T) {
+	guru := registerGuru(t, "Flamboyan")
+	classID, joinCode := classOf(t, guru)
+	wali, _ := registerWali(t, joinCode, "Flamboyan Child")
+
+	otherGuru := registerGuru(t, "Gardenia")
+	otherClassID, _ := classOf(t, otherGuru)
+
+	videos := fmt.Sprintf("/api/v1/classes/%s/videos", classID)
+
+	add := func(videoURL string) string {
+		res := call(t, http.MethodPost, videos, guru.Token, map[string]any{
+			"title": "Lesson", "description": "First version", "videoUrl": videoURL, "durationSeconds": 60,
+		})
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		return res.data("id").(string)
+	}
+
+	t.Run("change the details", func(t *testing.T) {
+		id := add("https://videos.example.com/edit.mp4")
+
+		res := call(t, http.MethodPatch, videos+"/"+id, guru.Token, map[string]any{
+			"title": " Better lesson ", "thumbnailUrl": "https://videos.example.com/edit.jpg", "durationSeconds": 90,
+		})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Learning video updated", res.Body["message"])
+		require.Equal(t, "Better lesson", res.data("title"))
+		require.Equal(t, "First version", res.data("description"), "a missing field stays")
+		require.Equal(t, "https://videos.example.com/edit.jpg", res.data("thumbnailUrl"))
+		require.EqualValues(t, 90, res.data("durationSeconds"))
+		require.Equal(t, "https://videos.example.com/edit.mp4", res.data("videoUrl"))
+
+		cleared := call(t, http.MethodPatch, videos+"/"+id, guru.Token, map[string]any{
+			"description": "", "thumbnailUrl": "", "durationSeconds": 0,
+		})
+		require.Equal(t, http.StatusOK, cleared.Status, "body %v", cleared.Body)
+		require.Nil(t, cleared.data("description"))
+		require.Nil(t, cleared.data("thumbnailUrl"))
+		require.Nil(t, cleared.data("durationSeconds"))
+		require.Equal(t, "Better lesson", cleared.data("title"))
+
+		listed := call(t, http.MethodGet, videos, wali.Token, nil)
+		require.Equal(t, http.StatusOK, listed.Status, "body %v", listed.Body)
+		require.Contains(t, titles(t, listOf(t, listed, "videos"), "title"), "Better lesson")
+	})
+
+	t.Run("bad changes are refused", func(t *testing.T) {
+		id := add("https://videos.example.com/bad.mp4")
+
+		for _, body := range []map[string]any{
+			{},
+			{"title": "   "},
+			{"title": strings.Repeat("a", 151)},
+			{"thumbnailUrl": "http://videos.example.com/a.jpg"},
+			{"durationSeconds": 86401},
+			{"durationSeconds": -1},
+			{"description": strings.Repeat("a", 2001)},
+		} {
+			call(t, http.MethodPatch, videos+"/"+id, guru.Token, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+
+		call(t, http.MethodPatch, videos+"/not-a-uuid", guru.Token, map[string]any{"title": "x"}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a video that is not in the class is not found", func(t *testing.T) {
+		theirs := call(t, http.MethodPost, fmt.Sprintf("/api/v1/classes/%s/videos", otherClassID), otherGuru.Token,
+			map[string]any{"title": "Theirs", "videoUrl": "https://videos.example.com/theirs.mp4"})
+		require.Equal(t, http.StatusCreated, theirs.Status, "body %v", theirs.Body)
+
+		for _, id := range []string{uuid.NewString(), theirs.data("id").(string)} {
+			call(t, http.MethodPatch, videos+"/"+id, guru.Token, map[string]any{"title": "x"}).
+				requireError(t, http.StatusNotFound, "VIDEO_NOT_FOUND")
+			call(t, http.MethodDelete, videos+"/"+id, guru.Token, nil).requireError(t, http.StatusNotFound, "VIDEO_NOT_FOUND")
+		}
+	})
+
+	t.Run("only a teacher of the class changes or deletes a video", func(t *testing.T) {
+		id := add("https://videos.example.com/guarded.mp4")
+
+		for _, token := range []string{wali.Token, otherGuru.Token} {
+			call(t, http.MethodPatch, videos+"/"+id, token, map[string]any{"title": "x"}).
+				requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+			call(t, http.MethodDelete, videos+"/"+id, token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		}
+
+		call(t, http.MethodPatch, videos+"/"+id, "", map[string]any{"title": "x"}).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodDelete, videos+"/"+id, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodDelete, videos+"/not-a-uuid", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("deleting a link only forgets it", func(t *testing.T) {
+		id := add("https://videos.example.com/gone.mp4")
+
+		res := call(t, http.MethodDelete, videos+"/"+id, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Learning video deleted", res.Body["message"])
+
+		call(t, http.MethodDelete, videos+"/"+id, guru.Token, nil).requireError(t, http.StatusNotFound, "VIDEO_NOT_FOUND")
+
+		listed := call(t, http.MethodGet, videos, guru.Token, nil)
+		for _, item := range listOf(t, listed, "videos") {
+			require.NotEqual(t, id, item.(map[string]any)["id"])
+		}
+	})
+
+	t.Run("the uploaded file goes with its last video", func(t *testing.T) {
+		upload := call(t, http.MethodPost, videos+"/upload-url", guru.Token, map[string]any{"contentType": "video/mp4", "sizeBytes": 128})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+		sendFile(t, upload, "video/mp4", 128)
+
+		fileURL := upload.data("videoUrl").(string)
+		key := strings.TrimPrefix(fileURL, testPublicURL+"/")
+		require.Contains(t, uploaded("videos/"+classID+"/"), key)
+
+		first, second := add(fileURL), add(fileURL)
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, videos+"/"+first, guru.Token, nil).Status)
+		require.Contains(t, uploaded("videos/"+classID+"/"), key, "another video still uses the file")
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, videos+"/"+second, guru.Token, nil).Status)
+		require.NotContains(t, uploaded("videos/"+classID+"/"), key)
+	})
+}
