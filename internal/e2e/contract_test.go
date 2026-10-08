@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -123,13 +124,52 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// documentedPath turns a path of the spec into the path the server answers on, only /healthz lives outside the prefix
+// templateParam finds the {name} segments of a path in the spec
+var templateParam = regexp.MustCompile(`\{([^}/]+)\}`)
+
+// documentedPath turns a path of the spec into the path the server answers on, only /healthz lives outside the prefix.
+// A {name} segment becomes the :name segment of Fiber, so the parameter names have to match the code as well.
 func documentedPath(path string) string {
 	if path == "/healthz" {
 		return path
 	}
 
-	return apiPrefix + path
+	return apiPrefix + templateParam.ReplaceAllString(path, ":$1")
+}
+
+// findPath matches a path of a request against the paths of the spec, where a {name} segment accepts any value.
+// It returns the path as the spec writes it, so every operation is counted under one name.
+func findPath(doc *openapi3.T, path string) (string, *openapi3.PathItem) {
+	if item := doc.Paths.Value(path); item != nil {
+		return path, item
+	}
+
+	segments := strings.Split(path, "/")
+
+	for template, item := range doc.Paths.Map() {
+		wanted := strings.Split(template, "/")
+		if len(wanted) != len(segments) {
+			continue
+		}
+
+		matched := true
+
+		for i := range wanted {
+			parameter := strings.HasPrefix(wanted[i], "{") && strings.HasSuffix(wanted[i], "}")
+
+			if (parameter && segments[i] == "") || (!parameter && wanted[i] != segments[i]) {
+				matched = false
+
+				break
+			}
+		}
+
+		if matched {
+			return template, item
+		}
+	}
+
+	return "", nil
 }
 
 func routeFor(doc *openapi3.T, method string, path string) *routers.Route {
@@ -143,7 +183,7 @@ func routeFor(doc *openapi3.T, method string, path string) *routers.Route {
 		}
 	}
 
-	item := doc.Paths.Find(specPath)
+	template, item := findPath(doc, specPath)
 	if item == nil {
 		return nil
 	}
@@ -153,7 +193,7 @@ func routeFor(doc *openapi3.T, method string, path string) *routers.Route {
 		return nil
 	}
 
-	return &routers.Route{Spec: doc, Path: specPath, PathItem: item, Method: method, Operation: operation}
+	return &routers.Route{Spec: doc, Path: template, PathItem: item, Method: method, Operation: operation}
 }
 
 // requireContract checks one response. Requests for paths that are not documented, such as a probe for a missing route, are skipped.

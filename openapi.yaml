@@ -27,6 +27,8 @@ tags:
     description: Routes for the WALI role
   - name: Teacher
     description: Routes for the GURU role
+  - name: Classroom
+    description: Learning videos and the forum of a class, for the teachers and the parents of that class
   - name: Trash
     description: Claiming points and the leaderboard
   - name: Account
@@ -319,6 +321,171 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/videos:
+    get:
+      tags: [Classroom]
+      operationId: listVideos
+      summary: List the learning videos of a class
+      description: Newest first. Open to the teachers of the class and the parents of a child in it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The videos of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Classroom]
+      operationId: addVideo
+      summary: Add a learning video to a class
+      description: Only a teacher of the class can add one. The video is an https address, the file itself is not uploaded.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddVideoRequest"
+      responses:
+        "201":
+          description: Learning video added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/forum:
+    get:
+      tags: [Classroom]
+      operationId: listThreads
+      summary: List the forum threads of a class
+      description: Newest thread first. Open to the teachers of the class and the parents of a child in it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The threads of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumThreadListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Classroom]
+      operationId: createThread
+      summary: Start a forum thread
+      description: Open to the teachers of the class and the parents of a child in it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateThreadRequest"
+      responses:
+        "201":
+          description: Forum thread created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumThreadEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/forum/{postId}/replies:
+    get:
+      tags: [Classroom]
+      operationId: listReplies
+      summary: List the replies to a forum thread
+      description: Oldest reply first. `postId` is the id of a thread of the class.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The replies of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumReplyListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Classroom]
+      operationId: createReply
+      summary: Reply to a forum thread
+      description: Open to the teachers of the class and the parents of a child in it. A reply cannot be answered again.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReplyRequest"
+      responses:
+        "201":
+          description: Forum reply added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumReplyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /trash/scan-claim:
     post:
       tags: [Trash]
@@ -518,6 +685,40 @@ components:
       schema:
         type: string
         format: uuid
+    ClassPath:
+      name: classId
+      in: path
+      required: true
+      description: A class of the signed in user
+      schema:
+        type: string
+        format: uuid
+    PostPath:
+      name: postId
+      in: path
+      required: true
+      description: A forum thread of the class
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      description: The page to return, starting at 1
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 10000
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      description: How many items one page holds
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
   responses:
     ValidationError:
       description: The input is invalid (`VALIDATION_ERROR`), with one message per field in `details`
@@ -546,7 +747,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -769,13 +970,17 @@ components:
           $ref: "#/components/schemas/AuthData"
     WaliStudent:
       type: object
-      required: [id, fullName, className, avatarUrl, nisn]
+      required: [id, fullName, classId, className, avatarUrl, nisn]
       properties:
         id:
           type: string
           format: uuid
         fullName:
           type: string
+        classId:
+          type: string
+          format: uuid
+          description: The class of the child, used in the `/classes/{classId}` routes
         className:
           type: string
           description: The grade level and the school
@@ -1145,6 +1350,233 @@ components:
           type: string
           format: password
           maxLength: 72
+    PageInfo:
+      type: object
+      required: [page, limit, total]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 50
+        total:
+          type: integer
+          minimum: 0
+          description: How many items the whole list holds
+    AddVideoRequest:
+      type: object
+      required: [title, videoUrl]
+      properties:
+        title:
+          type: string
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+        videoUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: An https address the app can stream
+        thumbnailUrl:
+          type: string
+          format: uri
+          maxLength: 2048
+          description: An https address of a preview image
+        durationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+    Video:
+      type: object
+      required: [id, title, description, videoUrl, thumbnailUrl, durationSeconds, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        videoUrl:
+          type: string
+          format: uri
+        thumbnailUrl:
+          type: string
+          format: uri
+          nullable: true
+        durationSeconds:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    VideoList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [videos]
+          properties:
+            videos:
+              type: array
+              items:
+                $ref: "#/components/schemas/Video"
+    VideoEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Video"
+    VideoListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/VideoList"
+    ForumAuthor:
+      type: object
+      required: [id, fullName, role, avatarUrl]
+      description: The account that wrote a post. A deleted account shows the name `Deleted account` and no photo.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The id of the account, compare it with the id of the signed in user
+        fullName:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    CreateThreadRequest:
+      type: object
+      required: [title, body]
+      properties:
+        title:
+          type: string
+          maxLength: 150
+        body:
+          type: string
+          maxLength: 5000
+    ForumThread:
+      type: object
+      required: [id, title, body, author, replyCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body:
+          type: string
+        author:
+          $ref: "#/components/schemas/ForumAuthor"
+        replyCount:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    ForumThreadList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [threads]
+          properties:
+            threads:
+              type: array
+              items:
+                $ref: "#/components/schemas/ForumThread"
+    ForumThreadEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ForumThread"
+    ForumThreadListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ForumThreadList"
+    CreateReplyRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          maxLength: 5000
+    ForumReply:
+      type: object
+      required: [id, body, author, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        body:
+          type: string
+        author:
+          $ref: "#/components/schemas/ForumAuthor"
+        createdAt:
+          type: string
+          format: date-time
+    ForumReplyList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [replies]
+          properties:
+            replies:
+              type: array
+              items:
+                $ref: "#/components/schemas/ForumReply"
+    ForumReplyEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ForumReply"
+    ForumReplyListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ForumReplyList"
     Health:
       type: object
       required: [success, status, version, checks]

@@ -1,0 +1,350 @@
+package e2e
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+)
+
+func listOf(t *testing.T, res result, key string) []any {
+	t.Helper()
+
+	items, ok := res.data(key).([]any)
+	require.True(t, ok, "%s must be a list, body %v", key, res.Body)
+
+	return items
+}
+
+func titles(t *testing.T, items []any, field string) []string {
+	t.Helper()
+
+	out := make([]string, 0, len(items))
+
+	for _, item := range items {
+		out = append(out, item.(map[string]any)[field].(string))
+	}
+
+	return out
+}
+
+func TestLearningVideos(t *testing.T) {
+	guru := registerGuru(t, "Melati")
+	classID, joinCode := classOf(t, guru)
+	wali, _ := registerWali(t, joinCode, "Melati Child")
+
+	otherGuru := registerGuru(t, "Cempaka")
+	otherClassID, otherCode := classOf(t, otherGuru)
+	otherWali, _ := registerWali(t, otherCode, "Cempaka Child")
+
+	videos := fmt.Sprintf("/api/v1/classes/%s/videos", classID)
+
+	t.Run("a parent finds the class id on the dashboard", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/wali/dashboard", wali.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, classID, res.data("student", "classId"))
+	})
+
+	t.Run("a new class has no videos", func(t *testing.T) {
+		for name, token := range map[string]string{"teacher": guru.Token, "parent": wali.Token} {
+			res := call(t, http.MethodGet, videos, token, nil)
+			require.Equal(t, http.StatusOK, res.Status, "%s, body %v", name, res.Body)
+			require.Empty(t, listOf(t, res, "videos"))
+			require.EqualValues(t, 1, res.data("page"))
+			require.EqualValues(t, 20, res.data("limit"))
+			require.EqualValues(t, 0, res.data("total"))
+		}
+	})
+
+	t.Run("only a teacher of the class can add a video", func(t *testing.T) {
+		body := map[string]any{"title": "Sorting trash", "videoUrl": "https://videos.example.com/sorting.mp4"}
+
+		call(t, http.MethodPost, videos, wali.Token, body).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodPost, videos, otherGuru.Token, body).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodPost, videos, "", body).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+	})
+
+	t.Run("only members of the class can list its videos", func(t *testing.T) {
+		call(t, http.MethodGet, videos, otherGuru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, videos, otherWali.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, videos, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodGet, "/api/v1/classes/"+uuid.NewString()+"/videos", guru.Token, nil).
+			requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, "/api/v1/classes/"+otherClassID+"/videos", guru.Token, nil).
+			requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+	})
+
+	t.Run("a video needs a title and https addresses", func(t *testing.T) {
+		invalid := map[string]map[string]any{
+			"no body fields":     {},
+			"blank title":        {"title": "   ", "videoUrl": "https://videos.example.com/a.mp4"},
+			"http video":         {"title": "A", "videoUrl": "http://videos.example.com/a.mp4"},
+			"script address":     {"title": "A", "videoUrl": "javascript:alert(1)"},
+			"address with a gap": {"title": "A", "videoUrl": "https://videos.example.com/a b.mp4"},
+			"http thumbnail":     {"title": "A", "videoUrl": "https://videos.example.com/a.mp4", "thumbnailUrl": "http://img.example.com/a.png"},
+			"zero duration":      {"title": "A", "videoUrl": "https://videos.example.com/a.mp4", "durationSeconds": 0},
+			"too long a title":   {"title": strings.Repeat("a", 151), "videoUrl": "https://videos.example.com/a.mp4"},
+		}
+
+		for name, body := range invalid {
+			res := call(t, http.MethodPost, videos, guru.Token, body)
+			require.Equal(t, http.StatusBadRequest, res.Status, "%s, body %v", name, res.Body)
+			require.Equal(t, "VALIDATION_ERROR", res.Body["errorCode"], name)
+		}
+
+		res := call(t, http.MethodPost, videos, guru.Token, map[string]any{
+			"title": " ", "videoUrl": "http://videos.example.com/a.mp4", "thumbnailUrl": "ftp://img.example.com/a.png",
+		})
+		res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		details, ok := res.Body["details"].(map[string]any)
+		require.True(t, ok)
+		require.Contains(t, details, "title")
+		require.Contains(t, details, "videoUrl")
+		require.Contains(t, details, "thumbnailUrl")
+	})
+
+	t.Run("add videos", func(t *testing.T) {
+		first := call(t, http.MethodPost, videos, guru.Token, map[string]any{
+			"title": "  Sorting trash  ", "description": "How to sort at school", "videoUrl": "https://videos.example.com/sorting.mp4",
+			"thumbnailUrl": "https://img.example.com/sorting.png", "durationSeconds": 125,
+		})
+		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
+		require.Equal(t, "Learning video added", first.Body["message"])
+		require.Equal(t, "Sorting trash", first.data("title"))
+		require.Equal(t, "How to sort at school", first.data("description"))
+		require.EqualValues(t, 125, first.data("durationSeconds"))
+		require.NotEmpty(t, first.data("id"))
+
+		minimal := call(t, http.MethodPost, videos, guru.Token, map[string]any{
+			"title": "Washing hands", "videoUrl": "https://videos.example.com/hands.mp4",
+		})
+		require.Equal(t, http.StatusCreated, minimal.Status, "body %v", minimal.Body)
+		require.Nil(t, minimal.data("description"))
+		require.Nil(t, minimal.data("thumbnailUrl"))
+		require.Nil(t, minimal.data("durationSeconds"))
+	})
+
+	t.Run("list the newest video first and page through them", func(t *testing.T) {
+		res := call(t, http.MethodGet, videos, wali.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.EqualValues(t, 2, res.data("total"))
+		require.Equal(t, []string{"Washing hands", "Sorting trash"}, titles(t, listOf(t, res, "videos"), "title"))
+
+		second := call(t, http.MethodGet, videos+"?page=2&limit=1", guru.Token, nil)
+		require.Equal(t, http.StatusOK, second.Status, "body %v", second.Body)
+		require.Equal(t, []string{"Sorting trash"}, titles(t, listOf(t, second, "videos"), "title"))
+		require.EqualValues(t, 2, second.data("page"))
+		require.EqualValues(t, 1, second.data("limit"))
+		require.EqualValues(t, 2, second.data("total"))
+
+		beyond := call(t, http.MethodGet, videos+"?page=3&limit=1", guru.Token, nil)
+		require.Equal(t, http.StatusOK, beyond.Status)
+		require.Empty(t, listOf(t, beyond, "videos"))
+	})
+
+	t.Run("a bad request is refused", func(t *testing.T) {
+		for _, query := range []string{"?page=0", "?page=x", "?limit=0", "?limit=51", "?limit=x"} {
+			call(t, http.MethodGet, videos+query, guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+
+		call(t, http.MethodGet, "/api/v1/classes/not-a-uuid/videos", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, "/api/v1/classes/not-a-uuid/videos", guru.Token, map[string]any{}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+}
+
+func TestClassForum(t *testing.T) {
+	guru := registerGuru(t, "Flamboyan")
+	classID, joinCode := classOf(t, guru)
+	wali, _ := registerWali(t, joinCode, "Flamboyan Child")
+
+	otherGuru := registerGuru(t, "Teratai")
+	otherClassID, otherCode := classOf(t, otherGuru)
+	otherWali, _ := registerWali(t, otherCode, "Teratai Child")
+
+	forum := fmt.Sprintf("/api/v1/classes/%s/forum", classID)
+
+	var guruThread, waliThread string
+
+	t.Run("a new class has no threads", func(t *testing.T) {
+		res := call(t, http.MethodGet, forum, wali.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Empty(t, listOf(t, res, "threads"))
+		require.EqualValues(t, 0, res.data("total"))
+	})
+
+	t.Run("only members of the class can use the forum", func(t *testing.T) {
+		thread := map[string]any{"title": "Hello", "body": "Hello everyone"}
+
+		for _, token := range []string{otherGuru.Token, otherWali.Token} {
+			call(t, http.MethodGet, forum, token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+			call(t, http.MethodPost, forum, token, thread).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		}
+
+		call(t, http.MethodGet, forum, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodPost, forum, "", thread).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+	})
+
+	t.Run("a thread needs a title and a body", func(t *testing.T) {
+		for _, body := range []map[string]any{
+			{},
+			{"title": "Only a title"},
+			{"body": "Only a body"},
+			{"title": "  ", "body": "Blank title"},
+			{"title": "Blank body", "body": " \n "},
+			{"title": strings.Repeat("a", 151), "body": "Long title"},
+			{"title": "Long body", "body": strings.Repeat("a", 5001)},
+		} {
+			call(t, http.MethodPost, forum, guru.Token, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+	})
+
+	t.Run("teachers and parents start threads", func(t *testing.T) {
+		first := call(t, http.MethodPost, forum, guru.Token, map[string]any{"title": " Field trip ", "body": " Bring a hat. "})
+		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
+		require.Equal(t, "Forum thread created", first.Body["message"])
+		require.Equal(t, "Field trip", first.data("title"))
+		require.Equal(t, "Bring a hat.", first.data("body"))
+		require.Equal(t, "GURU", first.data("author", "role"))
+		require.Equal(t, "Siti Rahayu, S.Pd.", first.data("author", "fullName"))
+		require.EqualValues(t, 0, first.data("replyCount"))
+
+		guruThread = first.data("id").(string)
+
+		second := call(t, http.MethodPost, forum, wali.Token, map[string]any{"title": "Lunch box", "body": "Is fruit allowed?"})
+		require.Equal(t, http.StatusCreated, second.Status, "body %v", second.Body)
+		require.Equal(t, "WALI", second.data("author", "role"))
+
+		waliThread = second.data("id").(string)
+	})
+
+	t.Run("list the newest thread first", func(t *testing.T) {
+		res := call(t, http.MethodGet, forum, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.EqualValues(t, 2, res.data("total"))
+		require.Equal(t, []string{"Lunch box", "Field trip"}, titles(t, listOf(t, res, "threads"), "title"))
+
+		page := call(t, http.MethodGet, forum+"?page=2&limit=1", wali.Token, nil)
+		require.Equal(t, http.StatusOK, page.Status, "body %v", page.Body)
+		require.Equal(t, []string{"Field trip"}, titles(t, listOf(t, page, "threads"), "title"))
+
+		call(t, http.MethodGet, forum+"?limit=100", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, "/api/v1/classes/not-a-uuid/forum", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, "/api/v1/classes/not-a-uuid/forum", guru.Token, map[string]any{}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	replies := func(thread string) string {
+		return fmt.Sprintf("%s/%s/replies", forum, thread)
+	}
+
+	t.Run("replies", func(t *testing.T) {
+		empty := call(t, http.MethodGet, replies(guruThread), wali.Token, nil)
+		require.Equal(t, http.StatusOK, empty.Status, "body %v", empty.Body)
+		require.Empty(t, listOf(t, empty, "replies"))
+
+		fromParent := call(t, http.MethodPost, replies(guruThread), wali.Token, map[string]any{"body": " I will bring one. "})
+		require.Equal(t, http.StatusCreated, fromParent.Status, "body %v", fromParent.Body)
+		require.Equal(t, "Forum reply added", fromParent.Body["message"])
+		require.Equal(t, "I will bring one.", fromParent.data("body"))
+		require.Equal(t, "WALI", fromParent.data("author", "role"))
+
+		fromTeacher := call(t, http.MethodPost, replies(guruThread), guru.Token, map[string]any{"body": "Thank you!"})
+		require.Equal(t, http.StatusCreated, fromTeacher.Status, "body %v", fromTeacher.Body)
+
+		list := call(t, http.MethodGet, replies(guruThread), guru.Token, nil)
+		require.Equal(t, http.StatusOK, list.Status, "body %v", list.Body)
+		require.EqualValues(t, 2, list.data("total"))
+		require.Equal(t, []string{"I will bring one.", "Thank you!"}, titles(t, listOf(t, list, "replies"), "body"))
+
+		second := call(t, http.MethodGet, replies(guruThread)+"?page=2&limit=1", guru.Token, nil)
+		require.Equal(t, http.StatusOK, second.Status, "body %v", second.Body)
+		require.Equal(t, []string{"Thank you!"}, titles(t, listOf(t, second, "replies"), "body"))
+
+		threads := call(t, http.MethodGet, forum, guru.Token, nil)
+		require.Equal(t, http.StatusOK, threads.Status)
+
+		counts := map[string]any{}
+		for _, item := range listOf(t, threads, "threads") {
+			thread := item.(map[string]any)
+			counts[thread["id"].(string)] = thread["replyCount"]
+		}
+
+		require.EqualValues(t, 2, counts[guruThread])
+		require.EqualValues(t, 0, counts[waliThread])
+	})
+
+	t.Run("a reply needs a body", func(t *testing.T) {
+		for _, body := range []map[string]any{{}, {"body": "   "}, {"body": strings.Repeat("a", 5001)}} {
+			call(t, http.MethodPost, replies(guruThread), guru.Token, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+	})
+
+	t.Run("replies belong to a thread of this class", func(t *testing.T) {
+		reply := call(t, http.MethodPost, replies(waliThread), guru.Token, map[string]any{"body": "Yes, fruit is fine."})
+		require.Equal(t, http.StatusCreated, reply.Status, "body %v", reply.Body)
+
+		replyID := reply.data("id").(string)
+		body := map[string]any{"body": "Nested"}
+
+		// a reply cannot be answered again, and neither can a post that does not exist
+		call(t, http.MethodPost, replies(replyID), guru.Token, body).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodGet, replies(replyID), guru.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodPost, replies(uuid.NewString()), guru.Token, body).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodGet, replies(uuid.NewString()), wali.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+
+		// a thread of another class is not reachable through this class
+		other := call(t, http.MethodPost, fmt.Sprintf("/api/v1/classes/%s/forum", otherClassID), otherGuru.Token,
+			map[string]any{"title": "Other class", "body": "Not for you"})
+		require.Equal(t, http.StatusCreated, other.Status, "body %v", other.Body)
+
+		otherThread := other.data("id").(string)
+
+		call(t, http.MethodPost, replies(otherThread), guru.Token, body).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodGet, replies(otherThread), guru.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+
+		// members of another class cannot read or write replies at all
+		call(t, http.MethodGet, replies(guruThread), otherWali.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodPost, replies(guruThread), otherGuru.Token, body).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, replies(guruThread), "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+
+		call(t, http.MethodGet, replies("not-a-uuid"), guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, replies("not-a-uuid"), guru.Token, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, replies(guruThread)+"?page=0", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a deleted account keeps its posts without its name", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, deleteAccount(t, wali.Token, wali.Password).Status)
+
+		// the account cannot use the forum any more
+		call(t, http.MethodGet, forum, wali.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+
+		res := call(t, http.MethodGet, forum, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		var seen bool
+
+		for _, item := range listOf(t, res, "threads") {
+			thread := item.(map[string]any)
+			if thread["id"] != waliThread {
+				continue
+			}
+
+			seen = true
+			author := thread["author"].(map[string]any)
+			require.Equal(t, "Deleted account", author["fullName"])
+			require.Nil(t, author["avatarUrl"])
+			require.Equal(t, "WALI", author["role"])
+		}
+
+		require.True(t, seen, "the thread of the deleted account must stay")
+
+		list := call(t, http.MethodGet, replies(guruThread), guru.Token, nil)
+		require.Equal(t, http.StatusOK, list.Status, "body %v", list.Body)
+		require.Equal(t, "Deleted account", dig(listOf(t, list, "replies")[0], "author", "fullName"))
+	})
+}
