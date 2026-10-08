@@ -65,6 +65,19 @@ jobs:
           fi
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
+      # A tag only points at whatever the registry holds today. The build attestation is kept by GitHub and not by the registry,
+      # so this proves that docker.yaml of this repository built these exact bytes before they get a new signature
+      - name: Check that docker.yaml built this image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          gh attestation verify "oci://${GHCR_IMAGE}@${DIGEST}" \
+            --repo "$REPOSITORY" \
+            --signer-workflow "${REPOSITORY}/.github/workflows/docker.yaml" \
+            --predicate-type https://cyclonedx.org/bom
+
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
