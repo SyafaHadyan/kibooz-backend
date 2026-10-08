@@ -56,6 +56,7 @@ func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID
 		Student: dto.WaliStudent{
 			ID:        student.ID,
 			FullName:  student.FullName,
+			ClassID:   student.ClassID,
 			ClassName: fmt.Sprintf("%s • %s", student.GradeLevel, student.SchoolName),
 			AvatarURL: student.AvatarURL,
 			NISN:      student.NISN,

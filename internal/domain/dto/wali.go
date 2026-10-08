@@ -11,6 +11,7 @@ import (
 type WaliStudent struct {
 	ID        uuid.UUID `json:"id"`
 	FullName  string    `json:"fullName"`
+	ClassID   uuid.UUID `json:"classId"`
 	ClassName string    `json:"className"`
 	AvatarURL *string   `json:"avatarUrl"`
 	NISN      string    `json:"nisn"`

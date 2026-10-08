@@ -1,0 +1,81 @@
+package dto
+
+import (
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+)
+
+// PageInfo describes which part of a list a response holds
+type PageInfo struct {
+	Page  int `json:"page"`
+	Limit int `json:"limit"`
+	Total int `json:"total"`
+}
+
+type AddVideoRequest struct {
+	Title           string `json:"title" validate:"required,max=150"`
+	Description     string `json:"description" validate:"omitempty,max=2000"`
+	VideoURL        string `json:"videoUrl" validate:"required,max=2048"`
+	ThumbnailURL    string `json:"thumbnailUrl" validate:"omitempty,max=2048"`
+	DurationSeconds *int   `json:"durationSeconds" validate:"omitempty,gte=1,lte=86400"`
+}
+
+type Video struct {
+	ID              uuid.UUID `json:"id"`
+	Title           string    `json:"title"`
+	Description     *string   `json:"description"`
+	VideoURL        string    `json:"videoUrl"`
+	ThumbnailURL    *string   `json:"thumbnailUrl"`
+	DurationSeconds *int      `json:"durationSeconds"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+type VideoList struct {
+	Videos []Video `json:"videos"`
+	PageInfo
+}
+
+type ForumAuthor struct {
+	ID        uuid.UUID      `json:"id"`
+	FullName  string         `json:"fullName"`
+	Role      constants.Role `json:"role"`
+	AvatarURL *string        `json:"avatarUrl"`
+}
+
+type CreateThreadRequest struct {
+	Title string `json:"title" validate:"required,max=150"`
+	Body  string `json:"body" validate:"required,max=5000"`
+}
+
+type CreateReplyRequest struct {
+	Body string `json:"body" validate:"required,max=5000"`
+}
+
+type ForumThread struct {
+	ID         uuid.UUID   `json:"id"`
+	Title      string      `json:"title"`
+	Body       string      `json:"body"`
+	Author     ForumAuthor `json:"author"`
+	ReplyCount int         `json:"replyCount"`
+	CreatedAt  time.Time   `json:"createdAt"`
+}
+
+type ForumThreadList struct {
+	Threads []ForumThread `json:"threads"`
+	PageInfo
+}
+
+type ForumReply struct {
+	ID        uuid.UUID   `json:"id"`
+	Body      string      `json:"body"`
+	Author    ForumAuthor `json:"author"`
+	CreatedAt time.Time   `json:"createdAt"`
+}
+
+type ForumReplyList struct {
+	Replies []ForumReply `json:"replies"`
+	PageInfo
+}

@@ -49,3 +49,38 @@ func TestAnOperationOutsideTheSpecIsNotReported(t *testing.T) {
 
 	require.Empty(t, unexercised(spec(t), seen))
 }
+
+func TestAConcretePathIsMatchedToItsTemplate(t *testing.T) {
+	doc := spec(t)
+	id := "6f1c1a52-0c55-4d6c-a4a9-8f54a39bd1a8"
+
+	tests := map[string]string{
+		"/guru/dashboard":                              "/guru/dashboard",
+		"/classes/" + id + "/videos":                   "/classes/{classId}/videos",
+		"/classes/" + id + "/forum":                    "/classes/{classId}/forum",
+		"/classes/" + id + "/forum/" + id + "/replies": "/classes/{classId}/forum/{postId}/replies",
+		"/classes/{classId}/videos":                    "/classes/{classId}/videos",
+	}
+
+	for concrete, want := range tests {
+		got, item := findPath(doc, concrete)
+		require.Equal(t, want, got, concrete)
+		require.NotNil(t, item, concrete)
+	}
+}
+
+func TestAPathOutsideTheSpecIsNotMatched(t *testing.T) {
+	doc := spec(t)
+
+	for _, path := range []string{"/classes//videos", "/classes/x/videos/extra", "/classes/x", "/not-documented", ""} {
+		got, item := findPath(doc, path)
+		require.Empty(t, got, path)
+		require.Nil(t, item, path)
+	}
+}
+
+func TestADocumentedPathUsesTheParameterNamesOfFiber(t *testing.T) {
+	require.Equal(t, "/healthz", documentedPath("/healthz"))
+	require.Equal(t, "/api/v1/guru/dashboard", documentedPath("/guru/dashboard"))
+	require.Equal(t, "/api/v1/classes/:classId/forum/:postId/replies", documentedPath("/classes/{classId}/forum/{postId}/replies"))
+}

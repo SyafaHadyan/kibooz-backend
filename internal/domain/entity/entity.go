@@ -106,3 +106,26 @@ type RefreshToken struct {
 	ExpiresAt time.Time `gorm:"not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
+
+type LearningVideo struct {
+	ID              uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ClassID         uuid.UUID `gorm:"type:uuid;not null"`
+	AddedByGuruID   uuid.UUID `gorm:"type:uuid;not null"`
+	Title           string    `gorm:"size:150;not null"`
+	Description     *string
+	VideoURL        string  `gorm:"column:video_url;not null"`
+	ThumbnailURL    *string `gorm:"column:thumbnail_url"`
+	DurationSeconds *int
+	CreatedAt       time.Time `gorm:"autoCreateTime:false;not null"`
+}
+
+// ForumPost is a thread when ParentID is nil and a reply to that thread otherwise
+type ForumPost struct {
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	ClassID      uuid.UUID  `gorm:"type:uuid;not null"`
+	ParentID     *uuid.UUID `gorm:"type:uuid"`
+	AuthorUserID uuid.UUID  `gorm:"type:uuid;not null"`
+	Title        *string    `gorm:"size:150"`
+	Body         string     `gorm:"not null"`
+	CreatedAt    time.Time  `gorm:"autoCreateTime:false;not null"`
+}
