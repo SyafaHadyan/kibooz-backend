@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -125,17 +126,41 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 		return dto.Video{}, apperror.Validation(details)
 	}
 
-	err = u.checkUploadedVideo(ctx, classID, video.VideoURL)
-	if err != nil {
-		return dto.Video{}, err
-	}
+	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
+		// the file is checked and the video stored under one lock, so the file cannot be deleted in between
+		checkErr := u.checkUploadedVideo(ctx, classID, video.VideoURL)
+		if checkErr != nil {
+			return checkErr
+		}
 
-	err = u.repo.CreateVideo(ctx, video)
+		return repo.CreateVideo(ctx, video)
+	})
 	if err != nil {
-		return dto.Video{}, apperror.Internal(err)
+		return dto.Video{}, asAppError(err)
 	}
 
 	return videoResponse(video), nil
+}
+
+// withFileLock runs fn under the lock of an uploaded file, and without a lock for a link to another site
+func (u *ClassroomUseCase) withFileLock(ctx context.Context, videoURL string, fn func(repo repository.ClassroomDBItf) error) error {
+	_, ours := u.storage.KeyFromURL(videoURL)
+	if !ours {
+		return fn(u.repo)
+	}
+
+	return u.repo.WithVideoFileLock(ctx, videoURL, fn)
+}
+
+// asAppError keeps a typed error as it is and turns anything else into an internal error
+func asAppError(err error) error {
+	var appErr *apperror.Error
+
+	if errors.As(err, &appErr) {
+		return err
+	}
+
+	return apperror.Internal(err)
 }
 
 func (u *ClassroomUseCase) UpdateVideo(
@@ -187,30 +212,38 @@ func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, cl
 		return apperror.ErrVideoNotFound
 	}
 
-	deleted, err := u.repo.DeleteVideo(ctx, classID, videoID)
+	// the video, the count and the file are handled under one lock, so no new video can be added for a file that is about to go
+	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
+		deleted, deleteErr := repo.DeleteVideo(ctx, classID, videoID)
+		if deleteErr != nil {
+			return deleteErr
+		}
+
+		// another request removed it first
+		if !deleted {
+			return apperror.ErrVideoNotFound
+		}
+
+		u.removeUploadedFile(ctx, repo, video.VideoURL)
+
+		return nil
+	})
 	if err != nil {
-		return apperror.Internal(err)
+		return asAppError(err)
 	}
-
-	// another request removed it first
-	if !deleted {
-		return apperror.ErrVideoNotFound
-	}
-
-	u.removeUploadedFile(ctx, video.VideoURL)
 
 	return nil
 }
 
 // removeUploadedFile deletes the file of an uploaded video once no video points at it any more.
 // A file that stays behind is only unused storage, so a failure here never fails the request.
-func (u *ClassroomUseCase) removeUploadedFile(ctx context.Context, videoURL string) {
+func (u *ClassroomUseCase) removeUploadedFile(ctx context.Context, repo repository.ClassroomDBItf, videoURL string) {
 	key, ours := u.storage.KeyFromURL(videoURL)
 	if !ours {
 		return
 	}
 
-	remaining, err := u.repo.CountVideosByURL(ctx, videoURL)
+	remaining, err := repo.CountVideosByURL(ctx, videoURL)
 	if err != nil || remaining > 0 {
 		return
 	}

@@ -51,6 +51,9 @@ type ClassroomDBItf interface {
 	DeleteVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (bool, error)
 	// CountVideosByURL tells how many videos still point at the address
 	CountVideosByURL(ctx context.Context, videoURL string) (int, error)
+	// WithVideoFileLock runs fn in a transaction that holds a lock for the video address until fn returns, so adding a video
+	// and deleting the last video of the same uploaded file never interleave. fn must use the repository it is given.
+	WithVideoFileLock(ctx context.Context, videoURL string, fn func(repo ClassroomDBItf) error) error
 	ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
 	ThreadExists(ctx context.Context, classID uuid.UUID, threadID uuid.UUID) (bool, error)
 	ListReplies(ctx context.Context, threadID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
@@ -161,6 +164,18 @@ func (r *ClassroomDB) CountVideosByURL(ctx context.Context, videoURL string) (in
 	err := r.db.WithContext(ctx).Model(&entity.LearningVideo{}).Where("video_url = ?", videoURL).Count(&total).Error
 
 	return int(total), err
+}
+
+func (r *ClassroomDB) WithVideoFileLock(ctx context.Context, videoURL string, fn func(repo ClassroomDBItf) error) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the lock is released with the transaction, and a second request for the same address waits here
+		err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", videoURL).Error
+		if err != nil {
+			return err
+		}
+
+		return fn(&ClassroomDB{db: tx})
+	})
 }
 
 func (r *ClassroomDB) ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error) {
