@@ -25,10 +25,11 @@ type User struct {
 }
 
 type Guru struct {
-	ID         uuid.UUID      `gorm:"type:uuid;primaryKey"`
-	UserID     uuid.UUID      `gorm:"type:uuid;not null;uniqueIndex"`
-	NIP        *string        `gorm:"column:nip;size:50;uniqueIndex"`
-	SchoolName string         `gorm:"size:150;not null"`
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UserID     uuid.UUID `gorm:"type:uuid;not null;uniqueIndex"`
+	NIP        *string   `gorm:"column:nip;size:50;uniqueIndex"`
+	SchoolName string    `gorm:"size:150;not null"`
+	Address    *string
 	DeletedAt  gorm.DeletedAt `gorm:"index"`
 }
 
