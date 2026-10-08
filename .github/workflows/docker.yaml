@@ -25,8 +25,9 @@ jobs:
       attestations: write
       security-events: write
     env:
-      # Dependabot and fork runs get no write access or secrets, so they only build
-      PUSH: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      # Dependabot and fork runs get no write access or secrets, so they only build. A manual run only publishes from main,
+      # because the signature check accepts no other branch
+      PUSH: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
       # Docker Hub is optional and needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret
       HUB: ${{ vars.DOCKERHUB_USERNAME != '' }}
       HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/kibooz-backend
