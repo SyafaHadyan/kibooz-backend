@@ -34,6 +34,8 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group.Post("/forum", members, handler.CreateThread)
 	group.Get("/forum/:postId/replies", members, handler.ListReplies)
 	group.Post("/forum/:postId/replies", members, handler.CreateReply)
+	// the register holds the NISN of every child, so it is for the teachers only
+	group.Get("/students", mw.RequireRole(constants.RoleGuru), handler.ListStudents)
 }
 
 func (h *ClassroomHandler) ListVideos(c fiber.Ctx) error {
@@ -154,6 +156,25 @@ func (h *ClassroomHandler) CreateReply(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusCreated, "Forum reply added", res)
+}
+
+func (h *ClassroomHandler) ListStudents(c fiber.Ctx) error {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return err
+	}
+
+	page, err := pagination.Parse(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.ListStudents(c.Context(), middleware.UserIDFrom(c), classID, page)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
 }
 
 func classAndPost(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {

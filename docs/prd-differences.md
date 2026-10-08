@@ -20,7 +20,15 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - `GET` and `POST /classes/{classId}/videos` list and add learning videos. Both teachers of the class and parents of a child in it can list them, and only a teacher can add one. The video is an https address and uploading a video file is not built yet.
 - `GET` and `POST /classes/{classId}/forum` list and start threads, and `GET` and `POST /classes/{classId}/forum/{postId}/replies` list and add replies. Teachers of the class and parents of a child in it can all write. A reply cannot be answered again and a post cannot be edited or deleted yet. The author of a deleted account shows as `Deleted account`.
 - The lists of videos, threads and replies take `page` and `limit` and return `page`, `limit` and `total` next to the items.
-- The paths `/guru/classes`, `/guru/classes/{id}`, `/classes/{id}/students`, `/guru/profile`, `/guru/profile/detail`, `/wali/child/{id}` and `/trash/stats` are listed in the app roadmap but the PRD never defines them, so they are not implemented.
+- `GET` and `POST /guru/classes` list and create classes, and `GET /guru/classes/{classId}` shows one with its number of children, learning videos and forum threads. A teacher can teach several classes and every class has its own join code. The roadmap mentions six subjects on the class screen, which the PRD never defines, so the response carries counts instead.
+- `GET /classes/{classId}/students` lists the children of a class with their points, rank and latest mood of today. It is for the teachers of the class only because it shows the NISN.
+- `GET /guru/profile` and `GET /guru/profile/detail` show the teacher, and `PUT /guru/profile` changes the phone number and the address. The address is a new `gurus.address` column and the photo is still changed with `POST /users/avatar`.
+- `GET /wali/child/{studentId}` shows the registered details of a child together with the contact details of the parent, and `GET /trash/stats` shows the scans and points of a child for each trash category together with the scans left today.
+
+## Not built yet
+
+- Uploading a video file. A teacher adds the https address of a video that is hosted somewhere else.
+- Editing or deleting a learning video or a forum post.
 
 ## Language
 

@@ -35,3 +35,25 @@ type LeaderboardResponse struct {
 type AvatarResponse struct {
 	AvatarURL string `json:"avatarUrl"`
 }
+
+type TrashTypeStat struct {
+	TrashType constants.TrashType `json:"trashType"`
+	Scans     int                 `json:"scans"`
+	Points    int                 `json:"points"`
+}
+
+type TrashStatsStudent struct {
+	ID       uuid.UUID `json:"id"`
+	FullName string    `json:"fullName"`
+}
+
+type TrashStatsResponse struct {
+	Student             TrashStatsStudent `json:"student"`
+	TotalPoints         int               `json:"totalPoints"`
+	ClassRank           int               `json:"classRank"`
+	TotalScans          int               `json:"totalScans"`
+	Breakdown           []TrashTypeStat   `json:"breakdown"`
+	TodayScans          int               `json:"todayScans"`
+	DailyLimit          int               `json:"dailyLimit"`
+	RemainingDailyScans int               `json:"remainingDailyScans"`
+}

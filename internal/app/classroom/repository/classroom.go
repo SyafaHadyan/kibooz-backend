@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -19,6 +20,12 @@ type PostRow struct {
 	AuthorRole       constants.Role
 	AuthorDeleted    bool
 	ReplyCount       int
+}
+
+// StudentRow is a child of the class with the latest mood of the requested day
+type StudentRow struct {
+	entity.Student `gorm:"embedded"`
+	TodayMood      *constants.Mood
 }
 
 const (
@@ -42,6 +49,8 @@ type ClassroomDBItf interface {
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
 	// FindPost returns a post with its author, or nil when it does not exist
 	FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error)
+	// ListStudents returns the children of the class by name, with the latest mood each recorded between from and to
+	ListStudents(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, limit int, offset int) ([]StudentRow, int, error)
 }
 
 type ClassroomDB struct {
@@ -193,4 +202,32 @@ func (r *ClassroomDB) FindPost(ctx context.Context, postID uuid.UUID) (*PostRow,
 	}
 
 	return &rows[0], nil
+}
+
+func (r *ClassroomDB) ListStudents(
+	ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, limit int, offset int,
+) ([]StudentRow, int, error) {
+	var total int64
+
+	err := r.db.WithContext(ctx).Model(&entity.Student{}).Where("class_id = ?", classID).Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var rows []StudentRow
+
+	err = r.db.WithContext(ctx).
+		Table("students AS s").
+		Select(`s.*, (SELECT m.mood_type FROM mood_logs AS m
+			WHERE m.student_id = s.id AND m.recorded_at >= ? AND m.recorded_at < ?
+			ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) AS today_mood`, from, to).
+		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
+		Order("s.full_name ASC, s.id ASC").
+		Limit(limit).Offset(offset).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return rows, int(total), nil
 }

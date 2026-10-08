@@ -31,6 +31,8 @@ The features are `auth` for registration, login and tokens, `user` for the profi
 | `internal/middleware` | Authentication and the per user rate limit |
 | `internal/infra` | Fiber setup and limits, JWT, device tokens, validation, environment settings, Redis, S3 and the database with its migrations |
 | `internal/imageutil` | Safe decoding and checking of uploaded images |
+| `internal/pagination` | The `page` and `limit` query parameters of the list endpoints |
+| `internal/classcode` | Stores a class under a random join code that no other class uses |
 | `internal/bootstrap` | Builds everything from the settings and connects the layers |
 | `internal/e2e` | End to end tests that also check every response against `openapi.yaml` |
 

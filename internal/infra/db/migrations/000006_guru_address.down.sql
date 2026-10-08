@@ -1,0 +1,1 @@
+ALTER TABLE gurus DROP COLUMN address;

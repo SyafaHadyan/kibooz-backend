@@ -27,18 +27,15 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 
 	group.Get("/dashboard", handler.Dashboard)
 	group.Post("/guidance/apply", handler.ApplyGuidance)
+	group.Get("/child/:studentId", handler.Child)
+
+	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
 }
 
 func (h *WaliHandler) Dashboard(c fiber.Ctx) error {
-	var studentID *uuid.UUID
-
-	if raw := c.Query("studentId"); raw != "" {
-		parsed, err := uuid.Parse(raw)
-		if err != nil {
-			return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
-		}
-
-		studentID = &parsed
+	studentID, err := optionalStudentID(c)
+	if err != nil {
+		return err
 	}
 
 	res, err := h.useCase.Dashboard(c.Context(), middleware.UserIDFrom(c), studentID)
@@ -63,4 +60,46 @@ func (h *WaliHandler) ApplyGuidance(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Handling status forwarded to the class teacher", nil)
+}
+
+func (h *WaliHandler) Child(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.Child(c.Context(), middleware.UserIDFrom(c), studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *WaliHandler) TrashStats(c fiber.Ctx) error {
+	studentID, err := optionalStudentID(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.TrashStats(c.Context(), middleware.UserIDFrom(c), studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func optionalStudentID(c fiber.Ctx) (*uuid.UUID, error) {
+	raw := c.Query("studentId")
+	if raw == "" {
+		return nil, nil
+	}
+
+	parsed, err := uuid.Parse(raw)
+	if err != nil {
+		return nil, apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	return &parsed, nil
 }
