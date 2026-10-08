@@ -1,10 +1,30 @@
 # Differences from the PRD
 
-The PRD leaves a few gaps that this implementation fills.
+The PRD leaves a few gaps that this implementation fills. The backend PRD in the app repository (`docs/prd_and_roadmap/02_BACKEND_API_AND_DATABASE.md`) describes the same contract as this implementation, so the list below is what changed compared with its first version.
 
-- `class_teachers` (present in the ERD but not the DDL), `classes.join_code` and `guidance_applications` were added to the schema.
+## Schema
+
+- `class_teachers` (present in the ERD but not the DDL), `classes.join_code`, `guidance_applications` and `refresh_tokens` were added to the schema.
+- `users`, `gurus`, `walis` and `students` have a `deleted_at` column. Deleting an account hides the rows, and the unique rules on email, NIP and NISN only apply to rows that are still active, so those values can be used again.
 - `gen_random_uuid()` replaces `uuid_generate_v4()`, so no extension is needed.
-- `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout` and `POST /users/avatar` were added, and `classOverview` also returns `joinCode`.
+- `learning_videos` and `forum_posts` appear in the ERD but have no DDL or endpoints, so they were not built.
+
+## Endpoints
+
+- `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` were added, and `GET /healthz` reports the health of the service.
+- A refresh token works once, and every successful refresh returns a new one.
+- `POST /auth/login` and registration accept and return an optional `deviceToken`, which gives a device its own login budget for an email.
+- `GET /wali/dashboard` takes an optional `studentId` for a parent with several children and defaults to the child who was registered first.
+- `GET /guru/dashboard` takes an optional `classId`, `classOverview` also returns `joinCode`, and `dominantMood` is `null` while the class has no mood record for the day.
+- `GET /guru/mood/analytics` also returns `monthlyDistribution` when `range=monthly`.
+- The paths `/classes/{id}/videos`, `/classes/{id}/forum`, `/guru/classes`, `/guru/classes/{id}`, `/classes/{id}/students`, `/guru/profile`, `/guru/profile/detail`, `/wali/child/{id}` and `/trash/stats` are listed in the app roadmap but the PRD never defines them, so they are not implemented.
+
+## Language
+
+Messages and the weekday names in `weeklyTrend` are in English (`Monday` to `Friday` where the PRD examples use `Senin` to `Jumat`), and new classes default to the grade level `Class A`. Clients branch on `errorCode` and translate the text they show.
+
+## Business rules
+
 - The PRD defines points only for organic and inorganic trash, so B3 is recorded with `POINTS_B3` (0 by default).
 - BR-04 (confirm AI results below 75% confidence) is a client dialog, so the server stores whatever confidence the confirmed result carries.
 - `averageHappyScore` is the share of that day's students whose latest mood is SENANG.
