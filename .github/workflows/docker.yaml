@@ -25,8 +25,9 @@ jobs:
       attestations: write
       security-events: write
     env:
-      # Dependabot and fork runs get no write access or secrets, so they only build
-      PUSH: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      # Dependabot and fork runs get no write access or secrets, so they only build. A manual run only publishes from main,
+      # because the signature check accepts no other branch
+      PUSH: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main') }}
       # Docker Hub is optional and needs the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret
       HUB: ${{ vars.DOCKERHUB_USERNAME != '' }}
       HUB_IMAGE: ${{ vars.DOCKERHUB_USERNAME || 'local' }}/kibooz-backend
@@ -175,12 +176,34 @@ jobs:
         if: env.PUSH == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
+      # The default bundle format of cosign 3 is stored as an OCI referrer, and GitHub Container Registry lists it under the wrong type, so a plain cosign verify finds nothing
+      # The classic format is a .sig tag that every registry and every cosign version can read
       - name: Sign image (keyless)
         if: env.PUSH == 'true'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          cosign sign --yes "${GHCR_IMAGE}@${DIGEST}"
+          cosign sign --yes --use-signing-config=false --new-bundle-format=false "${GHCR_IMAGE}@${DIGEST}"
           if [ "$HUB" = "true" ]; then
-            cosign sign --yes "${HUB_IMAGE}@${DIGEST}"
+            cosign sign --yes --use-signing-config=false --new-bundle-format=false "${HUB_IMAGE}@${DIGEST}"
+          fi
+
+      # A signing step that did nothing useful would pass unnoticed, so check every signature against the identity of this workflow
+      - name: Verify the signature
+        if: env.PUSH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          identity="^https://github\.com/${REPOSITORY}/\.github/workflows/docker\.yaml@refs/(heads/main|tags/v.+|pull/[0-9]+/merge)$"
+          verify() {
+            cosign verify \
+              --new-bundle-format=false \
+              --certificate-identity-regexp "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              "$1@${DIGEST}" > /dev/null
+          }
+          verify "$GHCR_IMAGE"
+          if [ "$HUB" = "true" ]; then
+            verify "$HUB_IMAGE"
           fi
