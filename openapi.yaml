@@ -236,6 +236,31 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/child/{studentId}:
+    get:
+      tags: [Parent]
+      operationId: getChild
+      summary: Show a child
+      description: The registered details of a child of the signed in parent, with the class and the contact details of the parent.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+      responses:
+        "200":
+          description: The child
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChildProfileEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
     get:
       tags: [Teacher]
@@ -321,6 +346,151 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /guru/classes:
+    get:
+      tags: [Teacher]
+      operationId: listClasses
+      summary: List the classes of the teacher
+      description: The classes the teacher teaches, oldest first, each with the join code and the number of children.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The classes of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Teacher]
+      operationId: createClass
+      summary: Create a class
+      description: The teacher becomes a teacher of the new class, which gets a join code that parents use to register a child. A missing grade level, academic year or school take the defaults.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClassRequest"
+      responses:
+        "201":
+          description: Class created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}:
+    get:
+      tags: [Teacher]
+      operationId: getClass
+      summary: Show a class
+      description: A class of the teacher with the number of children, learning videos and forum threads.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The class
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassDetailEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/profile:
+    get:
+      tags: [Teacher]
+      operationId: getGuruProfile
+      summary: Show the profile of the teacher
+      description: The name, NIP, school and photo that the profile screen shows.
+      responses:
+        "200":
+          description: The profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuruProfileEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    put:
+      tags: [Teacher]
+      operationId: updateGuruProfile
+      summary: Change the contact details of the teacher
+      description: Send `phoneNumber`, `address` or both. A field that is missing stays as it is and an empty text clears it. The photo is changed with `POST /users/avatar`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateGuruProfileRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuruProfileDetailEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/profile/detail:
+    get:
+      tags: [Teacher]
+      operationId: getGuruProfileDetail
+      summary: Show the full profile of the teacher
+      description: The profile with the email, phone number, address and the date the account was created.
+      responses:
+        "200":
+          description: The full profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuruProfileDetailEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /classes/{classId}/videos:
     get:
       tags: [Classroom]
@@ -366,6 +536,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VideoEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/students:
+    get:
+      tags: [Classroom]
+      operationId: listClassStudents
+      summary: List the children of a class
+      description: Only for the teachers of the class. Sorted by name, with the points, the rank and the latest mood of today.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The children of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassStudentListEnvelope"
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -529,6 +724,31 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "502":
           $ref: "#/components/responses/StorageFailed"
+  /trash/stats:
+    get:
+      tags: [Trash]
+      operationId: trashStats
+      summary: Trash sorting statistics of a child
+      description: The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
+      parameters:
+        - $ref: "#/components/parameters/StudentId"
+      responses:
+        "200":
+          description: The statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrashStatsEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /leaderboard:
     get:
       tags: [Trash]
@@ -698,6 +918,21 @@ components:
       in: path
       required: true
       description: A forum thread of the class
+      schema:
+        type: string
+        format: uuid
+    StudentPath:
+      name: studentId
+      in: path
+      required: true
+      description: A child of the signed in parent
+      schema:
+        type: string
+        format: uuid
+    StudentId:
+      name: studentId
+      in: query
+      description: A child of the signed in parent
       schema:
         type: string
         format: uuid
@@ -1577,6 +1812,344 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/ForumReplyList"
+    ClassSummary:
+      type: object
+      required: [id, name, gradeLevel, schoolName, academicYear, joinCode, totalStudents, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        gradeLevel:
+          type: string
+        schoolName:
+          type: string
+        academicYear:
+          type: string
+        joinCode:
+          type: string
+          description: The code a parent enters to register a child in this class
+        totalStudents:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    ClassList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [classes]
+          properties:
+            classes:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClassSummary"
+    ClassDetail:
+      allOf:
+        - $ref: "#/components/schemas/ClassSummary"
+        - type: object
+          required: [totalVideos, totalThreads]
+          properties:
+            totalVideos:
+              type: integer
+              minimum: 0
+            totalThreads:
+              type: integer
+              minimum: 0
+    CreateClassRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 50
+        gradeLevel:
+          type: string
+          maxLength: 20
+          default: Class A
+        academicYear:
+          type: string
+          maxLength: 20
+          default: 2026/2027
+        schoolName:
+          type: string
+          maxLength: 150
+          description: The school of the teacher by default
+    ClassEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ClassSummary"
+    ClassListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ClassList"
+    ClassDetailEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ClassDetail"
+    GuruProfile:
+      type: object
+      required: [id, fullName, nip, schoolName, avatarUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The id of the account
+        fullName:
+          type: string
+        nip:
+          type: string
+          nullable: true
+        schoolName:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    GuruProfileDetail:
+      allOf:
+        - $ref: "#/components/schemas/GuruProfile"
+        - type: object
+          required: [email, phoneNumber, address, joinedAt]
+          properties:
+            email:
+              type: string
+              format: email
+            phoneNumber:
+              type: string
+              nullable: true
+            address:
+              type: string
+              nullable: true
+            joinedAt:
+              type: string
+              format: date-time
+    UpdateGuruProfileRequest:
+      type: object
+      minProperties: 1
+      properties:
+        phoneNumber:
+          type: string
+          maxLength: 30
+          description: Digits with an optional leading plus, spaces, dashes and brackets. An empty text clears it.
+        address:
+          type: string
+          maxLength: 1000
+          description: An empty text clears it
+    GuruProfileEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GuruProfile"
+    GuruProfileDetailEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GuruProfileDetail"
+    ClassStudent:
+      type: object
+      required: [id, fullName, nisn, avatarUrl, currentPoints, classRank, todayMood]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        nisn:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        currentPoints:
+          type: integer
+          minimum: 0
+        classRank:
+          type: integer
+          minimum: 0
+        todayMood:
+          type: string
+          enum: [SENANG, SEDIH, MARAH, BINGUNG, null]
+          nullable: true
+          description: The latest mood recorded today, null when none was
+    ClassStudentList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [students]
+          properties:
+            students:
+              type: array
+              items:
+                $ref: "#/components/schemas/ClassStudent"
+    ClassStudentListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ClassStudentList"
+    Guardian:
+      type: object
+      required: [fullName, email, phoneNumber, whatsappNumber, address]
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        phoneNumber:
+          type: string
+          nullable: true
+        whatsappNumber:
+          type: string
+          nullable: true
+        address:
+          type: string
+          nullable: true
+    ChildProfile:
+      type: object
+      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, classRank, guardian]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        nisn:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        gradeLevel:
+          type: string
+        schoolName:
+          type: string
+        academicYear:
+          type: string
+        currentPoints:
+          type: integer
+          minimum: 0
+        classRank:
+          type: integer
+          minimum: 0
+        guardian:
+          $ref: "#/components/schemas/Guardian"
+    ChildProfileEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChildProfile"
+    TrashTypeStat:
+      type: object
+      required: [trashType, scans, points]
+      properties:
+        trashType:
+          $ref: "#/components/schemas/TrashType"
+        scans:
+          type: integer
+          minimum: 0
+        points:
+          type: integer
+          minimum: 0
+    TrashStats:
+      type: object
+      required: [student, totalPoints, classRank, totalScans, breakdown, todayScans, dailyLimit, remainingDailyScans]
+      properties:
+        student:
+          type: object
+          required: [id, fullName]
+          properties:
+            id:
+              type: string
+              format: uuid
+            fullName:
+              type: string
+        totalPoints:
+          type: integer
+          minimum: 0
+        classRank:
+          type: integer
+          minimum: 0
+        totalScans:
+          type: integer
+          minimum: 0
+        breakdown:
+          type: array
+          description: One entry for each trash category, in the order ORGANIK, ANORGANIK, B3
+          items:
+            $ref: "#/components/schemas/TrashTypeStat"
+        todayScans:
+          type: integer
+          minimum: 0
+        dailyLimit:
+          type: integer
+          minimum: 1
+        remainingDailyScans:
+          type: integer
+          minimum: 0
+    TrashStatsEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/TrashStats"
     Health:
       type: object
       required: [success, status, version, checks]
