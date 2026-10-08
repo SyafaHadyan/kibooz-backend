@@ -10,9 +10,22 @@
 | `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
 | `dast-active.yaml` | weekly on Sunday, manual | Builds the compose stack, registers throwaway accounts, replays the API requests and runs the ZAP active scan with an Automation Framework plan. It only reports and is not a required check |
 | `docker.yaml` | push to main, tags, pull requests | Builds the image for `linux/amd64` and `linux/arm64`, pushes it to GitHub Container Registry and to Docker Hub when configured, scans both platforms with Trivy, attaches an SBOM, signs with cosign and verifies each signature right away |
+| `resign.yaml` | manual, from main only | Signs an image that is already published again in the classic format, without building anything. It checks that both registries hold the same digest and that the build attestation kept by GitHub shows `docker.yaml` built that digest from the tag of that version, and only then signs and verifies each signature right away |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
 Image tags are `latest` for main, `sha-<commit>` for every build, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and Dependabot only build the image. All actions are pinned to commit SHAs and kept current by Dependabot, which waits 7 days after a new release before proposing it.
+
+Verify an image with cosign by checking the identity of the workflow that signed it. A normal build is signed by `docker.yaml` and an image signed again by hand is signed by `resign.yaml`, so the identity pattern accepts both.
+
+```sh
+cosign verify \
+  --new-bundle-format=false \
+  --certificate-identity-regexp '^https://github\.com/SyafaHadyan/kibooz-backend/\.github/workflows/(docker\.yaml@refs/(heads/main|tags/v.+)|resign\.yaml@refs/heads/main)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/syafahadyan/kibooz-backend:0.4.0
+```
+
+The pattern leaves out the identity of pull request builds on purpose, so an image tagged `pr-<number>` does not pass this check and only builds from `main` or from a version tag do. The check inside `docker.yaml` accepts pull request identities because it only verifies the image that the same run just built.
 
 Every tag is one image for `linux/amd64` and `linux/arm64`, and Docker pulls the one that matches the machine. The Go binary is cross-compiled on the build machine, so the arm64 image needs no emulation. The signature covers the index of both platforms. Trivy scans each platform and reports it in its own code scanning category, but the SBOM is made for the amd64 image only, which has the same Go modules and the same base image packages as the arm64 one.
 
