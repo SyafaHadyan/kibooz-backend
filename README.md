@@ -83,7 +83,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 
 ## Documentation
 
-The API reference, with every route, field, limit, status code and error code, is at <https://docs.kibooz.syafahadyan.com> and is built from [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). Change the spec in the same pull request as an endpoint, because CI lints it and the end to end tests fail when a response or a route differs from it.
+The API reference, with every route, field, limit, status code and error code, is at <https://docs.kibooz.syafahadyan.com> and is built from [`openapi.yaml`](openapi.yaml) (OpenAPI 3.0). The API itself is served at <https://kibooz-api.syafahadyan.com/api/v1>. Change the spec in the same pull request as an endpoint, because CI lints it and the end to end tests fail when a response or a route differs from it.
 
 Cloudflare rebuilds the site on every push to `main` with `npm run build`, which uses the Redocly and Wrangler versions pinned in `package-lock.json`, the security headers in `docs/_headers` and the icon in `docs/favicon.ico`, and deploys it with `wrangler.jsonc`. The `package.json` only serves this site, so run `npm ci` once and then `npm run lint` or `npm run build` to try it locally. Dependabot keeps both tools current.
 
