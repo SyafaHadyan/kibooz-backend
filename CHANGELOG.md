@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.4.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.3.0...v0.4.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **limiter:** limit by user and account instead of IP ([#58](https://github.com/SyafaHadyan/kibooz-backend/issues/58))
+* **limiter:** limit by user and account instead of IP
+
+### Features
+
+* **auth:** give returning devices their own login rate limit ([dd3426d](https://github.com/SyafaHadyan/kibooz-backend/commit/dd3426dafb87c293ae8372dce8762909258e4fb2))
+* **auth:** give returning devices their own login rate limit ([#59](https://github.com/SyafaHadyan/kibooz-backend/issues/59)) ([cd23989](https://github.com/SyafaHadyan/kibooz-backend/commit/cd239894d79171511a556150c1502787f51a3629))
+* **dast:** add a weekly ZAP active scan ([7e455ae](https://github.com/SyafaHadyan/kibooz-backend/commit/7e455ae3f67b7394e36029710e5c09ae75c3af1f))
+* **dast:** add a weekly ZAP active scan ([#51](https://github.com/SyafaHadyan/kibooz-backend/issues/51)) ([af022dd](https://github.com/SyafaHadyan/kibooz-backend/commit/af022dd717eb2353ba21cba5514eb305ec9f8ef9))
+* **dast:** show how many requests the active scan sent ([c5584dd](https://github.com/SyafaHadyan/kibooz-backend/commit/c5584ddeadee4645f8966295c18022fb008b19eb))
+* **docs:** add a favicon to the API reference ([2d3ab31](https://github.com/SyafaHadyan/kibooz-backend/commit/2d3ab31bd073a70eeb2007fb84684a947a7a8329))
+* **docs:** add a favicon to the API reference ([#69](https://github.com/SyafaHadyan/kibooz-backend/issues/69)) ([17cecc7](https://github.com/SyafaHadyan/kibooz-backend/commit/17cecc7fffbf9fad9b350903c71d41bab718f4f2))
+* **limiter:** limit by user and account instead of IP ([373f87c](https://github.com/SyafaHadyan/kibooz-backend/commit/373f87cb6b7b1a6f26f52bf5f70f848a467bce82))
+* **limiter:** limit by user and account instead of IP ([#58](https://github.com/SyafaHadyan/kibooz-backend/issues/58)) ([8974bde](https://github.com/SyafaHadyan/kibooz-backend/commit/8974bdec9e048fef18654bef42dbfdd8749eec7d))
+
+
+### Bug Fixes
+
+* **auth:** reject a device token lifetime below one day ([f9538c4](https://github.com/SyafaHadyan/kibooz-backend/commit/f9538c466dd9799436ea4a891048ef7e77d5cc1d))
+* **dast:** move the ZAP proxy off the port of the API ([fe146d7](https://github.com/SyafaHadyan/kibooz-backend/commit/fe146d720debcec40badbd07f4e70b4ca2dcd9d1))
+* **dast:** print the request counts in the log as well ([e858359](https://github.com/SyafaHadyan/kibooz-backend/commit/e85835986bfbf5d70b2338a14c210080769ad7ce))
+* **limiter:** limit refresh and logout by token and login by email only ([9c49238](https://github.com/SyafaHadyan/kibooz-backend/commit/9c49238440fe36df86daa0a685271aad0c3c459e))
+* **limiter:** use a neutral key prefix for the password limiter ([e1823a9](https://github.com/SyafaHadyan/kibooz-backend/commit/e1823a9937449dcdf7d1928151650294ffdce093))
+
 ## [0.3.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.2.1...v0.3.0) (2026-10-07)
 
 
