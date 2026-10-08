@@ -11,9 +11,11 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/clock"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -31,15 +33,18 @@ type ClassroomUseCaseItf interface {
 	CreateReply(
 		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, req dto.CreateReplyRequest,
 	) (dto.ForumReply, error)
+	// ListStudents is for the teachers of the class, it shows each child with the latest mood of today
+	ListStudents(ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params) (dto.ClassStudentList, error)
 }
 
 type ClassroomUseCase struct {
 	repo repository.ClassroomDBItf
+	cfg  *env.Env
 	now  func() time.Time
 }
 
-func NewClassroomUseCase(repo repository.ClassroomDBItf) ClassroomUseCaseItf {
-	return &ClassroomUseCase{repo: repo, now: time.Now}
+func NewClassroomUseCase(repo repository.ClassroomDBItf, cfg *env.Env) ClassroomUseCaseItf {
+	return &ClassroomUseCase{repo: repo, cfg: cfg, now: time.Now}
 }
 
 func (u *ClassroomUseCase) ListVideos(
@@ -226,6 +231,41 @@ func (u *ClassroomUseCase) CreateReply(
 	}
 
 	return replyResponse(post), nil
+}
+
+func (u *ClassroomUseCase) ListStudents(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params,
+) (dto.ClassStudentList, error) {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return dto.ClassStudentList{}, err
+	}
+
+	from, to := clock.DayBounds(u.now(), u.cfg.Location())
+
+	rows, total, err := u.repo.ListStudents(ctx, classID, from, to, page.Limit, page.Offset())
+	if err != nil {
+		return dto.ClassStudentList{}, apperror.Internal(err)
+	}
+
+	res := dto.ClassStudentList{
+		Students: make([]dto.ClassStudent, 0, len(rows)),
+		PageInfo: dto.PageInfo{Page: page.Page, Limit: page.Limit, Total: total},
+	}
+
+	for i := range rows {
+		res.Students = append(res.Students, dto.ClassStudent{
+			ID:            rows[i].ID,
+			FullName:      rows[i].FullName,
+			NISN:          rows[i].NISN,
+			AvatarURL:     rows[i].AvatarURL,
+			CurrentPoints: rows[i].CurrentPoints,
+			ClassRank:     rows[i].RankPosition,
+			TodayMood:     rows[i].TodayMood,
+		})
+	}
+
+	return res, nil
 }
 
 // authorize lets a teacher of the class and a parent of a child in it through. It returns the guru id for a teacher.
