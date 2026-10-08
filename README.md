@@ -89,6 +89,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 
 - [Architecture](docs/architecture.md) covers the parts, the layers of the code and the path of a request.
 - [Design notes](docs/design.md) covers how accounts work, the rate limits, why Redis is optional and the business rules.
+- [Security](docs/security.md) covers what is protected, the threats, the measures and what is not covered.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Differences from the PRD](docs/prd-differences.md) lists where this implementation fills gaps in the PRD.
