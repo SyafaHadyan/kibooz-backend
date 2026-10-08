@@ -25,6 +25,8 @@ cosign verify \
   ghcr.io/syafahadyan/kibooz-backend:0.4.0
 ```
 
+The pattern leaves out the identity of pull request builds on purpose, so an image tagged `pr-<number>` does not pass this check and only builds from `main` or from a version tag do. The check inside `docker.yaml` accepts pull request identities because it only verifies the image that the same run just built.
+
 Every tag is one image for `linux/amd64` and `linux/arm64`, and Docker pulls the one that matches the machine. The Go binary is cross-compiled on the build machine, so the arm64 image needs no emulation. The signature covers the index of both platforms. Trivy scans each platform and reports it in its own code scanning category, but the SBOM is made for the amd64 image only, which has the same Go modules and the same base image packages as the arm64 one.
 
 ## Required checks
