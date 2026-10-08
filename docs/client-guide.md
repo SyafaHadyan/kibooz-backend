@@ -16,7 +16,7 @@ Registration and login also return a `deviceToken`. It is not a credential and t
 - Send it as `deviceToken` in the next login request for that email.
 - Replace the stored token with the one in every login response, because each login renews it for another 90 days by default.
 - Keep it after logout. A token that was kept lets the device sign in again even while a stranger is using up the shared budget of the email.
-- Do not worry about a stale one. A token that expired or does not match the email is ignored and the login is counted in the shared bucket, so sending it never causes an error.
+- Do not worry about a stale one. A token that expired or does not match the email is ignored and the login is counted in the shared bucket. If that bucket is used up, the login returns `429` with `RATE_LIMITED`, the same as for a device that has no token.
 
 A token refresh does not return a device token, so leave the stored one as it is.
 
