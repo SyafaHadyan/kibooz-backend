@@ -18,6 +18,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - `GET /guru/dashboard` takes an optional `classId`, `classOverview` also returns `joinCode`, and `dominantMood` is `null` while the class has no mood record for the day.
 - `GET /guru/mood/analytics` also returns `monthlyDistribution` when `range=monthly`.
 - `GET` and `POST /classes/{classId}/videos` list and add learning videos. Both teachers of the class and parents of a child in it can list them, and only a teacher can add one. The video is an https address, either a link to another host or a file the teacher uploaded.
+- `PATCH` and `DELETE /classes/{classId}/videos/{videoId}` change the details of a video and delete it. Any teacher of the class can do both. The address of a video cannot change, so a different file is a new video. Deleting an uploaded video also removes its file from the bucket once no other video uses it.
 - `POST /classes/{classId}/videos/upload-url` signs an address for uploading an mp4 or webm file straight to the bucket, because a video is too large to pass through the API. The teacher sends the file there and then adds the video with the `videoUrl` of the answer. Adding checks that the file arrived, belongs to the class and is a video of an accepted type and size.
 - `GET` and `POST /classes/{classId}/forum` list and start threads, and `GET` and `POST /classes/{classId}/forum/{postId}/replies` list and add replies. Teachers of the class and parents of a child in it can all write. A reply cannot be answered again and a post cannot be edited or deleted yet. The author of a deleted account shows as `Deleted account`.
 - The lists of videos, threads and replies take `page` and `limit` and return `page`, `limit` and `total` next to the items.
@@ -28,8 +29,8 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
-- Removing a video file from the bucket when its video is deleted or when it was never added. Videos cannot be deleted yet, and unused files are left to a bucket lifecycle rule.
-- Editing or deleting a learning video or a forum post.
+- Removing an uploaded video file that was never added to a class. Such a file is left to a bucket lifecycle rule on the `videos/` prefix.
+- Editing or deleting a forum post.
 
 ## Language
 
