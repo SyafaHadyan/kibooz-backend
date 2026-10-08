@@ -6,7 +6,7 @@ This page is for the people who build an app against the API. The full contract 
 
 Registration and login return an access token and a refresh token. Use the access token on every request and keep both tokens in secure storage, which is the Keychain on iOS and the Keystore on Android.
 
-A refresh token works once. Every call to `POST /api/v1/auth/refresh-token` returns a new refresh token, so replace the stored one each time and never reuse the old one. Send a refresh request when the access token expires and not on every launch.
+A refresh token works once. Every successful call to `POST /api/v1/auth/refresh-token` returns a new refresh token, so replace the stored one each time and never reuse the old one. A call that fails returns an error and no token, and the error `AUTH_REFRESH_INVALID` means the session is over and the person has to sign in again. Send a refresh request when the access token expires and not on every launch.
 
 ## Keep the device token
 
