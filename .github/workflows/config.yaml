@@ -89,3 +89,4 @@ jobs:
           npm run build
           test -s dist/index.html
           test -s dist/_headers
+          test -s dist/favicon.ico
