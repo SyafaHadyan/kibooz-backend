@@ -67,6 +67,7 @@ jobs:
 
       # A tag only points at whatever the registry holds today. The build attestation is kept by GitHub and not by the registry,
       # so this proves that docker.yaml of this repository built these exact bytes before they get a new signature
+      # The source ref has to be the tag of this version, because a pull request build is attested by the same workflow
       - name: Check that docker.yaml built this image
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,6 +77,7 @@ jobs:
           gh attestation verify "oci://${GHCR_IMAGE}@${DIGEST}" \
             --repo "$REPOSITORY" \
             --signer-workflow "${REPOSITORY}/.github/workflows/docker.yaml" \
+            --source-ref "refs/tags/v${TAG}" \
             --predicate-type https://cyclonedx.org/bom
 
       - name: Install cosign
