@@ -42,8 +42,8 @@ The mood detection runs on the device, so the API never receives a face photo an
 
 The argument has three parts.
 
-1. **Every request is checked at the edge.** A request is limited, then authenticated, then validated before any rule runs, so a hostile request is rejected by the cheapest check that can reject it. The order is the same on every route because the layers in [Architecture](architecture.md#layers) are the same for every feature.
-2. **Authority has one owner.** PostgreSQL alone decides who owns which data and which token is valid. Redis and the storage bucket can fail or be wrong without giving anyone access.
+1. **Every request is checked before a rule runs.** A signed in route checks the access token first and then applies the limit for that user. A public auth route applies the limit for the account first, because there is no token yet. Both validate the body before any rule runs, so a hostile request is rejected by the cheapest check that can reject it. The checks sit in the same places for every feature because the layers in [Architecture](architecture.md#layers) are the same for every feature.
+2. **Data and sessions have one owner.** PostgreSQL alone decides who owns which data and whether a refresh token is valid. An access token is checked locally against the signing key and its expiry, and a refresh token only works while PostgreSQL holds it. Redis and the storage bucket can fail or be wrong without giving anyone access.
 3. **The checks keep running.** The tools above run on every pull request and on a schedule, a required check blocks a merge when it fails, and the documented API is tested against the real behavior. A change that weakens a measure has to get past those checks.
 
 ## What is not covered
