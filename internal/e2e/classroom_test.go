@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -346,5 +348,133 @@ func TestClassForum(t *testing.T) {
 		list := call(t, http.MethodGet, replies(guruThread), guru.Token, nil)
 		require.Equal(t, http.StatusOK, list.Status, "body %v", list.Body)
 		require.Equal(t, "Deleted account", dig(listOf(t, list, "replies")[0], "author", "fullName"))
+	})
+}
+
+// sendFile does what the app does with a signed address, a PUT of the bytes with the headers of the answer
+func sendFile(t *testing.T, upload result, contentType string, size int) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPut, upload.data("uploadUrl").(string), bytes.NewReader(make([]byte, size)))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", contentType)
+
+	res, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	require.NoError(t, res.Body.Close())
+	require.Equal(t, http.StatusOK, res.StatusCode)
+}
+
+func TestVideoUpload(t *testing.T) {
+	guru := registerGuru(t, "Anggrek")
+	classID, joinCode := classOf(t, guru)
+	wali, _ := registerWali(t, joinCode, "Anggrek Child")
+
+	otherGuru := registerGuru(t, "Dahlia")
+	otherClassID, _ := classOf(t, otherGuru)
+
+	sign := func(token string, class string, body map[string]any) result {
+		return call(t, http.MethodPost, fmt.Sprintf("/api/v1/classes/%s/videos/upload-url", class), token, body)
+	}
+
+	add := func(token string, class string, videoURL string) result {
+		return call(t, http.MethodPost, fmt.Sprintf("/api/v1/classes/%s/videos", class), token,
+			map[string]any{"title": "Recorded lesson", "videoUrl": videoURL})
+	}
+
+	t.Run("sign, send and add a file", func(t *testing.T) {
+		upload := sign(guru.Token, classID, map[string]any{"contentType": "video/mp4", "sizeBytes": 2048})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+		require.Equal(t, "Upload URL created", upload.Body["message"])
+		require.Equal(t, "PUT", upload.data("method"))
+		require.Equal(t, "video/mp4", upload.data("headers", "Content-Type"))
+		require.NotEmpty(t, upload.data("expiresAt"))
+
+		videoURL := upload.data("videoUrl").(string)
+		require.True(t, strings.HasPrefix(videoURL, testPublicURL+"/videos/"+classID+"/"), videoURL)
+		require.True(t, strings.HasSuffix(videoURL, ".mp4"), videoURL)
+
+		signed, err := url.Parse(upload.data("uploadUrl").(string))
+		require.NoError(t, err)
+		require.Contains(t, signed.Path, "/"+testBucket+"/videos/"+classID+"/")
+		require.NotEmpty(t, signed.Query().Get("X-Amz-Signature"))
+
+		early := add(guru.Token, classID, videoURL)
+		early.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "has no uploaded file yet", dig(early.Body, "details", "videoUrl"))
+
+		sendFile(t, upload, "video/mp4", 2048)
+
+		added := add(guru.Token, classID, videoURL)
+		require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
+		require.Equal(t, videoURL, added.data("videoUrl"))
+
+		listed := call(t, http.MethodGet, fmt.Sprintf("/api/v1/classes/%s/videos", classID), wali.Token, nil)
+		require.Equal(t, http.StatusOK, listed.Status, "body %v", listed.Body)
+		require.Equal(t, []string{"Recorded lesson"}, titles(t, listOf(t, listed, "videos"), "title"))
+	})
+
+	t.Run("a webm file is accepted too", func(t *testing.T) {
+		upload := sign(guru.Token, classID, map[string]any{"contentType": "video/webm", "sizeBytes": 10})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+		require.True(t, strings.HasSuffix(upload.data("videoUrl").(string), ".webm"))
+	})
+
+	t.Run("a file that is not a video is refused when it is added", func(t *testing.T) {
+		upload := sign(guru.Token, classID, map[string]any{"contentType": "video/mp4", "sizeBytes": 64})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+
+		sendFile(t, upload, "image/png", 64)
+
+		res := add(guru.Token, classID, upload.data("videoUrl").(string))
+		res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "is not an accepted video file", dig(res.Body, "details", "videoUrl"))
+	})
+
+	t.Run("a file of another class or another kind cannot be added", func(t *testing.T) {
+		theirs := sign(otherGuru.Token, otherClassID, map[string]any{"contentType": "video/mp4", "sizeBytes": 16})
+		require.Equal(t, http.StatusOK, theirs.Status, "body %v", theirs.Body)
+		sendFile(t, theirs, "video/mp4", 16)
+
+		for name, videoURL := range map[string]string{
+			"another class": theirs.data("videoUrl").(string),
+			"an avatar":     testPublicURL + "/avatars/" + uuid.NewString() + "/a.png",
+		} {
+			res := add(guru.Token, classID, videoURL)
+			res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+			require.Equal(t, "is not a file uploaded for this class", dig(res.Body, "details", "videoUrl"), name)
+		}
+	})
+
+	t.Run("a link to another site still works", func(t *testing.T) {
+		res := add(guru.Token, classID, "https://videos.example.com/lesson.mp4")
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+	})
+
+	t.Run("the request is checked", func(t *testing.T) {
+		tooBig := int64(101) * 1024 * 1024
+
+		for _, body := range []map[string]any{
+			{},
+			{"contentType": "video/x-msvideo", "sizeBytes": 10},
+			{"contentType": "image/png", "sizeBytes": 10},
+			{"contentType": "video/mp4"},
+			{"contentType": "video/mp4", "sizeBytes": -1},
+			{"contentType": "video/mp4", "sizeBytes": tooBig},
+			{"contentType": "video/mp4", "sizeBytes": "big"},
+		} {
+			sign(guru.Token, classID, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+
+		sign(guru.Token, "not-a-uuid", map[string]any{"contentType": "video/mp4", "sizeBytes": 10}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("only a teacher of the class signs an upload", func(t *testing.T) {
+		body := map[string]any{"contentType": "video/mp4", "sizeBytes": 10}
+
+		sign(wali.Token, classID, body).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		sign(otherGuru.Token, classID, body).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		sign("", classID, body).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 	})
 }
