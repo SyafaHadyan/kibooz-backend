@@ -7,8 +7,6 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 )
 
-const defaultBannerBase = "https://storage.kibooz.id"
-
 type Guidance struct {
 	ID         string
 	Title      string
@@ -61,11 +59,12 @@ func Exists(id string) bool {
 	return false
 }
 
-// BannerURL builds the public URL of the guide banner
+// BannerURL builds the public URL of the guide banner and is empty when no public base URL is configured,
+// because a made up host would hand out a link that never works
 func (g Guidance) BannerURL(publicBase string) string {
 	base := strings.TrimRight(publicBase, "/")
 	if base == "" {
-		base = defaultBannerBase
+		return ""
 	}
 
 	return base + "/" + g.BannerPath
