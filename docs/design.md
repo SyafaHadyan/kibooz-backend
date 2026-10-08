@@ -39,7 +39,7 @@ Two things follow from not using the address. Guessing the password of one accou
 
 ### A flood limit in the proxy
 
-The proxy limit is a ceiling for floods and not a throttle for people. Set it far above what one school network sends, because many users can share one address and the API already limits every user and account on its own. This nginx example allows each address 30 requests a second with a burst of 60 on the four public auth routes and leaves every other route to the API.
+The proxy limit is a ceiling for floods and not a throttle for people. It still counts by address, so once an address goes over the ceiling the proxy rejects everyone who shares it, including the users who behave. That is why the numbers have to sit far above what one school network sends, and the API already limits every user and account on its own. This nginx example allows each address 30 requests a second with a burst of 60 on the four public auth routes and leaves every other route to the API.
 
 ```nginx
 # http block
