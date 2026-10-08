@@ -77,6 +77,16 @@ type CreateReplyRequest struct {
 	Body string `json:"body" validate:"required,max=5000"`
 }
 
+// UpdateThreadRequest changes the title or the text of a thread, a missing field stays as it was
+type UpdateThreadRequest struct {
+	Title *string `json:"title" validate:"omitempty,max=150"`
+	Body  *string `json:"body" validate:"omitempty,max=5000"`
+}
+
+type UpdateReplyRequest struct {
+	Body string `json:"body" validate:"required,max=5000"`
+}
+
 type ForumThread struct {
 	ID         uuid.UUID   `json:"id"`
 	Title      string      `json:"title"`
