@@ -28,7 +28,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27"
+          # always the newest 1.27 patch release, so a fixed standard library vulnerability reaches CI without a change here
+          check-latest: true
 
       - name: Check formatting
         run: |
@@ -98,7 +100,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          go-version: "1.27"
+          # always the newest 1.27 patch release, so a fixed standard library vulnerability reaches CI without a change here
+          check-latest: true
 
       - name: Build
         run: go build ./...
