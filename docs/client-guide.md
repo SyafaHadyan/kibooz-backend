@@ -2,6 +2,10 @@
 
 This page is for the people who build an app against the API. The full contract is the [API reference](https://docs.kibooz.syafahadyan.com), and this page only explains the parts that an app has to do on its own.
 
+## Base URL
+
+The API is served over HTTPS at `https://kibooz-api.syafahadyan.com`. Every route lives under `/api/v1`, for example `https://kibooz-api.syafahadyan.com/api/v1/auth/login`, and only the health probe `GET /healthz` lives at the root. Plain HTTP requests are redirected to HTTPS, so always configure the app with the `https://` address.
+
 ## Sign in and keep the tokens
 
 Registration and login return an access token and a refresh token. Use the access token on every request and keep both tokens in secure storage, which is the Keychain on iOS and the Keystore on Android.

@@ -16,8 +16,10 @@ info:
     name: GNU General Public License v3.0
     url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
 servers:
-  - url: /api/v1
-    description: Same host as this document
+  - url: https://kibooz-api.syafahadyan.com/api/v1
+    description: Production
+  - url: http://localhost:8080/api/v1
+    description: Local development with the default port
 tags:
   - name: Auth
     description: Registration, login and sessions
@@ -484,7 +486,10 @@ paths:
         This route lives at the root and not under `/api/v1`.
       security: []
       servers:
-        - url: /
+        - url: https://kibooz-api.syafahadyan.com
+          description: Production
+        - url: http://localhost:8080
+          description: Local development with the default port
       responses:
         "200":
           description: Healthy or degraded
