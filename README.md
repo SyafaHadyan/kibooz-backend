@@ -79,7 +79,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
-| `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured |
+| `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_URL` has to serve the objects publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
 
