@@ -28,7 +28,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # go.mod stays on the oldest Go release the code supports because Snyk cannot read a newer go directive or a toolchain line,
+          # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
+          go-version: "1.27.2"
 
       - name: Check formatting
         run: |
@@ -98,7 +100,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # go.mod stays on the oldest Go release the code supports because Snyk cannot read a newer go directive or a toolchain line,
+          # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
+          go-version: "1.27.2"
 
       - name: Build
         run: go build ./...
