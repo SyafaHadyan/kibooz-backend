@@ -128,3 +128,37 @@ func TestWeeklyTrendScoresShareOfHappyStudents(t *testing.T) {
 	require.Equal(t, 100, points[2].AverageHappyScore)
 	require.Equal(t, "Friday", points[4].Day)
 }
+
+// Two logs of the same moment must give one answer whatever order they arrive in, and the one that the parent dashboard
+// and the class register pick, which orders them by id as well
+func TestLogsOfTheSameMomentAreOrderedByID(t *testing.T) {
+	loc := jakarta(t)
+	student := uuid.New()
+	moment := time.Date(2026, 10, 5, 1, 0, 0, 500, time.UTC)
+
+	low := repository.MoodRecord{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), StudentID: student, MoodType: constants.MoodSedih, RecordedAt: moment}
+	high := repository.MoodRecord{ID: uuid.MustParse("ffffffff-0000-0000-0000-000000000001"), StudentID: student, MoodType: constants.MoodSenang, RecordedAt: moment}
+
+	for _, order := range [][]repository.MoodRecord{{low, high}, {high, low}} {
+		items := latestPerStudentPerDay(order, loc)
+
+		require.Len(t, items, 1)
+		require.Equal(t, constants.MoodSenang, items[0].Mood, "the log with the higher id wins")
+	}
+}
+
+func TestANewerMomentBeatsAHigherID(t *testing.T) {
+	loc := jakarta(t)
+	student := uuid.New()
+	moment := time.Date(2026, 10, 5, 1, 0, 0, 0, time.UTC)
+
+	older := repository.MoodRecord{ID: uuid.MustParse("ffffffff-0000-0000-0000-000000000001"), StudentID: student, MoodType: constants.MoodSedih, RecordedAt: moment}
+	newest := repository.MoodRecord{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), StudentID: student, MoodType: constants.MoodSenang, RecordedAt: moment.Add(time.Microsecond)}
+
+	for _, order := range [][]repository.MoodRecord{{older, newest}, {newest, older}} {
+		items := latestPerStudentPerDay(order, loc)
+
+		require.Len(t, items, 1)
+		require.Equal(t, constants.MoodSenang, items[0].Mood)
+	}
+}

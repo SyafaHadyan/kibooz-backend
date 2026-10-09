@@ -40,6 +40,7 @@ type ProfileUpdate struct {
 
 // MoodRecord is the minimal mood log projection used by aggregations
 type MoodRecord struct {
+	ID         uuid.UUID
 	StudentID  uuid.UUID
 	MoodType   constants.Mood
 	RecordedAt time.Time
@@ -132,10 +133,10 @@ func (r *GuruDB) ListMoodRecords(ctx context.Context, classID uuid.UUID, from ti
 
 	err := r.db.WithContext(ctx).
 		Table("mood_logs AS m").
-		Select("m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at").
+		Select("m.id AS id, m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at").
 		Joins("JOIN students AS s ON s.id = m.student_id").
 		Where("s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?", classID, from, to).
-		Order("m.recorded_at ASC").
+		Order("m.recorded_at ASC, m.id ASC").
 		Scan(&records).Error
 
 	return records, err

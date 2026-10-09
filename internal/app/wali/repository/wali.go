@@ -104,7 +104,7 @@ func (r *WaliDB) LatestMood(ctx context.Context, studentID uuid.UUID, from time.
 
 	err := r.db.WithContext(ctx).
 		Where("student_id = ? AND recorded_at >= ? AND recorded_at < ?", studentID, from, to).
-		Order("recorded_at DESC").
+		Order("recorded_at DESC, id DESC").
 		Limit(1).
 		Find(&logs).Error
 	if err != nil {
