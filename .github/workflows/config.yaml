@@ -17,6 +17,7 @@ jobs:
   actionlint:
     name: Actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -32,6 +33,7 @@ jobs:
   zizmor:
     name: Zizmor
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -48,6 +50,7 @@ jobs:
   hadolint:
     name: Hadolint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -63,6 +66,7 @@ jobs:
   openapi:
     name: OpenAPI lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
