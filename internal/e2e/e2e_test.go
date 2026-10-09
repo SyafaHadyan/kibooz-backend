@@ -342,6 +342,34 @@ func TestRegistrationAndLogin(t *testing.T) {
 		res.requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
 	})
 
+	t.Run("a NISN with anything but digits", func(t *testing.T) {
+		for _, bad := range []string{"-12345", "+12345", "123.45", "12 345", "12e345", "١٢٣٤٥"} {
+			res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+				"email": fmt.Sprintf("n.%s@example.com", suffix()), "password": testPassword, "fullName": "New Parent",
+				"role": "WALI", "classCode": joinCode, "student": map[string]any{"nisn": bad, "fullName": "Anak"},
+			})
+			res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+			require.Equal(t, "must contain digits only", dig(res.Body, "details", "student.nisn"), "nisn %q", bad)
+		}
+	})
+
+	t.Run("names that are only spaces", func(t *testing.T) {
+		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": fmt.Sprintf("b.%s@example.com", suffix()), "password": testPassword, "fullName": "   ",
+			"role": "GURU", "class": map[string]any{"name": "   "},
+		})
+		res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "is required", dig(res.Body, "details", "fullName"))
+		require.Equal(t, "is required", dig(res.Body, "details", "class.name"))
+
+		child := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": fmt.Sprintf("c.%s@example.com", suffix()), "password": testPassword, "fullName": "New Parent",
+			"role": "WALI", "classCode": joinCode, "student": map[string]any{"nisn": nisn(), "fullName": "   "},
+		})
+		child.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "is required", dig(child.Body, "details", "student.fullName"))
+	})
+
 	t.Run("unknown class code", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
 			"email": fmt.Sprintf("x.%s@example.com", suffix()), "password": testPassword, "fullName": "New Parent",

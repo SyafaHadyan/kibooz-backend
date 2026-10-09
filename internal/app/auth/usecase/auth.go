@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -24,6 +26,9 @@ import (
 
 const (
 	bcryptMaxBytes = 72
+
+	// minFullNameRunes is the shortest name of a person, the same minimum the request validator uses
+	minFullNameRunes = 2
 
 	// usedTTL is how long Redis remembers a consumed token to reject quick replays
 	usedTTL = time.Minute
@@ -53,7 +58,41 @@ func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.Cache
 	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg)}
 }
 
+// checkNames refuses a name that is only spaces or that is too short once the spaces are gone. The validator counts the text as it was
+// sent, and the names are stored trimmed, so "  " would pass it and be stored as an empty name.
+func checkNames(req dto.RegisterRequest) map[string]string {
+	details := map[string]string{}
+
+	check := func(field string, value string, minRunes int) {
+		trimmed := strings.TrimSpace(value)
+
+		switch {
+		case trimmed == "":
+			details[field] = "is required"
+		case utf8.RuneCountInString(trimmed) < minRunes:
+			details[field] = "too short or too small, minimum " + strconv.Itoa(minRunes)
+		}
+	}
+
+	check("fullName", req.FullName, minFullNameRunes)
+
+	if req.Role == constants.RoleGuru && req.Class != nil {
+		check("class.name", req.Class.Name, 1)
+	}
+
+	if req.Role == constants.RoleWali && req.Student != nil {
+		check("student.fullName", req.Student.FullName, minFullNameRunes)
+	}
+
+	return details
+}
+
 func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error) {
+	details := checkNames(req)
+	if len(details) > 0 {
+		return dto.AuthResponse{}, apperror.Validation(details)
+	}
+
 	if len([]byte(req.Password)) > bcryptMaxBytes {
 		//nolint:gosec // this is a validation message and not a credential
 		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": "too long, maximum 72 bytes"})

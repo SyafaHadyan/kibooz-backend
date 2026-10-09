@@ -15,7 +15,7 @@ type RegisterClass struct {
 }
 
 type RegisterStudent struct {
-	NISN     string `json:"nisn" validate:"required,numeric,min=5,max=30"`
+	NISN     string `json:"nisn" validate:"required,number,min=5,max=30"`
 	FullName string `json:"fullName" validate:"required,min=2,max=150"`
 }
 

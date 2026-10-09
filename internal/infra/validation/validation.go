@@ -92,7 +92,7 @@ func describe(fieldErr validator.FieldError) string {
 		return "too long or too large, maximum " + fieldErr.Param()
 	case "oneof":
 		return "must be one of " + fieldErr.Param()
-	case "numeric":
+	case "numeric", "number":
 		return "must contain digits only"
 	case "alphanum":
 		return "must contain letters and digits only"
