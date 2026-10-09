@@ -10,8 +10,10 @@ on:
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.ref }}
-  # Only a pull request build is dropped for a newer one. A run on main or a tag that is cancelled after the push has moved
-  # the tags but before the image is scanned and signed would leave an unsigned image under them.
+  # A run that has started is never cancelled unless it builds a pull request. Cancelling a run on main or a tag after the push
+  # has moved the tags but before the image is scanned and signed would leave an unsigned image under them. A run that is still
+  # waiting is replaced by a newer one, which is fine because only the newest commit on main matters for latest, and the runs
+  # must stay in one group so that two of them never move latest at the same time.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
