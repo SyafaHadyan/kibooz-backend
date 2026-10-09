@@ -789,6 +789,126 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/forum/{postId}:
+    patch:
+      tags: [Classroom]
+      operationId: updateThread
+      summary: Change a forum thread
+      description: >-
+        Only the author can change a thread. A missing field stays as it is, and the title and the text cannot be empty. At least one field is required.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateThreadRequest"
+      responses:
+        "200":
+          description: Forum thread updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumThreadEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Classroom]
+      operationId: deleteThread
+      summary: Delete a forum thread
+      description: >-
+        The author and the teachers of the class can delete a thread. Its replies are deleted with it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+      responses:
+        "200":
+          description: Forum thread deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/forum/{postId}/replies/{replyId}:
+    patch:
+      tags: [Classroom]
+      operationId: updateReply
+      summary: Change a forum reply
+      description: >-
+        Only the author can change a reply. `postId` is the thread the reply belongs to.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+        - $ref: "#/components/parameters/ReplyPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateReplyRequest"
+      responses:
+        "200":
+          description: Forum reply updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForumReplyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Classroom]
+      operationId: deleteReply
+      summary: Delete a forum reply
+      description: >-
+        The author and the teachers of the class can delete a reply. `postId` is the thread the reply belongs to.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/PostPath"
+        - $ref: "#/components/parameters/ReplyPath"
+      responses:
+        "200":
+          description: Forum reply deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /trash/scan-claim:
     post:
       tags: [Trash]
@@ -1026,6 +1146,14 @@ components:
       in: path
       required: true
       description: A learning video of the class
+      schema:
+        type: string
+        format: uuid
+    ReplyPath:
+      name: replyId
+      in: path
+      required: true
+      description: A reply to the forum thread
       schema:
         type: string
         format: uuid
@@ -1945,6 +2073,26 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/ForumThreadList"
+    UpdateThreadRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+    UpdateReplyRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
     CreateReplyRequest:
       type: object
       required: [body]

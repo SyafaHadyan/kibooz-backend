@@ -267,6 +267,189 @@ func TestRemoveUploadedFile(t *testing.T) {
 	}
 }
 
+// forumRepo holds one post and answers the membership questions from memory
+type forumRepo struct {
+	repository.ClassroomDBItf
+
+	teacher *uuid.UUID
+	parent  bool
+	post    *repository.PostRow
+	gone    bool
+}
+
+func (r *forumRepo) TeacherOfClass(context.Context, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
+	return r.teacher, nil
+}
+
+func (r *forumRepo) ParentInClass(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return r.parent, nil
+}
+
+func (r *forumRepo) FindPost(context.Context, uuid.UUID) (*repository.PostRow, error) {
+	return r.post, nil
+}
+
+func (r *forumRepo) UpdatePost(_ context.Context, post *entity.ForumPost) error {
+	r.post.ForumPost = *post
+
+	return nil
+}
+
+func (r *forumRepo) DeletePost(context.Context, uuid.UUID) (bool, error) {
+	if r.gone {
+		return false, nil
+	}
+
+	r.gone = true
+
+	return true, nil
+}
+
+func TestForumEditAndDeleteRules(t *testing.T) {
+	classID, threadID, replyID := uuid.New(), uuid.New(), uuid.New()
+	author, stranger, guruID := uuid.New(), uuid.New(), uuid.New()
+	title := "Title"
+
+	newRepo := func() *forumRepo {
+		return &forumRepo{
+			parent: true,
+			post: &repository.PostRow{
+				ForumPost: entity.ForumPost{ID: threadID, ClassID: classID, AuthorUserID: author, Title: &title, Body: "Text"},
+			},
+		}
+	}
+
+	reply := func(r *forumRepo) *forumRepo {
+		r.post = &repository.PostRow{
+			ForumPost: entity.ForumPost{ID: replyID, ClassID: classID, ParentID: &threadID, AuthorUserID: author, Body: "Answer"},
+		}
+
+		return r
+	}
+
+	text := func(value string) *string { return &value }
+
+	t.Run("the author changes a thread", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: newRepo()}
+
+		got, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID,
+			dto.UpdateThreadRequest{Title: text(" New title "), Body: text("New text")})
+
+		require.NoError(t, err)
+		require.Equal(t, "New title", got.Title)
+		require.Equal(t, "New text", got.Body)
+	})
+
+	t.Run("a missing field of a thread stays", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: newRepo()}
+
+		got, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Body: text("Only text")})
+
+		require.NoError(t, err)
+		require.Equal(t, "Title", got.Title)
+		require.Equal(t, "Only text", got.Body)
+	})
+
+	t.Run("an empty thread change is refused", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: newRepo()}
+
+		for _, req := range []dto.UpdateThreadRequest{{}, {Title: text("  ")}, {Body: text("")}} {
+			_, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, req)
+
+			var appErr *apperror.Error
+
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		}
+	})
+
+	t.Run("only the author edits", func(t *testing.T) {
+		repo := newRepo()
+		repo.teacher = &guruID
+		u := &ClassroomUseCase{repo: repo}
+
+		_, err := u.UpdateThread(context.Background(), stranger, constants.RoleGuru, classID, threadID, dto.UpdateThreadRequest{Body: text("x")})
+		require.ErrorIs(t, err, apperror.ErrForbidden, "a teacher may delete but not edit the words of someone else")
+
+		repliesRepo := reply(newRepo())
+		repliesRepo.teacher = &guruID
+
+		_, err = (&ClassroomUseCase{repo: repliesRepo}).UpdateReply(
+			context.Background(), stranger, constants.RoleGuru, classID, threadID, replyID, dto.UpdateReplyRequest{Body: "x"})
+		require.ErrorIs(t, err, apperror.ErrForbidden)
+	})
+
+	t.Run("the author changes a reply", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: reply(newRepo())}
+
+		got, err := u.UpdateReply(context.Background(), author, constants.RoleWali, classID, threadID, replyID, dto.UpdateReplyRequest{Body: " Better "})
+
+		require.NoError(t, err)
+		require.Equal(t, "Better", got.Body)
+
+		_, err = u.UpdateReply(context.Background(), author, constants.RoleWali, classID, threadID, replyID, dto.UpdateReplyRequest{Body: "  "})
+		require.Error(t, err)
+	})
+
+	t.Run("a post of another place is not found", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: newRepo()}
+
+		_, err := u.UpdateThread(context.Background(), author, constants.RoleWali, uuid.New(), threadID, dto.UpdateThreadRequest{Body: text("x")})
+		require.ErrorIs(t, err, apperror.ErrForumPostNotFound, "the post belongs to another class")
+
+		require.ErrorIs(t, u.DeleteReply(context.Background(), author, constants.RoleWali, classID, threadID, threadID), apperror.ErrForumPostNotFound,
+			"a thread is not a reply")
+
+		replies := &ClassroomUseCase{repo: reply(newRepo())}
+
+		require.ErrorIs(t, replies.DeleteReply(context.Background(), author, constants.RoleWali, classID, uuid.New(), replyID), apperror.ErrForumPostNotFound,
+			"the reply belongs to another thread")
+		require.ErrorIs(t, replies.DeleteThread(context.Background(), author, constants.RoleWali, classID, replyID), apperror.ErrForumPostNotFound,
+			"a reply is not a thread")
+
+		missing := newRepo()
+		missing.post = nil
+
+		require.ErrorIs(t, (&ClassroomUseCase{repo: missing}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
+			apperror.ErrForumPostNotFound)
+	})
+
+	t.Run("the author or a teacher deletes", func(t *testing.T) {
+		own := newRepo()
+		require.NoError(t, (&ClassroomUseCase{repo: own}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID))
+		require.True(t, own.gone)
+
+		moderated := reply(newRepo())
+		moderated.teacher = &guruID
+		require.NoError(t, (&ClassroomUseCase{repo: moderated}).DeleteReply(context.Background(), stranger, constants.RoleGuru, classID, threadID, replyID))
+		require.True(t, moderated.gone)
+	})
+
+	t.Run("another parent cannot delete", func(t *testing.T) {
+		repo := newRepo()
+
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), stranger, constants.RoleWali, classID, threadID),
+			apperror.ErrForbidden)
+		require.False(t, repo.gone)
+	})
+
+	t.Run("someone outside the class cannot touch the forum", func(t *testing.T) {
+		repo := newRepo()
+		repo.parent = false
+
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
+			apperror.ErrForbidden)
+	})
+
+	t.Run("a post removed by another request is not found", func(t *testing.T) {
+		repo := newRepo()
+		repo.gone = true
+
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
+			apperror.ErrForumPostNotFound)
+	})
+}
+
 // lockRepo records what happens in which order, so the tests can see what runs under the file lock
 type lockRepo struct {
 	repository.ClassroomDBItf

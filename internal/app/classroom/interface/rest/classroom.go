@@ -35,8 +35,12 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group.Delete("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.DeleteVideo)
 	group.Get("/forum", members, handler.ListThreads)
 	group.Post("/forum", members, handler.CreateThread)
+	group.Patch("/forum/:postId", members, handler.UpdateThread)
+	group.Delete("/forum/:postId", members, handler.DeleteThread)
 	group.Get("/forum/:postId/replies", members, handler.ListReplies)
 	group.Post("/forum/:postId/replies", members, handler.CreateReply)
+	group.Patch("/forum/:postId/replies/:replyId", members, handler.UpdateReply)
+	group.Delete("/forum/:postId/replies/:replyId", members, handler.DeleteReply)
 	// the register holds the NISN of every child, so it is for the teachers only
 	group.Get("/students", mw.RequireRole(constants.RoleGuru), handler.ListStudents)
 }
@@ -177,6 +181,76 @@ func (h *ClassroomHandler) CreateThread(c fiber.Ctx) error {
 	return response.JSON(c, http.StatusCreated, "Forum thread created", res)
 }
 
+func (h *ClassroomHandler) UpdateThread(c fiber.Ctx) error {
+	classID, threadID, err := classAndPost(c)
+	if err != nil {
+		return err
+	}
+
+	var req dto.UpdateThreadRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateThread(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, threadID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Forum thread updated", res)
+}
+
+func (h *ClassroomHandler) DeleteThread(c fiber.Ctx) error {
+	classID, threadID, err := classAndPost(c)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.DeleteThread(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, threadID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Forum thread deleted", nil)
+}
+
+func (h *ClassroomHandler) UpdateReply(c fiber.Ctx) error {
+	classID, threadID, replyID, err := classPostAndReply(c)
+	if err != nil {
+		return err
+	}
+
+	var req dto.UpdateReplyRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateReply(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, threadID, replyID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Forum reply updated", res)
+}
+
+func (h *ClassroomHandler) DeleteReply(c fiber.Ctx) error {
+	classID, threadID, replyID, err := classPostAndReply(c)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.DeleteReply(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, threadID, replyID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Forum reply deleted", nil)
+}
+
 func (h *ClassroomHandler) ListReplies(c fiber.Ctx) error {
 	classID, threadID, err := classAndPost(c)
 	if err != nil {
@@ -234,6 +308,20 @@ func (h *ClassroomHandler) ListStudents(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func classPostAndReply(c fiber.Ctx) (uuid.UUID, uuid.UUID, uuid.UUID, error) {
+	classID, threadID, err := classAndPost(c)
+	if err != nil {
+		return uuid.Nil, uuid.Nil, uuid.Nil, err
+	}
+
+	replyID, err := pathUUID(c, "replyId")
+	if err != nil {
+		return uuid.Nil, uuid.Nil, uuid.Nil, err
+	}
+
+	return classID, threadID, replyID, nil
 }
 
 func classAndVideo(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {

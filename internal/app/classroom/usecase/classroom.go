@@ -45,6 +45,21 @@ type ClassroomUseCaseItf interface {
 	CreateReply(
 		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, req dto.CreateReplyRequest,
 	) (dto.ForumReply, error)
+	// UpdateThread lets the author of a thread change its title or text
+	UpdateThread(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, req dto.UpdateThreadRequest,
+	) (dto.ForumThread, error)
+	// DeleteThread removes a thread with its replies, the author and the teachers of the class may do it
+	DeleteThread(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID) error
+	// UpdateReply lets the author of a reply change its text
+	UpdateReply(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, replyID uuid.UUID,
+		req dto.UpdateReplyRequest,
+	) (dto.ForumReply, error)
+	// DeleteReply removes a reply, the author and the teachers of the class may do it
+	DeleteReply(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, replyID uuid.UUID,
+	) error
 	// ListStudents is for the teachers of the class, it shows each child with the latest mood of today
 	ListStudents(ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params) (dto.ClassStudentList, error)
 }
@@ -471,6 +486,179 @@ func (u *ClassroomUseCase) CreateReply(
 	}
 
 	return replyResponse(post), nil
+}
+
+func (u *ClassroomUseCase) UpdateThread(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, req dto.UpdateThreadRequest,
+) (dto.ForumThread, error) {
+	post, err := u.findOwnPost(ctx, userID, role, classID, nil, threadID)
+	if err != nil {
+		return dto.ForumThread{}, err
+	}
+
+	if req.Title == nil && req.Body == nil {
+		return dto.ForumThread{}, apperror.Validation(map[string]string{"body": "provide title or body"})
+	}
+
+	details := map[string]string{}
+	changed := post.ForumPost
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			details["title"] = "cannot be empty"
+		}
+
+		changed.Title = &title
+	}
+
+	if req.Body != nil {
+		text := strings.TrimSpace(*req.Body)
+		if text == "" {
+			details["body"] = "cannot be empty"
+		}
+
+		changed.Body = text
+	}
+
+	if len(details) > 0 {
+		return dto.ForumThread{}, apperror.Validation(details)
+	}
+
+	row, err := u.saveChanges(ctx, &changed)
+	if err != nil {
+		return dto.ForumThread{}, err
+	}
+
+	return threadResponse(row), nil
+}
+
+func (u *ClassroomUseCase) UpdateReply(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, replyID uuid.UUID,
+	req dto.UpdateReplyRequest,
+) (dto.ForumReply, error) {
+	post, err := u.findOwnPost(ctx, userID, role, classID, &threadID, replyID)
+	if err != nil {
+		return dto.ForumReply{}, err
+	}
+
+	text := strings.TrimSpace(req.Body)
+	if text == "" {
+		return dto.ForumReply{}, apperror.Validation(map[string]string{"body": "cannot be empty"})
+	}
+
+	changed := post.ForumPost
+	changed.Body = text
+
+	row, err := u.saveChanges(ctx, &changed)
+	if err != nil {
+		return dto.ForumReply{}, err
+	}
+
+	return replyResponse(row), nil
+}
+
+func (u *ClassroomUseCase) DeleteThread(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID,
+) error {
+	return u.removePost(ctx, userID, role, classID, nil, threadID)
+}
+
+func (u *ClassroomUseCase) DeleteReply(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, replyID uuid.UUID,
+) error {
+	return u.removePost(ctx, userID, role, classID, &threadID, replyID)
+}
+
+// removePost deletes a post of the class for its author or for a teacher of the class
+func (u *ClassroomUseCase) removePost(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID *uuid.UUID, postID uuid.UUID,
+) error {
+	post, guruID, err := u.findPostInClass(ctx, userID, role, classID, threadID, postID)
+	if err != nil {
+		return err
+	}
+
+	if post.AuthorUserID != userID && guruID == nil {
+		return apperror.ErrForbidden
+	}
+
+	deleted, err := u.repo.DeletePost(ctx, postID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	// another request removed it first
+	if !deleted {
+		return apperror.ErrForumPostNotFound
+	}
+
+	return nil
+}
+
+// findOwnPost returns a post that the account wrote, anyone else gets a refusal
+func (u *ClassroomUseCase) findOwnPost(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID *uuid.UUID, postID uuid.UUID,
+) (*repository.PostRow, error) {
+	post, _, err := u.findPostInClass(ctx, userID, role, classID, threadID, postID)
+	if err != nil {
+		return nil, err
+	}
+
+	if post.AuthorUserID != userID {
+		return nil, apperror.ErrForbidden
+	}
+
+	return post, nil
+}
+
+// findPostInClass checks that the account belongs to the class and that the post is a thread of it,
+// or a reply to the given thread when threadID is set. It returns the guru id of a teacher.
+func (u *ClassroomUseCase) findPostInClass(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID *uuid.UUID, postID uuid.UUID,
+) (*repository.PostRow, *uuid.UUID, error) {
+	guruID, err := u.authorize(ctx, userID, role, classID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	post, err := u.repo.FindPost(ctx, postID)
+	if err != nil {
+		return nil, nil, apperror.Internal(err)
+	}
+
+	if post == nil || post.ClassID != classID || !postHasParent(post, threadID) {
+		return nil, nil, apperror.ErrForumPostNotFound
+	}
+
+	return post, guruID, nil
+}
+
+// postHasParent tells whether a post is a thread when threadID is nil, and a reply to that thread otherwise
+func postHasParent(post *repository.PostRow, threadID *uuid.UUID) bool {
+	if threadID == nil {
+		return post.ParentID == nil
+	}
+
+	return post.ParentID != nil && *post.ParentID == *threadID
+}
+
+func (u *ClassroomUseCase) saveChanges(ctx context.Context, post *entity.ForumPost) (*repository.PostRow, error) {
+	err := u.repo.UpdatePost(ctx, post)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	row, err := u.repo.FindPost(ctx, post.ID)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	if row == nil {
+		return nil, apperror.ErrForumPostNotFound
+	}
+
+	return row, nil
 }
 
 func (u *ClassroomUseCase) ListStudents(

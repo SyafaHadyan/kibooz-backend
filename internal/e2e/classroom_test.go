@@ -604,3 +604,155 @@ func TestEditAndDeleteVideos(t *testing.T) {
 		require.NotContains(t, uploaded("videos/"+classID+"/"), key)
 	})
 }
+
+func TestForumEditAndDelete(t *testing.T) {
+	guru := registerGuru(t, "Heliconia")
+	classID, joinCode := classOf(t, guru)
+	author, _ := registerWali(t, joinCode, "Heliconia Child One")
+	neighbour, _ := registerWali(t, joinCode, "Heliconia Child Two")
+
+	otherGuru := registerGuru(t, "Iris")
+	_, otherCode := classOf(t, otherGuru)
+	outsider, _ := registerWali(t, otherCode, "Iris Child")
+
+	forum := fmt.Sprintf("/api/v1/classes/%s/forum", classID)
+
+	thread := func(token string, title string) string {
+		res := call(t, http.MethodPost, forum, token, map[string]any{"title": title, "body": "Original text"})
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		return res.data("id").(string)
+	}
+
+	reply := func(token string, threadID string, body string) string {
+		res := call(t, http.MethodPost, forum+"/"+threadID+"/replies", token, map[string]any{"body": body})
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		return res.data("id").(string)
+	}
+
+	t.Run("the author changes a thread", func(t *testing.T) {
+		id := thread(author.Token, "First title")
+
+		res := call(t, http.MethodPatch, forum+"/"+id, author.Token, map[string]any{"title": " Second title ", "body": "Changed text"})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Forum thread updated", res.Body["message"])
+		require.Equal(t, "Second title", res.data("title"))
+		require.Equal(t, "Changed text", res.data("body"))
+
+		onlyBody := call(t, http.MethodPatch, forum+"/"+id, author.Token, map[string]any{"body": "Third text"})
+		require.Equal(t, http.StatusOK, onlyBody.Status, "body %v", onlyBody.Body)
+		require.Equal(t, "Second title", onlyBody.data("title"), "a missing field stays")
+
+		listed := call(t, http.MethodGet, forum, guru.Token, nil)
+		require.Contains(t, titles(t, listOf(t, listed, "threads"), "title"), "Second title")
+	})
+
+	t.Run("a bad thread change is refused", func(t *testing.T) {
+		id := thread(author.Token, "Checked")
+
+		for _, body := range []map[string]any{
+			{},
+			{"title": "   "},
+			{"body": ""},
+			{"title": strings.Repeat("a", 151)},
+			{"body": strings.Repeat("a", 5001)},
+		} {
+			call(t, http.MethodPatch, forum+"/"+id, author.Token, body).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		}
+
+		call(t, http.MethodPatch, forum+"/not-a-uuid", author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("only the author changes the words", func(t *testing.T) {
+		id := thread(author.Token, "Mine")
+		replyID := reply(guru.Token, id, "A teacher answer")
+
+		for _, token := range []string{neighbour.Token, guru.Token} {
+			call(t, http.MethodPatch, forum+"/"+id, token, map[string]any{"body": "x"}).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		}
+
+		call(t, http.MethodPatch, forum+"/"+id+"/replies/"+replyID, author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+
+		call(t, http.MethodPatch, forum+"/"+id, outsider.Token, map[string]any{"body": "x"}).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodPatch, forum+"/"+id, "", map[string]any{"body": "x"}).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+	})
+
+	t.Run("the author changes a reply", func(t *testing.T) {
+		id := thread(neighbour.Token, "Discussion")
+		replyID := reply(author.Token, id, "First answer")
+
+		res := call(t, http.MethodPatch, forum+"/"+id+"/replies/"+replyID, author.Token, map[string]any{"body": " Better answer "})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Forum reply updated", res.Body["message"])
+		require.Equal(t, "Better answer", res.data("body"))
+
+		call(t, http.MethodPatch, forum+"/"+id+"/replies/"+replyID, author.Token, map[string]any{"body": "  "}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPatch, forum+"/"+id+"/replies/not-a-uuid", author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a post that is not where the path says is not found", func(t *testing.T) {
+		first, second := thread(author.Token, "One"), thread(author.Token, "Two")
+		replyID := reply(author.Token, first, "Under one")
+
+		call(t, http.MethodPatch, forum+"/"+uuid.NewString(), author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodPatch, forum+"/"+replyID, author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodPatch, forum+"/"+second+"/replies/"+replyID, author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodPatch, forum+"/"+first+"/replies/"+second, author.Token, map[string]any{"body": "x"}).
+			requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodDelete, forum+"/"+second+"/replies/"+replyID, author.Token, nil).
+			requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodDelete, forum+"/"+replyID, author.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+	})
+
+	t.Run("the author and a teacher delete a reply", func(t *testing.T) {
+		id := thread(author.Token, "Replies")
+		own := reply(author.Token, id, "Mine")
+		theirs := reply(neighbour.Token, id, "Theirs")
+		moderated := reply(neighbour.Token, id, "Against the rules")
+
+		call(t, http.MethodDelete, forum+"/"+id+"/replies/"+theirs, author.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+
+		res := call(t, http.MethodDelete, forum+"/"+id+"/replies/"+own, author.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Forum reply deleted", res.Body["message"])
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, forum+"/"+id+"/replies/"+moderated, guru.Token, nil).Status)
+		call(t, http.MethodDelete, forum+"/"+id+"/replies/"+moderated, guru.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+
+		left := call(t, http.MethodGet, forum+"/"+id+"/replies", author.Token, nil)
+		require.Equal(t, http.StatusOK, left.Status, "body %v", left.Body)
+		require.Equal(t, []string{"Theirs"}, titles(t, listOf(t, left, "replies"), "body"))
+	})
+
+	t.Run("deleting a thread takes its replies along", func(t *testing.T) {
+		id := thread(author.Token, "Short lived")
+		reply(neighbour.Token, id, "Soon gone")
+
+		call(t, http.MethodDelete, forum+"/"+id, neighbour.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodDelete, forum+"/"+id, outsider.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodDelete, forum+"/"+id, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodDelete, forum+"/not-a-uuid", author.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		res := call(t, http.MethodDelete, forum+"/"+id, author.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Forum thread deleted", res.Body["message"])
+
+		call(t, http.MethodGet, forum+"/"+id+"/replies", author.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		call(t, http.MethodDelete, forum+"/"+id, author.Token, nil).requireError(t, http.StatusNotFound, "FORUM_POST_NOT_FOUND")
+		require.NotContains(t, titles(t, listOf(t, call(t, http.MethodGet, forum, guru.Token, nil), "threads"), "title"), "Short lived")
+	})
+
+	t.Run("a teacher removes a thread of a parent", func(t *testing.T) {
+		id := thread(author.Token, "Off topic")
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, forum+"/"+id, guru.Token, nil).Status)
+	})
+}

@@ -60,6 +60,10 @@ type ClassroomDBItf interface {
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
 	// FindPost returns a post with its author, or nil when it does not exist
 	FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error)
+	// UpdatePost writes the title and the text of a post, a reply keeps its empty title
+	UpdatePost(ctx context.Context, post *entity.ForumPost) error
+	// DeletePost removes a post and, for a thread, its replies, and reports whether a post was removed
+	DeletePost(ctx context.Context, postID uuid.UUID) (bool, error)
 	// ListStudents returns the children of the class by name, with the latest mood each recorded between from and to
 	ListStudents(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, limit int, offset int) ([]StudentRow, int, error)
 }
@@ -261,6 +265,19 @@ func (r *ClassroomDB) FindPost(ctx context.Context, postID uuid.UUID) (*PostRow,
 	}
 
 	return &rows[0], nil
+}
+
+func (r *ClassroomDB) UpdatePost(ctx context.Context, post *entity.ForumPost) error {
+	return r.db.WithContext(ctx).Model(&entity.ForumPost{}).
+		Where("id = ?", post.ID).
+		Select("title", "body").
+		Updates(post).Error
+}
+
+func (r *ClassroomDB) DeletePost(ctx context.Context, postID uuid.UUID) (bool, error) {
+	res := r.db.WithContext(ctx).Where("id = ?", postID).Delete(&entity.ForumPost{})
+
+	return res.RowsAffected > 0, res.Error
 }
 
 func (r *ClassroomDB) ListStudents(
