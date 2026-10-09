@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.0...v0.5.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **auth:** accept only digits in a NISN and refuse names that are only spaces ([ead0650](https://github.com/SyafaHadyan/kibooz-backend/commit/ead065080c97e4681fe24a16ac5c0ad9d2773f3b))
+* **auth:** keep the account rate limit on when a body field has another type or the path differs in case ([cbb2a33](https://github.com/SyafaHadyan/kibooz-backend/commit/cbb2a33603bcbc0b7597e44c7452e171f943d891))
+* **auth:** store the first refresh token in the same transaction as the new account ([a9908b4](https://github.com/SyafaHadyan/kibooz-backend/commit/a9908b4d27f465df367eb632d348b52ed283c8e0))
+* **ci:** publish latest and the sha tag from main only and never cancel a main or tag image run ([f6bceac](https://github.com/SyafaHadyan/kibooz-backend/commit/f6bceac622cb8787f6fc9d9885c4c948e6db92e4))
+* **ci:** upload the Trivy filesystem results for Dependabot so the required Trivy check appears ([6db0f2a](https://github.com/SyafaHadyan/kibooz-backend/commit/6db0f2a52f15ff16dbe9de18fa5ff6a284e1142b))
+* **classroom:** answer 404 and not 500 when a reply is posted to a thread that was just deleted ([f2d0480](https://github.com/SyafaHadyan/kibooz-backend/commit/f2d048002b43dc6e312817fc30a526e6a1148885))
+* **classroom:** lock the video row for an edit and delete a video file only after the video is gone ([0aee047](https://github.com/SyafaHadyan/kibooz-backend/commit/0aee047b255aad796b1883390d0adf4299892cf1))
+* **env:** refuse the sample JWT secret and values that are out of range, and load the timezone once ([d15ebff](https://github.com/SyafaHadyan/kibooz-backend/commit/d15ebff8c7e140b748153f5c9eae77321e8ee02b))
+* **infra:** cancel the work of a request after REQUEST_TIMEOUT_SECONDS ([98cf89c](https://github.com/SyafaHadyan/kibooz-backend/commit/98cf89cdac5e2e8f814537ca38531ae59580a534))
+* **infra:** end idle transactions and bound the calls to the bucket ([c983aa5](https://github.com/SyafaHadyan/kibooz-backend/commit/c983aa5999d1d89c392e5ec1484f7e1e42530cb9))
+* **mood:** keep the microseconds of a mood log and order logs of the same moment by id on every screen ([9d748df](https://github.com/SyafaHadyan/kibooz-backend/commit/9d748df3fbd2413f5b3d91b1f6e20d9f29c3876f))
+* **wali:** say that the guidance status is recorded and not forwarded ([224c0df](https://github.com/SyafaHadyan/kibooz-backend/commit/224c0df75d18c05ffc9b6c0617618436a500def9))
+
+
+### Performance Improvements
+
+* **db:** index learning videos by address ([03b5ca3](https://github.com/SyafaHadyan/kibooz-backend/commit/03b5ca3e0b7d5f09772d90170d577ec71de96cd8))
+
 ## [0.5.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.4.0...v0.5.0) (2026-10-09)
 
 
