@@ -73,6 +73,18 @@ func (r *AuthDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 	return &user, nil
 }
 
+// createAll inserts the rows in order and stops at the first one that fails
+func createAll(tx *gorm.DB, rows ...any) error {
+	for _, row := range rows {
+		err := tx.Create(row).Error
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (r *AuthDB) CreateGuru(
 	ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken,
 ) error {
@@ -92,13 +104,8 @@ func (r *AuthDB) CreateGuru(
 			return err
 		}
 
-		err = tx.Create(&entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID}).Error
-		if err != nil {
-			return err
-		}
-
 		// a new account has no earlier tokens, so there is nothing to purge
-		return tx.Create(session).Error
+		return createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID}, session)
 	})
 
 	return mapUniqueViolation(err)
@@ -151,12 +158,7 @@ func (r *AuthDB) CreateWali(
 		student.WaliID = wali.ID
 		student.ClassID = class.ID
 
-		err = tx.Create(student).Error
-		if err != nil {
-			return err
-		}
-
-		err = tx.Create(session).Error
+		err = createAll(tx, student, session)
 		if err != nil {
 			return err
 		}

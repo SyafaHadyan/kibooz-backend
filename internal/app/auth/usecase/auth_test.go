@@ -130,6 +130,13 @@ func (fakeJWT) GenerateToken(uuid.UUID, constants.Role) (string, error) { return
 
 func (fakeJWT) ValidateToken(string) (*jwt.Claims, error) { return nil, errors.New("unused") }
 
+// brokenJWT cannot sign a token
+type brokenJWT struct{ fakeJWT }
+
+func (brokenJWT) GenerateToken(uuid.UUID, constants.Role) (string, error) {
+	return "", errors.New("no signing key")
+}
+
 func build(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache) usecase.AuthUseCaseItf {
 	t.Helper()
 
@@ -291,6 +298,21 @@ func TestRegistrationStoresTheFirstSessionWithTheAccount(t *testing.T) {
 		require.Empty(t, res.RefreshToken)
 		require.Nil(t, repo.registered)
 	})
+}
+
+func TestRegistrationFailsWhenTheAccessTokenCannotBeSigned(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+
+	res, err := useCase.Register(context.Background(), dto.RegisterRequest{
+		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Bunga"},
+	})
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, http.StatusInternalServerError, appErr.Status)
+	require.Empty(t, res.RefreshToken)
 }
 
 func sha256Hex(value string) string {
