@@ -858,6 +858,10 @@ func (u *ClassroomUseCase) authorizeThread(
 // store saves a post and reads it back together with its author
 func (u *ClassroomUseCase) store(ctx context.Context, post *entity.ForumPost) (*repository.PostRow, error) {
 	err := u.repo.CreatePost(ctx, post)
+	if errors.Is(err, repository.ErrParentGone) {
+		return nil, apperror.ErrForumPostNotFound
+	}
+
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
