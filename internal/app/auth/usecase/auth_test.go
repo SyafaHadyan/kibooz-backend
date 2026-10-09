@@ -28,21 +28,44 @@ type fakeRepo struct {
 	user        *entity.User
 	rotateErrs  []error
 	rotateCalls int
+
+	// registered keeps the session that came with an account, and separateTokens counts the tokens stored on their own
+	registered     *entity.RefreshToken
+	separateTokens int
+	createErr      error
 }
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
 
 func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) { return f.user, nil }
 
-func (f *fakeRepo) CreateGuru(context.Context, *entity.User, *entity.Guru, *entity.Class) error {
+func (f *fakeRepo) CreateGuru(_ context.Context, _ *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
+	if f.createErr != nil {
+		return f.createErr
+	}
+
+	f.registered = session
+
 	return nil
 }
 
-func (f *fakeRepo) CreateWali(context.Context, *entity.User, *entity.Wali, string, *entity.Student) (uuid.UUID, error) {
+func (f *fakeRepo) CreateWali(
+	_ context.Context, _ *entity.User, _ *entity.Wali, _ string, _ *entity.Student, session *entity.RefreshToken,
+) (uuid.UUID, error) {
+	if f.createErr != nil {
+		return uuid.Nil, f.createErr
+	}
+
+	f.registered = session
+
 	return uuid.Nil, nil
 }
 
-func (f *fakeRepo) CreateRefreshToken(context.Context, *entity.RefreshToken) error { return nil }
+func (f *fakeRepo) CreateRefreshToken(context.Context, *entity.RefreshToken) error {
+	f.separateTokens++
+
+	return nil
+}
 
 func (f *fakeRepo) RotateRefreshToken(context.Context, string, time.Time, *entity.RefreshToken) (*entity.User, error) {
 	f.rotateCalls++
@@ -106,6 +129,13 @@ type fakeJWT struct{}
 func (fakeJWT) GenerateToken(uuid.UUID, constants.Role) (string, error) { return "access", nil }
 
 func (fakeJWT) ValidateToken(string) (*jwt.Claims, error) { return nil, errors.New("unused") }
+
+// brokenJWT cannot sign a token
+type brokenJWT struct{ fakeJWT }
+
+func (brokenJWT) GenerateToken(uuid.UUID, constants.Role) (string, error) {
+	return "", errors.New("no signing key")
+}
 
 func build(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache) usecase.AuthUseCaseItf {
 	t.Helper()
@@ -227,4 +257,66 @@ func TestAFailedLoginHandsOutNoToken(t *testing.T) {
 	res, err := useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: "wrong", Role: constants.RoleWali})
 	require.Error(t, err)
 	require.Empty(t, res.DeviceToken)
+}
+
+// The account and its first refresh token are stored together, so no failure in between can leave an account without a session
+func TestRegistrationStoresTheFirstSessionWithTheAccount(t *testing.T) {
+	register := func(t *testing.T, repo *fakeRepo, role constants.Role) (dto.AuthResponse, error) {
+		t.Helper()
+
+		useCase := build(t, nil, repo, newFakeCache())
+		req := dto.RegisterRequest{
+			Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: role,
+			Class: &dto.RegisterClass{Name: "Bunga"}, ClassCode: "ABC234", Student: &dto.RegisterStudent{NISN: "12345", FullName: "Anak"},
+		}
+
+		return useCase.Register(context.Background(), req)
+	}
+
+	for _, role := range []constants.Role{constants.RoleGuru, constants.RoleWali} {
+		t.Run(string(role), func(t *testing.T) {
+			repo := &fakeRepo{}
+
+			res, err := register(t, repo, role)
+			require.NoError(t, err)
+
+			require.NotNil(t, repo.registered, "the session has to reach the repository with the account")
+			require.Equal(t, 0, repo.separateTokens, "no second write that could fail on its own")
+			require.NotEqual(t, uuid.Nil, repo.registered.UserID)
+			require.NotEmpty(t, res.RefreshToken)
+			require.NotEmpty(t, res.DeviceToken)
+			require.Equal(t, sha256Hex(res.RefreshToken), repo.registered.TokenHash, "the stored token is the hash of the one returned")
+		})
+	}
+
+	t.Run("a failed registration returns no token", func(t *testing.T) {
+		repo := &fakeRepo{createErr: apperror.ErrEmailTaken}
+
+		res, err := register(t, repo, constants.RoleGuru)
+
+		require.ErrorIs(t, err, apperror.ErrEmailTaken)
+		require.Empty(t, res.RefreshToken)
+		require.Nil(t, repo.registered)
+	})
+}
+
+func TestRegistrationFailsWhenTheAccessTokenCannotBeSigned(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+
+	res, err := useCase.Register(context.Background(), dto.RegisterRequest{
+		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Bunga"},
+	})
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, http.StatusInternalServerError, appErr.Status)
+	require.Empty(t, res.RefreshToken)
+}
+
+func sha256Hex(value string) string {
+	sum := sha256.Sum256([]byte(value))
+
+	return hex.EncodeToString(sum[:])
 }

@@ -21,10 +21,13 @@ const uniqueViolation = "23505"
 type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
-	// CreateGuru stores the user, the guru profile, a fresh class and the teaching link atomically
-	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class) error
-	// CreateWali stores the user, the wali profile and the child inside the class that owns joinCode
-	CreateWali(ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student) (classID uuid.UUID, err error)
+	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
+	// so an account never exists without the session it was registered with
+	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
+	// CreateWali stores the user, the wali profile, the child inside the class that owns joinCode and the first refresh token
+	CreateWali(
+		ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
+	) (classID uuid.UUID, err error)
 	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken) error
 	// RotateRefreshToken consumes a valid token and stores its replacement atomically.
 	// It returns nil without an error when the token is unknown, already used or expired.
@@ -70,7 +73,21 @@ func (r *AuthDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 	return &user, nil
 }
 
-func (r *AuthDB) CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class) error {
+// createAll inserts the rows in order and stops at the first one that fails
+func createAll(tx *gorm.DB, rows ...any) error {
+	for _, row := range rows {
+		err := tx.Create(row).Error
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *AuthDB) CreateGuru(
+	ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken,
+) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		err := tx.Create(user).Error
 		if err != nil {
@@ -87,14 +104,15 @@ func (r *AuthDB) CreateGuru(ctx context.Context, user *entity.User, guru *entity
 			return err
 		}
 
-		return tx.Create(&entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID}).Error
+		// a new account has no earlier tokens, so there is nothing to purge
+		return createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID}, session)
 	})
 
 	return mapUniqueViolation(err)
 }
 
 func (r *AuthDB) CreateWali(
-	ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student,
+	ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
 ) (uuid.UUID, error) {
 	var classID uuid.UUID
 
@@ -140,7 +158,7 @@ func (r *AuthDB) CreateWali(
 		student.WaliID = wali.ID
 		student.ClassID = class.ID
 
-		err = tx.Create(student).Error
+		err = createAll(tx, student, session)
 		if err != nil {
 			return err
 		}
