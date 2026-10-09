@@ -3,15 +3,29 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 )
+
+// ErrParentGone is returned when a post is stored under a thread that was deleted in the meantime
+var ErrParentGone = errors.New("the thread of the reply no longer exists")
+
+// foreignKeyViolation is the SQLSTATE of a row that points at a row which does not exist
+const foreignKeyViolation = "23503"
+
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+
+	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation
+}
 
 // PostRow is a forum post joined with the account columns shown next to it
 type PostRow struct {
@@ -60,6 +74,7 @@ type ClassroomDBItf interface {
 	ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
 	ThreadExists(ctx context.Context, classID uuid.UUID, threadID uuid.UUID) (bool, error)
 	ListReplies(ctx context.Context, threadID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
+	// CreatePost stores a post, and returns ErrParentGone for a reply whose thread was deleted in the meantime
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
 	// FindPost returns a post with its author, or nil when it does not exist
 	FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error)
@@ -278,7 +293,14 @@ func (r *ClassroomDB) ListReplies(ctx context.Context, threadID uuid.UUID, limit
 }
 
 func (r *ClassroomDB) CreatePost(ctx context.Context, post *entity.ForumPost) error {
-	return r.db.WithContext(ctx).Create(post).Error
+	err := r.db.WithContext(ctx).Create(post).Error
+
+	// the thread and the class of a reply are one foreign key, so a thread deleted after the reply was authorized ends here
+	if post.ParentID != nil && isForeignKeyViolation(err) {
+		return ErrParentGone
+	}
+
+	return err
 }
 
 func (r *ClassroomDB) FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error) {

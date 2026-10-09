@@ -873,3 +873,35 @@ func TestApplyPostChangesWorksOnTheCurrentRow(t *testing.T) {
 		require.Equal(t, &now, post.EditedAt)
 	})
 }
+
+// storingRepo fails to create a post with the given error
+type storingRepo struct {
+	repository.ClassroomDBItf
+
+	createErr error
+}
+
+func (r storingRepo) CreatePost(context.Context, *entity.ForumPost) error {
+	return r.createErr
+}
+
+func TestAReplyToAThreadThatIsDeletedMeanwhileIsNotFound(t *testing.T) {
+	threadID := uuid.New()
+	reply := &entity.ForumPost{ID: uuid.New(), ParentID: &threadID, Body: "Answer"}
+
+	u := &ClassroomUseCase{repo: storingRepo{createErr: repository.ErrParentGone}}
+
+	_, err := u.store(context.Background(), reply)
+	require.ErrorIs(t, err, apperror.ErrForumPostNotFound)
+
+	t.Run("any other failure is still an internal error", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: storingRepo{createErr: context.DeadlineExceeded}}
+
+		_, err := u.store(context.Background(), reply)
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "INTERNAL_ERROR", appErr.Code)
+	})
+}
