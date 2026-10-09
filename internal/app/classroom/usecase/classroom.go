@@ -141,20 +141,61 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 		return dto.Video{}, apperror.Validation(details)
 	}
 
+	// a file that was just uploaded waits under pending/ and is copied to its permanent key when the video is added,
+	// so the bucket can expire whatever is never added without touching a real video
+	submittedURL := video.VideoURL
+	stagedKey := u.stagedVideoKey(classID, submittedURL)
+
+	if stagedKey != "" {
+		video.VideoURL = u.storage.PublicURL(strings.TrimPrefix(stagedKey, pendingPrefix))
+	}
+
 	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
 		// the file is checked and the video stored under one lock, so the file cannot be deleted in between
-		checkErr := u.checkUploadedVideo(ctx, classID, video.VideoURL)
+		object, checkErr := u.checkUploadedVideo(ctx, classID, submittedURL)
 		if checkErr != nil {
 			return checkErr
 		}
 
-		return repo.CreateVideo(ctx, video)
+		if stagedKey == "" {
+			return repo.CreateVideo(ctx, video)
+		}
+
+		permanentKey := strings.TrimPrefix(stagedKey, pendingPrefix)
+
+		copyErr := u.storage.Copy(ctx, stagedKey, permanentKey, object.ContentType)
+		if copyErr != nil {
+			return copyErr
+		}
+
+		createErr := repo.CreateVideo(ctx, video)
+		if createErr != nil {
+			// nothing points at the copy, and the staged file expires by itself
+			s3.Discard(ctx, u.storage, permanentKey)
+		}
+
+		return createErr
 	})
 	if err != nil {
 		return dto.Video{}, asAppError(err)
 	}
 
+	if stagedKey != "" {
+		// the staged file is only a leftover now, and the bucket removes it anyway if this fails
+		s3.Discard(ctx, u.storage, stagedKey)
+	}
+
 	return videoResponse(video), nil
+}
+
+// stagedVideoKey returns the key of a video address that is a file this class uploaded and has not added yet, or "" for any other address
+func (u *ClassroomUseCase) stagedVideoKey(classID uuid.UUID, videoURL string) string {
+	key, ours := u.storage.KeyFromURL(videoURL)
+	if ours && strings.HasPrefix(key, pendingVideoKeyPrefix(classID)) {
+		return key
+	}
+
+	return ""
 }
 
 // withFileLock runs fn under the lock of an uploaded file, and without a lock for a link to another site
@@ -321,8 +362,9 @@ func (u *ClassroomUseCase) CreateVideoUpload(
 		})
 	}
 
-	// every file gets its own key under the class, so a later registration can tell which class it was made for
-	key := fmt.Sprintf("%s%s%s", videoKeyPrefix(classID), uuid.New(), videoTypes[req.ContentType])
+	// every file gets its own key under the class, so a later registration can tell which class it was made for.
+	// It waits under pending/ until the video is added.
+	key := fmt.Sprintf("%s%s%s", pendingVideoKeyPrefix(classID), uuid.New(), videoTypes[req.ContentType])
 	ttl := time.Duration(u.cfg.VideoUploadURLSeconds) * time.Second
 
 	uploadURL, err := u.storage.PresignUpload(ctx, key, req.ContentType, req.SizeBytes, ttl)
@@ -340,35 +382,43 @@ func (u *ClassroomUseCase) CreateVideoUpload(
 }
 
 // checkUploadedVideo makes sure a video address that points into our own bucket is a finished upload made for this class,
-// any other address is the teacher's own link and is left alone
-func (u *ClassroomUseCase) checkUploadedVideo(ctx context.Context, classID uuid.UUID, videoURL string) error {
+// either one that waits under pending/ or one that was added before. It returns the stored file, and nil for the teacher's own
+// link to another site, which is left alone.
+func (u *ClassroomUseCase) checkUploadedVideo(ctx context.Context, classID uuid.UUID, videoURL string) (*s3.Object, error) {
 	key, ours := u.storage.KeyFromURL(videoURL)
 	if !ours {
-		return nil
+		return nil, nil
 	}
 
-	if !strings.HasPrefix(key, videoKeyPrefix(classID)) {
-		return apperror.Validation(map[string]string{"videoUrl": "is not a file uploaded for this class"})
+	if !strings.HasPrefix(key, videoKeyPrefix(classID)) && !strings.HasPrefix(key, pendingVideoKeyPrefix(classID)) {
+		return nil, apperror.Validation(map[string]string{"videoUrl": "is not a file uploaded for this class"})
 	}
 
 	object, err := u.storage.Stat(ctx, key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if object == nil {
-		return apperror.Validation(map[string]string{"videoUrl": "has no uploaded file yet"})
+		return nil, apperror.Validation(map[string]string{"videoUrl": "has no uploaded file yet"})
 	}
 
 	if _, accepted := videoTypes[object.ContentType]; !accepted || object.Size > int64(u.cfg.VideoMaxMB)*bytesPerMB {
-		return apperror.Validation(map[string]string{"videoUrl": "is not an accepted video file"})
+		return nil, apperror.Validation(map[string]string{"videoUrl": "is not an accepted video file"})
 	}
 
-	return nil
+	return object, nil
 }
+
+// pendingPrefix holds the files that were uploaded and not added to a class yet, and the bucket expires it after a day
+const pendingPrefix = "pending/"
 
 func videoKeyPrefix(classID uuid.UUID) string {
 	return "videos/" + classID.String() + "/"
+}
+
+func pendingVideoKeyPrefix(classID uuid.UUID) string {
+	return pendingPrefix + videoKeyPrefix(classID)
 }
 
 func (u *ClassroomUseCase) ListThreads(

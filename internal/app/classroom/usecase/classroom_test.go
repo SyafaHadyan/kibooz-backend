@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -101,6 +102,10 @@ func (b bucket) KeyFromURL(raw string) (string, bool) {
 	return strings.CutPrefix(raw, "https://cdn.example.test/")
 }
 
+func (b bucket) PublicURL(key string) string {
+	return "https://cdn.example.test/" + key
+}
+
 func (b bucket) Stat(_ context.Context, key string) (*s3.Object, error) {
 	return b.objects[key], b.failure
 }
@@ -108,7 +113,9 @@ func (b bucket) Stat(_ context.Context, key string) (*s3.Object, error) {
 func TestCheckUploadedVideo(t *testing.T) {
 	classID := uuid.New()
 	key := videoKeyPrefix(classID) + uuid.NewString() + ".mp4"
+	staged := pendingVideoKeyPrefix(classID) + uuid.NewString() + ".mp4"
 	other := videoKeyPrefix(uuid.New()) + uuid.NewString() + ".mp4"
+	otherStaged := pendingVideoKeyPrefix(uuid.New()) + uuid.NewString() + ".mp4"
 
 	good := &s3.Object{Size: 5 * bytesPerMB, ContentType: "video/mp4"}
 
@@ -117,12 +124,16 @@ func TestCheckUploadedVideo(t *testing.T) {
 		bucket  bucket
 		wantErr string
 	}{
-		"a link to another site":  {"https://videos.example.com/a.mp4", bucket{}, ""},
-		"a finished upload":       {"https://cdn.example.test/" + key, bucket{objects: map[string]*s3.Object{key: good}}, ""},
-		"a file of another class": {"https://cdn.example.test/" + other, bucket{objects: map[string]*s3.Object{other: good}}, "is not a file uploaded for this class"},
-		"an avatar":               {"https://cdn.example.test/avatars/a/b.png", bucket{}, "is not a file uploaded for this class"},
-		"a file never sent":       {"https://cdn.example.test/" + key, bucket{}, "has no uploaded file yet"},
-		"a file of another type":  {"https://cdn.example.test/" + key, bucket{objects: map[string]*s3.Object{key: {Size: 10, ContentType: "image/png"}}}, "is not an accepted video file"},
+		"a link to another site":     {"https://videos.example.com/a.mp4", bucket{}, ""},
+		"a finished upload":          {"https://cdn.example.test/" + key, bucket{objects: map[string]*s3.Object{key: good}}, ""},
+		"a file waiting to be added": {"https://cdn.example.test/" + staged, bucket{objects: map[string]*s3.Object{staged: good}}, ""},
+		"a file of another class":    {"https://cdn.example.test/" + other, bucket{objects: map[string]*s3.Object{other: good}}, "is not a file uploaded for this class"},
+		"a waiting file of another class": {
+			"https://cdn.example.test/" + otherStaged, bucket{objects: map[string]*s3.Object{otherStaged: good}}, "is not a file uploaded for this class",
+		},
+		"an avatar":              {"https://cdn.example.test/avatars/a/b.png", bucket{}, "is not a file uploaded for this class"},
+		"a file never sent":      {"https://cdn.example.test/" + key, bucket{}, "has no uploaded file yet"},
+		"a file of another type": {"https://cdn.example.test/" + key, bucket{objects: map[string]*s3.Object{key: {Size: 10, ContentType: "image/png"}}}, "is not an accepted video file"},
 		"a file that is too big": {
 			"https://cdn.example.test/" + key,
 			bucket{objects: map[string]*s3.Object{key: {Size: 101 * bytesPerMB, ContentType: "video/mp4"}}},
@@ -135,10 +146,17 @@ func TestCheckUploadedVideo(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			u := &ClassroomUseCase{storage: tt.bucket, cfg: &env.Env{VideoMaxMB: 100}}
 
-			err := u.checkUploadedVideo(context.Background(), classID, tt.url)
+			object, err := u.checkUploadedVideo(context.Background(), classID, tt.url)
 
 			if tt.wantErr == "" {
 				require.NoError(t, err)
+
+				if strings.HasPrefix(tt.url, "https://cdn.example.test/") {
+					require.Equal(t, good, object)
+				} else {
+					require.Nil(t, object, "a link to another site has no stored file")
+				}
+
 				return
 			}
 
@@ -154,6 +172,7 @@ func TestVideoKeyPrefixBelongsToTheClass(t *testing.T) {
 	id := uuid.MustParse("3f2a9b1c-6d4e-4f70-8a12-9c0d1e2f3a4b")
 
 	require.Equal(t, "videos/3f2a9b1c-6d4e-4f70-8a12-9c0d1e2f3a4b/", videoKeyPrefix(id))
+	require.Equal(t, "pending/videos/3f2a9b1c-6d4e-4f70-8a12-9c0d1e2f3a4b/", pendingVideoKeyPrefix(id))
 }
 
 func TestApplyVideoChanges(t *testing.T) {
@@ -458,6 +477,7 @@ type lockRepo struct {
 	teacher   uuid.UUID
 	video     *entity.LearningVideo
 	remaining int
+	createErr error
 }
 
 func (r lockRepo) TeacherOfClass(context.Context, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
@@ -471,7 +491,7 @@ func (r lockRepo) FindVideo(context.Context, uuid.UUID, uuid.UUID) (*entity.Lear
 func (r lockRepo) CreateVideo(context.Context, *entity.LearningVideo) error {
 	*r.events = append(*r.events, "create")
 
-	return nil
+	return r.createErr
 }
 
 func (r lockRepo) DeleteVideo(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
@@ -494,15 +514,27 @@ func (r lockRepo) WithVideoFileLock(_ context.Context, _ string, fn func(repo re
 	return err
 }
 
-// orderedBucket adds the deletion of a file to the events of the repository
+// orderedBucket adds the copy and the deletion of a file to the events of the repository
 type orderedBucket struct {
 	bucket
 
-	events *[]string
+	events  *[]string
+	deleted *[]string
+	copyErr error
 }
 
-func (b orderedBucket) Delete(context.Context, string) error {
+func (b orderedBucket) Copy(_ context.Context, source string, key string, contentType string) error {
+	*b.events = append(*b.events, "copy "+source+" to "+key+" as "+contentType)
+
+	return b.copyErr
+}
+
+func (b orderedBucket) Delete(_ context.Context, key string) error {
 	*b.events = append(*b.events, "discard")
+
+	if b.deleted != nil {
+		*b.deleted = append(*b.deleted, key)
+	}
 
 	return nil
 }
@@ -572,5 +604,77 @@ func TestVideoFileLock(t *testing.T) {
 
 		require.NoError(t, build(&events, 1, present).DeleteVideo(context.Background(), userID, classID, videoID))
 		require.Equal(t, []string{"lock", "delete", "count", "unlock"}, events)
+	})
+}
+
+func TestAddStagedVideo(t *testing.T) {
+	classID, userID := uuid.New(), uuid.New()
+	name := uuid.NewString() + ".mp4"
+	stagedKey := pendingVideoKeyPrefix(classID) + name
+	permanentKey := videoKeyPrefix(classID) + name
+	stagedURL := "https://cdn.example.test/" + stagedKey
+	permanentURL := "https://cdn.example.test/" + permanentKey
+
+	files := map[string]*s3.Object{stagedKey: {Size: 10, ContentType: "video/mp4"}}
+
+	build := func(events *[]string, deleted *[]string, createErr error, copyErr error) *ClassroomUseCase {
+		return &ClassroomUseCase{
+			repo:    lockRepo{events: events, teacher: uuid.New(), createErr: createErr},
+			storage: orderedBucket{bucket: bucket{objects: files}, events: events, deleted: deleted, copyErr: copyErr},
+			cfg:     &env.Env{VideoMaxMB: 100},
+			now:     time.Now,
+		}
+	}
+
+	req := dto.AddVideoRequest{Title: "Lesson", VideoURL: stagedURL}
+
+	t.Run("the file is copied to its permanent key and the staged file goes", func(t *testing.T) {
+		var events, deleted []string
+
+		video, err := build(&events, &deleted, nil, nil).AddVideo(context.Background(), userID, classID, req)
+
+		require.NoError(t, err)
+		require.Equal(t, permanentURL, video.VideoURL)
+		require.Equal(t, []string{
+			"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "unlock", "discard",
+		}, events)
+		require.Equal(t, []string{stagedKey}, deleted)
+	})
+
+	t.Run("a failed copy stores nothing", func(t *testing.T) {
+		var events, deleted []string
+
+		_, err := build(&events, &deleted, nil, apperror.ErrStorageFailed).AddVideo(context.Background(), userID, classID, req)
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "STORAGE_ERROR", appErr.Code)
+		require.Equal(t, []string{"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "unlock"}, events)
+		require.Empty(t, deleted)
+	})
+
+	t.Run("a video that cannot be stored removes the copy and keeps the staged file", func(t *testing.T) {
+		var events, deleted []string
+
+		_, err := build(&events, &deleted, errors.New("insert failed"), nil).AddVideo(context.Background(), userID, classID, req)
+
+		require.Error(t, err)
+		require.Equal(t, []string{
+			"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "discard", "unlock",
+		}, events)
+		require.Equal(t, []string{permanentKey}, deleted, "the staged file expires by itself")
+	})
+
+	t.Run("a staged file of another class is refused before anything is copied", func(t *testing.T) {
+		var events, deleted []string
+
+		_, err := build(&events, &deleted, nil, nil).AddVideo(context.Background(), userID, uuid.New(), req)
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.NotContains(t, strings.Join(events, ","), "copy")
 	})
 }
