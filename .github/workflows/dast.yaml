@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false
 
       - name: Pull images through the Google mirror
-        uses: $/.github/actions/pull-images
+        uses: ./.github/actions/pull-images
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
