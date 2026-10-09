@@ -2,12 +2,15 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
+/* global __ENV */
+
 const base = __ENV.BASE_URL || 'http://127.0.0.1:8080';
 
 export const api = `${base}/api/v1`;
 
 const parentCount = 20;
 
+// digits returns a string of random digits, so every run gets accounts with their own email
 function digits(length) {
   let out = '';
   while (out.length < length) {
@@ -22,6 +25,7 @@ function newPassword() {
   return `k6${digits(24)}`;
 }
 
+// json reads the body of a response
 export function json(res) {
   return res.json();
 }
@@ -37,6 +41,7 @@ export function tagged(token, endpoint) {
   return { headers, tags: { endpoint } };
 }
 
+// register creates an account with a random email and returns its data, and it throws when the registration fails
 export function register(body, pass) {
   const res = http.post(
     `${api}/auth/register`,
@@ -81,10 +86,12 @@ export function setup() {
   return { guru, parents, password: pass };
 }
 
+// pick returns a random item of the list
 function pick(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+// parent is the scenario of a parent who opens the dashboard, claims a scan and looks at the leaderboard
 export function parent(data) {
   const me = pick(data.parents);
 
@@ -106,6 +113,7 @@ export function parent(data) {
   });
 }
 
+// teacher is the scenario of a teacher who logs a mood and opens the dashboard and the mood analytics
 export function teacher(data) {
   const kid = pick(data.parents);
 

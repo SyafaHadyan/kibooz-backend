@@ -4,6 +4,8 @@
 // Set DURATION to change the length, for example DURATION=5m for a quick check.
 export { setup, parent, teacher, login } from './lib.js';
 
+/* global __ENV */
+
 const duration = __ENV.DURATION || '30m';
 
 export const options = {
