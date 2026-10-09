@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -38,6 +39,9 @@ type StorageItf interface {
 	PresignUpload(ctx context.Context, objectKey string, contentType string, size int64, ttl time.Duration) (string, error)
 	// Stat describes a stored object and returns nil when the object does not exist
 	Stat(ctx context.Context, objectKey string) (*Object, error)
+	// Copy duplicates an object under another key inside the bucket, so the data never passes through this API,
+	// and stores the copy with the content type
+	Copy(ctx context.Context, sourceKey string, objectKey string, contentType string) error
 }
 
 // Object describes a stored object
@@ -166,8 +170,27 @@ func (s *Storage) Stat(ctx context.Context, objectKey string) (*Object, error) {
 	return &Object{Size: aws.ToInt64(head.ContentLength), ContentType: aws.ToString(head.ContentType)}, nil
 }
 
-func (s *Storage) KeyFromURL(url string) (string, bool) {
-	key, found := strings.CutPrefix(url, s.publicURL+"/")
+func (s *Storage) Copy(ctx context.Context, sourceKey string, objectKey string, contentType string) error {
+	source := url.URL{Path: s.bucket + "/" + sourceKey}
+
+	_, err := s.client.CopyObject(ctx, &awss3.CopyObjectInput{
+		Bucket:     aws.String(s.bucket),
+		Key:        aws.String(objectKey),
+		CopySource: aws.String(source.EscapedPath()),
+		// the copy is described again because the staged file was uploaded without cache headers
+		MetadataDirective: types.MetadataDirectiveReplace,
+		ContentType:       aws.String(contentType),
+		CacheControl:      aws.String("public, max-age=31536000, immutable"),
+	})
+	if err != nil {
+		return apperror.ErrStorageFailed.WithErr(err)
+	}
+
+	return nil
+}
+
+func (s *Storage) KeyFromURL(rawURL string) (string, bool) {
+	key, found := strings.CutPrefix(rawURL, s.publicURL+"/")
 	if !found || key == "" {
 		return "", false
 	}
@@ -212,6 +235,10 @@ func (Disabled) PresignUpload(context.Context, string, string, int64, time.Durat
 
 func (Disabled) Stat(context.Context, string) (*Object, error) {
 	return nil, apperror.ErrStorageDisabled
+}
+
+func (Disabled) Copy(context.Context, string, string, string) error {
+	return apperror.ErrStorageDisabled
 }
 
 func (Disabled) Delete(context.Context, string) error {

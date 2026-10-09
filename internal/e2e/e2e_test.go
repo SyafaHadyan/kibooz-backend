@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -56,7 +57,7 @@ type storedObject struct {
 	contentType string
 }
 
-// startMockS3 accepts every PutObject and remembers the object keys, so uploads can be asserted.
+// startMockS3 accepts every PutObject and CopyObject and remembers the object keys, so uploads can be asserted.
 // It also answers HEAD requests from what it stored, so a file that was never sent is a 404.
 func startMockS3() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,9 +68,29 @@ func startMockS3() *httptest.Server {
 		switch r.Method {
 		case http.MethodPut:
 			storedMu.Lock()
+			defer storedMu.Unlock()
+
+			// a copy names its source in a header and sends no body
+			if source := r.Header.Get("X-Amz-Copy-Source"); source != "" {
+				sourceKey, _ := url.PathUnescape(strings.TrimPrefix(source, testBucket+"/"))
+
+				original, found := storedObjects[sourceKey]
+				if !found {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+
+				storedKeys = append(storedKeys, key)
+				storedObjects[key] = storedObject{size: original.size, contentType: r.Header.Get("Content-Type")}
+
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`<CopyObjectResult><ETag>"mock"</ETag></CopyObjectResult>`))
+
+				return
+			}
+
 			storedKeys = append(storedKeys, key)
 			storedObjects[key] = storedObject{size: size, contentType: r.Header.Get("Content-Type")}
-			storedMu.Unlock()
 		case http.MethodDelete:
 			storedMu.Lock()
 			storedKeys = slices.DeleteFunc(storedKeys, func(stored string) bool { return stored == key })

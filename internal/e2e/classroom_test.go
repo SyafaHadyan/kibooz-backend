@@ -391,12 +391,12 @@ func TestVideoUpload(t *testing.T) {
 		require.NotEmpty(t, upload.data("expiresAt"))
 
 		videoURL := upload.data("videoUrl").(string)
-		require.True(t, strings.HasPrefix(videoURL, testPublicURL+"/videos/"+classID+"/"), videoURL)
+		require.True(t, strings.HasPrefix(videoURL, testPublicURL+"/pending/videos/"+classID+"/"), videoURL)
 		require.True(t, strings.HasSuffix(videoURL, ".mp4"), videoURL)
 
 		signed, err := url.Parse(upload.data("uploadUrl").(string))
 		require.NoError(t, err)
-		require.Contains(t, signed.Path, "/"+testBucket+"/videos/"+classID+"/")
+		require.Contains(t, signed.Path, "/"+testBucket+"/pending/videos/"+classID+"/")
 		require.NotEmpty(t, signed.Query().Get("X-Amz-Signature"))
 
 		early := add(guru.Token, classID, videoURL)
@@ -405,13 +405,28 @@ func TestVideoUpload(t *testing.T) {
 
 		sendFile(t, upload, "video/mp4", 2048)
 
+		stagedKey := strings.TrimPrefix(videoURL, testPublicURL+"/")
+		require.Contains(t, uploaded("pending/videos/"+classID+"/"), stagedKey)
+
 		added := add(guru.Token, classID, videoURL)
 		require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
-		require.Equal(t, videoURL, added.data("videoUrl"))
+
+		// the file moved from pending/ to its permanent key, which is the address the video keeps
+		permanentURL := testPublicURL + "/" + strings.TrimPrefix(stagedKey, "pending/")
+		require.Equal(t, permanentURL, added.data("videoUrl"))
+		require.Contains(t, uploaded("videos/"+classID+"/"), strings.TrimPrefix(stagedKey, "pending/"))
+		require.NotContains(t, uploaded("pending/videos/"+classID+"/"), stagedKey)
+
+		again := add(guru.Token, classID, videoURL)
+		again.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "has no uploaded file yet", dig(again.Body, "details", "videoUrl"), "a staged file is added once")
+
+		reused := add(guru.Token, classID, permanentURL)
+		require.Equal(t, http.StatusCreated, reused.Status, "the permanent address can be added again, body %v", reused.Body)
 
 		listed := call(t, http.MethodGet, fmt.Sprintf("/api/v1/classes/%s/videos", classID), wali.Token, nil)
 		require.Equal(t, http.StatusOK, listed.Status, "body %v", listed.Body)
-		require.Equal(t, []string{"Recorded lesson"}, titles(t, listOf(t, listed, "videos"), "title"))
+		require.Equal(t, []string{"Recorded lesson", "Recorded lesson"}, titles(t, listOf(t, listed, "videos"), "title"))
 	})
 
 	t.Run("a webm file is accepted too", func(t *testing.T) {
@@ -591,11 +606,17 @@ func TestEditAndDeleteVideos(t *testing.T) {
 		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
 		sendFile(t, upload, "video/mp4", 128)
 
-		fileURL := upload.data("videoUrl").(string)
+		stagedURL := upload.data("videoUrl").(string)
+		require.Contains(t, uploaded("pending/videos/"+classID+"/"), strings.TrimPrefix(stagedURL, testPublicURL+"/"))
+
+		// the first video moves the file out of pending/ and a second one shares the permanent file
+		first := add(stagedURL)
+
+		fileURL := testPublicURL + "/" + strings.TrimPrefix(strings.TrimPrefix(stagedURL, testPublicURL+"/"), "pending/")
 		key := strings.TrimPrefix(fileURL, testPublicURL+"/")
 		require.Contains(t, uploaded("videos/"+classID+"/"), key)
 
-		first, second := add(fileURL), add(fileURL)
+		second := add(fileURL)
 
 		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, videos+"/"+first, guru.Token, nil).Status)
 		require.Contains(t, uploaded("videos/"+classID+"/"), key, "another video still uses the file")

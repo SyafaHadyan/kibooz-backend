@@ -523,7 +523,10 @@ paths:
       description: >-
         Only a teacher of the class can add one. The video is an https address. For a file the teacher recorded, first ask for a signed
         address with `POST /classes/{classId}/videos/upload-url`, send the file there, then add the video with the `videoUrl` of that
-        answer. The file must have arrived by then, it must belong to this class, and it must be an accepted video.
+        answer. The file must have arrived by then, it must belong to this class, and it must be an accepted video. The file waits in a
+        staging folder until it is added, and adding copies it to a permanent address. That address is the `videoUrl` of the added video,
+        so use it and not the address of the upload. A staged file can be added once, and the permanent address can be added again to
+        share the file with another video of the same class.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
@@ -557,8 +560,8 @@ paths:
       description: >-
         Only a teacher of the class can ask for one. Send the file with a PUT request to `uploadUrl` before `expiresAt`, with exactly
         `sizeBytes` bytes and the headers of the answer, and no other header is needed. The bucket refuses a file of another size or
-        type. Then add the video with `POST /classes/{classId}/videos` and the `videoUrl` of this answer. A file that is never added
-        stays in the bucket until a lifecycle rule removes it.
+        type. Then add the video with `POST /classes/{classId}/videos` and the `videoUrl` of this answer. The file waits in a `pending/`
+        folder of the bucket until it is added, and the bucket removes whatever is never added after a day.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
@@ -1923,7 +1926,7 @@ components:
         videoUrl:
           type: string
           format: uri
-          description: The public address of the file, to add as the video once the upload is done
+          description: The address of the staged file, to add as the video once the upload is done. The added video returns its permanent address.
         expiresAt:
           type: string
           format: date-time
