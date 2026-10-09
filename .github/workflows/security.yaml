@@ -139,8 +139,10 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      # Dependabot uploads too, because the code scanning check named Trivy is required and no other run posts it on a Dependabot
+      # pull request. The image scan in the Docker workflow only runs when it can push the image.
       - name: Upload Trivy results to code scanning
-        if: ${{ !cancelled() && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: trivy-fs.sarif
