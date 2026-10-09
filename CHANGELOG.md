@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.5.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.4.0...v0.5.0) (2026-10-09)
+
+
+### Features
+
+* **api:** add the remaining roadmap endpoints ([#75](https://github.com/SyafaHadyan/kibooz-backend/issues/75)) ([4d5fd9b](https://github.com/SyafaHadyan/kibooz-backend/commit/4d5fd9b638f5aa7411f49138aaea4b29814318c8))
+* **classroom:** add learning videos and the class forum ([10062d6](https://github.com/SyafaHadyan/kibooz-backend/commit/10062d6bccece23f39ab2f1d4f08fbd0fb328af4))
+* **classroom:** add learning videos and the class forum ([#74](https://github.com/SyafaHadyan/kibooz-backend/issues/74)) ([0613d34](https://github.com/SyafaHadyan/kibooz-backend/commit/0613d346d0c702c1a422c59a6eeac04fc9fa394a))
+* **classroom:** edit and delete forum threads and replies ([8e88d6c](https://github.com/SyafaHadyan/kibooz-backend/commit/8e88d6cc389b8a25e08c8257c236831296bffa9b))
+* **classroom:** edit and delete forum threads and replies ([#80](https://github.com/SyafaHadyan/kibooz-backend/issues/80)) ([c79a0b5](https://github.com/SyafaHadyan/kibooz-backend/commit/c79a0b5e502629feabbf665017e11a4daa61f55c))
+* **classroom:** edit and delete learning videos ([ed1e7a0](https://github.com/SyafaHadyan/kibooz-backend/commit/ed1e7a046a782247b7ed42396920bf1fff98c770))
+* **classroom:** edit and delete learning videos ([#79](https://github.com/SyafaHadyan/kibooz-backend/issues/79)) ([8f91599](https://github.com/SyafaHadyan/kibooz-backend/commit/8f91599397956706d427a99511a9d5566872a9ae))
+* **classroom:** list the children of a class ([aa1eb7f](https://github.com/SyafaHadyan/kibooz-backend/commit/aa1eb7f9805a0a9506eefcf5bf0d058407efedff))
+* **classroom:** mark a forum post as edited when its words change ([104df76](https://github.com/SyafaHadyan/kibooz-backend/commit/104df767da8cb44410954f711c8289869d7a3bb9))
+* **classroom:** mark a forum post as edited when its words change ([#87](https://github.com/SyafaHadyan/kibooz-backend/issues/87)) ([f785810](https://github.com/SyafaHadyan/kibooz-backend/commit/f785810eca0e134a32f6a48fc416c2b9fb66af0c))
+* **classroom:** stage uploaded videos under pending until they are added ([114894c](https://github.com/SyafaHadyan/kibooz-backend/commit/114894cd98266b6ae7aabee69b939affe8db27f3))
+* **classroom:** stage uploaded videos under pending until they are added ([#85](https://github.com/SyafaHadyan/kibooz-backend/issues/85)) ([ceb1960](https://github.com/SyafaHadyan/kibooz-backend/commit/ceb19602b80cd6bd4238f49823f0307e6606505d))
+* **classroom:** upload class videos through a signed address ([1356a0b](https://github.com/SyafaHadyan/kibooz-backend/commit/1356a0b50db4ca42bb37145fbb6f066860b9103e))
+* **classroom:** upload class videos through a signed address ([#77](https://github.com/SyafaHadyan/kibooz-backend/issues/77)) ([4e00923](https://github.com/SyafaHadyan/kibooz-backend/commit/4e00923b4dd3bf36e7ed0fea4744658504413f4e))
+* **db:** add learning video and forum post tables ([ef2609e](https://github.com/SyafaHadyan/kibooz-backend/commit/ef2609e690427c00ed63b73eb81633b92a93a30a))
+* **db:** add the address of a teacher ([4b6a9c1](https://github.com/SyafaHadyan/kibooz-backend/commit/4b6a9c1ce1df59e594d5c48145be35fe93ac2502))
+* **guru:** add classes and the teacher profile ([13bf2ee](https://github.com/SyafaHadyan/kibooz-backend/commit/13bf2ee04af9c6cdb28dfe1d2a83aef148f0e483))
+* **storage:** copy an object inside the bucket ([8637edb](https://github.com/SyafaHadyan/kibooz-backend/commit/8637edb20e38b7eb6f921d3aa6b8b7088a02c64c))
+* **storage:** sign video uploads and read object details ([dc6eb35](https://github.com/SyafaHadyan/kibooz-backend/commit/dc6eb350dbfcd2886aba9de59393102aa70914ed))
+* **wali:** add the child profile and trash statistics ([ae6652d](https://github.com/SyafaHadyan/kibooz-backend/commit/ae6652d807fc961dd6e5fc0efa2f08508ed245e6))
+* **wali:** return the class id of the child on the dashboard ([1f8b7b7](https://github.com/SyafaHadyan/kibooz-backend/commit/1f8b7b76fad47ae2536d2ba11c1442a9196e7e65))
+
+
+### Bug Fixes
+
+* **ci:** fetch Go 1.27.2 with GOTOOLCHAIN and read the base version from go.mod ([9723a62](https://github.com/SyafaHadyan/kibooz-backend/commit/9723a625c10f7bcb1c2e1a5478f4715f3a6c1016))
+* **ci:** set up Go 1.27.2 by name because setup-go resets GOTOOLCHAIN ([d8b5195](https://github.com/SyafaHadyan/kibooz-backend/commit/d8b5195106bf19a778b9d7c7876b892ef5ad149a))
+* **ci:** set up the newest Go 1.27 release without a toolchain line ([951eb4b](https://github.com/SyafaHadyan/kibooz-backend/commit/951eb4b5cf7fc732d16a150e1b0fc86f0ed1efdd))
+* **classroom:** apply a forum edit to the locked post so a stale save cannot undo a newer one ([e51028e](https://github.com/SyafaHadyan/kibooz-backend/commit/e51028e6f27ba315d8c3d5f2996c1c0e8586b4cd))
+* **classroom:** refuse a staged file that another request already added ([7e7014b](https://github.com/SyafaHadyan/kibooz-backend/commit/7e7014b33e60c6a99596658d20769906bab4c12b))
+* **classroom:** serialize adding and deleting videos of one uploaded file ([fdcc9d5](https://github.com/SyafaHadyan/kibooz-backend/commit/fdcc9d572bcfa0f1dce46bf2d3f1e8b265de43d0))
+* **deps:** keep the go directive and pick Go 1.27.2 with a toolchain line ([d81e79c](https://github.com/SyafaHadyan/kibooz-backend/commit/d81e79c8270ad4aff59f4fedfe72cd4149128044))
+* **deps:** update x/net and Go to fix GO-2026-6617 ([1c673b4](https://github.com/SyafaHadyan/kibooz-backend/commit/1c673b415e33814fc4a1a27f251aa0ab15112695))
+* **deps:** update x/net and Go to fix GO-2026-6617 ([#81](https://github.com/SyafaHadyan/kibooz-backend/issues/81)) ([92fc320](https://github.com/SyafaHadyan/kibooz-backend/commit/92fc32001fdef912af8c33e31d40a14e9b1749db))
+* **docker:** build with the Go 1.27.2 image ([201141a](https://github.com/SyafaHadyan/kibooz-backend/commit/201141ab717751e1905a8598b659580076282881))
+* **guidance:** leave the banner URL empty without a public base ([ad791dc](https://github.com/SyafaHadyan/kibooz-backend/commit/ad791dc35cea3db7157d11087ef29509e3d3bc66))
+* **guidance:** leave the banner URL empty without a public base ([#78](https://github.com/SyafaHadyan/kibooz-backend/issues/78)) ([f411248](https://github.com/SyafaHadyan/kibooz-backend/commit/f4112487db9e1fc6590ee06d2b9f0e9d1859923e))
+* **k6:** declare the k6 globals and document the helper functions ([b8b8185](https://github.com/SyafaHadyan/kibooz-backend/commit/b8b8185e935eb8ecef3497bc41b44c35a475f021))
+* **k6:** declare the k6 globals and document the helper functions ([#86](https://github.com/SyafaHadyan/kibooz-backend/issues/86)) ([a324454](https://github.com/SyafaHadyan/kibooz-backend/commit/a324454cd46affb5eff3df9ca959c924cd87b98d))
+
 ## [0.4.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.3.0...v0.4.0) (2026-10-08)
 
 
