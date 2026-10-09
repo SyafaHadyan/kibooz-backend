@@ -112,11 +112,16 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		PhoneNumber:  optional(req.PhoneNumber),
 	}
 
+	// the first refresh token is stored with the account, so a failure after the account exists cannot leave it without a
+	// session, which would send the retry of a registration into a conflict on an email the person never got a session for
+	raw, session := u.newRefreshToken()
+	session.UserID = user.ID
+
 	switch req.Role {
 	case constants.RoleGuru:
-		err = u.registerGuru(ctx, user, req)
+		err = u.registerGuru(ctx, user, req, session)
 	case constants.RoleWali:
-		err = u.registerWali(ctx, user, req)
+		err = u.registerWali(ctx, user, req, session)
 	default:
 		return dto.AuthResponse{}, apperror.Validation(map[string]string{"role": "must be one of GURU WALI"})
 	}
@@ -125,10 +130,17 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		return dto.AuthResponse{}, err
 	}
 
-	return u.startSession(ctx, user, "")
+	u.remember(ctx, session)
+
+	res, err := u.buildResponse(user, raw)
+	if err != nil {
+		return dto.AuthResponse{}, err
+	}
+
+	return u.withDeviceToken(res, user, "")
 }
 
-func (u *AuthUseCase) registerGuru(ctx context.Context, user *entity.User, req dto.RegisterRequest) error {
+func (u *AuthUseCase) registerGuru(ctx context.Context, user *entity.User, req dto.RegisterRequest, session *entity.RefreshToken) error {
 	school := firstNonEmpty(req.Class.SchoolName, req.SchoolName, constants.DefaultSchoolName)
 
 	guru := &entity.Guru{
@@ -146,10 +158,10 @@ func (u *AuthUseCase) registerGuru(ctx context.Context, user *entity.User, req d
 		AcademicYear: firstNonEmpty(req.Class.AcademicYear, constants.DefaultAcademicYr),
 	}
 
-	return wrap(u.repo.CreateGuru(ctx, user, guru, class))
+	return wrap(u.repo.CreateGuru(ctx, user, guru, class, session))
 }
 
-func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req dto.RegisterRequest) error {
+func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req dto.RegisterRequest, session *entity.RefreshToken) error {
 	wali := &entity.Wali{
 		ID:             uuid.New(),
 		UserID:         user.ID,
@@ -163,7 +175,7 @@ func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req d
 		FullName: strings.TrimSpace(req.Student.FullName),
 	}
 
-	classID, err := u.repo.CreateWali(ctx, user, wali, strings.ToUpper(strings.TrimSpace(req.ClassCode)), student)
+	classID, err := u.repo.CreateWali(ctx, user, wali, strings.ToUpper(strings.TrimSpace(req.ClassCode)), student, session)
 	if err != nil {
 		return wrap(err)
 	}
@@ -206,6 +218,13 @@ func (u *AuthUseCase) startSession(ctx context.Context, user *entity.User, prese
 	if err != nil {
 		return dto.AuthResponse{}, err
 	}
+
+	return u.withDeviceToken(res, user, presented)
+}
+
+// withDeviceToken hands the device the token for the rate limiter of the email of the user
+func (u *AuthUseCase) withDeviceToken(res dto.AuthResponse, user *entity.User, presented string) (dto.AuthResponse, error) {
+	var err error
 
 	res.DeviceToken, err = u.devices.Issue(user.Email, presented)
 	if err != nil {
