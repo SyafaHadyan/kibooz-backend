@@ -2027,7 +2027,7 @@ components:
           maxLength: 5000
     ForumThread:
       type: object
-      required: [id, title, body, author, replyCount, createdAt]
+      required: [id, title, body, author, replyCount, createdAt, editedAt]
       properties:
         id:
           type: string
@@ -2044,6 +2044,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the author last changed the title or the text, and null for a thread that was never edited
     ForumThreadList:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
@@ -2105,7 +2110,7 @@ components:
           maxLength: 5000
     ForumReply:
       type: object
-      required: [id, body, author, createdAt]
+      required: [id, body, author, createdAt, editedAt]
       properties:
         id:
           type: string
@@ -2117,6 +2122,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the author last changed the text, and null for a reply that was never edited
     ForumReplyList:
       allOf:
         - $ref: "#/components/schemas/PageInfo"
