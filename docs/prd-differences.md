@@ -19,7 +19,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - `GET /guru/mood/analytics` also returns `monthlyDistribution` when `range=monthly`.
 - `GET` and `POST /classes/{classId}/videos` list and add learning videos. Both teachers of the class and parents of a child in it can list them, and only a teacher can add one. The video is an https address, either a link to another host or a file the teacher uploaded.
 - `PATCH` and `DELETE /classes/{classId}/videos/{videoId}` change the details of a video and delete it. Any teacher of the class can do both. The address of a video cannot change, so a different file is a new video. Deleting an uploaded video also removes its file from the bucket once no other video uses it.
-- `POST /classes/{classId}/videos/upload-url` signs an address for uploading an mp4 or webm file straight to the bucket, because a video is too large to pass through the API. The teacher sends the file there and then adds the video with the `videoUrl` of the answer. Adding checks that the file arrived, belongs to the class and is a video of an accepted type and size.
+- `POST /classes/{classId}/videos/upload-url` signs an address for uploading an mp4 or webm file straight to the bucket, because a video is too large to pass through the API. The teacher sends the file there and then adds the video with the `videoUrl` of the answer. The file waits in a staging folder until it is added, and adding copies it to a permanent address that the video returns. Adding checks that the file arrived, belongs to the class and is a video of an accepted type and size.
 - `GET` and `POST /classes/{classId}/forum` list and start threads, and `GET` and `POST /classes/{classId}/forum/{postId}/replies` list and add replies. Teachers of the class and parents of a child in it can all write. A reply cannot be answered again. The author of a deleted account shows as `Deleted account`.
 - `PATCH` and `DELETE /classes/{classId}/forum/{postId}` and `/classes/{classId}/forum/{postId}/replies/{replyId}` change and delete a thread or a reply. Only the author can change a post. The author and the teachers of the class can delete one, and deleting a thread deletes its replies. A thread or a reply that is not where the path says returns `FORUM_POST_NOT_FOUND`.
 - The lists of videos, threads and replies take `page` and `limit` and return `page`, `limit` and `total` next to the items.
@@ -30,7 +30,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
-- Removing an uploaded video file that was never added to a class. Such a file is left to a bucket lifecycle rule on the `videos/` prefix.
+- Removing an uploaded video file that was never added to a class. Such a file waits under the `pending/` prefix of the bucket, and a bucket lifecycle rule that expires `pending/` after one day removes it. The rule is set in the bucket and not in this API, and it must never cover `videos/` because that holds the real videos.
 
 ## Language
 
