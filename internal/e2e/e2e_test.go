@@ -590,7 +590,7 @@ func TestMoodAndDashboards(t *testing.T) {
 			"guidanceId": "guidance-bingung-4step", "studentId": ameliaID, "parentNotes": "Already talked to gently.",
 		})
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
-		require.Equal(t, "Handling status forwarded to the class teacher", res.Body["message"])
+		require.Equal(t, "Handling status recorded", res.Body["message"])
 
 		call(t, http.MethodPost, "/api/v1/wali/guidance/apply", amelia.Token, map[string]any{
 			"guidanceId": "not-found", "studentId": ameliaID,
