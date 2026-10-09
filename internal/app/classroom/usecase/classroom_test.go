@@ -617,9 +617,9 @@ func TestAddStagedVideo(t *testing.T) {
 
 	files := map[string]*s3.Object{stagedKey: {Size: 10, ContentType: "video/mp4"}}
 
-	build := func(events *[]string, deleted *[]string, createErr error, copyErr error) *ClassroomUseCase {
+	build := func(events *[]string, deleted *[]string, createErr error, copyErr error, existing int) *ClassroomUseCase {
 		return &ClassroomUseCase{
-			repo:    lockRepo{events: events, teacher: uuid.New(), createErr: createErr},
+			repo:    lockRepo{events: events, teacher: uuid.New(), createErr: createErr, remaining: existing},
 			storage: orderedBucket{bucket: bucket{objects: files}, events: events, deleted: deleted, copyErr: copyErr},
 			cfg:     &env.Env{VideoMaxMB: 100},
 			now:     time.Now,
@@ -631,12 +631,12 @@ func TestAddStagedVideo(t *testing.T) {
 	t.Run("the file is copied to its permanent key and the staged file goes", func(t *testing.T) {
 		var events, deleted []string
 
-		video, err := build(&events, &deleted, nil, nil).AddVideo(context.Background(), userID, classID, req)
+		video, err := build(&events, &deleted, nil, nil, 0).AddVideo(context.Background(), userID, classID, req)
 
 		require.NoError(t, err)
 		require.Equal(t, permanentURL, video.VideoURL)
 		require.Equal(t, []string{
-			"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "unlock", "discard",
+			"lock", "count", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "unlock", "discard",
 		}, events)
 		require.Equal(t, []string{stagedKey}, deleted)
 	})
@@ -644,32 +644,46 @@ func TestAddStagedVideo(t *testing.T) {
 	t.Run("a failed copy stores nothing", func(t *testing.T) {
 		var events, deleted []string
 
-		_, err := build(&events, &deleted, nil, apperror.ErrStorageFailed).AddVideo(context.Background(), userID, classID, req)
+		_, err := build(&events, &deleted, nil, apperror.ErrStorageFailed, 0).AddVideo(context.Background(), userID, classID, req)
 
 		var appErr *apperror.Error
 
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "STORAGE_ERROR", appErr.Code)
-		require.Equal(t, []string{"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "unlock"}, events)
+		require.Equal(t, []string{"lock", "count", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "unlock"}, events)
 		require.Empty(t, deleted)
 	})
 
 	t.Run("a video that cannot be stored removes the copy and keeps the staged file", func(t *testing.T) {
 		var events, deleted []string
 
-		_, err := build(&events, &deleted, errors.New("insert failed"), nil).AddVideo(context.Background(), userID, classID, req)
+		_, err := build(&events, &deleted, errors.New("insert failed"), nil, 0).AddVideo(context.Background(), userID, classID, req)
 
 		require.Error(t, err)
 		require.Equal(t, []string{
-			"lock", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "discard", "unlock",
+			"lock", "count", "copy " + stagedKey + " to " + permanentKey + " as video/mp4", "create", "discard", "unlock",
 		}, events)
 		require.Equal(t, []string{permanentKey}, deleted, "the staged file expires by itself")
+	})
+
+	t.Run("a staged file that another request already added is refused", func(t *testing.T) {
+		var events, deleted []string
+
+		_, err := build(&events, &deleted, nil, nil, 1).AddVideo(context.Background(), userID, classID, req)
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.Equal(t, "has already been added", appErr.Details["videoUrl"])
+		require.Equal(t, []string{"lock", "count", "unlock"}, events, "nothing is copied or stored")
+		require.Empty(t, deleted)
 	})
 
 	t.Run("a staged file of another class is refused before anything is copied", func(t *testing.T) {
 		var events, deleted []string
 
-		_, err := build(&events, &deleted, nil, nil).AddVideo(context.Background(), userID, uuid.New(), req)
+		_, err := build(&events, &deleted, nil, nil, 0).AddVideo(context.Background(), userID, uuid.New(), req)
 
 		var appErr *apperror.Error
 

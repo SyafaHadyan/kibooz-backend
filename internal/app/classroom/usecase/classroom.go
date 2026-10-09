@@ -161,6 +161,17 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 			return repo.CreateVideo(ctx, video)
 		}
 
+		// the staged file is deleted after the lock is released, so a second request for it can get here first
+		// and must find that the first one already registered it
+		existing, countErr := repo.CountVideosByURL(ctx, video.VideoURL)
+		if countErr != nil {
+			return countErr
+		}
+
+		if existing > 0 {
+			return apperror.Validation(map[string]string{"videoUrl": "has already been added"})
+		}
+
 		permanentKey := strings.TrimPrefix(stagedKey, pendingPrefix)
 
 		copyErr := u.storage.Copy(ctx, stagedKey, permanentKey, object.ContentType)
