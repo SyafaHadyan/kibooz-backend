@@ -59,7 +59,7 @@ func (h *WaliHandler) ApplyGuidance(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.JSON(c, http.StatusOK, "Handling status forwarded to the class teacher", nil)
+	return response.JSON(c, http.StatusOK, "Handling status recorded", nil)
 }
 
 func (h *WaliHandler) Child(c fiber.Ctx) error {

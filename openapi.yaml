@@ -10,8 +10,18 @@ info:
     A failure has `success: false`, a `message` and a stable `errorCode`, and validation failures also carry a
     `details` object with one message per field.
 
-    Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`.
-    They count requests per signed-in user, and login, registration and token routes per account, never per IP address.
+    Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`
+    and a `Retry-After` header. They count requests per signed-in user, and login, registration and token routes per account,
+    never per IP address. The daily limit of trash claims is a different `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After`
+    header, because it ends at midnight of the local day.
+
+    Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
+    `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
+    processed answers `400` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
+    A client should branch on `errorCode` and treat an unknown code like its status.
+
+    A day, such as "today" or the Monday to Friday of a week, is the local day of the school. It follows the timezone of the
+    deployment, which is `Asia/Jakarta` unless the operator sets another one.
   license:
     name: GNU General Public License v3.0
     url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
@@ -71,7 +81,7 @@ paths:
                   password: "{{password}}"
                   fullName: Bapak Budi
                   role: WALI
-                  classCode: ABC123
+                  classCode: ABC234
                   student:
                     nisn: "1234567890"
                     fullName: Ani
@@ -212,7 +222,7 @@ paths:
     post:
       tags: [Parent]
       operationId: applyGuidance
-      summary: Tell the teacher that a guidance was applied at home
+      summary: Record that a guidance was applied at home
       requestBody:
         required: true
         content:
@@ -221,7 +231,7 @@ paths:
               $ref: "#/components/schemas/ApplyGuidanceRequest"
       responses:
         "200":
-          description: The status was forwarded to the class teacher
+          description: The status was recorded. No screen of the teacher shows it yet.
           content:
             application/json:
               schema:
@@ -320,7 +330,10 @@ paths:
       tags: [Teacher]
       operationId: moodAnalytics
       summary: Mood charts of a class
-      description: The donut summary and the Monday to Friday trend. The monthly range adds the distribution of the month.
+      description: |
+        The donut summary and the Monday to Friday trend. The donut covers the current week for `weekly` and the current month for
+        `monthly`, counting the latest mood of each child for each local day. The trend is always the Monday to Friday of the
+        current week, whatever the range is. The monthly range adds the distribution of the month.
       parameters:
         - $ref: "#/components/parameters/ClassId"
         - name: range
@@ -368,6 +381,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
     post:
@@ -394,6 +409,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}:
@@ -918,8 +935,9 @@ paths:
       operationId: scanClaim
       summary: Claim points for sorted trash
       description: |
-        A child can claim a limited number of times per local day. The optional photo is stored as evidence and has to
-        be a JPEG, PNG or WebP image of at most 4 MiB, given as base64 or as a data URI.
+        Only for the WALI role. A child can claim a limited number of times per local day. The optional photo has to be a
+        JPEG, PNG or WebP image of at most 4 MiB, given as base64 or as a data URI. It is stored as evidence when file storage is
+        configured, and a deployment without it checks the photo and then drops it.
       requestBody:
         required: true
         content:
@@ -948,7 +966,9 @@ paths:
         "413":
           $ref: "#/components/responses/FileTooLarge"
         "429":
-          description: Rate limited (`RATE_LIMITED`), or the daily claim limit of the child is reached (`TRASH_DAILY_LIMIT_REACHED`)
+          description: |
+            Rate limited (`RATE_LIMITED`, with a `Retry-After` header), or the daily claim limit of the child is reached
+            (`TRASH_DAILY_LIMIT_REACHED`, without one, the limit resets at midnight of the local day)
           content:
             application/json:
               schema:
@@ -960,7 +980,7 @@ paths:
       tags: [Trash]
       operationId: trashStats
       summary: Trash sorting statistics of a child
-      description: The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
+      description: Only for the WALI role. The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
       parameters:
         - $ref: "#/components/parameters/StudentId"
       responses:
@@ -1213,7 +1233,7 @@ components:
             message: The submitted data is invalid
             errorCode: VALIDATION_ERROR
             details:
-              email: must be a valid email address
+              email: invalid email format
     Unauthorized:
       description: The access token is missing, invalid or expired (`AUTH_TOKEN_MISSING`, `AUTH_TOKEN_INVALID`)
       content:
@@ -1236,6 +1256,11 @@ components:
             $ref: "#/components/schemas/Failure"
     RateLimited:
       description: Too many requests from this user or for this account (`RATE_LIMITED`)
+      headers:
+        Retry-After:
+          description: Seconds to wait before the next try
+          schema:
+            type: string
       content:
         application/json:
           schema:
@@ -1347,15 +1372,19 @@ components:
         nip:
           type: string
           maxLength: 50
+          description: Only used for a GURU
         schoolName:
           type: string
           maxLength: 150
+          description: Only used for a GURU. The school of the class takes precedence.
         address:
           type: string
           maxLength: 1000
+          description: Only used for a WALI. A teacher sets the address with `PUT /guru/profile`.
         whatsappNumber:
           type: string
           maxLength: 30
+          description: Only used for a WALI
         class:
           allOf:
             - $ref: "#/components/schemas/RegisterClass"
@@ -1365,7 +1394,7 @@ components:
           pattern: "^[A-Za-z0-9]+$"
           minLength: 4
           maxLength: 12
-          description: Required for a WALI, the join code from the dashboard of the teacher
+          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter.
         student:
           allOf:
             - $ref: "#/components/schemas/RegisterStudent"
@@ -1579,6 +1608,7 @@ components:
           format: uuid
         className:
           type: string
+          description: The grade level and the name of the class in brackets, such as `Class A (Bunga)`
         joinCode:
           type: string
           description: Six characters that a parent uses to register a child into the class
@@ -2413,6 +2443,7 @@ components:
           format: uuid
         className:
           type: string
+          description: The name of the class only, the grade level is in `gradeLevel`
         gradeLevel:
           type: string
         schoolName:
