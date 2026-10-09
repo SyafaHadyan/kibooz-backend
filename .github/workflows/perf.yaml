@@ -33,7 +33,6 @@ jobs:
     permissions:
       contents: read
     env:
-      DOCKERHUB_PULL_TOKEN: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
       # pull requests get the 30 second smoke test, the nightly run and manual runs get the load test
       SCRIPT: ${{ github.event_name == 'workflow_dispatch' && inputs.script || (github.event_name == 'schedule' && 'load' || 'smoke') }}
       DURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.duration || '30m' }}
@@ -43,14 +42,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Log in to Docker Hub
-        if: env.DOCKERHUB_PULL_TOKEN != ''
-        # a login that times out must not fail the job, the pulls that follow then go anonymously
-        continue-on-error: true
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
       - name: Create the environment file
         run: |

@@ -61,10 +61,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: postgres:15-alpine
-        credentials:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+        image: mirror.gcr.io/library/postgres:15-alpine
         env:
           POSTGRES_USER: kibooz
           POSTGRES_PASSWORD: kibooz
@@ -77,10 +74,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       redis:
-        image: redis:7-alpine
-        credentials:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379:6379
         options: >-
