@@ -60,7 +60,7 @@ type ClassroomDBItf interface {
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
 	// FindPost returns a post with its author, or nil when it does not exist
 	FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error)
-	// UpdatePost writes the title and the text of a post, a reply keeps its empty title
+	// UpdatePost writes the title, the text and the edit time of a post, a reply keeps its empty title
 	UpdatePost(ctx context.Context, post *entity.ForumPost) error
 	// DeletePost removes a post and, for a thread, its replies, and reports whether a post was removed
 	DeletePost(ctx context.Context, postID uuid.UUID) (bool, error)
@@ -270,7 +270,7 @@ func (r *ClassroomDB) FindPost(ctx context.Context, postID uuid.UUID) (*PostRow,
 func (r *ClassroomDB) UpdatePost(ctx context.Context, post *entity.ForumPost) error {
 	return r.db.WithContext(ctx).Model(&entity.ForumPost{}).
 		Where("id = ?", post.ID).
-		Select("title", "body").
+		Select("title", "body", "edited_at").
 		Updates(post).Error
 }
 

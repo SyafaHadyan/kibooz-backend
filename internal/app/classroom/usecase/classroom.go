@@ -586,6 +586,8 @@ func (u *ClassroomUseCase) UpdateThread(
 		return dto.ForumThread{}, apperror.Validation(details)
 	}
 
+	u.markEdited(&changed, &post.ForumPost)
+
 	row, err := u.saveChanges(ctx, &changed)
 	if err != nil {
 		return dto.ForumThread{}, err
@@ -610,6 +612,8 @@ func (u *ClassroomUseCase) UpdateReply(
 
 	changed := post.ForumPost
 	changed.Body = text
+
+	u.markEdited(&changed, &post.ForumPost)
 
 	row, err := u.saveChanges(ctx, &changed)
 	if err != nil {
@@ -702,6 +706,17 @@ func postHasParent(post *repository.PostRow, threadID *uuid.UUID) bool {
 	}
 
 	return post.ParentID != nil && *post.ParentID == *threadID
+}
+
+// markEdited records the time of an edit that changed the words of a post.
+// A save that changes nothing keeps the old mark, so a post is only shown as edited when its words really changed.
+func (u *ClassroomUseCase) markEdited(changed *entity.ForumPost, original *entity.ForumPost) {
+	if changed.Body == original.Body && sameText(changed.Title, original.Title) {
+		return
+	}
+
+	editedAt := u.timestamp()
+	changed.EditedAt = &editedAt
 }
 
 func (u *ClassroomUseCase) saveChanges(ctx context.Context, post *entity.ForumPost) (*repository.PostRow, error) {
@@ -857,6 +872,7 @@ func threadResponse(row *repository.PostRow) dto.ForumThread {
 		Author:     authorResponse(row),
 		ReplyCount: row.ReplyCount,
 		CreatedAt:  row.CreatedAt.UTC(),
+		EditedAt:   editedAt(row.EditedAt),
 	}
 }
 
@@ -866,7 +882,28 @@ func replyResponse(row *repository.PostRow) dto.ForumReply {
 		Body:      row.Body,
 		Author:    authorResponse(row),
 		CreatedAt: row.CreatedAt.UTC(),
+		EditedAt:  editedAt(row.EditedAt),
 	}
+}
+
+// sameText compares two optional texts, and two missing texts are the same
+func sameText(a *string, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
+// editedAt returns the edit time in UTC, and nil for a post that was never edited
+func editedAt(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+
+	utc := at.UTC()
+
+	return &utc
 }
 
 // authorResponse hides the name and photo of an account that was deleted

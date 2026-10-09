@@ -94,6 +94,7 @@ type ForumThread struct {
 	Author     ForumAuthor `json:"author"`
 	ReplyCount int         `json:"replyCount"`
 	CreatedAt  time.Time   `json:"createdAt"`
+	EditedAt   *time.Time  `json:"editedAt"`
 }
 
 type ForumThreadList struct {
@@ -106,6 +107,7 @@ type ForumReply struct {
 	Body      string      `json:"body"`
 	Author    ForumAuthor `json:"author"`
 	CreatedAt time.Time   `json:"createdAt"`
+	EditedAt  *time.Time  `json:"editedAt"`
 }
 
 type ForumReplyList struct {

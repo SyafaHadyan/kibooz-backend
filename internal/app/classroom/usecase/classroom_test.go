@@ -348,8 +348,11 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 
 	text := func(value string) *string { return &value }
 
+	editTime := time.Date(2026, 10, 9, 12, 0, 0, 123456789, time.UTC)
+	clock := func() time.Time { return editTime }
+
 	t.Run("the author changes a thread", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: newRepo()}
+		u := &ClassroomUseCase{repo: newRepo(), now: clock}
 
 		got, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID,
 			dto.UpdateThreadRequest{Title: text(" New title "), Body: text("New text")})
@@ -360,7 +363,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 	})
 
 	t.Run("a missing field of a thread stays", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: newRepo()}
+		u := &ClassroomUseCase{repo: newRepo(), now: clock}
 
 		got, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Body: text("Only text")})
 
@@ -370,7 +373,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 	})
 
 	t.Run("an empty thread change is refused", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: newRepo()}
+		u := &ClassroomUseCase{repo: newRepo(), now: clock}
 
 		for _, req := range []dto.UpdateThreadRequest{{}, {Title: text("  ")}, {Body: text("")}} {
 			_, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, req)
@@ -385,7 +388,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 	t.Run("only the author edits", func(t *testing.T) {
 		repo := newRepo()
 		repo.teacher = &guruID
-		u := &ClassroomUseCase{repo: repo}
+		u := &ClassroomUseCase{repo: repo, now: clock}
 
 		_, err := u.UpdateThread(context.Background(), stranger, constants.RoleGuru, classID, threadID, dto.UpdateThreadRequest{Body: text("x")})
 		require.ErrorIs(t, err, apperror.ErrForbidden, "a teacher may delete but not edit the words of someone else")
@@ -393,13 +396,13 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 		repliesRepo := reply(newRepo())
 		repliesRepo.teacher = &guruID
 
-		_, err = (&ClassroomUseCase{repo: repliesRepo}).UpdateReply(
+		_, err = (&ClassroomUseCase{repo: repliesRepo, now: clock}).UpdateReply(
 			context.Background(), stranger, constants.RoleGuru, classID, threadID, replyID, dto.UpdateReplyRequest{Body: "x"})
 		require.ErrorIs(t, err, apperror.ErrForbidden)
 	})
 
 	t.Run("the author changes a reply", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: reply(newRepo())}
+		u := &ClassroomUseCase{repo: reply(newRepo()), now: clock}
 
 		got, err := u.UpdateReply(context.Background(), author, constants.RoleWali, classID, threadID, replyID, dto.UpdateReplyRequest{Body: " Better "})
 
@@ -410,8 +413,43 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("an edit that changes the words marks the post as edited", func(t *testing.T) {
+		u := &ClassroomUseCase{repo: newRepo(), now: clock}
+
+		before, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Body: text("Text")})
+		require.NoError(t, err)
+		require.Nil(t, before.EditedAt, "the same words are not an edit")
+
+		changed, err := u.UpdateThread(context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Title: text("Other")})
+		require.NoError(t, err)
+		require.NotNil(t, changed.EditedAt)
+		require.Equal(t, editTime.Truncate(time.Microsecond), *changed.EditedAt)
+
+		replyUseCase := &ClassroomUseCase{repo: reply(newRepo()), now: clock}
+
+		same, err := replyUseCase.UpdateReply(context.Background(), author, constants.RoleWali, classID, threadID, replyID, dto.UpdateReplyRequest{Body: " Answer "})
+		require.NoError(t, err)
+		require.Nil(t, same.EditedAt)
+
+		edited, err := replyUseCase.UpdateReply(context.Background(), author, constants.RoleWali, classID, threadID, replyID, dto.UpdateReplyRequest{Body: "Better"})
+		require.NoError(t, err)
+		require.NotNil(t, edited.EditedAt)
+	})
+
+	t.Run("a save without changes keeps the old edit time", func(t *testing.T) {
+		earlier := editTime.Add(-time.Hour)
+		repo := newRepo()
+		repo.post.EditedAt = &earlier
+
+		got, err := (&ClassroomUseCase{repo: repo, now: clock}).UpdateThread(
+			context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Body: text("Text")})
+
+		require.NoError(t, err)
+		require.Equal(t, &earlier, got.EditedAt)
+	})
+
 	t.Run("a post of another place is not found", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: newRepo()}
+		u := &ClassroomUseCase{repo: newRepo(), now: clock}
 
 		_, err := u.UpdateThread(context.Background(), author, constants.RoleWali, uuid.New(), threadID, dto.UpdateThreadRequest{Body: text("x")})
 		require.ErrorIs(t, err, apperror.ErrForumPostNotFound, "the post belongs to another class")
@@ -419,7 +457,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 		require.ErrorIs(t, u.DeleteReply(context.Background(), author, constants.RoleWali, classID, threadID, threadID), apperror.ErrForumPostNotFound,
 			"a thread is not a reply")
 
-		replies := &ClassroomUseCase{repo: reply(newRepo())}
+		replies := &ClassroomUseCase{repo: reply(newRepo()), now: clock}
 
 		require.ErrorIs(t, replies.DeleteReply(context.Background(), author, constants.RoleWali, classID, uuid.New(), replyID), apperror.ErrForumPostNotFound,
 			"the reply belongs to another thread")
@@ -447,7 +485,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 	t.Run("another parent cannot delete", func(t *testing.T) {
 		repo := newRepo()
 
-		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), stranger, constants.RoleWali, classID, threadID),
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo, now: clock}).DeleteThread(context.Background(), stranger, constants.RoleWali, classID, threadID),
 			apperror.ErrForbidden)
 		require.False(t, repo.gone)
 	})
@@ -456,7 +494,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 		repo := newRepo()
 		repo.parent = false
 
-		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo, now: clock}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
 			apperror.ErrForbidden)
 	})
 
@@ -464,7 +502,7 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 		repo := newRepo()
 		repo.gone = true
 
-		require.ErrorIs(t, (&ClassroomUseCase{repo: repo}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
+		require.ErrorIs(t, (&ClassroomUseCase{repo: repo, now: clock}).DeleteThread(context.Background(), author, constants.RoleWali, classID, threadID),
 			apperror.ErrForumPostNotFound)
 	})
 }
