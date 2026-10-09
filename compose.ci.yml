@@ -3,7 +3,11 @@
 services:
   api:
     image: kibooz-backend:ci
-    build: .
+    build:
+      context: .
+      # the Go base image of the Dockerfile is taken from the Google mirror, because Docker Hub rejects or times out many pulls from the shared runners
+      additional_contexts:
+        "golang:1.27-alpine@sha256:738d1cf061836894ff6bb8c33881080ac66de8cf0586615012a0c8f592649cfa": "docker-image://mirror.gcr.io/library/golang:1.27-alpine@sha256:738d1cf061836894ff6bb8c33881080ac66de8cf0586615012a0c8f592649cfa"
     pull_policy: never
     deploy:
       resources:
@@ -11,7 +15,9 @@ services:
           memory: 256M
           cpus: "0.5"
 
+  # the images are named through the Google mirror because Docker Hub rejects or times out many pulls from the shared runners
   db:
+    image: mirror.gcr.io/library/postgres:15-alpine
     deploy:
       resources:
         limits:
@@ -19,6 +25,7 @@ services:
           cpus: "0.5"
 
   redis:
+    image: mirror.gcr.io/library/redis:7-alpine
     deploy:
       resources:
         limits:
