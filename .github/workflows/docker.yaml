@@ -10,7 +10,11 @@ on:
 
 concurrency:
   group: docker-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  # A run that has started is never cancelled unless it builds a pull request. Cancelling a run on main or a tag after the push
+  # has moved the tags but before the image is scanned and signed would leave an unsigned image under them. A run that is still
+  # waiting is replaced by a newer one, which is fine because only the newest commit on main matters for latest, and the runs
+  # must stay in one group so that two of them never move latest at the same time.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -56,9 +60,11 @@ jobs:
           images: |
             ${{ env.GHCR_IMAGE }}
             ${{ env.HUB == 'true' && env.HUB_IMAGE || '' }}
+          # A release makes two runs for the same commit, one for main and one for the tag. Both would move latest and the
+          # sha tag, and the run that finishes last wins, so only main publishes them and a tag run only adds its version tags.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,format=short,enable=${{ github.ref_type != 'tag' }}
             type=ref,event=pr,prefix=pr-
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
