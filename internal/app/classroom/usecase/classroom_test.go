@@ -733,6 +733,11 @@ func (r failingDeleteRepo) DeleteVideo(context.Context, uuid.UUID, uuid.UUID) (b
 	return false, context.DeadlineExceeded
 }
 
+// WithVideoFileLock hands this repository to fn and not the embedded one, so the failing delete is the one that runs
+func (r failingDeleteRepo) WithVideoFileLock(_ context.Context, _ string, fn func(repo repository.ClassroomDBItf) error) error {
+	return fn(r)
+}
+
 func TestAddStagedVideo(t *testing.T) {
 	classID, userID := uuid.New(), uuid.New()
 	name := uuid.NewString() + ".mp4"
