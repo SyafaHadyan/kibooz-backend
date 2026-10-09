@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -60,8 +61,9 @@ type ClassroomDBItf interface {
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
 	// FindPost returns a post with its author, or nil when it does not exist
 	FindPost(ctx context.Context, postID uuid.UUID) (*PostRow, error)
-	// UpdatePost writes the title, the text and the edit time of a post, a reply keeps its empty title
-	UpdatePost(ctx context.Context, post *entity.ForumPost) error
+	// UpdatePost locks the post, lets change edit the row as it is now and writes the title, the text and the edit time back,
+	// so a request that read the post earlier cannot overwrite a newer edit. It reports false when the post is gone.
+	UpdatePost(ctx context.Context, postID uuid.UUID, change func(post *entity.ForumPost)) (bool, error)
 	// DeletePost removes a post and, for a thread, its replies, and reports whether a post was removed
 	DeletePost(ctx context.Context, postID uuid.UUID) (bool, error)
 	// ListStudents returns the children of the class by name, with the latest mood each recorded between from and to
@@ -267,11 +269,28 @@ func (r *ClassroomDB) FindPost(ctx context.Context, postID uuid.UUID) (*PostRow,
 	return &rows[0], nil
 }
 
-func (r *ClassroomDB) UpdatePost(ctx context.Context, post *entity.ForumPost) error {
-	return r.db.WithContext(ctx).Model(&entity.ForumPost{}).
-		Where("id = ?", post.ID).
-		Select("title", "body", "edited_at").
-		Updates(post).Error
+func (r *ClassroomDB) UpdatePost(ctx context.Context, postID uuid.UUID, change func(post *entity.ForumPost)) (bool, error) {
+	updated := false
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var post entity.ForumPost
+
+		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", postID).Limit(1).Find(&post)
+		if found.Error != nil || found.RowsAffected == 0 {
+			return found.Error
+		}
+
+		change(&post)
+
+		updated = true
+
+		return tx.Model(&entity.ForumPost{}).
+			Where("id = ?", postID).
+			Select("title", "body", "edited_at").
+			Updates(&post).Error
+	})
+
+	return updated && err == nil, err
 }
 
 func (r *ClassroomDB) DeletePost(ctx context.Context, postID uuid.UUID) (bool, error) {

@@ -308,10 +308,14 @@ func (r *forumRepo) FindPost(context.Context, uuid.UUID) (*repository.PostRow, e
 	return r.post, nil
 }
 
-func (r *forumRepo) UpdatePost(_ context.Context, post *entity.ForumPost) error {
-	r.post.ForumPost = *post
+func (r *forumRepo) UpdatePost(_ context.Context, _ uuid.UUID, change func(post *entity.ForumPost)) (bool, error) {
+	if r.gone {
+		return false, nil
+	}
 
-	return nil
+	change(&r.post.ForumPost)
+
+	return true, nil
 }
 
 func (r *forumRepo) DeletePost(context.Context, uuid.UUID) (bool, error) {
@@ -446,6 +450,16 @@ func TestForumEditAndDeleteRules(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, &earlier, got.EditedAt)
+	})
+
+	t.Run("a post removed while it is saved is not found", func(t *testing.T) {
+		repo := newRepo()
+		repo.gone = true
+
+		_, err := (&ClassroomUseCase{repo: repo, now: clock}).UpdateThread(
+			context.Background(), author, constants.RoleWali, classID, threadID, dto.UpdateThreadRequest{Body: text("x")})
+
+		require.ErrorIs(t, err, apperror.ErrForumPostNotFound)
 	})
 
 	t.Run("a post of another place is not found", func(t *testing.T) {
@@ -728,5 +742,55 @@ func TestAddStagedVideo(t *testing.T) {
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
 		require.NotContains(t, strings.Join(events, ","), "copy")
+	})
+}
+
+func TestApplyPostChangesWorksOnTheCurrentRow(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	earlier := now.Add(-time.Hour)
+	u := &ClassroomUseCase{now: func() time.Time { return now }}
+
+	text := func(value string) *string { return &value }
+
+	current := func() *entity.ForumPost {
+		return &entity.ForumPost{Title: text("Title"), Body: "Newer words", EditedAt: &earlier}
+	}
+
+	t.Run("words that match the current row change nothing", func(t *testing.T) {
+		post := current()
+
+		u.applyPostChanges(post, text("Title"), text("Newer words"))
+
+		require.Equal(t, "Newer words", post.Body)
+		require.Equal(t, &earlier, post.EditedAt, "a delayed save cannot clear or move the mark of a newer edit")
+	})
+
+	t.Run("a missing field stays", func(t *testing.T) {
+		post := current()
+
+		u.applyPostChanges(post, nil, text("Changed"))
+
+		require.Equal(t, "Title", *post.Title)
+		require.Equal(t, "Changed", post.Body)
+		require.Equal(t, &now, post.EditedAt)
+	})
+
+	t.Run("a new title marks the post", func(t *testing.T) {
+		post := current()
+
+		u.applyPostChanges(post, text("Other"), nil)
+
+		require.Equal(t, "Other", *post.Title)
+		require.Equal(t, "Newer words", post.Body)
+		require.Equal(t, &now, post.EditedAt)
+	})
+
+	t.Run("a reply keeps its empty title", func(t *testing.T) {
+		post := &entity.ForumPost{Body: "Answer"}
+
+		u.applyPostChanges(post, nil, text("Better"))
+
+		require.Nil(t, post.Title)
+		require.Equal(t, &now, post.EditedAt)
 	})
 }
