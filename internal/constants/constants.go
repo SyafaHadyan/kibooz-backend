@@ -1,8 +1,6 @@
 // Package constants stores values shared across modules
 package constants
 
-import "time"
-
 type Role string
 
 const (
@@ -77,8 +75,6 @@ const (
 
 	AvatarMaxBytes     = 2 * 1024 * 1024
 	TrashPhotoMaxBytes = 4 * 1024 * 1024
-
-	RequestTimeout = 10 * time.Second
 )
 
 // MoodLabels are the parent facing captions shown on the wali dashboard

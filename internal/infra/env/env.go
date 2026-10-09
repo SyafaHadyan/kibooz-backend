@@ -16,6 +16,7 @@ type Env struct {
 	AppPort                  uint   `env:"APP_PORT" envDefault:"8080"`
 	AppTimezone              string `env:"APP_TIMEZONE" envDefault:"Asia/Jakarta"`
 	BodyLimitMB              int    `env:"BODY_LIMIT_MB" envDefault:"8"`
+	RequestTimeoutSeconds    int    `env:"REQUEST_TIMEOUT_SECONDS" envDefault:"10"`
 	VideoMaxMB               int    `env:"VIDEO_MAX_MB" envDefault:"100"`
 	VideoUploadURLSeconds    int    `env:"VIDEO_UPLOAD_URL_SECONDS" envDefault:"900"`
 	UserLimiterMax           int    `env:"USER_LIMITER_MAX" envDefault:"120"`
@@ -88,6 +89,11 @@ func (e *Env) validate() error {
 
 	if e.TrashDailyLimit < 1 {
 		return errors.New("TRASH_DAILY_LIMIT must be at least 1")
+	}
+
+	// a request without a deadline can hold a database connection for as long as a storage call or a lock wait lasts
+	if e.RequestTimeoutSeconds < 1 {
+		return errors.New("REQUEST_TIMEOUT_SECONDS must be at least 1")
 	}
 
 	// a device token that is already over when it is issued gives nobody a bucket of their own
