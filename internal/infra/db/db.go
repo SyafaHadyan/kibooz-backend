@@ -29,11 +29,16 @@ func dsnValue(value string) string {
 	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
 }
 
+// idleInTransactionTimeout is how long the server lets a transaction sit idle before it ends the session and frees its
+// locks. Statements and lock waits are bounded by the deadline of the request instead of a session setting, because the
+// migrations run on the same connections and an index build may take longer than any request.
+const idleInTransactionTimeout = 30 * time.Second
+
 func buildDSN(cfg *env.Env) string {
 	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC idle_in_transaction_session_timeout=%d",
 		dsnValue(cfg.DBHost), cfg.DBPort, dsnValue(cfg.DBUsername), dsnValue(cfg.DBPassword),
-		dsnValue(cfg.DBName), dsnValue(cfg.DBSSLMode),
+		dsnValue(cfg.DBName), dsnValue(cfg.DBSSLMode), idleInTransactionTimeout.Milliseconds(),
 	)
 }
 
