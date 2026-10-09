@@ -526,7 +526,7 @@ paths:
         answer. The file must have arrived by then, it must belong to this class, and it must be an accepted video. The file waits in a
         staging folder until it is added, and adding copies it to a permanent address. That address is the `videoUrl` of the added video,
         so use it and not the address of the upload. A staged file can be added once, and the permanent address can be added again to
-        share the file with another video of the same class.
+        share the file with another video of the same class, for as long as a video still uses it. The file is deleted with the last video.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
