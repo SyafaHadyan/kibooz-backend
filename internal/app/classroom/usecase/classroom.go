@@ -158,7 +158,7 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 		}
 
 		if stagedKey == "" {
-			return repo.CreateVideo(ctx, video)
+			return u.createFromAddress(ctx, repo, video)
 		}
 
 		// the staged file is deleted after the lock is released, so a second request for it can get here first
@@ -197,6 +197,27 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 	}
 
 	return videoResponse(video), nil
+}
+
+// createFromAddress stores a video whose address is a link to another site or the permanent address of a file this class already
+// uses. A permanent address that no video uses is refused, because the last video of a file deletes it after its own
+// transaction ends, and a new video must not be able to claim a file in the time between.
+func (u *ClassroomUseCase) createFromAddress(ctx context.Context, repo repository.ClassroomDBItf, video *entity.LearningVideo) error {
+	_, ours := u.storage.KeyFromURL(video.VideoURL)
+	if !ours {
+		return repo.CreateVideo(ctx, video)
+	}
+
+	existing, err := repo.CountVideosByURL(ctx, video.VideoURL)
+	if err != nil {
+		return err
+	}
+
+	if existing == 0 {
+		return apperror.Validation(map[string]string{"videoUrl": "is not a file that a video of this class already uses"})
+	}
+
+	return repo.CreateVideo(ctx, video)
 }
 
 // stagedVideoKey returns the key of a video address that is a file this class uploaded and has not added yet, or "" for any other address
@@ -242,23 +263,17 @@ func (u *ClassroomUseCase) UpdateVideo(
 		return dto.Video{}, apperror.Validation(map[string]string{"body": "provide title, description, thumbnailUrl or durationSeconds"})
 	}
 
-	video, err := u.repo.FindVideo(ctx, classID, videoID)
+	// the changes are applied to the row as it is when it is locked, so two teachers editing different fields of one video
+	// at the same time both keep their change
+	video, err := u.repo.UpdateVideo(ctx, classID, videoID, func(video *entity.LearningVideo) error {
+		return applyVideoChanges(video, req)
+	})
 	if err != nil {
-		return dto.Video{}, apperror.Internal(err)
+		return dto.Video{}, asAppError(err)
 	}
 
 	if video == nil {
 		return dto.Video{}, apperror.ErrVideoNotFound
-	}
-
-	err = applyVideoChanges(video, req)
-	if err != nil {
-		return dto.Video{}, err
-	}
-
-	err = u.repo.SaveVideoDetails(ctx, video)
-	if err != nil {
-		return dto.Video{}, apperror.Internal(err)
 	}
 
 	return videoResponse(video), nil
@@ -279,7 +294,9 @@ func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, cl
 		return apperror.ErrVideoNotFound
 	}
 
-	// the video, the count and the file are handled under one lock, so no new video can be added for a file that is about to go
+	// the video and the count are handled under one lock, so no new video can claim a file that is about to go
+	var unusedKey string
+
 	err = u.withFileLock(ctx, video.VideoURL, func(repo repository.ClassroomDBItf) error {
 		deleted, deleteErr := repo.DeleteVideo(ctx, classID, videoID)
 		if deleteErr != nil {
@@ -291,7 +308,7 @@ func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, cl
 			return apperror.ErrVideoNotFound
 		}
 
-		u.removeUploadedFile(ctx, repo, video.VideoURL)
+		unusedKey = u.unusedFileKey(ctx, repo, classID, video.VideoURL)
 
 		return nil
 	})
@@ -299,23 +316,30 @@ func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, cl
 		return asAppError(err)
 	}
 
+	// the file goes only after the video is really gone, because a file cannot be brought back when the transaction fails to commit.
+	// No video can be added for it in between, since a permanent address is only accepted while a video still uses it.
+	if unusedKey != "" {
+		s3.Discard(ctx, u.storage, unusedKey)
+	}
+
 	return nil
 }
 
-// removeUploadedFile deletes the file of an uploaded video once no video points at it any more.
-// A file that stays behind is only unused storage, so a failure here never fails the request.
-func (u *ClassroomUseCase) removeUploadedFile(ctx context.Context, repo repository.ClassroomDBItf, videoURL string) {
+// unusedFileKey returns the key of the file of an uploaded video once no video points at it any more, and "" for a link to
+// another site, for a file another video still uses and for an address outside the folder of the class. A file that stays behind
+// is only unused storage, so a failure here never fails the request.
+func (u *ClassroomUseCase) unusedFileKey(ctx context.Context, repo repository.ClassroomDBItf, classID uuid.UUID, videoURL string) string {
 	key, ours := u.storage.KeyFromURL(videoURL)
-	if !ours {
-		return
+	if !ours || !strings.HasPrefix(key, videoKeyPrefix(classID)) {
+		return ""
 	}
 
 	remaining, err := repo.CountVideosByURL(ctx, videoURL)
 	if err != nil || remaining > 0 {
-		return
+		return ""
 	}
 
-	s3.Discard(ctx, u.storage, key)
+	return key
 }
 
 // applyVideoChanges checks the changed fields and writes them to the video

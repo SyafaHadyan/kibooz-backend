@@ -246,42 +246,30 @@ func (r countingRepo) CountVideosByURL(context.Context, string) (int, error) {
 	return r.remaining, r.failure
 }
 
-// removalBucket records which objects were deleted
-type removalBucket struct {
-	bucket
-
-	deleted *[]string
-}
-
-func (b removalBucket) Delete(_ context.Context, key string) error {
-	*b.deleted = append(*b.deleted, key)
-
-	return nil
-}
-
-func TestRemoveUploadedFile(t *testing.T) {
-	ours := "https://cdn.example.test/videos/c/f.mp4"
+func TestUnusedFileKey(t *testing.T) {
+	classID := uuid.New()
+	key := videoKeyPrefix(classID) + "f.mp4"
+	ours := "https://cdn.example.test/" + key
 
 	tests := map[string]struct {
 		url  string
 		repo countingRepo
-		want []string
+		want string
 	}{
-		"the last video of an uploaded file": {ours, countingRepo{}, []string{"videos/c/f.mp4"}},
-		"another video uses the same file":   {ours, countingRepo{remaining: 1}, nil},
-		"a link to another site":             {"https://videos.example.com/a.mp4", countingRepo{}, nil},
-		"the count fails":                    {ours, countingRepo{failure: context.DeadlineExceeded}, nil},
+		"the last video of an uploaded file":   {ours, countingRepo{}, key},
+		"another video uses the same file":     {ours, countingRepo{remaining: 1}, ""},
+		"a link to another site":               {"https://videos.example.com/a.mp4", countingRepo{}, ""},
+		"the count fails":                      {ours, countingRepo{failure: context.DeadlineExceeded}, ""},
+		"an address in the folder of another":  {"https://cdn.example.test/" + videoKeyPrefix(uuid.New()) + "f.mp4", countingRepo{}, ""},
+		"an address outside the video folders": {"https://cdn.example.test/avatars/" + classID.String() + "/me.png", countingRepo{}, ""},
+		"an address that is still staged":      {"https://cdn.example.test/" + pendingVideoKeyPrefix(classID) + "f.mp4", countingRepo{}, ""},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			var deleted []string
+			u := &ClassroomUseCase{storage: bucket{}}
 
-			u := &ClassroomUseCase{storage: removalBucket{deleted: &deleted}}
-
-			u.removeUploadedFile(context.Background(), tt.repo, tt.url)
-
-			require.Equal(t, tt.want, deleted)
+			require.Equal(t, tt.want, u.unusedFileKey(context.Background(), tt.repo, classID, tt.url))
 		})
 	}
 }
@@ -540,6 +528,24 @@ func (r lockRepo) FindVideo(context.Context, uuid.UUID, uuid.UUID) (*entity.Lear
 	return r.video, nil
 }
 
+// UpdateVideo edits a copy of the video the way the locked row is edited, and keeps it only when the change succeeds
+func (r lockRepo) UpdateVideo(_ context.Context, _ uuid.UUID, _ uuid.UUID, change func(video *entity.LearningVideo) error) (*entity.LearningVideo, error) {
+	if r.video == nil {
+		return nil, nil
+	}
+
+	edited := *r.video
+
+	err := change(&edited)
+	if err != nil {
+		return nil, err
+	}
+
+	*r.events = append(*r.events, "update")
+
+	return &edited, nil
+}
+
 func (r lockRepo) CreateVideo(context.Context, *entity.LearningVideo) error {
 	*r.events = append(*r.events, "create")
 
@@ -613,13 +619,26 @@ func TestVideoFileLock(t *testing.T) {
 
 	present := map[string]*s3.Object{key: {Size: 10, ContentType: "video/mp4"}}
 
-	t.Run("adding an uploaded file checks and stores it under the lock", func(t *testing.T) {
+	t.Run("adding the address of a file that a video uses checks and stores it under the lock", func(t *testing.T) {
+		var events []string
+
+		_, err := build(&events, 1, present).AddVideo(context.Background(), userID, classID, dto.AddVideoRequest{Title: "Lesson", VideoURL: uploadedURL})
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"lock", "count", "create", "unlock"}, events)
+	})
+
+	t.Run("the address of a file that no video uses cannot be claimed", func(t *testing.T) {
 		var events []string
 
 		_, err := build(&events, 0, present).AddVideo(context.Background(), userID, classID, dto.AddVideoRequest{Title: "Lesson", VideoURL: uploadedURL})
 
-		require.NoError(t, err)
-		require.Equal(t, []string{"lock", "create", "unlock"}, events)
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.Contains(t, appErr.Details["videoUrl"], "already uses")
+		require.Equal(t, []string{"lock", "count", "unlock"}, events)
 	})
 
 	t.Run("adding a file that is gone stores nothing", func(t *testing.T) {
@@ -644,11 +663,57 @@ func TestVideoFileLock(t *testing.T) {
 		require.Equal(t, []string{"create"}, events)
 	})
 
-	t.Run("the file is removed while the lock is held", func(t *testing.T) {
+	t.Run("the file is removed only after the video is gone and the lock is released", func(t *testing.T) {
 		var events []string
 
 		require.NoError(t, build(&events, 0, present).DeleteVideo(context.Background(), userID, classID, videoID))
-		require.Equal(t, []string{"lock", "delete", "count", "discard", "unlock"}, events)
+		require.Equal(t, []string{"lock", "delete", "count", "unlock", "discard"}, events)
+	})
+
+	t.Run("a file is kept when the delete fails", func(t *testing.T) {
+		var events []string
+
+		u := build(&events, 0, present)
+		u.repo = failingDeleteRepo{lockRepo: u.repo.(lockRepo)}
+
+		require.Error(t, u.DeleteVideo(context.Background(), userID, classID, videoID))
+		require.NotContains(t, events, "discard")
+	})
+
+	t.Run("an edit is applied to the video and reported", func(t *testing.T) {
+		var events []string
+
+		title := "New title"
+		got, err := build(&events, 0, present).UpdateVideo(context.Background(), userID, classID, videoID, dto.UpdateVideoRequest{Title: &title})
+
+		require.NoError(t, err)
+		require.Equal(t, "New title", got.Title)
+		require.Equal(t, []string{"update"}, events)
+	})
+
+	t.Run("an invalid edit changes nothing", func(t *testing.T) {
+		var events []string
+
+		blank := "  "
+		_, err := build(&events, 0, present).UpdateVideo(context.Background(), userID, classID, videoID, dto.UpdateVideoRequest{Title: &blank})
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.Empty(t, events)
+	})
+
+	t.Run("an edit of a video that is gone is not found", func(t *testing.T) {
+		var events []string
+
+		u := build(&events, 0, present)
+		u.repo = lockRepo{events: &events, teacher: uuid.New()}
+
+		title := "New title"
+		_, err := u.UpdateVideo(context.Background(), userID, classID, videoID, dto.UpdateVideoRequest{Title: &title})
+
+		require.ErrorIs(t, err, apperror.ErrVideoNotFound)
 	})
 
 	t.Run("a file that another video uses stays", func(t *testing.T) {
@@ -657,6 +722,20 @@ func TestVideoFileLock(t *testing.T) {
 		require.NoError(t, build(&events, 1, present).DeleteVideo(context.Background(), userID, classID, videoID))
 		require.Equal(t, []string{"lock", "delete", "count", "unlock"}, events)
 	})
+}
+
+// failingDeleteRepo cannot delete the video, as if the transaction had failed
+type failingDeleteRepo struct {
+	lockRepo
+}
+
+func (r failingDeleteRepo) DeleteVideo(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return false, context.DeadlineExceeded
+}
+
+// WithVideoFileLock hands this repository to fn and not the embedded one, so the failing delete is the one that runs
+func (r failingDeleteRepo) WithVideoFileLock(_ context.Context, _ string, fn func(repo repository.ClassroomDBItf) error) error {
+	return fn(r)
 }
 
 func TestAddStagedVideo(t *testing.T) {

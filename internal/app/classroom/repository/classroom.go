@@ -46,8 +46,10 @@ type ClassroomDBItf interface {
 	CreateVideo(ctx context.Context, video *entity.LearningVideo) error
 	// FindVideo returns nil when the class has no such video
 	FindVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (*entity.LearningVideo, error)
-	// SaveVideoDetails writes the editable columns, so a cleared field becomes null
-	SaveVideoDetails(ctx context.Context, video *entity.LearningVideo) error
+	// UpdateVideo locks the video, lets change edit the row as it is now and writes the editable columns back, so a cleared field
+	// becomes null and a request that read the video earlier cannot overwrite a newer edit. An error from change rolls
+	// the edit back and is returned as it is. It returns nil when the class has no such video.
+	UpdateVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID, change func(video *entity.LearningVideo) error) (*entity.LearningVideo, error)
 	// DeleteVideo reports whether a video was removed
 	DeleteVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (bool, error)
 	// CountVideosByURL tells how many videos still point at the address
@@ -151,11 +153,42 @@ func (r *ClassroomDB) FindVideo(ctx context.Context, classID uuid.UUID, videoID 
 	return &videos[0], nil
 }
 
-func (r *ClassroomDB) SaveVideoDetails(ctx context.Context, video *entity.LearningVideo) error {
-	return r.db.WithContext(ctx).Model(&entity.LearningVideo{}).
-		Where("id = ? AND class_id = ?", video.ID, video.ClassID).
-		Select("title", "description", "thumbnail_url", "duration_seconds").
-		Updates(video).Error
+func (r *ClassroomDB) UpdateVideo(
+	ctx context.Context, classID uuid.UUID, videoID uuid.UUID, change func(video *entity.LearningVideo) error,
+) (*entity.LearningVideo, error) {
+	var updated *entity.LearningVideo
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var video entity.LearningVideo
+
+		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND class_id = ?", videoID, classID).Limit(1).Find(&video)
+		if found.Error != nil || found.RowsAffected == 0 {
+			return found.Error
+		}
+
+		err := change(&video)
+		if err != nil {
+			return err
+		}
+
+		err = tx.Model(&entity.LearningVideo{}).
+			Where("id = ? AND class_id = ?", videoID, classID).
+			Select("title", "description", "thumbnail_url", "duration_seconds").
+			Updates(&video).Error
+		if err != nil {
+			return err
+		}
+
+		updated = &video
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return updated, nil
 }
 
 func (r *ClassroomDB) DeleteVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (bool, error) {
