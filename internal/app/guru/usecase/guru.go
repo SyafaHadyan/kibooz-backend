@@ -143,7 +143,7 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		MoodType:         req.MoodType,
 		ConfidenceScore:  confidence,
 		Source:           source,
-		RecordedAt:       u.now().UTC().Truncate(time.Second),
+		RecordedAt:       u.now().UTC().Truncate(time.Microsecond),
 	}
 
 	if notes := strings.TrimSpace(req.Notes); notes != "" {

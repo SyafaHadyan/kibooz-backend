@@ -1,6 +1,7 @@
 package usecase
 
 import (
+	"bytes"
 	"math"
 	"sort"
 	"time"
@@ -26,6 +27,16 @@ type dayStudent struct {
 	student uuid.UUID
 }
 
+// newer tells whether a log comes after another. Two logs of the same moment are ordered by id, which is how the parent
+// dashboard and the class register order them as well, so every screen shows the same mood.
+func newer(record repository.MoodRecord, than repository.MoodRecord) bool {
+	if !record.RecordedAt.Equal(than.RecordedAt) {
+		return record.RecordedAt.After(than.RecordedAt)
+	}
+
+	return bytes.Compare(record.ID[:], than.ID[:]) > 0
+}
+
 // latestPerStudentPerDay keeps only the newest log of each student for each local day
 func latestPerStudentPerDay(records []repository.MoodRecord, loc *time.Location) []dayMood {
 	latest := make(map[dayStudent]repository.MoodRecord, len(records))
@@ -37,7 +48,7 @@ func latestPerStudentPerDay(records []repository.MoodRecord, loc *time.Location)
 		}
 
 		current, exists := latest[key]
-		if !exists || !record.RecordedAt.Before(current.RecordedAt) {
+		if !exists || newer(record, current) {
 			latest[key] = record
 		}
 	}
