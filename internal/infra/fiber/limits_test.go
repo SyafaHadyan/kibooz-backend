@@ -209,7 +209,11 @@ func TestLimitersIgnoreRequestsThatNameNoAccount(t *testing.T) {
 	app := publicServer(1, nil)
 
 	for _, path := range []string{"/login", "/refresh"} {
-		for _, body := range []string{``, `{}`, `not json`, `{"email":""}`, `{"email":"   "}`, `{"refreshToken":""}`, `[]`} {
+		for _, body := range []string{
+			``, `{}`, `not json`, `{"email":""}`, `{"email":"   "}`, `{"refreshToken":""}`, `[]`,
+			// the handlers refuse a value of the wrong type before they read anything else
+			`{"email":0}`, `{"email":["a@example.com"]}`, `{"refreshToken":0}`, `{"refreshToken":{"a":1}}`, `{"email":null,"refreshToken":null}`,
+		} {
 			for range 3 {
 				require.Equal(t, http.StatusOK, status(t, app, path, body), "%s body %q", path, body)
 			}
@@ -373,4 +377,60 @@ func TestTheDeviceBucketKeyIsAHashAndNeverTheTokenOrTheEmail(t *testing.T) {
 	require.True(t, ok)
 
 	require.ElementsMatch(t, []string{"device:/api/v1/login:" + sha(hex.EncodeToString(deviceID))}, storage.keys())
+}
+
+// The limiter must read a body the way the handlers do. A field of another type that the handler ignores must not make the
+// limiter ignore the request.
+func TestAFieldOfAnotherTypeDoesNotSwitchTheLimiterOff(t *testing.T) {
+	app := publicServer(1, nil)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com","password":"one","refreshToken":0}`))
+
+	for _, body := range []string{
+		`{"email":"a@example.com","password":"two","refreshToken":0}`,
+		`{"email":"a@example.com","refreshToken":{"x":1}}`,
+		`{"email":"a@example.com","refreshToken":["x"]}`,
+		`{"email":"a@example.com","refreshToken":true}`,
+		`{"email":"a@example.com","deviceToken":7}`,
+		`{"email":"a@example.com","deviceToken":null}`,
+	} {
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", body), "body %s", body)
+	}
+
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one","email":0}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"refreshToken":"token-one","email":0}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"refreshToken":"token-one","email":["x"],"deviceToken":1}`))
+}
+
+// encoding/json matches the names of a struct without regard to case, and the handlers decode with it, so a request that
+// spells the field differently still reaches the handler with the email in it
+func TestTheNameOfAFieldIsMatchedWithoutRegardToCase(t *testing.T) {
+	app := publicServer(1, nil)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com"}`))
+
+	for _, body := range []string{`{"EMAIL":"a@example.com"}`, `{"Email":"a@example.com"}`, `{"eMaIl":"A@Example.com "}`} {
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", body), "body %s", body)
+	}
+
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"REFRESHTOKEN":"token-one"}`))
+}
+
+// The router ignores the case and a trailing slash, so every spelling of a path reaches the same handler and has to share its budget
+func TestEverySpellingOfAPathSharesOneBudget(t *testing.T) {
+	app := publicServer(1, nil)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com"}`))
+
+	for _, path := range []string{"/login", "/Login", "/LOGIN", "/login/", "/Login/"} {
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, path, `{"email":"a@example.com"}`), "path %s", path)
+	}
+
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/Refresh/", `{"refreshToken":"token-one"}`))
+
+	// a different route still has a budget of its own
+	require.Equal(t, http.StatusOK, status(t, app, "/Register", `{"email":"a@example.com"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register/", `{"email":"a@example.com"}`))
 }

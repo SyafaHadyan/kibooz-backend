@@ -68,30 +68,75 @@ func (f *Fiber) TokenLimiter() fiber.Handler {
 }
 
 type accountRequest struct {
-	Email        string `json:"email"`
-	RefreshToken string `json:"refreshToken"`
-	DeviceToken  string `json:"deviceToken"`
+	Email        string
+	RefreshToken string
+	DeviceToken  string
 }
+
+// rawAccountRequest reads the same fields as the handlers do and by the same rules, because encoding/json matches the
+// names without regard to case in a struct. Each value is kept raw, so a field of the wrong type cannot make the whole
+// parse fail and let a request that the handler goes on to read slip past the limiter.
+type rawAccountRequest struct {
+	Email        json.RawMessage `json:"email"`
+	RefreshToken json.RawMessage `json:"refreshToken"`
+	DeviceToken  json.RawMessage `json:"deviceToken"`
+}
+
+// text returns the value of a JSON string, and "" for a missing field or any other type
+func text(raw json.RawMessage) string {
+	var value string
+
+	err := json.Unmarshal(raw, &value)
+	if err != nil {
+		return ""
+	}
+
+	return value
+}
+
+// limiterKeyLocal keeps the key of a request between the skip check and the limiter, so the body is parsed once
+type limiterKeyLocal struct{}
 
 // accountLimiter limits by the identifier that identify picks from the body, and each route keeps its own budget.
 // The identifier is hashed so that neither an email, a refresh token nor a device id is kept in clear in the limiter storage.
-// A request without an identifier is not limited, because it is rejected before it touches the database.
+// A request without an identifier is not limited, because the handler rejects it before it touches the database.
+// That holds for a body that is not a JSON object and for a field that is not a string, and a field that the handler
+// does read is always read here the same way.
+// The route is named by the path it was registered with and not by the path the client sent, because the router ignores
+// the case and a trailing slash, so each spelling of the path would otherwise get a budget of its own.
 func (f *Fiber) accountLimiter(identify func(accountRequest) (string, string)) fiber.Handler {
 	key := func(c fiber.Ctx) string {
-		var body accountRequest
-		if err := json.Unmarshal(c.Body(), &body); err != nil {
+		var raw rawAccountRequest
+
+		err := json.Unmarshal(c.Body(), &raw)
+		if err != nil {
 			return ""
 		}
 
-		kind, identifier := identify(body)
+		kind, identifier := identify(accountRequest{
+			Email:        text(raw.Email),
+			RefreshToken: text(raw.RefreshToken),
+			DeviceToken:  text(raw.DeviceToken),
+		})
 		if identifier == "" {
 			return ""
 		}
 
 		sum := sha256.Sum256([]byte(identifier))
 
-		return kind + ":" + c.Path() + ":" + hex.EncodeToString(sum[:])
+		return kind + ":" + c.Route().Path + ":" + hex.EncodeToString(sum[:])
 	}
 
-	return f.newLimiter(f.authMax, key, func(c fiber.Ctx) bool { return key(c) == "" })
+	keyOf := func(c fiber.Ctx) string {
+		if cached, ok := c.Locals(limiterKeyLocal{}).(string); ok {
+			return cached
+		}
+
+		computed := key(c)
+		c.Locals(limiterKeyLocal{}, computed)
+
+		return computed
+	}
+
+	return f.newLimiter(f.authMax, keyOf, func(c fiber.Ctx) bool { return keyOf(c) == "" })
 }
