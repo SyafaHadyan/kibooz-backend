@@ -16,6 +16,11 @@ func valid() *Env {
 		DeviceTokenTTLDays: 90,
 
 		RequestTimeoutSeconds: 10,
+
+		AppPort: 8080, DBPort: 5432, RedisPort: 6379,
+		BodyLimitMB: 8, VideoMaxMB: 100, VideoUploadURLSeconds: 900,
+		UserLimiterMax: 120, AuthLimiterMax: 10, LimiterExpirationSeconds: 60,
+		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30,
 	}
 }
 
@@ -107,4 +112,92 @@ func TestStartupFailsForADeviceTokenLifetimeOfZero(t *testing.T) {
 
 	_, err := New()
 	require.ErrorContains(t, err, "DEVICE_TOKEN_TTL_DAYS")
+}
+
+func TestTheSampleJWTSecretIsRejected(t *testing.T) {
+	for _, secret := range []string{
+		"change-me-to-a-random-string-of-32-chars-or-more",
+		"CHANGE-ME-TO-A-RANDOM-STRING-OF-32-CHARS-OR-MORE",
+		"Change-Me-and-then-some-more-characters-here-1",
+	} {
+		cfg := valid()
+		cfg.JWTSecretKey = secret
+
+		require.ErrorContains(t, cfg.validate(), "sample value", secret)
+	}
+
+	cfg := valid()
+	cfg.JWTSecretKey = "a-secret-that-mentions-change-me-in-the-middle-1234"
+	require.NoError(t, cfg.validate())
+}
+
+// A limit of 0 switches a limiter off, a cache time of 0 never ends and a negative number of points breaks every claim
+func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
+	tests := map[string]func(*Env){
+		"BODY_LIMIT_MB":              func(e *Env) { e.BodyLimitMB = 0 },
+		"VIDEO_MAX_MB":               func(e *Env) { e.VideoMaxMB = 0 },
+		"VIDEO_UPLOAD_URL_SECONDS":   func(e *Env) { e.VideoUploadURLSeconds = -1 },
+		"USER_LIMITER_MAX":           func(e *Env) { e.UserLimiterMax = 0 },
+		"AUTH_LIMITER_MAX":           func(e *Env) { e.AuthLimiterMax = 0 },
+		"LIMITER_EXPIRATION_SECONDS": func(e *Env) { e.LimiterExpirationSeconds = 0 },
+		"LEADERBOARD_CACHE_SECONDS":  func(e *Env) { e.LeaderboardCacheSeconds = 0 },
+		"JWT_ACCESS_EXPIRED_MINUTES": func(e *Env) { e.JWTAccessExpiredMinutes = 0 },
+		"JWT_REFRESH_EXPIRED_DAYS":   func(e *Env) { e.JWTRefreshExpiredDays = -5 },
+		"KEEPALIVE_SECONDS":          func(e *Env) { e.KeepaliveSeconds = -1 },
+		"REDIS_DATABASE":             func(e *Env) { e.RedisDatabase = -1 },
+		"POINTS_ORGANIK":             func(e *Env) { e.PointsOrganik = -1 },
+		"POINTS_ANORGANIK":           func(e *Env) { e.PointsAnorganik = -1 },
+		"POINTS_B3":                  func(e *Env) { e.PointsB3 = -1 },
+	}
+
+	for name, change := range tests {
+		cfg := valid()
+		change(cfg)
+
+		require.ErrorContains(t, cfg.validate(), name)
+	}
+}
+
+func TestAKeepaliveOfZeroAndZeroPointsAreAllowed(t *testing.T) {
+	cfg := valid()
+	cfg.KeepaliveSeconds = 0
+	cfg.PointsB3 = 0
+	cfg.PointsOrganik = 0
+	cfg.RedisDatabase = 0
+
+	require.NoError(t, cfg.validate())
+}
+
+func TestAPortHasToBeBetweenOneAndSixtyFiveThousand(t *testing.T) {
+	for name, change := range map[string]func(*Env, uint){
+		"APP_PORT":   func(e *Env, v uint) { e.AppPort = v },
+		"DB_PORT":    func(e *Env, v uint) { e.DBPort = v },
+		"REDIS_PORT": func(e *Env, v uint) { e.RedisPort = v },
+	} {
+		for _, port := range []uint{0, 65536, 100000} {
+			cfg := valid()
+			change(cfg, port)
+
+			require.ErrorContains(t, cfg.validate(), name, "port %d", port)
+		}
+
+		cfg := valid()
+		change(cfg, 65535)
+		require.NoError(t, cfg.validate())
+	}
+}
+
+func TestTheTimezoneIsLoadedOnce(t *testing.T) {
+	cfg := valid()
+	cfg.AppTimezone = "Asia/Jakarta"
+	require.NoError(t, cfg.validate())
+
+	first := cfg.Location()
+	require.Equal(t, "Asia/Jakarta", first.String())
+	require.Same(t, first, cfg.Location(), "every call has to return the zone that validate loaded")
+
+	// a config built without validate still answers
+	bare := &Env{AppTimezone: "Asia/Jakarta"}
+	require.Equal(t, "Asia/Jakarta", bare.Location().String())
+	require.Equal(t, "UTC", (&Env{AppTimezone: "Not/AZone"}).Location().String())
 }

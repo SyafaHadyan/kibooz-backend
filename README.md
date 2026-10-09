@@ -59,7 +59,7 @@ docker compose logs -f api
 
 ## Configuration
 
-Every value is an environment variable. A `.env` file is read when present. See `.env.example` for the full list.
+Every value is an environment variable. A `.env` file is read when present. See `.env.example` for the full list. The server refuses to start when a limit, lifetime or port is out of range, for example a limit of 0, a cache time of 0 or a negative number of points, so a typo cannot switch a limiter off silently.
 
 | Variable | Default | Purpose |
 |:---|:---|:---|
@@ -76,7 +76,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `GOMEMLIMIT`, `REDIS_MAXMEMORY` | `200MiB`, `96mb` | Only read by the bundled compose files. A soft memory limit for the Go runtime and a cap for the bundled Redis that evicts only keys with an expiry |
 | `LEADERBOARD_CACHE_SECONDS` | `300` | Leaderboard cache lifetime, it is also cleared whenever the ranking changes |
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
-| `JWT_SECRET_KEY` | required | At least 32 characters |
+| `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured |

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -53,6 +54,9 @@ type Env struct {
 	PointsAnorganik          int    `env:"POINTS_ANORGANIK" envDefault:"15"`
 	PointsB3                 int    `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit          int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+
+	// location is the parsed AppTimezone, set by validate so that it is not loaded from the zone data on every request
+	location *time.Location
 }
 
 // New reads .env when present, then parses and validates the process environment
@@ -77,35 +81,83 @@ func New() (*Env, error) {
 	return cfg, nil
 }
 
+// placeholderSecretPrefix starts the sample JWT secret of .env.example, which anyone can read in the repository
+const placeholderSecretPrefix = "change-me"
+
 func (e *Env) validate() error {
 	if len(e.JWTSecretKey) < 32 {
 		return errors.New("JWT_SECRET_KEY must be at least 32 characters")
 	}
 
-	_, err := time.LoadLocation(e.AppTimezone)
+	if strings.HasPrefix(strings.ToLower(e.JWTSecretKey), placeholderSecretPrefix) {
+		return errors.New("JWT_SECRET_KEY still holds the sample value from .env.example, set a random secret of your own")
+	}
+
+	loc, err := time.LoadLocation(e.AppTimezone)
 	if err != nil {
 		return fmt.Errorf("invalid APP_TIMEZONE %q: %w", e.AppTimezone, err)
 	}
 
-	if e.TrashDailyLimit < 1 {
-		return errors.New("TRASH_DAILY_LIMIT must be at least 1")
+	e.location = loc
+
+	// A limit of 0 would switch a limiter off, and a lifetime that is not positive gives tokens, caches and signed addresses
+	// that are over when they are issued, or in the case of the leaderboard cache that never end
+	for _, rule := range []struct {
+		name  string
+		value int
+		min   int
+	}{
+		{"BODY_LIMIT_MB", e.BodyLimitMB, 1},
+		{"VIDEO_MAX_MB", e.VideoMaxMB, 1},
+		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
+		{"USER_LIMITER_MAX", e.UserLimiterMax, 1},
+		{"AUTH_LIMITER_MAX", e.AuthLimiterMax, 1},
+		{"LIMITER_EXPIRATION_SECONDS", e.LimiterExpirationSeconds, 1},
+		{"LEADERBOARD_CACHE_SECONDS", e.LeaderboardCacheSeconds, 1},
+		{"JWT_ACCESS_EXPIRED_MINUTES", e.JWTAccessExpiredMinutes, 1},
+		{"JWT_REFRESH_EXPIRED_DAYS", e.JWTRefreshExpiredDays, 1},
+		// a request without a deadline can hold a database connection for as long as a storage call or a lock wait lasts
+		{"REQUEST_TIMEOUT_SECONDS", e.RequestTimeoutSeconds, 1},
+		// a device token that is already over when it is issued gives nobody a bucket of their own
+		{"DEVICE_TOKEN_TTL_DAYS", e.DeviceTokenTTLDays, 1},
+		{"TRASH_DAILY_LIMIT", e.TrashDailyLimit, 1},
+		// 0 turns the keepalive off, which is what the pipelines that run against a throwaway stack do
+		{"KEEPALIVE_SECONDS", e.KeepaliveSeconds, 0},
+		{"REDIS_DATABASE", e.RedisDatabase, 0},
+		// points are stored under a check constraint that refuses a negative number, so every claim would fail
+		{"POINTS_ORGANIK", e.PointsOrganik, 0},
+		{"POINTS_ANORGANIK", e.PointsAnorganik, 0},
+		{"POINTS_B3", e.PointsB3, 0},
+	} {
+		if rule.value < rule.min {
+			return fmt.Errorf("%s must be at least %d", rule.name, rule.min)
+		}
 	}
 
-	// a request without a deadline can hold a database connection for as long as a storage call or a lock wait lasts
-	if e.RequestTimeoutSeconds < 1 {
-		return errors.New("REQUEST_TIMEOUT_SECONDS must be at least 1")
-	}
-
-	// a device token that is already over when it is issued gives nobody a bucket of their own
-	if e.DeviceTokenTTLDays < 1 {
-		return errors.New("DEVICE_TOKEN_TTL_DAYS must be at least 1")
+	for _, port := range []struct {
+		name  string
+		value uint
+	}{
+		{"APP_PORT", e.AppPort},
+		{"DB_PORT", e.DBPort},
+		{"REDIS_PORT", e.RedisPort},
+	} {
+		if port.value < 1 || port.value > maxPort {
+			return fmt.Errorf("%s must be between 1 and %d", port.name, maxPort)
+		}
 	}
 
 	return nil
 }
 
+const maxPort = 65535
+
 // Location returns the school timezone used for "today" and weekly boundaries
 func (e *Env) Location() *time.Location {
+	if e.location != nil {
+		return e.location
+	}
+
 	loc, err := time.LoadLocation(e.AppTimezone)
 	if err != nil {
 		return time.UTC
