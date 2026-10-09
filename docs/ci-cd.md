@@ -13,8 +13,7 @@
 | `resign.yaml` | manual, from main only | Signs an image that is already published again in the classic format, without building anything. It checks that both registries hold the same digest and that the build attestation kept by GitHub shows `docker.yaml` built that digest from the tag of that version, and only then signs and verifies each signature right away |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
-Image tags are `latest` for main, `sha-<commit>` for builds of main and pull requests, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. A release commit is built twice, once for main and once for its tag, so only the main build sets `latest` and the `sha-` tag and the tag build only adds the version tags. The version that `latest` reports is therefore the commit hash, and the version tags report the release number. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and Dependabot only build the image. Every job has a `timeout-minutes` limit, so a hung job ends after a few minutes and not after the six hours that GitHub allows. All actions are pinned to commit SHAs and kept current by Dependabot, which waits 7 days after a new release before proposing it.
-
+Image tags are `latest` for main, `sha-<commit>` for builds of main and pull requests, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. A release commit is built twice, once for main and once for its tag, so only the main build sets `latest` and the `sha-` tag and the tag build only adds the version tags. The version that `latest` reports is therefore the commit hash, and the version tags report the release number. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and Dependabot only build the image. How the jobs pull their own base images is described in [Pulling images](#pulling-images). All actions are pinned to commit SHAs and kept current by Dependabot, which waits 7 days after a new release before proposing it. Every job has a `timeout-minutes` limit, so a hung job ends after a few minutes and not after the six hours that GitHub allows. All actions are pinned to commit SHAs and kept current by Dependabot, which waits 7 days after a new release before proposing it.
 Verify an image with cosign by checking the identity of the workflow that signed it. A normal build is signed by `docker.yaml` and an image signed again by hand is signed by `resign.yaml`, so the identity pattern accepts both.
 
 ```sh
@@ -28,6 +27,25 @@ cosign verify \
 The pattern leaves out the identity of pull request builds on purpose, so an image tagged `pr-<number>` does not pass this check and only builds from `main` or from a version tag do. The check inside `docker.yaml` accepts pull request identities because it only verifies the image that the same run just built.
 
 Every tag is one image for `linux/amd64` and `linux/arm64`, and Docker pulls the one that matches the machine. The Go binary is cross-compiled on the build machine, so the arm64 image needs no emulation. The signature covers the index of both platforms. Trivy scans each platform and reports it in its own code scanning category, but the SBOM is made for the amd64 image only, which has the same Go modules and the same base image packages as the arm64 one.
+
+## Pulling images
+
+Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares its addresses with many other users. Jobs that pulled `postgres`, `redis` or a lint image therefore failed at random, either with `toomanyrequests` or with a timeout on `auth.docker.io`. The jobs avoid Docker Hub where they can.
+
+- The Docker Hub images of the lint and scan jobs are pulled with `.github/actions/pull-images/pull.sh`, which tries `mirror.gcr.io/hadolint/hadolint:v2.15.1@sha256:...` first and the Docker Hub name when the mirror fails. The digests are the same, so the mirror serves the identical image. The performance test and both ZAP scans do the same for Postgres and Redis in `compose.ci.yml`, and take the Go base image of the Dockerfile from the mirror with a named build context, so `compose.yml` and the Dockerfile stay as they are for production.
+- The Postgres and Redis service containers of the test job name the mirror in the image as well, as `mirror.gcr.io/library/postgres:15-alpine`. If the mirror ever stops serving one of these images, change the name back to the Docker Hub one or to `public.ecr.aws/docker/library/` with the same name.
+- Each job that pulls from Docker Hub calls the local action `.github/actions/pull-images` right after the checkout. The action adds the mirror to `registry-mirrors` of the Docker daemon as a second line of defense and logs in to Docker Hub with a read-only token, so an image that falls through to Docker Hub is pulled as a known account. A login that fails does not fail the job.
+- `docker.yaml` is not changed. It already logs in to Docker Hub with the push token whenever it can push, and it builds from the Docker Hub base images of the Dockerfile.
+- Images from `ghcr.io` and `gcr.io`, such as zizmor, ZAP and the distroless base, are not limited this way and are pulled as they are.
+
+To set up the login, create a read-only access token in the Docker Hub account settings and add it as the secret `DOCKERHUB_PULL_TOKEN`. The account name comes from the variable `DOCKERHUB_USERNAME` that the image push already uses.
+
+```sh
+gh secret set DOCKERHUB_PULL_TOKEN                  # for pull requests of this repository
+gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # for Dependabot pull requests, which cannot read the secret above
+```
+
+Without the secret everything still works through the mirror alone. Pull requests from forks never get the secret, so they rely on the mirror.
 
 ## Required checks
 
