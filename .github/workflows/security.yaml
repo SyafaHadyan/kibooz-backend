@@ -66,8 +66,10 @@ jobs:
           # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
           go-version: "1.27.2"
 
+      # The tool is pinned, so a bad release of it cannot break every pull request. The vulnerability database it reads is always the current one.
+      # Raise the version by hand when a newer govulncheck is out.
       - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   dependency-review:
     name: Dependency review
