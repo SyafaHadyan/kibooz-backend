@@ -13,7 +13,7 @@ There is no seed data. Accounts come from `POST /auth/register`.
 
 ## Rate limits
 
-No rate limit looks at the IP address. A school network or an ISP puts many people behind one public address, so an address says little about who is asking and one noisy person would throttle everyone else on it. The `TRUST_PROXY` setting only decides which address the access log shows. Every limit is a sliding window of `LIMITER_EXPIRATION_SECONDS` and answers `429` with `RATE_LIMITED` and a `Retry-After` header.
+No rate limit looks at the IP address. A school network or an ISP puts many people behind one public address, so an address says little about who is asking and one noisy person would throttle everyone else on it. The `TRUST_PROXY` setting only decides which address the access log shows. Every limit is a sliding window of `LIMITER_EXPIRATION_SECONDS` and answers `429` with `RATE_LIMITED` and a `Retry-After` header. The daily limit of trash claims is not one of these limits, it answers `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After` header.
 
 | Where | Counted per | Allowance |
 |:---|:---|:---|
@@ -79,4 +79,4 @@ When Redis is unreachable the API logs it once and keeps serving. Calls to Redis
 - A class whose teachers were all deleted keeps its code, but registering a child with it fails with `CLASS_NO_ACTIVE_TEACHER`.
 - Deleting an account is a soft delete. The user, their profile and a parent's children get a `deleted_at` time and disappear from every query, login and refresh token, and the class ranking is renumbered. Moods, scans and guidance records stay in the database. Email, NIP and NISN are only unique among active rows, so they can be registered again, and permanent removal is not automated.
 - A teacher can only record and read moods of classes they teach. A parent can only read their own children. Cross class access returns 403 or 404.
-- Photos are decoded, size checked and type checked by content, not by file name. Raw face photos are never accepted because mood detection runs on the device.
+- Photos are size checked and type checked by their content, not by file name, and they are stored as they were sent. They are not decoded or re-encoded, so a photo keeps its metadata such as the location the phone wrote into it. Raw face photos are never accepted because mood detection runs on the device.

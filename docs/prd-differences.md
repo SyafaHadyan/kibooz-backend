@@ -13,7 +13,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 - `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` were added, and `GET /healthz` reports the health of the service.
 - A refresh token works once, and every successful refresh returns a new one.
-- `POST /auth/login` and registration accept and return an optional `deviceToken`, which gives a device its own login budget for an email.
+- `POST /auth/login` accepts an optional `deviceToken`, and login and registration both return one. It gives a device its own login budget for an email.
 - `GET /wali/dashboard` takes an optional `studentId` for a parent with several children and defaults to the child who was registered first. The `student` object also returns the `classId` of the child, which a parent needs for the `/classes/{classId}` routes.
 - `GET /guru/dashboard` takes an optional `classId`, `classOverview` also returns `joinCode`, and `dominantMood` is `null` while the class has no mood record for the day.
 - `GET /guru/mood/analytics` also returns `monthlyDistribution` when `range=monthly`.
@@ -30,6 +30,8 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
+- Showing the teacher that a parent applied a guidance. `POST /wali/guidance/apply` only records the status, and no teacher route reads it yet.
+- Several children for one parent and several teachers for one class. Registration creates one child, and there is no route to add another child or another teacher, although the data model allows both.
 - Removing an uploaded video file that was never added to a class. Such a file waits under the `pending/` prefix of the bucket, and a bucket lifecycle rule that expires `pending/` after one day removes it. The rule is set in the bucket and not in this API, and it must never cover `videos/` because that holds the real videos.
 
 ## Language

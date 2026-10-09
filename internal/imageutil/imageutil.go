@@ -1,4 +1,4 @@
-// Package imageutil validates and decodes uploaded images
+// Package imageutil checks the type and size of uploaded images and decodes their base64 form
 package imageutil
 
 import (
