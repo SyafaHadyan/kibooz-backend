@@ -25,7 +25,7 @@ services:
           cpus: "0.5"
 
   redis:
-    image: mirror.gcr.io/library/redis:7-alpine
+    image: mirror.gcr.io/library/redis:8-alpine
     deploy:
       resources:
         limits:
