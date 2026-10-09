@@ -14,6 +14,8 @@ func valid() *Env {
 		AppTimezone:        "UTC",
 		TrashDailyLimit:    1,
 		DeviceTokenTTLDays: 90,
+
+		RequestTimeoutSeconds: 10,
 	}
 }
 
@@ -48,6 +50,24 @@ func TestTheOtherRulesStillApply(t *testing.T) {
 	limit := valid()
 	limit.TrashDailyLimit = 0
 	require.ErrorContains(t, limit.validate(), "TRASH_DAILY_LIMIT")
+}
+
+func TestARequestTimeoutThatIsNotPositiveIsRejected(t *testing.T) {
+	for _, seconds := range []int{0, -1, -30} {
+		cfg := valid()
+		cfg.RequestTimeoutSeconds = seconds
+
+		require.ErrorContains(t, cfg.validate(), "REQUEST_TIMEOUT_SECONDS", "seconds %d", seconds)
+	}
+}
+
+func TestTheRequestTimeoutDefaultsToTenSeconds(t *testing.T) {
+	setRequired(t)
+	require.NoError(t, os.Unsetenv("REQUEST_TIMEOUT_SECONDS"))
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, 10, cfg.RequestTimeoutSeconds)
 }
 
 // setRequired gives New the variables it cannot start without, and removes the one under test so that its default applies

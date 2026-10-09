@@ -53,6 +53,9 @@ type Object struct {
 // discardTimeout bounds the cleanup of one object
 const discardTimeout = 5 * time.Second
 
+// httpTimeout bounds a whole call to the bucket, including the upload of a photo, for a call whose context has no deadline
+const httpTimeout = 30 * time.Second
+
 // Discard removes an object that was uploaded for a request that then failed, so no file is left without a record.
 // It still runs when the client already gave up and only logs a failure, because the caller is returning another error.
 func Discard(ctx context.Context, storage StorageItf, objectKey string) {
@@ -80,6 +83,8 @@ func New(cfg *env.Env) (StorageItf, error) {
 
 	awsCfg, err := awsconfig.LoadDefaultConfig(
 		context.Background(),
+		// the deadline of a request normally ends a call sooner, this one bounds the calls that do not have one
+		awsconfig.WithHTTPClient(&http.Client{Timeout: httpTimeout}),
 		awsconfig.WithRegion(cfg.S3Region),
 		awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(cfg.S3AccessKeyID, cfg.S3AccessKeySecret, ""),

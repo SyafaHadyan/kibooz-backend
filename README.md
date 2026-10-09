@@ -66,6 +66,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
 | `BODY_LIMIT_MB` | `8` | Maximum request body size |
+| `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |
 | `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |

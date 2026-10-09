@@ -37,5 +37,6 @@ func TestBuildDSNKeepsAwkwardPasswordsIntact(t *testing.T) {
 		require.Equal(t, uint16(5432), parsed.Port)
 		require.Equal(t, "kibooz", parsed.Database)
 		require.Equal(t, "UTC", parsed.RuntimeParams["TimeZone"])
+		require.Equal(t, "30000", parsed.RuntimeParams["idle_in_transaction_session_timeout"])
 	}
 }

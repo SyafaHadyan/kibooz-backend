@@ -2,6 +2,7 @@
 package fiber
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -55,6 +56,7 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 
 	app.Use(
 		recover.New(),
+		deadline(time.Duration(cfg.RequestTimeoutSeconds)*time.Second),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
 		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
 		helmet.New(helmet.Config{
@@ -75,6 +77,24 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 		userMax: cfg.UserLimiterMax,
 		authMax: cfg.AuthLimiterMax,
 		devices: devicetoken.New(cfg),
+	}
+}
+
+// deadline gives the context that every handler passes on to the database, the cache and the storage a time limit. Fiber
+// hands out a context that never ends, so without it a stalled query or storage call holds its pooled connection for as long
+// as it lasts. A timeout that is not positive leaves the context as it is.
+func deadline(timeout time.Duration) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if timeout <= 0 {
+			return c.Next()
+		}
+
+		ctx, cancel := context.WithTimeout(c.Context(), timeout)
+		defer cancel()
+
+		c.SetContext(ctx)
+
+		return c.Next()
 	}
 }
 
