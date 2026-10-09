@@ -562,31 +562,32 @@ func (u *ClassroomUseCase) UpdateThread(
 	}
 
 	details := map[string]string{}
-	changed := post.ForumPost
+
+	var title, body *string
 
 	if req.Title != nil {
-		title := strings.TrimSpace(*req.Title)
-		if title == "" {
+		trimmed := strings.TrimSpace(*req.Title)
+		if trimmed == "" {
 			details["title"] = "cannot be empty"
 		}
 
-		changed.Title = &title
+		title = &trimmed
 	}
 
 	if req.Body != nil {
-		text := strings.TrimSpace(*req.Body)
-		if text == "" {
+		trimmed := strings.TrimSpace(*req.Body)
+		if trimmed == "" {
 			details["body"] = "cannot be empty"
 		}
 
-		changed.Body = text
+		body = &trimmed
 	}
 
 	if len(details) > 0 {
 		return dto.ForumThread{}, apperror.Validation(details)
 	}
 
-	row, err := u.saveChanges(ctx, &changed)
+	row, err := u.saveChanges(ctx, post.ID, title, body)
 	if err != nil {
 		return dto.ForumThread{}, err
 	}
@@ -608,10 +609,7 @@ func (u *ClassroomUseCase) UpdateReply(
 		return dto.ForumReply{}, apperror.Validation(map[string]string{"body": "cannot be empty"})
 	}
 
-	changed := post.ForumPost
-	changed.Body = text
-
-	row, err := u.saveChanges(ctx, &changed)
+	row, err := u.saveChanges(ctx, post.ID, nil, &text)
 	if err != nil {
 		return dto.ForumReply{}, err
 	}
@@ -704,13 +702,38 @@ func postHasParent(post *repository.PostRow, threadID *uuid.UUID) bool {
 	return post.ParentID != nil && *post.ParentID == *threadID
 }
 
-func (u *ClassroomUseCase) saveChanges(ctx context.Context, post *entity.ForumPost) (*repository.PostRow, error) {
-	err := u.repo.UpdatePost(ctx, post)
+// applyPostChanges writes the given title and text to a post as it is in the database now, and a missing one stays.
+// The post is only marked as edited when its words really change, so a save that changes nothing keeps the old mark.
+func (u *ClassroomUseCase) applyPostChanges(post *entity.ForumPost, title *string, body *string) {
+	changed := false
+
+	if title != nil && !sameText(post.Title, title) {
+		post.Title = title
+		changed = true
+	}
+
+	if body != nil && *body != post.Body {
+		post.Body = *body
+		changed = true
+	}
+
+	if changed {
+		editedAt := u.timestamp()
+		post.EditedAt = &editedAt
+	}
+}
+
+func (u *ClassroomUseCase) saveChanges(ctx context.Context, postID uuid.UUID, title *string, body *string) (*repository.PostRow, error) {
+	updated, err := u.repo.UpdatePost(ctx, postID, func(current *entity.ForumPost) { u.applyPostChanges(current, title, body) })
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
 
-	row, err := u.repo.FindPost(ctx, post.ID)
+	if !updated {
+		return nil, apperror.ErrForumPostNotFound
+	}
+
+	row, err := u.repo.FindPost(ctx, postID)
 	if err != nil {
 		return nil, apperror.Internal(err)
 	}
@@ -857,6 +880,7 @@ func threadResponse(row *repository.PostRow) dto.ForumThread {
 		Author:     authorResponse(row),
 		ReplyCount: row.ReplyCount,
 		CreatedAt:  row.CreatedAt.UTC(),
+		EditedAt:   editedAt(row.EditedAt),
 	}
 }
 
@@ -866,7 +890,28 @@ func replyResponse(row *repository.PostRow) dto.ForumReply {
 		Body:      row.Body,
 		Author:    authorResponse(row),
 		CreatedAt: row.CreatedAt.UTC(),
+		EditedAt:  editedAt(row.EditedAt),
 	}
+}
+
+// sameText compares two optional texts, and two missing texts are the same
+func sameText(a *string, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+
+	return *a == *b
+}
+
+// editedAt returns the edit time in UTC, and nil for a post that was never edited
+func editedAt(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+
+	utc := at.UTC()
+
+	return &utc
 }
 
 // authorResponse hides the name and photo of an account that was deleted

@@ -129,4 +129,6 @@ type ForumPost struct {
 	Title        *string    `gorm:"size:150"`
 	Body         string     `gorm:"not null"`
 	CreatedAt    time.Time  `gorm:"autoCreateTime:false;not null"`
+	// EditedAt is when the author last changed the words of the post, and nil for a post that was never edited
+	EditedAt *time.Time
 }

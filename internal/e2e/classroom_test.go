@@ -664,9 +664,34 @@ func TestForumEditAndDelete(t *testing.T) {
 		onlyBody := call(t, http.MethodPatch, forum+"/"+id, author.Token, map[string]any{"body": "Third text"})
 		require.Equal(t, http.StatusOK, onlyBody.Status, "body %v", onlyBody.Body)
 		require.Equal(t, "Second title", onlyBody.data("title"), "a missing field stays")
+		require.NotNil(t, res.data("editedAt"), "a changed thread is marked as edited")
+		require.NotNil(t, onlyBody.data("editedAt"))
+
+		untouched := thread(author.Token, "Untouched title")
 
 		listed := call(t, http.MethodGet, forum, guru.Token, nil)
 		require.Contains(t, titles(t, listOf(t, listed, "threads"), "title"), "Second title")
+
+		for _, item := range listOf(t, listed, "threads") {
+			post := item.(map[string]any)
+			require.Contains(t, post, "editedAt")
+
+			switch post["id"] {
+			case id:
+				require.NotNil(t, post["editedAt"])
+			case untouched:
+				require.Nil(t, post["editedAt"], "a thread that was never edited has no mark")
+			}
+		}
+	})
+
+	t.Run("a save that changes nothing is not an edit", func(t *testing.T) {
+		id := thread(author.Token, "Same words")
+
+		res := call(t, http.MethodPatch, forum+"/"+id, author.Token, map[string]any{"title": "Same words", "body": " Original text "})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Contains(t, res.Body["data"], "editedAt")
+		require.Nil(t, res.data("editedAt"))
 	})
 
 	t.Run("a bad thread change is refused", func(t *testing.T) {
@@ -709,6 +734,11 @@ func TestForumEditAndDelete(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 		require.Equal(t, "Forum reply updated", res.Body["message"])
 		require.Equal(t, "Better answer", res.data("body"))
+		require.NotNil(t, res.data("editedAt"), "a changed reply is marked as edited")
+
+		list := call(t, http.MethodGet, forum+"/"+id+"/replies", neighbour.Token, nil)
+		require.Equal(t, http.StatusOK, list.Status, "body %v", list.Body)
+		require.NotNil(t, listOf(t, list, "replies")[0].(map[string]any)["editedAt"])
 
 		call(t, http.MethodPatch, forum+"/"+id+"/replies/"+replyID, author.Token, map[string]any{"body": "  "}).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
