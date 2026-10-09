@@ -62,6 +62,9 @@ jobs:
     services:
       postgres:
         image: postgres:15-alpine
+        credentials:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
         env:
           POSTGRES_USER: kibooz
           POSTGRES_PASSWORD: kibooz
@@ -75,6 +78,9 @@ jobs:
           --health-retries 10
       redis:
         image: redis:7-alpine
+        credentials:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
         ports:
           - 6379:6379
         options: >-
