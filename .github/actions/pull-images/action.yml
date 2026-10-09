@@ -22,6 +22,7 @@ runs:
         if [ -z "$existing" ]; then existing='{}'; fi
         echo "$existing" | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' | sudo tee /etc/docker/daemon.json > /dev/null
         sudo systemctl restart docker
+        docker info --format 'mirrors: {{.RegistryConfig.Mirrors}} storage: {{.DriverStatus}}'
 
     - name: Log in to Docker Hub
       if: inputs.token != ''
