@@ -137,6 +137,8 @@ func app(t *testing.T) *fiber.App {
 		t.Skip("set E2E_ENABLED=true with DB_* and REDIS_* variables to run end to end tests")
 	}
 
+	requireDisposableDatabase(t)
+
 	once.Do(func() {
 		defaults := map[string]string{
 			"USER_LIMITER_MAX":     "100000",
@@ -906,11 +908,29 @@ func TestAvatarUpload(t *testing.T) {
 	})
 }
 
+// requireDisposableDatabase stops the suite from running against a database that someone uses, because it creates thousands of rows
+// and empties the cache. The database of the pipeline is called kibooz_test, and E2E_ALLOW_ANY_DB=true overrides the check.
+func requireDisposableDatabase(t *testing.T) {
+	t.Helper()
+
+	name := os.Getenv("DB_NAME")
+	if strings.HasSuffix(name, "_test") || os.Getenv("E2E_ALLOW_ANY_DB") == "true" {
+		return
+	}
+
+	t.Fatalf("DB_NAME is %q and the end to end tests write to it and empty the cache, so use a database whose name ends in _test "+
+		"or set E2E_ALLOW_ANY_DB=true for one that you can lose", name)
+}
+
 func redisClient(t *testing.T) *goredis.Client {
 	t.Helper()
 
+	// the same logical database as the server, so that emptying it never touches the others of the instance
+	database, _ := strconv.Atoi(os.Getenv("REDIS_DATABASE"))
+
 	client := goredis.NewClient(&goredis.Options{
 		Addr: os.Getenv("REDIS_ADDRESS") + ":" + os.Getenv("REDIS_PORT"),
+		DB:   database,
 	})
 
 	t.Cleanup(func() { _ = client.Close() })
@@ -931,13 +951,13 @@ func TestRefreshTokensDoNotDependOnRedis(t *testing.T) {
 	t.Run("a token still works after Redis loses its data", func(t *testing.T) {
 		guru := registerGuru(t, "Redis Lost")
 
-		require.NoError(t, client.FlushAll(ctx).Err())
+		require.NoError(t, client.FlushDB(ctx).Err())
 
 		res := refresh(t, guru.RefreshToken)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 
 		// the old token is gone from Postgres, so it cannot be replayed even though Redis forgot it
-		require.NoError(t, client.FlushAll(ctx).Err())
+		require.NoError(t, client.FlushDB(ctx).Err())
 		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	})
 
@@ -969,7 +989,7 @@ func TestRefreshTokensDoNotDependOnRedis(t *testing.T) {
 	t.Run("logout works when Redis has no record", func(t *testing.T) {
 		guru := registerGuru(t, "Logout")
 
-		require.NoError(t, client.FlushAll(ctx).Err())
+		require.NoError(t, client.FlushDB(ctx).Err())
 		require.Equal(t, http.StatusOK, call(t, http.MethodPost, "/api/v1/auth/logout", "", map[string]any{"refreshToken": guru.RefreshToken}).Status)
 
 		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
