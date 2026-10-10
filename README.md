@@ -74,7 +74,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
 | `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header, it is only used in the access log because no rate limit looks at the IP |
 | `DB_*` | see example | PostgreSQL connection, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD` are required |
-| `REDIS_*` | see example | Redis connection, the API starts and works without it. Set `REDIS_TLS=true` for hosted Redis that requires TLS. When `REDIS_USERNAME` is set, the bundled compose files also create that Redis user with `REDIS_PASSWORD` |
+| `REDIS_*` | see example | Redis connection, the API starts and works without it. Set `REDIS_TLS=true` for hosted Redis that requires TLS. Set `REDIS_KEY_PREFIX`, for example `kibooz:`, when other applications use the same Redis, and every key of the API then starts with it. When `REDIS_USERNAME` is set, the bundled compose files also create that Redis user with `REDIS_PASSWORD` |
 | `GOMEMLIMIT`, `REDIS_MAXMEMORY` | `200MiB`, `96mb` | Only read by the bundled compose files. A soft memory limit for the Go runtime and a cap for the bundled Redis that evicts only keys with an expiry |
 | `LEADERBOARD_CACHE_SECONDS` | `300` | Leaderboard cache lifetime, it is also cleared whenever the ranking changes |
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |

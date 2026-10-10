@@ -34,29 +34,34 @@ func TestUnreachableRedisFailsFastAfterTheFirstError(t *testing.T) {
 	require.Less(t, time.Since(started), 100*time.Millisecond)
 }
 
-func TestLimiterStorageFallsBackToMemory(t *testing.T) {
-	storage := redis.NewLimiterStorage(unreachable(), "limiter:")
+func TestRateStoreCountsInMemoryWhileRedisIsDown(t *testing.T) {
+	store := redis.NewRateStore(unreachable())
+	ctx := context.Background()
 
-	require.NoError(t, storage.Set("ip", []byte("3"), time.Minute))
+	for want := int64(1); want <= 3; want++ {
+		hits, err := store.Hit(ctx, "user:1", time.Minute)
+		require.NoError(t, err, "a request is never refused because Redis is down")
+		require.Equal(t, want, hits.Current)
+	}
 
-	value, err := storage.Get("ip")
+	other, err := store.Hit(ctx, "user:2", time.Minute)
 	require.NoError(t, err)
-	require.Equal(t, []byte("3"), value)
-
-	require.NoError(t, storage.Delete("ip"))
-
-	value, err = storage.Get("ip")
-	require.NoError(t, err)
-	require.Nil(t, value)
+	require.EqualValues(t, 1, other.Current, "every key has its own count")
 }
 
-func TestLimiterStorageFallbackExpires(t *testing.T) {
-	storage := redis.NewLimiterStorage(unreachable(), "limiter:")
+func TestRateStoreFallbackMovesOnToTheNextWindow(t *testing.T) {
+	clock := time.Unix(0, 0).Add(5 * time.Second)
+	store := redis.NewRateStoreWithClock(unreachable(), func() time.Time { return clock })
+	ctx := context.Background()
 
-	require.NoError(t, storage.Set("ip", []byte("1"), 20*time.Millisecond))
-	time.Sleep(40 * time.Millisecond)
-
-	value, err := storage.Get("ip")
+	_, err := store.Hit(ctx, "user:1", time.Minute)
 	require.NoError(t, err)
-	require.Nil(t, value)
+
+	clock = clock.Add(time.Minute)
+
+	hits, err := store.Hit(ctx, "user:1", time.Minute)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, hits.Current)
+	require.EqualValues(t, 1, hits.Previous)
+	require.Equal(t, 5*time.Second, hits.Elapsed)
 }
