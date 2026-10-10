@@ -161,7 +161,7 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 
 		switch role {
 		case constants.RoleWali:
-			deleted.ClassIDs, deleted.FileURLs, err = softDeleteWali(tx, userID)
+			deleted.ClassIDs, err = softDeleteWali(tx, userID, &deleted.FileURLs)
 		case constants.RoleGuru:
 			err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
 		}
@@ -170,14 +170,11 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 			return err
 		}
 
-		avatars, err := takeAddresses(tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
-		if err != nil {
-			return err
+		err = takeAddresses(&deleted.FileURLs, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
+		if err == nil {
+			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
 		}
 
-		deleted.FileURLs = append(deleted.FileURLs, avatars...)
-
-		err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
 		if err != nil {
 			return err
 		}
@@ -192,47 +189,40 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 	return deleted, nil
 }
 
-// takeAddresses returns the file addresses that rows hold in column and clears them, so no row points at a file that is
-// about to be deleted
-func takeAddresses(rows *gorm.DB, column string) ([]string, error) {
+// takeAddresses adds the file addresses that rows hold in column to files and clears them, so no row points at a file
+// that is about to be deleted
+func takeAddresses(files *[]string, rows *gorm.DB, column string) error {
 	var urls []string
 
 	err := rows.Session(&gorm.Session{}).Where(column+" IS NOT NULL AND "+column+" <> ''").Pluck(column, &urls).Error
-	if err != nil {
-		return nil, err
+	if err != nil || len(urls) == 0 {
+		return err
 	}
 
-	if len(urls) == 0 {
-		return nil, nil
-	}
+	*files = append(*files, urls...)
 
-	err = rows.Session(&gorm.Session{}).Update(column, nil).Error
-	if err != nil {
-		return nil, err
-	}
-
-	return urls, nil
+	return rows.Session(&gorm.Session{}).Update(column, nil).Error
 }
 
 // softDeleteWali hides the parent and their children, then renumbers the ranking of the affected classes. It also
-// returns the addresses of the avatars of the children and of the photos of their trash scans, which are cleared.
-func softDeleteWali(tx *gorm.DB, userID uuid.UUID) ([]uuid.UUID, []string, error) {
+// adds the addresses of the avatars of the children and of the photos of their trash scans to files and clears them.
+func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID, error) {
 	var wali entity.Wali
 
 	err := tx.Select("id").Where("user_id = ?", userID).Take(&wali).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var classIDs []uuid.UUID
 
 	err = tx.Model(&entity.Student{}).Where("wali_id = ?", wali.ID).Distinct().Pluck("class_id", &classIDs).Error
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// one fixed order for the class locks, so two deletions in the same classes cannot deadlock
@@ -241,38 +231,36 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID) ([]uuid.UUID, []string, error
 	for _, classID := range classIDs {
 		err = ranking.Lock(tx, classID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-	}
-
-	avatars, err := takeAddresses(tx.Unscoped().Model(&entity.Student{}).Where("wali_id = ?", wali.ID), "avatar_url")
-	if err != nil {
-		return nil, nil, err
 	}
 
 	children := tx.Unscoped().Model(&entity.Student{}).Select("id").Where("wali_id = ?", wali.ID)
 
-	photos, err := takeAddresses(tx.Model(&entity.TrashScan{}).Where("student_id IN (?)", children), "photo_url")
-	if err != nil {
-		return nil, nil, err
+	err = takeAddresses(files, tx.Unscoped().Model(&entity.Student{}).Where("wali_id = ?", wali.ID), "avatar_url")
+	if err == nil {
+		err = takeAddresses(files, tx.Model(&entity.TrashScan{}).Where("student_id IN (?)", children), "photo_url")
 	}
 
-	err = tx.Where("wali_id = ?", wali.ID).Delete(&entity.Student{}).Error
+	if err == nil {
+		err = tx.Where("wali_id = ?", wali.ID).Delete(&entity.Student{}).Error
+	}
+
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	for _, classID := range classIDs {
 		err = ranking.Recompute(tx, classID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	err = tx.Where("id = ?", wali.ID).Delete(&entity.Wali{}).Error
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return classIDs, append(avatars, photos...), nil
+	return classIDs, nil
 }
