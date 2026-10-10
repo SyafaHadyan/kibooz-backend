@@ -42,11 +42,14 @@ type Redis struct {
 	Client    *redis.Client
 	downUntil atomic.Int64
 	down      atomic.Bool
+
+	// prefix comes before every key, so a Redis that other applications use too never mixes their keys with these
+	prefix string
 }
 
 // New never fails. A Redis that cannot be reached at startup only produces a warning.
 func New(cfg *env.Env) *Redis {
-	r := &Redis{Client: redis.NewClient(newOptions(cfg))}
+	r := &Redis{Client: redis.NewClient(newOptions(cfg)), prefix: cfg.RedisKeyPrefix}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -110,6 +113,11 @@ func (r *Redis) record(err error) error {
 	return err
 }
 
+// key returns the name that a key has in Redis
+func (r *Redis) key(key string) string {
+	return r.prefix + key
+}
+
 func (r *Redis) Available() bool {
 	return r.allow() == nil
 }
@@ -119,7 +127,7 @@ func (r *Redis) Set(ctx context.Context, key string, value string, ttl time.Dura
 		return err
 	}
 
-	return r.record(r.Client.Set(ctx, key, value, ttl).Err())
+	return r.record(r.Client.Set(ctx, r.key(key), value, ttl).Err())
 }
 
 func (r *Redis) Get(ctx context.Context, key string) (string, bool, error) {
@@ -127,7 +135,7 @@ func (r *Redis) Get(ctx context.Context, key string) (string, bool, error) {
 		return "", false, err
 	}
 
-	value, err := r.Client.Get(ctx, key).Result()
+	value, err := r.Client.Get(ctx, r.key(key)).Result()
 	if errors.Is(err, redis.Nil) {
 		return "", false, r.record(nil)
 	}
@@ -144,7 +152,12 @@ func (r *Redis) Del(ctx context.Context, keys ...string) error {
 		return err
 	}
 
-	return r.record(r.Client.Del(ctx, keys...).Err())
+	prefixed := make([]string, len(keys))
+	for i, key := range keys {
+		prefixed[i] = r.key(key)
+	}
+
+	return r.record(r.Client.Del(ctx, prefixed...).Err())
 }
 
 func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bool, error) {
@@ -152,7 +165,7 @@ func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bo
 		return false, err
 	}
 
-	previous, err := r.Client.SetArgs(ctx, key, usedMarker, redis.SetArgs{Mode: "XX", Get: true, TTL: ttl}).Result()
+	previous, err := r.Client.SetArgs(ctx, r.key(key), usedMarker, redis.SetArgs{Mode: "XX", Get: true, TTL: ttl}).Result()
 	if errors.Is(err, redis.Nil) {
 		return false, r.record(nil)
 	}

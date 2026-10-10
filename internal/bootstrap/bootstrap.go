@@ -84,7 +84,7 @@ func Start(version string) (*Bootstrap, error) {
 	}
 
 	jwtService := jwt.New(cfg)
-	app := fiberapp.New(cfg, redis.NewLimiterStorage(cache, "limiter:"))
+	app := fiberapp.New(cfg, redis.NewRateStore(cache))
 	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey))
 
 	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, storage.Enabled(), version))

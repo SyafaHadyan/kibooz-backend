@@ -36,6 +36,7 @@ type Env struct {
 	RedisTLS                 bool   `env:"REDIS_TLS" envDefault:"false"`
 	RedisUsername            string `env:"REDIS_USERNAME"`
 	RedisPassword            string `env:"REDIS_PASSWORD"`
+	RedisKeyPrefix           string `env:"REDIS_KEY_PREFIX"`
 	RedisDatabase            int    `env:"REDIS_DATABASE" envDefault:"0"`
 	LeaderboardCacheSeconds  int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
 	KeepaliveSeconds         int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`

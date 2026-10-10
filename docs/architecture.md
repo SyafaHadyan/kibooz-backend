@@ -8,7 +8,7 @@ Kibooz Backend is one Go program that serves a JSON REST API under `/api/v1`. It
 |:---|:---|
 | API server | Fiber v3 HTTP server that handles routing, security headers, rate limits and errors |
 | PostgreSQL | The only authority for users, sessions, classes, students, moods, scans and points. GORM with the pgx driver talks to it |
-| Redis | Optional. It holds the shared rate limit counters, a short memory of consumed refresh tokens and the leaderboard cache |
+| Redis | Optional, and it can be a local container or a hosted instance that several API instances and other applications share. It holds the shared rate limit counters, a short memory of consumed refresh tokens and the leaderboard cache. `REDIS_KEY_PREFIX` keeps its keys apart from those of other applications |
 | Object storage | Optional S3 compatible bucket for avatars and trash photos, which upload through the API, and class videos, which go straight to the bucket through a signed address. Uploads are off when it is not configured. Class videos wait under `pending/` until a teacher adds them, so the bucket needs a lifecycle rule that expires `pending/` after one day |
 | Migrations | SQL files embedded in the binary and applied with golang-migrate when the server starts |
 
