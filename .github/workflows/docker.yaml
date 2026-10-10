@@ -63,6 +63,8 @@ jobs:
             ${{ env.HUB == 'true' && env.HUB_IMAGE || '' }}
           # A release makes two runs for the same commit, one for main and one for the tag. Both would move latest and the
           # sha tag, and the run that finishes last wins, so only main publishes them and a tag run only adds its version tags.
+          # The default flavor adds latest to every semver tag by itself, so it is turned off and the raw tag below decides.
+          flavor: latest=false
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-,format=short,enable=${{ github.ref_type != 'tag' }}
