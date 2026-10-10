@@ -148,3 +148,29 @@ func TestASessionEndsAtItsLongestLifetime(t *testing.T) {
 		require.WithinDuration(t, time.Now(), started, time.Minute)
 	})
 }
+
+// A token that was used just before it expired is still the proof of a theft for a week, so cleaning up must keep it
+func TestAUsedTokenIsKeptForReplayDetectionEvenAfterItExpires(t *testing.T) {
+	guru := registerGuru(t, "Expired Replay")
+
+	first := refresh(t, guru.RefreshToken)
+	require.Equal(t, http.StatusOK, first.Status, "body %v", first.Body)
+
+	second := first.data("refreshToken").(string)
+
+	require.NoError(t, testDB.Exec("UPDATE refresh_tokens SET expires_at = now() - interval '1 hour' WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Error)
+
+	// a refresh cleans up the tokens of the account
+	third := refresh(t, second)
+	require.Equal(t, http.StatusOK, third.Status, "body %v", third.Body)
+
+	var kept int64
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&kept).Error)
+	require.EqualValues(t, 1, kept, "the used token is still there")
+
+	ageUse(t, guru.RefreshToken, 2*time.Minute)
+	require.NoError(t, redisClient(t).FlushDB(t.Context()).Err())
+
+	refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+	refresh(t, third.data("refreshToken").(string)).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+}

@@ -325,9 +325,11 @@ func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error
 }
 
 // purgeExpiredTokens keeps the table small without a background job by cleaning one user at a time. It removes the
-// expired tokens and the used ones that are too old to recognize a replay.
+// expired tokens that were never used and the used ones that are too old to recognize a replay. A used token stays for
+// the whole retention even when it has expired, because showing it again must still end the session.
 func purgeExpiredTokens(tx *gorm.DB, userID uuid.UUID, now time.Time) error {
 	return tx.Where(
-		"user_id = ? AND (expires_at <= ? OR (used_at IS NOT NULL AND used_at <= ?))", userID, now, now.Add(-usedRetention),
+		"user_id = ? AND ((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?))",
+		userID, now, now.Add(-usedRetention),
 	).Delete(&entity.RefreshToken{}).Error
 }
