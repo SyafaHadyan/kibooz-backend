@@ -57,6 +57,8 @@ docker compose up -d
 docker compose logs -f api
 ```
 
+The database volume is mounted at `/var/lib/postgresql`, which is where the PostgreSQL 18 image keeps its data. A deployment that still has a volume from PostgreSQL 15 does not start on PostgreSQL 18 and needs a fresh volume or a migration first. When the data does not matter, stop the stack and remove the volume with `docker compose down -v`, and the API creates the schema again from its embedded migrations on the next start. To keep the data, dump it with `pg_dumpall` from the old container before the upgrade and load the dump into the new one, or run `pg_upgrade`.
+
 ## Configuration
 
 Every value is an environment variable. A `.env` file is read when present. See `.env.example` for the full list. The server refuses to start when a limit, lifetime or port is out of range, for example a limit of 0, a cache time of 0 or a negative number of points, so a typo cannot switch a limiter off silently.
