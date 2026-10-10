@@ -26,11 +26,15 @@ type Hits struct {
 }
 
 // Estimate is the number of requests in the sliding window that ends now. The previous window counts for the part of it
-// that the sliding window still covers.
+// that the sliding window still covers, rounded up. The store keeps a count per window and not the time of each request, so
+// this stays an estimate that assumes the requests of the previous window were spread evenly. Rounding up only removes
+// the loss of a whole request to truncation at the start of a window. It never refuses a client whose requests in both
+// windows add up to the limit or less, because the share of the previous window is never larger than that window.
 func (h Hits) Estimate(window time.Duration) int64 {
-	covered := float64(window-h.Elapsed) / float64(window)
+	remaining := int64(window - h.Elapsed)
+	length := int64(window)
 
-	return int64(float64(h.Previous)*covered) + h.Current
+	return (h.Previous*remaining+length-1)/length + h.Current
 }
 
 // Window returns the number of the window that a moment falls in and how far into it the moment is
