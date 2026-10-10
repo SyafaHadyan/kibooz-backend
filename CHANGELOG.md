@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.1...v0.5.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **ci:** stop the tag run from moving latest so only main publishes it ([8e508b9](https://github.com/SyafaHadyan/kibooz-backend/commit/8e508b93104d637f3e7ec97ca9d6e79005ff0174))
+
 ## [0.5.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.0...v0.5.1) (2026-10-09)
 
 
