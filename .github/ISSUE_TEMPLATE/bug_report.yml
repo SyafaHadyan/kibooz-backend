@@ -33,7 +33,7 @@ body:
     attributes:
       label: Environment
       description: How you run it and the PostgreSQL and Redis versions.
-      placeholder: Docker Compose, PostgreSQL 15, Redis 7 (or no Redis)
+      placeholder: Docker Compose, PostgreSQL 18, Redis 8 (or no Redis)
   - type: textarea
     id: logs
     attributes:

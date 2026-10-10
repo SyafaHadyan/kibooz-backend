@@ -28,14 +28,14 @@ REST API for Kibooz, the kindergarten app that lets teachers record children's m
 ## Stack
 
 - Go with Fiber v3 and GORM
-- PostgreSQL 15 for data, with SQL migrations embedded in the binary and applied on startup
-- Redis 7 as an optional accelerator for replay rejection, shared rate limits and the leaderboard cache
+- PostgreSQL 18 for data, with SQL migrations embedded in the binary and applied on startup
+- Redis 8 as an optional accelerator for replay rejection, shared rate limits and the leaderboard cache
 - Any S3 compatible bucket (Cloudflare R2 by default) for avatars, trash photos and class videos
 - JWT (HS256) access tokens with rotating opaque refresh tokens stored hashed in PostgreSQL, bcrypt password hashes
 
 ## Quick start
 
-The API needs a PostgreSQL 15 reachable with the values in `.env`. Redis 7 is recommended but optional. Run it directly during development.
+The API needs a PostgreSQL 18 reachable with the values in `.env`. Redis 8 is recommended but optional. Run it directly during development.
 
 ```sh
 cp .env.example .env        # then edit the DB_*, REDIS_* and JWT_SECRET_KEY values
