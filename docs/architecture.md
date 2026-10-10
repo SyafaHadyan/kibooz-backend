@@ -46,7 +46,7 @@ The features are `auth` for registration, login and tokens, `user` for the profi
 
 ## Sessions
 
-An access token is a JWT that is valid for `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default. A refresh token is random, is stored only as a SHA-256 hash in the `refresh_tokens` table, is valid for `JWT_REFRESH_EXPIRED_DAYS`, 30 by default, and works exactly once. The details and the reason Redis never decides validity are in the [design notes](design.md#redis-is-optional).
+An access token is a JWT that is valid for `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default. A refresh token is random, is stored only as a SHA-256 hash in the `refresh_tokens` table, is valid for `JWT_REFRESH_EXPIRED_DAYS`, 30 by default, and works exactly once. Every sign in is a session, and its tokens share a family. A session ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed. The details and the reason Redis never decides validity are in the [design notes](design.md#redis-is-optional).
 
 ## Build and run
 

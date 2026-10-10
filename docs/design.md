@@ -65,7 +65,7 @@ If a CDN or load balancer sits in front of nginx, restore the visitor address fi
 
 ## Redis is optional
 
-PostgreSQL is the only authority for sessions. Refresh tokens live in the `refresh_tokens` table as SHA-256 hashes, and a token is consumed by a single atomic `DELETE ... RETURNING`, so it can be used exactly once even under concurrent requests.
+PostgreSQL is the only authority for sessions. Refresh tokens live in the `refresh_tokens` table as SHA-256 hashes, and a token is used by a single atomic `UPDATE ... RETURNING` that sets `used_at`, so it can be used exactly once even under concurrent requests. Every sign in has a `family_id` that its tokens share, and the used rows stay for a week. A used token that is shown again more than a minute after its use, which is the time Redis flags it for, is taken for a theft. The whole family is deleted, the owner is logged and both the thief and the owner have to sign in again. Within that minute the token is only refused, because a client that lost the answer retries with the same token. `session_started_at` is copied to every token of the family and caps the expiry of the next token at `JWT_SESSION_MAX_DAYS`, 90 by default, so refreshing cannot keep a session alive for ever. Signing out deletes the whole family.
 
 Redis never decides that a token is valid. It only remembers consumed tokens for a minute so a quick replay is rejected without a database call, and it holds the leaderboard cache and the shared rate limit counters. This also means a stale or restored Redis cannot revive a revoked token.
 
