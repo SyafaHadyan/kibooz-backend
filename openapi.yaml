@@ -1114,7 +1114,8 @@ paths:
       summary: Delete the own account
       description: |
         Soft deletes the account after the password is confirmed. The sessions are revoked, the account can no longer
-        sign in, and the children of a parent are deleted with it.
+        sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
+        children and the photos of their trash scans are deleted too.
       requestBody:
         required: true
         content:
