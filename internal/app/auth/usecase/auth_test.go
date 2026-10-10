@@ -1,11 +1,14 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -28,6 +32,10 @@ type fakeRepo struct {
 	user        *entity.User
 	rotateErrs  []error
 	rotateCalls int
+
+	// rotation replaces the default outcome of a swap, which is a session for user, and policy keeps the limits it was given
+	rotation *repository.Rotation
+	policy   repository.RotationPolicy
 
 	// registered keeps the session that came with an account, and separateTokens counts the tokens stored on their own
 	registered     *entity.RefreshToken
@@ -67,19 +75,26 @@ func (f *fakeRepo) CreateRefreshToken(context.Context, *entity.RefreshToken) err
 	return nil
 }
 
-func (f *fakeRepo) RotateRefreshToken(context.Context, string, time.Time, *entity.RefreshToken) (*entity.User, error) {
+func (f *fakeRepo) RotateRefreshToken(
+	_ context.Context, _ string, _ time.Time, _ *entity.RefreshToken, policy repository.RotationPolicy,
+) (repository.Rotation, error) {
 	f.rotateCalls++
+	f.policy = policy
 
 	if len(f.rotateErrs) > 0 {
 		err := f.rotateErrs[0]
 		f.rotateErrs = f.rotateErrs[1:]
 
 		if err != nil {
-			return nil, err
+			return repository.Rotation{}, err
 		}
 	}
 
-	return f.user, nil
+	if f.rotation != nil {
+		return *f.rotation, nil
+	}
+
+	return repository.Rotation{User: f.user}, nil
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
@@ -142,7 +157,7 @@ func build(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache) us
 
 	repo.user = user
 
-	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
 }
 
 func accountWith(t *testing.T, password string) *entity.User {
@@ -302,7 +317,7 @@ func TestRegistrationStoresTheFirstSessionWithTheAccount(t *testing.T) {
 
 func TestRegistrationFailsWhenTheAccessTokenCannotBeSigned(t *testing.T) {
 	repo := &fakeRepo{}
-	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
 
 	res, err := useCase.Register(context.Background(), dto.RegisterRequest{
 		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Bunga"},
@@ -319,4 +334,68 @@ func sha256Hex(value string) string {
 	sum := sha256.Sum256([]byte(value))
 
 	return hex.EncodeToString(sum[:])
+}
+
+func TestRefreshTellsTheRepositoryTheLimitsOfASession(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := build(t, accountWith(t, "password-1234"), repo, newFakeCache())
+
+	_, err := useCase.Refresh(context.Background(), "old-token")
+	require.NoError(t, err)
+
+	require.Equal(t, 90*24*time.Hour, repo.policy.SessionMax)
+	require.Equal(t, time.Minute, repo.policy.ReuseGrace, "the same minute that Redis flags a used token for")
+}
+
+func TestRefreshRefusesATokenThatCannotBeUsed(t *testing.T) {
+	for name, rotation := range map[string]repository.Rotation{
+		"unknown, expired or used a moment ago": {},
+		"used before and the session ended":     {Reused: true, UserID: uuid.New()},
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := &fakeRepo{rotation: &rotation}
+			useCase := build(t, accountWith(t, "password-1234"), repo, newFakeCache())
+
+			res, err := useCase.Refresh(context.Background(), "old-token")
+
+			require.Equal(t, "AUTH_REFRESH_INVALID", apperror.As(err).Code)
+			require.Empty(t, res.RefreshToken)
+		})
+	}
+}
+
+func TestAReusedTokenIsLoggedWithTheOwner(t *testing.T) {
+	var output bytes.Buffer
+
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	owner := uuid.New()
+	repo := &fakeRepo{rotation: &repository.Rotation{Reused: true, UserID: owner}}
+	useCase := build(t, accountWith(t, "password-1234"), repo, newFakeCache())
+
+	_, err := useCase.Refresh(context.Background(), "old-token")
+
+	require.Equal(t, "AUTH_REFRESH_INVALID", apperror.As(err).Code)
+	require.Contains(t, output.String(), owner.String())
+	require.NotContains(t, output.String(), "old-token", "the token itself is never logged")
+}
+
+func TestASessionStartsWithItsOwnFamilyAndNeverOutlastsItsMaximum(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := usecase.NewAuthUseCase(repo, fakeJWT{}, newFakeCache(), &env.Env{
+		JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 7, DeviceTokenTTLDays: 90,
+		JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests",
+	})
+
+	_, err := useCase.Register(context.Background(), dto.RegisterRequest{
+		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru,
+		Class: &dto.RegisterClass{Name: "Bunga"},
+	})
+	require.NoError(t, err)
+
+	session := repo.registered
+	require.NotEqual(t, uuid.Nil, session.FamilyID)
+	require.Equal(t, session.CreatedAt, session.SessionStartedAt)
+	require.Equal(t, 7*24*time.Hour, session.ExpiresAt.Sub(session.CreatedAt), "the shorter of the two limits")
 }
