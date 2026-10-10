@@ -157,11 +157,10 @@ func assembleJPEG(app0 []byte, orientation int, rest []byte) []byte {
 	out = append(out, app0...)
 
 	if orientation > 1 {
-		tiff := orientationTIFF(orientation)
 		out = append(out, jpegMarkerPrefix, jpegAPP1)
-		out = binary.BigEndian.AppendUint16(out, uint16(2+6+len(tiff)))
+		out = binary.BigEndian.AppendUint16(out, 2+exifHeaderSize+orientationBlockSize)
 		out = append(out, "Exif\x00\x00"...)
-		out = append(out, tiff...)
+		out = append(out, orientationTIFF(orientation)...)
 	}
 
 	return append(out, rest...)
@@ -288,21 +287,30 @@ func stripWebP(data []byte) ([]byte, error) {
 	}
 
 	if keepOrientation {
-		tiff := orientationTIFF(orientation)
 		body = append(body, "EXIF"...)
-		body = binary.LittleEndian.AppendUint32(body, uint32(len(tiff)))
-		body = append(body, tiff...)
+		body = binary.LittleEndian.AppendUint32(body, orientationBlockSize)
+		body = append(body, orientationTIFF(orientation)...)
 	}
 
 	out := make([]byte, 0, webpHeaderSize+len(body))
 	out = append(out, "RIFF"...)
-	out = binary.LittleEndian.AppendUint32(out, uint32(4+len(body)))
+	// the image was limited to a few MiB before it got here, so the size always fits
+	out = binary.LittleEndian.AppendUint32(out, uint32(4+len(body))) //nolint:gosec // see above
 	out = append(out, "WEBP"...)
 
 	return append(out, body...), nil
 }
 
-const exifOrientationTag = 0x0112
+const (
+	exifOrientationTag = 0x0112
+
+	// the TIFF structure that holds only an orientation is a header of 8 bytes, a directory with one entry of 12 bytes
+	// between its count of 2 bytes and the 4 bytes that end it
+	orientationBlockSize = 8 + 2 + 12 + 4
+
+	// the identifier that comes before the TIFF structure in an EXIF segment of a JPEG
+	exifHeaderSize = 6
+)
 
 // exifOrientation reads the orientation from the TIFF structure of an EXIF block and returns 0 when there is none that
 // makes sense
@@ -366,7 +374,7 @@ func orientationTIFF(orientation int) []byte {
 	tiff = binary.BigEndian.AppendUint16(tiff, exifOrientationTag)
 	tiff = binary.BigEndian.AppendUint16(tiff, 3)
 	tiff = binary.BigEndian.AppendUint32(tiff, 1)
-	tiff = binary.BigEndian.AppendUint16(tiff, uint16(orientation))
+	tiff = binary.BigEndian.AppendUint16(tiff, uint16(orientation)) //nolint:gosec // the orientation was checked to be 1 to 8
 	tiff = append(tiff, 0, 0)
 
 	// no further image directory
