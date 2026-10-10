@@ -34,6 +34,8 @@ type GuruUseCaseItf interface {
 	ListClasses(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ClassList, error)
 	Class(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassDetail, error)
 	CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error)
+	// RotateJoinCode replaces the join code of a class the teacher teaches, and parents can no longer join with the old one
+	RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error)
 	Profile(ctx context.Context, userID uuid.UUID) (dto.GuruProfile, error)
 	ProfileDetail(ctx context.Context, userID uuid.UUID) (dto.GuruProfileDetail, error)
 	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateGuruProfileRequest) (dto.GuruProfileDetail, error)
@@ -303,6 +305,20 @@ func (u *GuruUseCase) Class(ctx context.Context, userID uuid.UUID, classID uuid.
 	}
 
 	return dto.ClassDetail{ClassSummary: classSummary(row), TotalVideos: videos, TotalThreads: threads}, nil
+}
+
+func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.JoinCodeResponse{}, err
+	}
+
+	code, err := u.repo.RotateJoinCode(ctx, class.ID)
+	if err != nil {
+		return dto.JoinCodeResponse{}, apperror.Internal(err)
+	}
+
+	return dto.JoinCodeResponse{JoinCode: code}, nil
 }
 
 func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error) {

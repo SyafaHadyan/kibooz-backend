@@ -87,6 +87,11 @@ type ClassSummary struct {
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
+// JoinCodeResponse is the new join code of a class
+type JoinCodeResponse struct {
+	JoinCode string `json:"joinCode"`
+}
+
 type ClassList struct {
 	Classes []ClassSummary `json:"classes"`
 	PageInfo
