@@ -3,8 +3,10 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -32,6 +35,7 @@ func TestUploadAvatarReportsDisabledStorage(t *testing.T) {
 type fakeRepo struct {
 	user    *entity.User
 	classes []uuid.UUID
+	files   []string
 	err     error
 	deleted int
 
@@ -61,10 +65,10 @@ func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error
 	return f.user, nil
 }
 
-func (f *fakeRepo) SoftDeleteAccount(context.Context, uuid.UUID, constants.Role) ([]uuid.UUID, error) {
+func (f *fakeRepo) SoftDeleteAccount(context.Context, uuid.UUID, constants.Role) (repository.DeletedAccount, error) {
 	f.deleted++
 
-	return f.classes, f.err
+	return repository.DeletedAccount{ClassIDs: f.classes, FileURLs: f.files}, f.err
 }
 
 type fakeCache struct{ deleted []string }
@@ -167,6 +171,7 @@ func TestDeleteAccount(t *testing.T) {
 type fakeStorage struct {
 	s3.Disabled
 
+	mu      sync.Mutex
 	uploads int
 	keys    []string
 	deleted []string
@@ -187,6 +192,9 @@ func (f *fakeStorage) KeyFromURL(url string) (string, bool) {
 }
 
 func (f *fakeStorage) Delete(_ context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.deleted = append(f.deleted, key)
 
 	return nil
@@ -326,4 +334,68 @@ func TestUploadAvatarForAnAccountDeletedMeanwhileLeavesNoFile(t *testing.T) {
 
 	require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
 	require.Equal(t, storage.keys, storage.deleted)
+}
+
+func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("only avatars and trash photos of this storage are deleted", func(t *testing.T) {
+		repo := &fakeRepo{
+			user: accountOf(t, constants.RoleWali, "correct-password"),
+			files: []string{
+				"https://example.com/avatars/user/a.png",
+				"https://example.com/avatars/child/b.jpg",
+				"https://example.com/trash-scans/child/scan.png",
+				"https://example.com/videos/class/lesson.mp4",
+				"https://example.com/pending/upload.mp4",
+				"https://elsewhere.test/avatars/user/c.png",
+			},
+		}
+		storage := &fakeStorage{}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+
+		require.ElementsMatch(t, []string{
+			"avatars/user/a.png",
+			"avatars/child/b.jpg",
+			"trash-scans/child/scan.png",
+		}, storage.deleted)
+	})
+
+	t.Run("many photos are all deleted", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+		for i := range 40 {
+			repo.files = append(repo.files, fmt.Sprintf("https://example.com/trash-scans/child/%d.png", i))
+		}
+
+		storage := &fakeStorage{}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.Len(t, storage.deleted, 40)
+	})
+
+	t.Run("nothing is deleted when the account was not", func(t *testing.T) {
+		repo := &fakeRepo{
+			user:  accountOf(t, constants.RoleGuru, "correct-password"),
+			files: []string{"https://example.com/avatars/user/a.png"},
+			err:   errors.New("boom"),
+		}
+		storage := &fakeStorage{}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		require.Error(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password"))
+		require.Empty(t, storage.deleted)
+	})
+
+	t.Run("a disabled storage deletes nothing and does not fail", func(t *testing.T) {
+		repo := &fakeRepo{
+			user:  accountOf(t, constants.RoleGuru, "correct-password"),
+			files: []string{"https://example.com/avatars/user/a.png"},
+		}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password"))
+	})
 }
