@@ -27,6 +27,9 @@ func TestEstimateCountsThePreviousWindowForThePartThatIsStillCovered(t *testing.
 	}{
 		"start of the window":  {ratelimit.Hits{Current: 1, Previous: 10, Elapsed: 0}, 11},
 		"middle of the window": {ratelimit.Hits{Current: 1, Previous: 10, Elapsed: 30 * time.Second}, 6},
+		"a part is rounded up": {ratelimit.Hits{Current: 1, Previous: 10, Elapsed: 2 * time.Second}, 11},
+		"one request before":   {ratelimit.Hits{Current: 1, Previous: 1, Elapsed: 59 * time.Second}, 2},
+		"nothing left":         {ratelimit.Hits{Current: 2, Previous: 5, Elapsed: window}, 2},
 		"end of the window":    {ratelimit.Hits{Current: 4, Previous: 10, Elapsed: window}, 4},
 		"nothing before":       {ratelimit.Hits{Current: 3, Elapsed: 10 * time.Second}, 3},
 	} {
