@@ -22,7 +22,8 @@ var allowed = map[string]string{
 	"image/webp": ".webp",
 }
 
-// Inspect checks the real content type of data and its size against maxBytes
+// Inspect checks the real content type of data and its size against maxBytes and removes the metadata of the image,
+// such as the location and the camera that an EXIF block holds
 func Inspect(data []byte, maxBytes int) (Image, error) {
 	if len(data) == 0 {
 		return Image{}, apperror.ErrInvalidImage
@@ -42,7 +43,14 @@ func Inspect(data []byte, maxBytes int) (Image, error) {
 		return Image{}, apperror.ErrInvalidImage
 	}
 
-	return Image{Data: data, ContentType: contentType, Extension: extension}, nil
+	// the size limit applies to what was sent, and what is stored has no metadata and is never larger by more than the
+	// small orientation block
+	clean, err := strip(contentType, data)
+	if err != nil {
+		return Image{}, apperror.ErrInvalidImage
+	}
+
+	return Image{Data: clean, ContentType: contentType, Extension: extension}, nil
 }
 
 // DecodeBase64 accepts either a data URI or bare base64 and returns the checked image
