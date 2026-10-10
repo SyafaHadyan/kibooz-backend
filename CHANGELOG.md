@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.6.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.2...v0.6.0) (2026-10-10)
+
+
+### Features
+
+* **auth:** end the session when a used refresh token is shown again and cap how long a session can last ([b86e45b](https://github.com/SyafaHadyan/kibooz-backend/commit/b86e45b4d2b3b7dc90f2178c1193b9923386adb0))
+* **guru:** let a teacher replace the join code of a class ([e4ae61d](https://github.com/SyafaHadyan/kibooz-backend/commit/e4ae61d89ac5e6d171e5a38a5d5cb749a2c34746))
+* **limiter:** count requests with atomic Redis commands and add a key prefix for a shared Redis ([b797dae](https://github.com/SyafaHadyan/kibooz-backend/commit/b797daed90e45902898e5998a20fa3ecf54ad7f2))
+
+
+### Bug Fixes
+
+* **auth:** keep a used refresh token for the whole retention and state the grace boundary exactly ([fa15e9a](https://github.com/SyafaHadyan/kibooz-backend/commit/fa15e9ae322c8ed99a2e346892bd9497e74a23ad))
+* **limiter:** round the share of the previous window up so a window boundary cannot let an extra request through ([850a3db](https://github.com/SyafaHadyan/kibooz-backend/commit/850a3db99a81ffd8c8cddd98199c790198cc344e))
+* **limiter:** sweep the in-memory counters at most once per window ([8476e60](https://github.com/SyafaHadyan/kibooz-backend/commit/8476e60d42cfd984a8931829a9e01d6ebf6a88d4))
+* **upload:** keep only the JFIF header of a JPEG and refuse a WebP with a wrong extended header ([9655de4](https://github.com/SyafaHadyan/kibooz-backend/commit/9655de4e335dbcc9b88a9d0015450a08b21c7058))
+* **upload:** size the orientation block with constants and explain the one size conversion ([ec82ad7](https://github.com/SyafaHadyan/kibooz-backend/commit/ec82ad7b1d014e39e2a3459f2741ffc79ab52f4f))
+* **upload:** strip the EXIF, XMP and text metadata from avatars and trash photos and keep only the orientation ([2737995](https://github.com/SyafaHadyan/kibooz-backend/commit/2737995de36587a23844d92bd6c14db5f4aa6ab1))
+* **user:** delete the avatars and trash photos of an account when the account is deleted ([090d516](https://github.com/SyafaHadyan/kibooz-backend/commit/090d516c54d1e441e5b3d107be5afc3782c63ad6))
+* **user:** reuse the existing error checks when collecting the files of a deleted account ([d76d2db](https://github.com/SyafaHadyan/kibooz-backend/commit/d76d2dbe364447fa70ed30d760cad4a4ada244e6))
+
 ## [0.5.2](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.1...v0.5.2) (2026-10-10)
 
 
