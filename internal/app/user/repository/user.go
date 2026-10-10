@@ -24,9 +24,16 @@ type UserDBItf interface {
 	UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, string, error)
 	// FindUserByID returns nil when the account does not exist or is already deleted
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
-	// SoftDeleteAccount hides the account with its profile and children, revokes every session and
-	// returns the classes whose ranking changed
-	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) ([]uuid.UUID, error)
+	// SoftDeleteAccount hides the account with its profile and children, revokes every session and clears the
+	// addresses of their files. It returns the classes whose ranking changed and the addresses that were cleared,
+	// so the caller can delete the files.
+	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) (DeletedAccount, error)
+}
+
+// DeletedAccount is what a deleted account leaves behind for the caller to clean up
+type DeletedAccount struct {
+	ClassIDs []uuid.UUID
+	FileURLs []string
 }
 
 type UserDB struct {
@@ -143,15 +150,18 @@ func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 	return &user, nil
 }
 
-func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) ([]uuid.UUID, error) {
-	var classIDs []uuid.UUID
+func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) (DeletedAccount, error) {
+	var deleted DeletedAccount
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		deleted = DeletedAccount{}
+
 		var err error
 
 		switch role {
 		case constants.RoleWali:
-			classIDs, err = softDeleteWali(tx, userID)
+			deleted.ClassIDs, err = softDeleteWali(tx, userID, &deleted.FileURLs)
 		case constants.RoleGuru:
 			err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
 		}
@@ -160,7 +170,11 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 			return err
 		}
 
-		err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
+		err = takeAddresses(&deleted.FileURLs, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
+		if err == nil {
+			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
+		}
+
 		if err != nil {
 			return err
 		}
@@ -168,12 +182,31 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 		// refresh tokens have no soft delete, removing them ends every session
 		return tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error
 	})
+	if err != nil {
+		return DeletedAccount{}, err
+	}
 
-	return classIDs, err
+	return deleted, nil
 }
 
-// softDeleteWali hides the parent and their children, then renumbers the ranking of the affected classes
-func softDeleteWali(tx *gorm.DB, userID uuid.UUID) ([]uuid.UUID, error) {
+// takeAddresses adds the file addresses that rows hold in column to files and clears them, so no row points at a file
+// that is about to be deleted
+func takeAddresses(files *[]string, rows *gorm.DB, column string) error {
+	var urls []string
+
+	err := rows.Session(&gorm.Session{}).Where(column+" IS NOT NULL AND "+column+" <> ''").Pluck(column, &urls).Error
+	if err != nil || len(urls) == 0 {
+		return err
+	}
+
+	*files = append(*files, urls...)
+
+	return rows.Session(&gorm.Session{}).Update(column, nil).Error
+}
+
+// softDeleteWali hides the parent and their children, then renumbers the ranking of the affected classes. It also
+// adds the addresses of the avatars of the children and of the photos of their trash scans to files and clears them.
+func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID, error) {
 	var wali entity.Wali
 
 	err := tx.Select("id").Where("user_id = ?", userID).Take(&wali).Error
@@ -202,7 +235,17 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID) ([]uuid.UUID, error) {
 		}
 	}
 
-	err = tx.Where("wali_id = ?", wali.ID).Delete(&entity.Student{}).Error
+	children := tx.Unscoped().Model(&entity.Student{}).Select("id").Where("wali_id = ?", wali.ID)
+
+	err = takeAddresses(files, tx.Unscoped().Model(&entity.Student{}).Where("wali_id = ?", wali.ID), "avatar_url")
+	if err == nil {
+		err = takeAddresses(files, tx.Model(&entity.TrashScan{}).Where("student_id IN (?)", children), "photo_url")
+	}
+
+	if err == nil {
+		err = tx.Where("wali_id = ?", wali.ID).Delete(&entity.Student{}).Error
+	}
+
 	if err != nil {
 		return nil, err
 	}
