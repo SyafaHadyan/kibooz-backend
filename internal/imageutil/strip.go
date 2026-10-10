@@ -89,7 +89,9 @@ func stripJPEG(data []byte) ([]byte, error) {
 
 		switch {
 		case marker == jpegAPP0:
-			if app0 == nil {
+			// only the JFIF header stays, because the JFXX extension and the other uses of this segment can carry a thumbnail
+			// or any other data
+			if app0 == nil && bytes.HasPrefix(payload, []byte("JFIF\x00")) {
 				app0 = segment
 			}
 		case marker == jpegAPP1:
@@ -216,6 +218,8 @@ const (
 	webpFlagsEXIF   = 0x08
 	webpFlagsXMP    = 0x04
 	webpChunkHeader = 8
+
+	webpExtendedHeaderSize = 10
 )
 
 func stripWebP(data []byte) ([]byte, error) {
@@ -261,7 +265,12 @@ func stripWebP(data []byte) ([]byte, error) {
 			}
 		case "XMP ":
 		default:
-			if fourCC == "VP8X" && size >= 10 {
+			if fourCC == "VP8X" {
+				// the extended header is flags, a reserved field and two sizes, which makes exactly 10 bytes
+				if size != webpExtendedHeaderSize {
+					return nil, errMalformed
+				}
+
 				extended = true
 				flagsAt = chunks.Len() + webpChunkHeader
 			}

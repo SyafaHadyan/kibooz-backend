@@ -196,6 +196,34 @@ func TestStripJPEGKeepsTheColourProfileAndTheJFIFHeader(t *testing.T) {
 	require.NotContains(t, string(clean.Data), "SecretMPF")
 }
 
+func TestStripJPEGDropsAnApplicationSegmentThatIsNotTheJFIFHeader(t *testing.T) {
+	encoded := encodeJPEG(t)
+
+	for name, payload := range map[string][]byte{
+		"a JFXX extension with a thumbnail": []byte("JFXX\x00\x10SecretThumbnail"),
+		"another use of the segment":        []byte("Ducky\x00SecretDucky"),
+		"an empty segment":                  {},
+	} {
+		clean, err := Inspect(withJPEGMetadata(t, encoded, jpegSegment(0xE0, payload)), stripMaxBytes)
+		require.NoError(t, err, name)
+
+		require.NotContains(t, string(clean.Data), "Secret", name)
+		require.NotContains(t, string(clean.Data), "JFXX", name)
+	}
+}
+
+func TestStripJPEGKeepsOnlyTheFirstJFIFHeader(t *testing.T) {
+	jfif := func(tail string) []byte {
+		return jpegSegment(0xE0, []byte("JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"+tail))
+	}
+
+	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), jfif("first"), jfif("second")), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.Contains(t, string(clean.Data), "first")
+	require.NotContains(t, string(clean.Data), "second")
+}
+
 func TestStripJPEGIsAFixedPoint(t *testing.T) {
 	dirty := withJPEGMetadata(t, encodeJPEG(t),
 		jpegSegment(0xE1, append([]byte("Exif\x00\x00"), exifBlock(binary.LittleEndian, 3)...)),
