@@ -25,6 +25,7 @@ The mood detection runs on the device, so the API never receives a face photo an
 | Threat | Measure | Where to see it |
 |:---|:---|:---|
 | Guessing passwords | Passwords are stored as salted bcrypt hashes. Login, register, refresh and logout are limited per account, so many addresses cannot add up to more attempts. A login for an unknown email does the same bcrypt work as a real one, so timing does not reveal which emails exist | [Rate limits](design.md#rate-limits) and `internal/app/auth` |
+| Guessing a join code | A join code has six characters from an alphabet of 32, about a billion codes, and a wrong code is answered like any unknown class. A teacher can replace the code of a class with `POST /guru/classes/{classId}/join-code`, and the old code stops working at once. | `internal/classcode` |
 | Locking an owner out on purpose | A device that signed in before has its own login budget through the device token | [Trusted devices](design.md#trusted-devices) |
 | Flooding the public routes | Every signed in user and every account has a limit. A flood with a new email each time is not stopped by the API, so the proxy or CDN has to limit it | [A flood limit in the proxy](design.md#a-flood-limit-in-the-proxy) |
 | Stolen access token | The token expires after `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default, and every limit and role check still applies to it | [Architecture](architecture.md#sessions) |
