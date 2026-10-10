@@ -63,6 +63,8 @@ type GuruDBItf interface {
 	CountClassContent(ctx context.Context, classID uuid.UUID) (videos int, threads int, err error)
 	// CreateClass stores the class under a new join code and makes the guru its teacher
 	CreateClass(ctx context.Context, guruID uuid.UUID, class *entity.Class) error
+	// RotateJoinCode gives the class a new join code and returns it, the old code stops working at once
+	RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error)
 }
 
 type GuruDB struct {
@@ -254,6 +256,20 @@ func (r *GuruDB) CreateClass(ctx context.Context, guruID uuid.UUID, class *entit
 }
 
 // classQuery selects the classes of a teacher together with the number of children that are still active
+func (r *GuruDB) RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error) {
+	var code string
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+
+		code, err = classcode.Replace(tx, classID)
+
+		return err
+	})
+
+	return code, err
+}
+
 func (r *GuruDB) classQuery(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).
 		Table("classes AS c").
