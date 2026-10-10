@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -18,7 +19,12 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
 
-const bcryptMaxBytes = 72
+const (
+	bcryptMaxBytes = 72
+
+	// a parent can have many trash photos, so the files of a deleted account are removed a few at a time
+	discardConcurrency = 8
+)
 
 type UserUseCaseItf interface {
 	// UploadAvatar stores the image for the caller, or for one of their children when studentID is set
@@ -141,7 +147,7 @@ func (u *UserUseCase) discardReplaced(ctx context.Context, previous string) {
 	}
 
 	key, ok := u.storage.KeyFromURL(previous)
-	if !ok || !strings.HasPrefix(key, string(constants.AvatarDirectory)+"/") {
+	if !ok || !inDirectory(key, constants.AvatarDirectory) {
 		return
 	}
 
@@ -172,15 +178,60 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 		return apperror.ErrPasswordIncorrect
 	}
 
-	classIDs, err := u.repo.SoftDeleteAccount(ctx, userID, role)
+	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role)
 	if err != nil {
 		return apperror.Internal(err)
 	}
 
 	// the cache is optional, entries also expire by themselves
-	for _, classID := range classIDs {
+	for _, classID := range deleted.ClassIDs {
 		_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 	}
 
+	u.discardFiles(ctx, deleted.FileURLs)
+
 	return nil
+}
+
+// discardFiles removes the avatars and the trash photos of a deleted account. The rows no longer point at them, so a
+// file that cannot be deleted now is only logged and left in the bucket.
+func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
+	var keys []string
+
+	for _, url := range urls {
+		key, ok := u.storage.KeyFromURL(url)
+		if ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory) {
+			keys = append(keys, key)
+		}
+	}
+
+	var group sync.WaitGroup
+
+	limit := make(chan struct{}, discardConcurrency)
+
+	for _, key := range keys {
+		group.Add(1)
+
+		limit <- struct{}{}
+
+		go func() {
+			defer group.Done()
+			defer func() { <-limit }()
+
+			s3.Discard(ctx, u.storage, key)
+		}()
+	}
+
+	group.Wait()
+}
+
+// inDirectory tells whether key lies under one of the directories this service writes to
+func inDirectory(key string, directories ...constants.StorageDirectory) bool {
+	for _, directory := range directories {
+		if strings.HasPrefix(key, string(directory)+"/") {
+			return true
+		}
+	}
+
+	return false
 }
