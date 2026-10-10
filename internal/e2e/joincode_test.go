@@ -37,7 +37,7 @@ func TestRotateJoinCode(t *testing.T) {
 		require.Equal(t, newCode, list.data("joinCode"))
 
 		registerWaliWith(t, fmt.Sprintf("late.%s@example.com", suffix()), nisn(), oldCode, "Late Child").
-			requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+			requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
 	})
 
 	t.Run("the new code lets a parent join", func(t *testing.T) {
@@ -55,15 +55,15 @@ func TestRotateJoinCode(t *testing.T) {
 		require.NotEqual(t, newCode, second)
 
 		registerWaliWith(t, fmt.Sprintf("stale.%s@example.com", suffix()), nisn(), newCode, "Stale Child").
-			requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+			requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
 	})
 
 	t.Run("only a teacher of the class can replace the code", func(t *testing.T) {
-		call(t, http.MethodPost, path, otherGuru.Token, nil).requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+		call(t, http.MethodPost, path, otherGuru.Token, nil).requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
 		call(t, http.MethodPost, path, joined.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 		call(t, http.MethodPost, path, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 		call(t, http.MethodPost, "/api/v1/guru/classes/"+uuid.NewString()+"/join-code", guru.Token, nil).
-			requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+			requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
 		call(t, http.MethodPost, "/api/v1/guru/classes/not-a-uuid/join-code", guru.Token, nil).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
