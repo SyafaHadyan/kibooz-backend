@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
@@ -24,28 +25,53 @@ const (
 
 // Create retries with a new random code when it collides with an existing class
 func Create(tx *gorm.DB, class *entity.Class) error {
+	_, err := withNewCode(tx, func(inner *gorm.DB, code string) error {
+		class.JoinCode = code
+
+		return inner.Create(class).Error
+	})
+
+	return err
+}
+
+// Replace gives a class a new random code and returns it, so the old code stops working at once
+func Replace(tx *gorm.DB, classID uuid.UUID) (string, error) {
+	return withNewCode(tx, func(inner *gorm.DB, code string) error {
+		result := inner.Model(&entity.Class{}).Where("id = ?", classID).Update("join_code", code)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		return nil
+	})
+}
+
+// withNewCode runs store with a random code and tries again with another one when the code is already taken
+func withNewCode(tx *gorm.DB, store func(inner *gorm.DB, code string) error) (string, error) {
 	for range retries {
 		code, err := newCode()
 		if err != nil {
-			return err
+			return "", err
 		}
-
-		class.JoinCode = code
 
 		// a savepoint keeps the outer transaction usable after a unique violation
 		err = tx.Transaction(func(inner *gorm.DB) error {
-			return inner.Create(class).Error
+			return store(inner, code)
 		})
 		if err == nil {
-			return nil
+			return code, nil
 		}
 
 		if !isCodeTaken(err) {
-			return err
+			return "", err
 		}
 	}
 
-	return errors.New("failed to generate a unique class code")
+	return "", errors.New("failed to generate a unique class code")
 }
 
 func newCode() (string, error) {

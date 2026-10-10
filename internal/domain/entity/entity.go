@@ -106,6 +106,13 @@ type RefreshToken struct {
 	TokenHash string    `gorm:"column:token_hash;size:64;not null;uniqueIndex"`
 	ExpiresAt time.Time `gorm:"not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
+
+	// FamilyID is shared by every token of one sign in, and SessionStartedAt is the time of that sign in
+	FamilyID         uuid.UUID `gorm:"type:uuid;not null;index"`
+	SessionStartedAt time.Time `gorm:"not null"`
+
+	// UsedAt is set when the token was swapped for the next one, the row stays to recognize a replay
+	UsedAt *time.Time
 }
 
 type LearningVideo struct {

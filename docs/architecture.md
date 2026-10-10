@@ -8,7 +8,7 @@ Kibooz Backend is one Go program that serves a JSON REST API under `/api/v1`. It
 |:---|:---|
 | API server | Fiber v3 HTTP server that handles routing, security headers, rate limits and errors |
 | PostgreSQL | The only authority for users, sessions, classes, students, moods, scans and points. GORM with the pgx driver talks to it |
-| Redis | Optional. It holds the shared rate limit counters, a short memory of consumed refresh tokens and the leaderboard cache |
+| Redis | Optional, and it can be a local container or a hosted instance that several API instances and other applications share. It holds the shared rate limit counters, a short memory of consumed refresh tokens and the leaderboard cache. `REDIS_KEY_PREFIX` keeps its keys apart from those of other applications |
 | Object storage | Optional S3 compatible bucket for avatars and trash photos, which upload through the API, and class videos, which go straight to the bucket through a signed address. Uploads are off when it is not configured. Class videos wait under `pending/` until a teacher adds them, so the bucket needs a lifecycle rule that expires `pending/` after one day |
 | Migrations | SQL files embedded in the binary and applied with golang-migrate when the server starts |
 
@@ -46,7 +46,7 @@ The features are `auth` for registration, login and tokens, `user` for the profi
 
 ## Sessions
 
-An access token is a JWT that is valid for `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default. A refresh token is random, is stored only as a SHA-256 hash in the `refresh_tokens` table, is valid for `JWT_REFRESH_EXPIRED_DAYS`, 30 by default, and works exactly once. The details and the reason Redis never decides validity are in the [design notes](design.md#redis-is-optional).
+An access token is a JWT that is valid for `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default. A refresh token is random, is stored only as a SHA-256 hash in the `refresh_tokens` table, is valid for `JWT_REFRESH_EXPIRED_DAYS`, 30 by default, and works exactly once. Every sign in is a session, and its tokens share a family. A session ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed. The details and the reason Redis never decides validity are in the [design notes](design.md#redis-is-optional).
 
 ## Build and run
 

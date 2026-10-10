@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/gofiber/fiber/v3/middleware/limiter"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 )
@@ -16,18 +17,37 @@ import (
 // so the address says little about who is asking and one noisy person would throttle everyone else on it.
 // Signed-in requests are limited per user and the public auth routes per account.
 
-func (f *Fiber) newLimiter(max int, key func(fiber.Ctx) string, skip func(fiber.Ctx) bool) fiber.Handler {
-	return limiter.New(limiter.Config{
-		Max:               max,
-		Expiration:        f.window,
-		Storage:           f.storage,
-		KeyGenerator:      key,
-		Next:              skip,
-		LimiterMiddleware: limiter.SlidingWindow{},
-		LimitReached: func(fiber.Ctx) error {
+// newLimiter lets limit requests per window through for each key and refuses the rest with 429 and a Retry-After header.
+// A request is counted before it is judged, so one that is refused counts too and a client that keeps hammering stays
+// refused. The counting is left to the store, which is atomic when Redis backs it, so the handler holds no lock while
+// it waits for Redis and instances that share a Redis share the limit.
+func (f *Fiber) newLimiter(limit int, key func(fiber.Ctx) string, skip func(fiber.Ctx) bool) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if skip != nil && skip(c) {
+			return c.Next()
+		}
+
+		hits, err := f.limits.Hit(c.Context(), key(c), f.window)
+		if err != nil {
+			// a store that cannot count must not take the API down with it
+			return c.Next()
+		}
+
+		used := hits.Estimate(f.window)
+		untilNext := max(int((f.window-hits.Elapsed+time.Second-1)/time.Second), 1)
+
+		c.Set("X-RateLimit-Limit", strconv.Itoa(limit))
+		c.Set("X-RateLimit-Remaining", strconv.FormatInt(max(int64(limit)-used, 0), 10))
+		c.Set("X-RateLimit-Reset", strconv.Itoa(untilNext))
+
+		if used > int64(limit) {
+			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(untilNext))
+
 			return apperror.ErrRateLimited
-		},
-	})
+		}
+
+		return c.Next()
+	}
 }
 
 // UserLimiter gives every signed-in user USER_LIMITER_MAX requests per window. userKey names the user

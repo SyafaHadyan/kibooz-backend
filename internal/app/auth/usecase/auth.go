@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -30,7 +31,8 @@ const (
 	// minFullNameRunes is the shortest name of a person, the same minimum the request validator uses
 	minFullNameRunes = 2
 
-	// usedTTL is how long Redis remembers a consumed token to reject quick replays
+	// usedTTL is how long Redis remembers a consumed token to reject quick replays. A token that is shown again within
+	// that time is only refused, and after it the database decides whether the session was stolen.
 	usedTTL = time.Minute
 )
 
@@ -246,21 +248,28 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 
 	raw, next := u.newRefreshToken()
 
-	user, err := u.repo.RotateRefreshToken(ctx, hash, u.now(), next)
+	rotation, err := u.repo.RotateRefreshToken(ctx, hash, u.now(), next, repository.RotationPolicy{
+		SessionMax: time.Duration(u.cfg.JWTSessionMaxDays) * 24 * time.Hour,
+		ReuseGrace: usedTTL,
+	})
 	if err != nil {
-		// the database did not consume the token, so it must not stay flagged and block the client's retry
+		// the database did not use the token, so it must not stay flagged and block the client's retry
 		_ = u.cache.Del(ctx, refreshKey(hash))
 
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
 
-	if user == nil {
+	if rotation.Reused {
+		log.Printf("a refresh token that was already used was shown again, the session of user %s ended", rotation.UserID)
+	}
+
+	if rotation.User == nil {
 		return dto.AuthResponse{}, apperror.ErrRefreshInvalid
 	}
 
 	u.remember(ctx, next)
 
-	return u.buildResponse(user, raw)
+	return u.buildResponse(rotation.User, raw)
 }
 
 func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string) error {
@@ -314,11 +323,16 @@ func (u *AuthUseCase) newRefreshToken() (string, *entity.RefreshToken) {
 	raw := uuid.NewString()
 	now := u.now()
 
+	// a sign in lasts for at most JWT_SESSION_MAX_DAYS however often its token is swapped
+	lifetime := time.Duration(min(u.cfg.JWTRefreshExpiredDays, u.cfg.JWTSessionMaxDays)) * 24 * time.Hour
+
 	return raw, &entity.RefreshToken{
-		ID:        uuid.New(),
-		TokenHash: hashToken(raw),
-		ExpiresAt: now.Add(time.Duration(u.cfg.JWTRefreshExpiredDays) * 24 * time.Hour),
-		CreatedAt: now,
+		ID:               uuid.New(),
+		TokenHash:        hashToken(raw),
+		ExpiresAt:        now.Add(lifetime),
+		CreatedAt:        now,
+		FamilyID:         uuid.New(),
+		SessionStartedAt: now,
 	}
 }
 

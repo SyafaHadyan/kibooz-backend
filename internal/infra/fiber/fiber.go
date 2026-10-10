@@ -17,6 +17,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
 	"github.com/SyafaHadyan/kibooz-backend/internal/response"
 )
 
@@ -25,14 +26,15 @@ type Fiber struct {
 	Router fiber.Router
 
 	// the rate limiters in limits.go are built from these
-	storage fiber.Storage
+	limits  ratelimit.Store
 	window  time.Duration
 	userMax int
 	authMax int
 	devices *devicetoken.Tokens
 }
 
-func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
+// New builds the server. limits counts the requests for the rate limiters, and a nil store counts in the memory of the process.
+func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 	config := fiber.Config{
 		AppName:      "kibooz-backend",
 		BodyLimit:    cfg.BodyLimitMB * 1024 * 1024,
@@ -50,6 +52,10 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 			LinkLocal: true,
 			Private:   true,
 		}
+	}
+
+	if limits == nil {
+		limits = ratelimit.NewMemory()
 	}
 
 	app := fiber.New(config)
@@ -72,7 +78,7 @@ func New(cfg *env.Env, limiterStorage fiber.Storage) *Fiber {
 	return &Fiber{
 		Fiber:   app,
 		Router:  app.Group("/api/v1"),
-		storage: limiterStorage,
+		limits:  limits,
 		window:  time.Duration(cfg.LimiterExpirationSeconds) * time.Second,
 		userMax: cfg.UserLimiterMax,
 		authMax: cfg.AuthLimiterMax,

@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
 )
@@ -44,6 +45,7 @@ const (
 var (
 	once    sync.Once
 	testApp *fiber.App
+	testDB  *gorm.DB
 	initErr error
 
 	storedMu      sync.Mutex
@@ -164,6 +166,7 @@ func app(t *testing.T) *fiber.App {
 		}
 
 		testApp = started.App.Fiber
+		testDB = started.Database
 	})
 
 	require.NoError(t, initErr)
