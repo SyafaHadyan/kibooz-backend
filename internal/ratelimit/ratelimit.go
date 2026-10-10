@@ -47,6 +47,9 @@ type Memory struct {
 	mu      sync.Mutex
 	entries map[string]*counter
 	now     func() time.Time
+
+	// nextPrune is the earliest moment of the next sweep, so a map full of live keys is not scanned by every request
+	nextPrune time.Time
 }
 
 type counter struct {
@@ -83,7 +86,9 @@ func (m *Memory) Hit(_ context.Context, key string, window time.Duration) (Hits,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if len(m.entries) > pruneAbove {
+	if len(m.entries) > pruneAbove && !now.Before(m.nextPrune) {
+		m.nextPrune = now.Add(window)
+
 		for k, entry := range m.entries {
 			if now.After(entry.expires) {
 				delete(m.entries, k)
