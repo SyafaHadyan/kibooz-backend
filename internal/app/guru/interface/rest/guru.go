@@ -32,6 +32,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Get("/classes", handler.ListClasses)
 	group.Post("/classes", handler.CreateClass)
 	group.Get("/classes/:classId", handler.Class)
+	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Get("/profile", handler.Profile)
 	group.Put("/profile", handler.UpdateProfile)
 	group.Get("/profile/detail", handler.ProfileDetail)
@@ -107,6 +108,20 @@ func (h *GuruHandler) Class(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *GuruHandler) RotateJoinCode(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.RotateJoinCode(c.Context(), middleware.UserIDFrom(c), classID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Join code replaced", res)
 }
 
 func (h *GuruHandler) CreateClass(c fiber.Ctx) error {

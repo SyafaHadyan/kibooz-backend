@@ -43,6 +43,7 @@ type Env struct {
 	JWTSecretKey             string `env:"JWT_SECRET_KEY,required"`
 	JWTAccessExpiredMinutes  int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
 	JWTRefreshExpiredDays    int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
+	JWTSessionMaxDays        int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
 	DeviceTokenTTLDays       int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
 	S3Endpoint               string `env:"S3_ENDPOINT"`
 	S3AccountID              string `env:"S3_ACCOUNT_ID"`
@@ -117,6 +118,8 @@ func (e *Env) validate() error {
 		{"LEADERBOARD_CACHE_SECONDS", e.LeaderboardCacheSeconds, 1},
 		{"JWT_ACCESS_EXPIRED_MINUTES", e.JWTAccessExpiredMinutes, 1},
 		{"JWT_REFRESH_EXPIRED_DAYS", e.JWTRefreshExpiredDays, 1},
+		// a session that no limit ends could be kept alive for ever with a stolen refresh token
+		{"JWT_SESSION_MAX_DAYS", e.JWTSessionMaxDays, 1},
 		// a request without a deadline can hold a database connection for as long as a storage call or a lock wait lasts
 		{"REQUEST_TIMEOUT_SECONDS", e.RequestTimeoutSeconds, 1},
 		// a device token that is already over when it is issued gives nobody a bucket of their own

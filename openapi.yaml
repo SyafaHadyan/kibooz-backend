@@ -140,7 +140,11 @@ paths:
       tags: [Auth]
       operationId: refreshToken
       summary: Exchange a refresh token for a new pair
-      description: The refresh token is single use, so the old one stops working as soon as this call succeeds.
+      description: |
+        The refresh token is single use, so the old one stops working as soon as this call succeeds. Send the new
+        token the next time and save it before anything else. An old token that is shown again more than a minute after
+        its use is taken for a stolen one, and the whole session ends, including the newest token. A session also
+        ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed.
       security: []
       requestBody:
         required: true
@@ -428,6 +432,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ClassDetailEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/join-code:
+    post:
+      tags: [Teacher]
+      operationId: rotateJoinCode
+      summary: Replace the join code of a class
+      description: |
+        Gives the class a new random join code and returns it. The old code stops working at once, so a parent who
+        has not joined yet needs the new one. Parents who already joined are not affected. Use it when a code was
+        shared too widely or guessed.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The new join code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinCodeEnvelope"
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -2277,6 +2309,25 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/ClassList"
+    JoinCode:
+      type: object
+      required: [joinCode]
+      properties:
+        joinCode:
+          type: string
+          description: The new code of the class
+          example: K7M2QX
+    JoinCodeEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/JoinCode"
     ClassDetailEnvelope:
       type: object
       required: [success, data]

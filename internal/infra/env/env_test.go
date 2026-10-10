@@ -20,7 +20,7 @@ func valid() *Env {
 		AppPort: 8080, DBPort: 5432, RedisPort: 6379,
 		BodyLimitMB: 8, VideoMaxMB: 100, VideoUploadURLSeconds: 900,
 		UserLimiterMax: 120, AuthLimiterMax: 10, LimiterExpirationSeconds: 60,
-		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30,
+		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90,
 	}
 }
 
@@ -143,6 +143,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"LEADERBOARD_CACHE_SECONDS":  func(e *Env) { e.LeaderboardCacheSeconds = 0 },
 		"JWT_ACCESS_EXPIRED_MINUTES": func(e *Env) { e.JWTAccessExpiredMinutes = 0 },
 		"JWT_REFRESH_EXPIRED_DAYS":   func(e *Env) { e.JWTRefreshExpiredDays = -5 },
+		"JWT_SESSION_MAX_DAYS":       func(e *Env) { e.JWTSessionMaxDays = 0 },
 		"KEEPALIVE_SECONDS":          func(e *Env) { e.KeepaliveSeconds = -1 },
 		"REDIS_DATABASE":             func(e *Env) { e.RedisDatabase = -1 },
 		"POINTS_ORGANIK":             func(e *Env) { e.PointsOrganik = -1 },
