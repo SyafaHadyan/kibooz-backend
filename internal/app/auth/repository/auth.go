@@ -14,6 +14,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
+	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 )
 
 const uniqueViolation = "23505"
@@ -305,7 +306,7 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 
 	if !next.ExpiresAt.After(now) {
 		// the session reached its longest lifetime, so it ends here and the user signs in again
-		return nil, tx.Exec("DELETE FROM refresh_tokens WHERE family_id = ?", used.FamilyID).Error
+		return nil, sessions.EndFamily(tx, used.FamilyID)
 	}
 
 	err = tx.Create(next).Error
@@ -326,21 +327,33 @@ func endReusedSession(tx *gorm.DB, tokenHash string, now time.Time, grace time.D
 		return false, uuid.Nil, err
 	}
 
-	return true, seen[0].UserID, tx.Exec("DELETE FROM refresh_tokens WHERE family_id = ?", seen[0].FamilyID).Error
+	return true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	return r.db.WithContext(ctx).Exec(
-		"DELETE FROM refresh_tokens WHERE family_id IN (SELECT family_id FROM refresh_tokens WHERE token_hash = ?)", tokenHash,
-	).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var families []uuid.UUID
+
+		err := tx.Raw("SELECT family_id FROM refresh_tokens WHERE token_hash = ?", tokenHash).Scan(&families).Error
+		if err != nil || len(families) == 0 {
+			return err
+		}
+
+		return sessions.EndFamily(tx, families[0])
+	})
 }
 
 // purgeExpiredTokens keeps the table small without a background job by cleaning one user at a time. It removes the
 // expired tokens that were never used and the used ones that are too old to recognize a replay. A used token stays for
 // the whole retention even when it has expired, because showing it again must still end the session.
+//
+// A row that another transaction has locked is left for the next time. The cleanup runs while the refresh that called it
+// holds the lock of the token it used, so waiting here could close a circle with a deletion that holds the lock of an
+// expired token and waits for that refresh. See package sessions.
 func purgeExpiredTokens(tx *gorm.DB, userID uuid.UUID, now time.Time) error {
-	return tx.Where(
-		"user_id = ? AND ((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?))",
+	return tx.Exec(
+		"DELETE FROM refresh_tokens WHERE id IN (SELECT id FROM refresh_tokens WHERE user_id = ? AND "+
+			"((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?)) FOR UPDATE SKIP LOCKED)",
 		userID, now, now.Add(-usedRetention),
-	).Delete(&entity.RefreshToken{}).Error
+	).Error
 }
