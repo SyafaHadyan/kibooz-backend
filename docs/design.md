@@ -6,7 +6,7 @@ How accounts, sessions, rate limits, Redis and the business rules behave. The ro
 
 There is no seed data. Accounts come from `POST /auth/register`.
 
-- A GURU registers together with a new class (`class.name` is required) and becomes its teacher. The class gets a six character `joinCode` that the dashboard returns.
+- A GURU registers together with a new class (`class.name` is required) and becomes its teacher. The class gets an eight character `joinCode` that the dashboard returns. A class that was created before the codes grew keeps its six character code until a teacher replaces it.
 - A WALI registers with the teacher's `classCode` and the child's `student.nisn` and `student.fullName`.
 - A GURU cannot join an existing class, so knowing a class code never gives access to its children's data.
 - ADMIN exists in the role enum but cannot be registered.
@@ -21,6 +21,7 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 | Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
 | Login and register | email, or the device when the login carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
+| Register with a class code | the whole API | `CLASS_CODE_LIMITER_MAX`, 60 by default, on top of the limit per email |
 | `/healthz` | nothing | not limited |
 
 Each route is limited by the one field it actually reads, so adding a second field to the body, such as an email on a refresh request, does not give a caller a new budget. The email is trimmed and lower-cased the same way the sign in does it, so changing the letter case does not either. The identifiers are hashed before they become a storage key, so no email or token is kept in Redis in clear. A request that names no account, such as an empty or malformed body, is not counted, because it is rejected before it touches the database.
@@ -34,6 +35,8 @@ Anyone who knows an email can use up its shared login budget, so a limit per ema
 The token is not a credential and never replaces the password. It is signed with a key derived from `JWT_SECRET_KEY`, bound to the email, valid for `DEVICE_TOKEN_TTL_DAYS` (90 by default) and renewed by every login, and a token refresh does not return one. A forged, expired or foreign token is rejected by the signature alone, without a database lookup, and the request falls back to the shared bucket. A stolen token only gives the thief the same `AUTH_LIMITER_MAX` attempts per window in the bucket of that one device, and the password is still needed.
 
 A new device, or one that cleared its data, has no token and uses the shared bucket. While someone is using it up, that device cannot sign in until the window passes.
+
+A class code is the only secret between a stranger and a class, and a wrong code is answered at once with `CLASS_CODE_NOT_FOUND`, before any password is hashed. So the number of guesses is limited for the whole API and not per caller, because a guesser can use any number of emails and devices. Once the budget of a window is used up every registration that names a code gets `429`, the right code included, so the answer reveals nothing while the budget is gone. The price is that a flood of guesses can keep parents from joining a class for as long as it lasts. Eight characters from an alphabet of 32 make about 1.1e12 codes, so even a budget that is spent in full in every window needs decades to hit a code when a thousand classes exist.
 
 Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block new devices for that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
 
