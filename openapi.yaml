@@ -1291,7 +1291,7 @@ components:
       description: Too many requests from this user or for this account (`RATE_LIMITED`)
       headers:
         Retry-After:
-          description: Seconds to wait before the next try
+          description: Seconds to wait before the next try. A try before that is refused again and counts, so it makes the wait longer.
           schema:
             type: string
       content:

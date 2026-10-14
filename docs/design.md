@@ -13,7 +13,7 @@ There is no seed data. Accounts come from `POST /auth/register`.
 
 ## Rate limits
 
-No rate limit looks at the IP address. A school network or an ISP puts many people behind one public address, so an address says little about who is asking and one noisy person would throttle everyone else on it. The `TRUST_PROXY` setting only decides which address the access log shows. Every limit is a sliding window of `LIMITER_EXPIRATION_SECONDS` and answers `429` with `RATE_LIMITED` and a `Retry-After` header. The daily limit of trash claims is not one of these limits, it answers `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After` header.
+No rate limit looks at the IP address. A school network or an ISP puts many people behind one public address, so an address says little about who is asking and one noisy person would throttle everyone else on it. The `TRUST_PROXY` setting only decides which address the access log shows. Every limit is a sliding window of `LIMITER_EXPIRATION_SECONDS` and answers `429` with `RATE_LIMITED` and a `Retry-After` header. A request that is refused still counts, so `Retry-After` is the time until a request fits again with the refused ones included, and a client that keeps sending gets a longer wait, up to the rest of the window and the whole next one. `X-RateLimit-Reset` has the same value on a refused request and the seconds until the window ends on any other. The daily limit of trash claims is not one of these limits, it answers `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After` header.
 
 | Where | Counted per | Allowance |
 |:---|:---|:---|

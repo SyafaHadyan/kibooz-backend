@@ -2,6 +2,8 @@ package ratelimit_test
 
 import (
 	"context"
+	"math"
+	"math/rand/v2"
 	"sync"
 	"testing"
 	"time"
@@ -161,4 +163,67 @@ func TestMemorySweepsOnlyOncePerWindow(t *testing.T) {
 	_, err = store.Hit(ctx, "d", window)
 	require.NoError(t, err)
 	require.Equal(t, size+1, store.Len(), "no second sweep within the same window")
+}
+
+// quiet returns the state of a client that sends nothing for wait after the request that produced h, and then sends one
+func quiet(h ratelimit.Hits, wait time.Duration) ratelimit.Hits {
+	untilNext := window - h.Elapsed
+
+	switch {
+	case wait < untilNext:
+		return ratelimit.Hits{Current: h.Current + 1, Previous: h.Previous, Elapsed: h.Elapsed + wait}
+	case wait < untilNext+window:
+		return ratelimit.Hits{Current: 1, Previous: h.Current, Elapsed: wait - untilNext}
+	default:
+		return ratelimit.Hits{Current: 1}
+	}
+}
+
+func TestRetryAfterIsTheShortestWaitAfterWhichARequestFits(t *testing.T) {
+	for name, test := range map[string]struct {
+		hits  ratelimit.Hits
+		limit int64
+		want  time.Duration
+	}{
+		"nothing before, a full window":     {ratelimit.Hits{Current: 4, Elapsed: 10 * time.Second}, 3, 50*time.Second + 30*time.Second},
+		"the previous window fades out":     {ratelimit.Hits{Current: 1, Previous: 10, Elapsed: 30 * time.Second}, 5, 12 * time.Second},
+		"a limit of one waits for the end":  {ratelimit.Hits{Current: 1, Previous: 1, Elapsed: 20 * time.Second}, 1, 40*time.Second + 60*time.Second},
+		"room for the previous window only": {ratelimit.Hits{Current: 1, Previous: 5, Elapsed: 0}, 2, 60 * time.Second},
+		"already fits":                      {ratelimit.Hits{Current: 1, Previous: 1, Elapsed: 0}, 5, 0},
+		"a client that kept hammering":      {ratelimit.Hits{Current: 100, Elapsed: 0}, 2, 60*time.Second + 59*time.Second + 400*time.Millisecond},
+	} {
+		require.Equal(t, test.want, test.hits.RetryAfter(window, test.limit), name)
+	}
+}
+
+// The wait must be enough and must not be longer than needed, whatever the counts of the two windows are
+func TestRetryAfterWorksForAnyCounts(t *testing.T) {
+	random := rand.New(rand.NewPCG(1, 2))
+
+	for range 20000 {
+		limit := int64(1 + random.IntN(20))
+		hits := ratelimit.Hits{
+			Current:  limit + int64(random.IntN(30)),
+			Previous: int64(random.IntN(60)),
+			Elapsed:  time.Duration(random.Int64N(int64(window))),
+		}
+
+		// only a request that was refused asks how long to wait
+		if hits.Estimate(window) <= limit {
+			continue
+		}
+
+		wait := hits.RetryAfter(window, limit)
+		require.Positive(t, wait, "%+v limit %d", hits, limit)
+		require.LessOrEqual(t, quiet(hits, wait).Estimate(window), limit, "too short, %+v limit %d wait %s", hits, limit, wait)
+		require.Greater(t, quiet(hits, wait-time.Nanosecond).Estimate(window), limit, "too long, %+v limit %d wait %s", hits, limit, wait)
+	}
+}
+
+func TestRetryAfterSurvivesCountsThatWouldOverflow(t *testing.T) {
+	hits := ratelimit.Hits{Current: math.MaxInt64 / 2, Previous: 1, Elapsed: 10 * time.Second}
+
+	wait := hits.RetryAfter(window, 10)
+	require.Positive(t, wait)
+	require.LessOrEqual(t, wait, 2*window, "never longer than the rest of this window and the next one")
 }

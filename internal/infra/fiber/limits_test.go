@@ -447,7 +447,8 @@ func TestTheAnswerTellsTheBudgetAndWhenToComeBack(t *testing.T) {
 	wait, err := strconv.Atoi(refused.Header.Get("Retry-After"))
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, wait, 1)
-	require.LessOrEqual(t, wait, 60, "never longer than a window")
+	// the refused request counts too, so the next window starts with three requests behind it and has to fade them out
+	require.LessOrEqual(t, wait, 120, "never longer than the rest of this window and the next one")
 	require.Equal(t, refused.Header.Get("Retry-After"), refused.Header.Get("X-RateLimit-Reset"))
 }
 
@@ -460,7 +461,38 @@ func TestThePreviousWindowStillCountsForPartOfTheNextOne(t *testing.T) {
 	require.Equal(t, http.StatusOK, status(t, publicServer(6, half), "/login", `{"email":"a@example.com"}`))
 
 	refused := post(t, publicServer(5, half), "/api/v1/login", `{"email":"a@example.com"}`)
-	require.Equal(t, "30", refused.Header.Get("Retry-After"), "the rest of the window")
+	require.Equal(t, "12", refused.Header.Get("Retry-After"), "until the previous window weighs 3 requests or less, and not until the window ends")
+	require.Equal(t, "12", refused.Header.Get("X-RateLimit-Reset"))
+
+	allowed := post(t, publicServer(6, half), "/api/v1/login", `{"email":"a@example.com"}`)
+	require.Equal(t, "30", allowed.Header.Get("X-RateLimit-Reset"), "a request that is not refused is told when the window ends")
+}
+
+// A client that waits as long as it was told must not be refused again, wherever in the window it was refused
+func TestAClientThatWaitsForRetryAfterIsLetThrough(t *testing.T) {
+	for _, offset := range []time.Duration{0, 15 * time.Second, 40 * time.Second, 59 * time.Second} {
+		for _, extra := range []int{0, 1, 5, 40} {
+			clock := time.Unix(0, 0).Add(10*time.Minute + offset)
+			store := ratelimit.NewMemoryWithClock(func() time.Time { return clock })
+			app := publicServer(3, store)
+			body := `{"email":"waits@example.com"}`
+
+			var refused *http.Response
+
+			for range 3 + 1 + extra {
+				refused = post(t, app, "/api/v1/login", body)
+			}
+
+			require.Equal(t, http.StatusTooManyRequests, refused.StatusCode, "offset %s extra %d", offset, extra)
+
+			wait, err := strconv.Atoi(refused.Header.Get("Retry-After"))
+			require.NoError(t, err)
+
+			clock = clock.Add(time.Duration(wait) * time.Second)
+
+			require.Equal(t, http.StatusOK, status(t, app, "/login", body), "offset %s extra %d waited %ds", offset, extra, wait)
+		}
+	}
 }
 
 // A burst from many instances must not lose a request, which is what a counter that is read and written back does
