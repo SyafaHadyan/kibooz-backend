@@ -89,7 +89,12 @@ func Start(version string) (*Bootstrap, error) {
 	app := fiberapp.New(cfg, redis.NewRateStore(cache))
 	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey))
 
-	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, storage.Enabled(), version))
+	var pingStorage pinger
+	if storage.Enabled() {
+		pingStorage = newStorageProbe(storage).Ping
+	}
+
+	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, pingStorage, version))
 
 	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg,
@@ -146,9 +151,9 @@ func (b *Bootstrap) Close() {
 
 type pinger func(ctx context.Context) error
 
-// healthHandler fails only when the database is down and a Redis outage marks the service degraded.
-// Storage is a configuration choice, so it is reported in the checks without changing the status.
-func healthHandler(pingDB pinger, pingRedis pinger, storageEnabled bool, version string) fiber.Handler {
+// healthHandler fails only when the database is down, and a Redis outage or a bucket that refuses writes marks the
+// service degraded. A nil pingStorage means storage is not configured, which is a choice and not a fault.
+func healthHandler(pingDB pinger, pingRedis pinger, pingStorage pinger, version string) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		ctx, cancel := context.WithTimeout(c.Context(), 2*time.Second)
 		defer cancel()
@@ -157,7 +162,7 @@ func healthHandler(pingDB pinger, pingRedis pinger, storageEnabled bool, version
 		state := "ok"
 		checks := fiber.Map{"database": "ok", "redis": "ok", "storage": "ok"}
 
-		if !storageEnabled {
+		if pingStorage == nil {
 			checks["storage"] = "disabled"
 		}
 
@@ -172,6 +177,18 @@ func healthHandler(pingDB pinger, pingRedis pinger, storageEnabled bool, version
 
 			if status == http.StatusOK {
 				state = "degraded"
+			}
+		}
+
+		if pingStorage != nil {
+			if err := pingStorage(ctx); err != nil {
+				log.Printf("storage write probe failed %v", err)
+
+				checks["storage"] = "down"
+
+				if status == http.StatusOK {
+					state = "degraded"
+				}
 			}
 		}
 

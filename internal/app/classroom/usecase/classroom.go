@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
@@ -62,6 +63,8 @@ type ClassroomUseCaseItf interface {
 	) error
 	// ListStudents is for the teachers of the class, it shows each child with the latest mood of today
 	ListStudents(ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params) (dto.ClassStudentList, error)
+	// ListGuidanceReports is for the teachers of the class, it shows which guides the parents applied, newest first
+	ListGuidanceReports(ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params) (dto.GuidanceReportList, error)
 }
 
 // videoTypes maps each accepted video type to the extension of its object key
@@ -798,6 +801,43 @@ func (u *ClassroomUseCase) ListStudents(
 			CurrentPoints: rows[i].CurrentPoints,
 			ClassRank:     rows[i].RankPosition,
 			TodayMood:     rows[i].TodayMood,
+		})
+	}
+
+	return res, nil
+}
+
+func (u *ClassroomUseCase) ListGuidanceReports(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, page pagination.Params,
+) (dto.GuidanceReportList, error) {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return dto.GuidanceReportList{}, err
+	}
+
+	rows, total, err := u.repo.ListGuidanceReports(ctx, classID, page.Limit, page.Offset())
+	if err != nil {
+		return dto.GuidanceReportList{}, apperror.Internal(err)
+	}
+
+	res := dto.GuidanceReportList{
+		Reports:  make([]dto.GuidanceReport, 0, len(rows)),
+		PageInfo: dto.PageInfo{Page: page.Page, Limit: page.Limit, Total: total},
+	}
+
+	for i := range rows {
+		// the guide id was checked when the parent applied it, so a missing one only leaves the title and category empty
+		item, _ := guidance.ByID(rows[i].GuidanceID)
+
+		res.Reports = append(res.Reports, dto.GuidanceReport{
+			ID:            rows[i].ID,
+			StudentID:     rows[i].StudentID,
+			StudentName:   rows[i].StudentName,
+			GuidanceID:    rows[i].GuidanceID,
+			GuidanceTitle: item.Title,
+			Category:      item.Category,
+			ParentNotes:   rows[i].ParentNotes,
+			AppliedAt:     rows[i].AppliedAt,
 		})
 	}
 

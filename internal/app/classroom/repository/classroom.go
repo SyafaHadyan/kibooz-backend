@@ -43,6 +43,12 @@ type StudentRow struct {
 	TodayMood      *constants.Mood
 }
 
+// GuidanceReportRow is an application of a guide together with the name of the child
+type GuidanceReportRow struct {
+	entity.GuidanceApplication `gorm:"embedded"`
+	StudentName                string
+}
+
 const (
 	threadColumns = `p.*, u.full_name AS author_name, u.avatar_url AS author_avatar_url, u.role AS author_role,
 		(u.deleted_at IS NOT NULL) AS author_deleted,
@@ -85,6 +91,8 @@ type ClassroomDBItf interface {
 	DeletePost(ctx context.Context, postID uuid.UUID) (bool, error)
 	// ListStudents returns the children of the class by name, with the latest mood each recorded between from and to
 	ListStudents(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, limit int, offset int) ([]StudentRow, int, error)
+	// ListGuidanceReports returns the guides that parents applied for the children of the class, newest first
+	ListGuidanceReports(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]GuidanceReportRow, int, error)
 }
 
 type ClassroomDB struct {
@@ -373,6 +381,33 @@ func (r *ClassroomDB) ListStudents(
 			ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) AS today_mood`, from, to).
 		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
 		Order("s.full_name ASC, s.id ASC").
+		Limit(limit).Offset(offset).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return rows, int(total), nil
+}
+
+func (r *ClassroomDB) ListGuidanceReports(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]GuidanceReportRow, int, error) {
+	query := r.db.WithContext(ctx).
+		Table("guidance_applications AS g").
+		Joins("JOIN students AS s ON s.id = g.student_id").
+		Where("s.class_id = ? AND s.deleted_at IS NULL", classID)
+
+	var total int64
+
+	err := query.Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var rows []GuidanceReportRow
+
+	err = query.
+		Select("g.*, s.full_name AS student_name").
+		Order("g.applied_at DESC, g.id DESC").
 		Limit(limit).Offset(offset).
 		Scan(&rows).Error
 	if err != nil {
