@@ -202,12 +202,16 @@ func (u *UserUseCase) fileKey(url string) (string, bool) {
 	return key, ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory)
 }
 
+// cleanupBudget is the longest the response of a deletion waits for the bucket. The files it did not reach stay on the
+// queue for the sweep.
+const cleanupBudget = 10 * time.Second
+
 // queueTimeout bounds the write that takes deleted files off the queue
 const queueTimeout = 5 * time.Second
 
 // discardFiles removes the avatars and the trash photos of a deleted account. Their keys are already on the cleanup
-// queue, so a file that cannot be deleted now stays there and a later sweep removes it. The ones that are gone leave
-// the queue.
+// queue, so a file that cannot be deleted now, or that the time budget did not leave room for, stays there and a later
+// sweep removes it. The ones that are gone leave the queue.
 func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
 	var (
 		group sync.WaitGroup
@@ -215,9 +219,17 @@ func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
 		gone  []string
 	)
 
+	// the client may give up, the cleanup still has to run, but not for longer than the budget
+	budget, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBudget)
+	defer cancel()
+
 	limit := make(chan struct{}, discardConcurrency)
 
 	for _, key := range keys {
+		if budget.Err() != nil {
+			break
+		}
+
 		group.Add(1)
 
 		limit <- struct{}{}
@@ -226,7 +238,7 @@ func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
 			defer group.Done()
 			defer func() { <-limit }()
 
-			err := s3.TryDiscard(ctx, u.storage, key)
+			err := u.storage.Delete(budget, key)
 			if err != nil {
 				log.Printf("storage cleanup of %s failed, it will be tried again %v", key, err)
 
@@ -242,8 +254,8 @@ func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
 	group.Wait()
 
 	// the account is already deleted, so a queue that cannot be updated only means a later sweep deletes the file again
-	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
-	defer cancel()
+	queueCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
+	defer stop()
 
 	err := u.repo.UnqueueFileCleanups(queueCtx, gone)
 	if err != nil {

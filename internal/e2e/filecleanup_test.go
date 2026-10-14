@@ -111,8 +111,19 @@ func TestFileCleanupSweep(t *testing.T) {
 		require.Equal(t, 1, attempts, fmt.Sprintf("%s stays with its attempt counted", stuck))
 	})
 
-	t.Run("the file is removed once the bucket works again", func(t *testing.T) {
+	t.Run("a file that failed waits before the next try", func(t *testing.T) {
 		bucket.refused = nil
+
+		removed, err := sweeper.Sweep(context.Background())
+		require.NoError(t, err)
+		require.Zero(t, removed, "the failed file is not due yet")
+
+		rows, _ := queuedAttempts(t, stuck)
+		require.Equal(t, 1, rows)
+	})
+
+	t.Run("the file is removed once it is due and the bucket works again", func(t *testing.T) {
+		require.NoError(t, testDB.Exec("UPDATE file_cleanups SET next_try_at = now() WHERE object_key = ?", stuck).Error)
 
 		removed, err := sweeper.Sweep(context.Background())
 		require.NoError(t, err)

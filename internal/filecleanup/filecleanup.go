@@ -20,6 +20,8 @@ const (
 	batch = 100
 	// attemptTimeout bounds the removal of one file
 	attemptTimeout = 5 * time.Second
+	// maxSteps caps the wait between tries, which grows by 10 minutes with each failed attempt, at 24 hours
+	maxSteps = 144
 )
 
 // Sweeper removes the queued files from the bucket
@@ -32,13 +34,14 @@ func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
 	return &Sweeper{db: db, storage: storage}
 }
 
-// Sweep tries every queued file of one batch, the ones with the fewest failed attempts first and the oldest among them,
-// so files that keep failing cannot keep newer ones from being tried. A file that is gone leaves the queue, and one that still
-// fails stays with one more attempt counted. It returns how many files were removed.
+// Sweep tries the queued files that are due, the longest waiting first, up to one batch. A file that is gone leaves the
+// queue, and one that still fails waits longer before the next try, so files that keep failing cannot keep newer ones
+// from being tried. It returns how many files were removed.
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	var keys []string
 
-	err := s.db.WithContext(ctx).Raw("SELECT object_key FROM file_cleanups ORDER BY attempts, queued_at, object_key LIMIT ?", batch).
+	err := s.db.WithContext(ctx).
+		Raw("SELECT object_key FROM file_cleanups WHERE next_try_at <= now() ORDER BY next_try_at, object_key LIMIT ?", batch).
 		Scan(&keys).Error
 	if err != nil {
 		return 0, err
@@ -47,12 +50,12 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	removed := 0
 
 	for _, key := range keys {
-		if ctx.Err() != nil {
-			return removed, ctx.Err()
-		}
-
 		if s.attempt(ctx, key) {
 			removed++
+		}
+
+		if ctx.Err() != nil {
+			return removed, ctx.Err()
 		}
 	}
 
@@ -68,7 +71,11 @@ func (s *Sweeper) attempt(ctx context.Context, key string) bool {
 	if err != nil {
 		log.Printf("storage cleanup of %s failed again %v", key, err)
 
-		if err := s.db.WithContext(ctx).Exec("UPDATE file_cleanups SET attempts = attempts + 1 WHERE object_key = ?", key).Error; err != nil {
+		if err := s.db.WithContext(ctx).Exec(
+			"UPDATE file_cleanups SET attempts = attempts + 1, next_try_at = now() + LEAST(attempts + 1, ?) * interval '10 minutes' "+
+				"WHERE object_key = ?",
+			maxSteps, key,
+		).Error; err != nil {
 			log.Printf("count the cleanup attempt of %s failed %v", key, err)
 		}
 
