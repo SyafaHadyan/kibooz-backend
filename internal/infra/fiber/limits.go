@@ -34,14 +34,23 @@ func (f *Fiber) newLimiter(limit int, key func(fiber.Ctx) string, skip func(fibe
 		}
 
 		used := hits.Estimate(f.window)
-		untilNext := max(int((f.window-hits.Elapsed+time.Second-1)/time.Second), 1)
+		refused := used > int64(limit)
+
+		// the end of the window is when the counter starts over, but the previous window still weighs on the next one, so
+		// a client that was refused is told when a request fits again and not when the window ends
+		reset := f.window - hits.Elapsed
+		if refused {
+			reset = hits.RetryAfter(f.window, int64(limit))
+		}
+
+		untilReset := strconv.Itoa(max(int((reset+time.Second-1)/time.Second), 1))
 
 		c.Set("X-RateLimit-Limit", strconv.Itoa(limit))
 		c.Set("X-RateLimit-Remaining", strconv.FormatInt(max(int64(limit)-used, 0), 10))
-		c.Set("X-RateLimit-Reset", strconv.Itoa(untilNext))
+		c.Set("X-RateLimit-Reset", untilReset)
 
-		if used > int64(limit) {
-			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(untilNext))
+		if refused {
+			c.Set(fiber.HeaderRetryAfter, untilReset)
 
 			return apperror.ErrRateLimited
 		}

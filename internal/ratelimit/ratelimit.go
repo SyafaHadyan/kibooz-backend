@@ -4,6 +4,7 @@ package ratelimit
 
 import (
 	"context"
+	"math/bits"
 	"sync"
 	"time"
 )
@@ -35,6 +36,43 @@ func (h Hits) Estimate(window time.Duration) int64 {
 	length := int64(window)
 
 	return (h.Previous*remaining+length-1)/length + h.Current
+}
+
+// RetryAfter is how long a client that was refused has to wait until a request fits in limit again, assuming that it sends
+// nothing in between. The request that was just counted already sits in Current, and the next one has to fit as well, so
+// the previous window may still weigh limit - Current - 1 requests while the current window lasts. When the current
+// window alone is full the wait runs into the next window, which then carries Current requests as its previous one, and
+// these fade out by the same rule. After the end of that window no request is left to count. It is an estimate for the
+// same reason Estimate is, and it is the smallest wait for which the estimate of the next request is within the limit.
+func (h Hits) RetryAfter(window time.Duration, limit int64) time.Duration {
+	if room := limit - h.Current - 1; room >= 0 {
+		if h.Previous <= room {
+			return 0
+		}
+
+		// the previous window weighs previous * (window - at) / window at the moment at, and has to drop to room
+		return max(window-share(room, window, h.Previous)-h.Elapsed, 0)
+	}
+
+	// the current window is full, so the next window starts with Current requests behind it
+	return 2*window - h.Elapsed - share(limit-1, window, h.Current)
+}
+
+// share is the part of window that count of total covers, rounded down. The product is taken in 128 bits, because counts
+// can grow without a bound while a client keeps hammering.
+func share(count int64, window time.Duration, total int64) time.Duration {
+	if count <= 0 || total <= 0 {
+		return 0
+	}
+
+	high, low := bits.Mul64(uint64(count), uint64(window))
+	if high >= uint64(total) {
+		return window
+	}
+
+	quotient, _ := bits.Div64(high, low, uint64(total))
+
+	return min(time.Duration(quotient), window)
 }
 
 // Window returns the number of the window that a moment falls in and how far into it the moment is
