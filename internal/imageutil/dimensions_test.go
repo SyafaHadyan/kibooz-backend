@@ -134,3 +134,47 @@ func TestTheLimitMessageNamesTheLimits(t *testing.T) {
 	require.Equal(t, 8192, MaxSide)
 	require.Equal(t, 40_000_000, MaxPixels)
 }
+
+// anmf is the frame of an animation that announces the given size and holds the chunks
+func anmf(width int, height int, chunks ...[]byte) []byte {
+	frame := make([]byte, webpFrameHeaderSize)
+	frame[6], frame[7], frame[8] = byte(width-1), byte((width-1)>>8), byte((width-1)>>16)
+	frame[9], frame[10], frame[11] = byte(height-1), byte((height-1)>>8), byte((height-1)>>16)
+
+	for _, chunk := range chunks {
+		frame = append(frame, chunk...)
+	}
+
+	return frame
+}
+
+func TestEveryFrameOfAnAnimationIsHeldToTheLimits(t *testing.T) {
+	canvas := webpChunk("VP8X", vp8x(100, 100))
+
+	t.Run("an animation within the limits is accepted", func(t *testing.T) {
+		_, err := Inspect(webpFile(canvas,
+			webpChunk("ANMF", anmf(100, 100, webpChunk("VP8L", vp8l(100, 100)))),
+			webpChunk("ANMF", anmf(50, 50, webpChunk("VP8 ", vp8(50, 50)))),
+		), stripMaxBytes)
+		require.NoError(t, err)
+	})
+
+	for name, frame := range map[string][]byte{
+		"a frame that announces more than the canvas": anmf(20000, 20000, webpChunk("VP8L", vp8l(10, 10))),
+		"a frame whose image is wider than allowed":   anmf(10, 10, webpChunk("VP8L", vp8l(10000, 10))),
+		"a frame whose lossy image has too many":      anmf(10, 10, webpChunk("VP8 ", vp8(8000, 6000))),
+	} {
+		_, err := Inspect(webpFile(canvas, webpChunk("ANMF", frame)), stripMaxBytes)
+		require.ErrorIs(t, err, apperror.ErrImageDimensions, name)
+	}
+
+	t.Run("a frame that is too short to read is invalid", func(t *testing.T) {
+		_, err := Inspect(webpFile(canvas, webpChunk("ANMF", make([]byte, 4))), stripMaxBytes)
+		require.ErrorIs(t, err, apperror.ErrInvalidImage)
+	})
+
+	t.Run("a chunk inside a frame that runs past its end is invalid", func(t *testing.T) {
+		_, err := Inspect(webpFile(canvas, webpChunk("ANMF", append(make([]byte, webpFrameHeaderSize), "VP8L\xff\x00\x00\x00"...))), stripMaxBytes)
+		require.ErrorIs(t, err, apperror.ErrInvalidImage)
+	})
+}

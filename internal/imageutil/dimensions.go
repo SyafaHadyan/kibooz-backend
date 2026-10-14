@@ -41,25 +41,44 @@ func sizes(contentType string, data []byte) ([]size, error) {
 // webpMaxField is the largest value of a 14 bit field
 const webpMaxField = 0x3fff
 
-// webpSizes reads the canvas of the extended header and the size of a lossy or lossless image chunk. The data was
-// checked by stripWebP, so the chunks add up to the size of the file, and only their contents need a look.
+// webpFrameHeaderSize is the position, the size, the duration and the flags of a frame in an animation, and its image
+// chunks follow
+const webpFrameHeaderSize = 16
+
+// webpSizes reads the canvas of the extended header, the size of every frame of an animation and the size of every lossy
+// or lossless image chunk, including the ones inside a frame. A file can announce a different size in each of those
+// places, and a decoder may believe any of them, so each one has to be within the limits. The data was checked by
+// stripWebP, so the chunks add up to the size of the file, and only their contents need a look.
 func webpSizes(data []byte) ([]size, error) {
 	if len(data) < webpHeaderSize {
 		return nil, errMalformed
 	}
 
+	found, err := webpChunkSizes(data[webpHeaderSize:])
+	if err != nil {
+		return nil, err
+	}
+
+	if len(found) == 0 {
+		return nil, errMalformed
+	}
+
+	return found, nil
+}
+
+func webpChunkSizes(chunks []byte) ([]size, error) {
 	var found []size
 
-	for i := webpHeaderSize; i+webpChunkHeader <= len(data); {
-		fourCC := string(data[i : i+4])
-		length := int(binary.LittleEndian.Uint32(data[i+4 : i+8]))
+	for i := 0; i+webpChunkHeader <= len(chunks); {
+		fourCC := string(chunks[i : i+4])
+		length := int(binary.LittleEndian.Uint32(chunks[i+4 : i+8]))
 
 		end := i + webpChunkHeader + length + length%2
-		if length < 0 || end > len(data) {
+		if length < 0 || end > len(chunks) {
 			return nil, errMalformed
 		}
 
-		payload := data[i+webpChunkHeader : i+webpChunkHeader+length]
+		payload := chunks[i+webpChunkHeader : i+webpChunkHeader+length]
 
 		switch fourCC {
 		case "VP8X":
@@ -72,6 +91,23 @@ func webpSizes(data []byte) ([]size, error) {
 				width:  1 + (int(payload[4]) | int(payload[5])<<8 | int(payload[6])<<16),
 				height: 1 + (int(payload[7]) | int(payload[8])<<8 | int(payload[9])<<16),
 			})
+		case "ANMF":
+			if len(payload) < webpFrameHeaderSize {
+				return nil, errMalformed
+			}
+
+			// the size of the frame comes after its position, and is stored as the size minus one like the canvas
+			found = append(found, size{
+				width:  1 + (int(payload[6]) | int(payload[7])<<8 | int(payload[8])<<16),
+				height: 1 + (int(payload[9]) | int(payload[10])<<8 | int(payload[11])<<16),
+			})
+
+			inside, err := webpChunkSizes(payload[webpFrameHeaderSize:])
+			if err != nil {
+				return nil, err
+			}
+
+			found = append(found, inside...)
 		case "VP8 ":
 			// the lossy frame has a tag of three bytes and a start code, then the 14 bit sizes
 			if len(payload) < 10 || payload[3] != 0x9d || payload[4] != 0x01 || payload[5] != 0x2a {
@@ -93,10 +129,6 @@ func webpSizes(data []byte) ([]size, error) {
 		}
 
 		i = end
-	}
-
-	if len(found) == 0 {
-		return nil, errMalformed
 	}
 
 	return found, nil
