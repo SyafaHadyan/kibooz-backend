@@ -934,8 +934,10 @@ func redisClient(t *testing.T) *goredis.Client {
 	database, _ := strconv.Atoi(os.Getenv("REDIS_DATABASE"))
 
 	client := goredis.NewClient(&goredis.Options{
-		Addr: os.Getenv("REDIS_ADDRESS") + ":" + os.Getenv("REDIS_PORT"),
-		DB:   database,
+		Addr:     os.Getenv("REDIS_ADDRESS") + ":" + os.Getenv("REDIS_PORT"),
+		Username: os.Getenv("REDIS_USERNAME"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       database,
 	})
 
 	t.Cleanup(func() { _ = client.Close() })
