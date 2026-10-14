@@ -117,7 +117,7 @@ jobs:
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
           # the scan stack has no object storage, so a 503 from the video upload address is expected and must not drown out a real failure
-          errors="$({ grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* 5[0-9]{2} ' zap-out/api.log || true; } | awk '$3 != 503' | wc -l)"
+          errors="$({ grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* 5[0-9]{2} ' zap-out/api.log || true; } | awk '!($3 == 503 && $2 ~ /^\/api\/v1\/classes\/[^\/]+\/videos\/upload-url\/?(\?.*)?$/)' | wc -l)"
           if [ "${errors:-0}" -gt 0 ]; then
             echo "::warning title=ZAP active scan::The API answered $errors request(s) with a server error other than 503, see the summary"
           fi
