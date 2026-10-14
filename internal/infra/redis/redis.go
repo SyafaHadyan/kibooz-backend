@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,13 @@ import (
 const (
 	// downFor is how long calls are skipped after a failure, so an outage costs no network time
 	downFor = 5 * time.Second
+
+	// probeFor is how long the one call that tests a Redis that was down may take. A call is over in about two seconds
+	// even when the network drops every packet, and a call that never reports does not keep the others out for longer.
+	probeFor = 3 * time.Second
+
+	// rejectionLogEvery is how often a command that Redis answers with an error is logged
+	rejectionLogEvery = time.Minute
 
 	usedMarker = "used"
 )
@@ -39,9 +47,13 @@ type CacheItf interface {
 }
 
 type Redis struct {
-	Client    *redis.Client
+	Client *redis.Client
+	// downUntil is zero while Redis is in use. After a failure it is the moment when one call may test Redis again, and
+	// while that call is under way it is the moment when another may.
 	downUntil atomic.Int64
 	down      atomic.Bool
+
+	lastRejection atomic.Int64
 
 	// prefix comes before every key, so a Redis that other applications use too never mixes their keys with these
 	prefix string
@@ -80,37 +92,102 @@ func newOptions(cfg *env.Env) *redis.Options {
 	return opts
 }
 
-// allow returns ErrUnavailable while the breaker is open
+// allow returns ErrUnavailable while the breaker is open. Once the pause is over it lets exactly one call through to find
+// out whether Redis is back and keeps the others out until that call has reported, so a Redis that is still down costs one
+// slow call and not one for every request that arrives in the meantime.
 func (r *Redis) allow() error {
-	if time.Now().UnixNano() < r.downUntil.Load() {
+	until := r.downUntil.Load()
+	if until == 0 {
+		return nil
+	}
+
+	now := time.Now().UnixNano()
+	if now < until {
 		return ErrUnavailable
 	}
 
-	return nil
+	if r.downUntil.CompareAndSwap(until, now+int64(probeFor)) {
+		return nil
+	}
+
+	return ErrUnavailable
 }
 
 // record updates the breaker from the result of a call and logs only when the state changes
 func (r *Redis) record(err error) error {
-	if err == nil || errors.Is(err, redis.Nil) {
+	switch kind := classify(err); kind {
+	case healthy, rejected:
+		// Redis answered, so it is reachable even when it refused the command
+		r.downUntil.Store(0)
+
 		if r.down.CompareAndSwap(true, false) {
 			log.Println("redis is available again")
 		}
 
-		return err
-	}
+		if kind == rejected {
+			r.logRejection(err)
+		}
+	case abandoned:
+		// the caller gave up, which says nothing about the health of Redis
+	case outage:
+		r.downUntil.Store(time.Now().Add(downFor).UnixNano())
 
-	// a client that gave up on its own request says nothing about Redis health
-	if errors.Is(err, context.Canceled) {
-		return err
-	}
-
-	r.downUntil.Store(time.Now().Add(downFor).UnixNano())
-
-	if r.down.CompareAndSwap(false, true) {
-		log.Printf("redis became unavailable, continuing without it %v", err)
+		if r.down.CompareAndSwap(false, true) {
+			log.Printf("redis became unavailable, continuing without it %v", err)
+		}
 	}
 
 	return err
+}
+
+// logRejection logs an error that Redis answered with, at most once a minute because it comes with every call
+func (r *Redis) logRejection(err error) {
+	now := time.Now().UnixNano()
+
+	last := r.lastRejection.Load()
+	if now-last < int64(rejectionLogEvery) || !r.lastRejection.CompareAndSwap(last, now) {
+		return
+	}
+
+	log.Printf("redis refused a command, the call goes on without it %v", err)
+}
+
+type outcome int
+
+const (
+	healthy outcome = iota
+	// rejected is an error that Redis answered with, such as a key of the wrong type or a user without the permission
+	rejected
+	// abandoned is a call that the caller gave up on, by cancelling it or by running out of time
+	abandoned
+	// outage is anything that says Redis cannot be used right now
+	outage
+)
+
+// unavailableReplies are the errors that Redis answers with while it cannot serve the call, and not because of the call
+var unavailableReplies = []string{"LOADING", "READONLY", "MASTERDOWN", "CLUSTERDOWN", "BUSY", "TRYAGAIN", "OOM"}
+
+func classify(err error) outcome {
+	if err == nil || errors.Is(err, redis.Nil) {
+		return healthy
+	}
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return abandoned
+	}
+
+	var reply redis.Error
+	if !errors.As(err, &reply) {
+		return outage
+	}
+
+	for _, prefix := range unavailableReplies {
+		if strings.HasPrefix(reply.Error(), prefix) {
+			return outage
+		}
+	}
+
+	return rejected
 }
 
 // key returns the name that a key has in Redis
@@ -118,8 +195,11 @@ func (r *Redis) key(key string) string {
 	return r.prefix + key
 }
 
+// Available reports whether calls reach Redis. It only looks, and never takes the one call that tests a Redis that was down.
 func (r *Redis) Available() bool {
-	return r.allow() == nil
+	until := r.downUntil.Load()
+
+	return until == 0 || time.Now().UnixNano() >= until
 }
 
 func (r *Redis) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
