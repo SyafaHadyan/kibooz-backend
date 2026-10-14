@@ -21,6 +21,9 @@ const uniqueViolation = "23505"
 type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
+	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
+	// before it spends the time of a password hash
+	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
 	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
@@ -81,6 +84,14 @@ func (r *AuthDB) FindUserByEmail(ctx context.Context, email string) (*entity.Use
 	}
 
 	return &user, nil
+}
+
+func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, error) {
+	var found int64
+
+	err := r.db.WithContext(ctx).Model(&entity.Class{}).Where("join_code = ?", joinCode).Limit(1).Count(&found).Error
+
+	return found > 0, err
 }
 
 func (r *AuthDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
