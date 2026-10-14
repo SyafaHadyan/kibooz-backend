@@ -1303,7 +1303,7 @@ components:
           schema:
             type: string
         X-RateLimit-Reset:
-          description: Seconds until the window ends, and the same as Retry-After when the request was refused
+          description: Seconds until the window ends. On a refused request it is the wait until a request fits again, the same as Retry-After, which can be longer than the rest of the window
           schema:
             type: string
       content:
