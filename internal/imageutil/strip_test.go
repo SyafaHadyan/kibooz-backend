@@ -212,7 +212,7 @@ func TestStripJPEGDropsAnApplicationSegmentThatIsNotTheJFIFHeader(t *testing.T) 
 	}
 }
 
-func TestStripJPEGKeepsOnlyTheFirstJFIFHeader(t *testing.T) {
+func TestStripJPEGKeepsOnlyTheFirstJFIFHeaderWithoutItsTail(t *testing.T) {
 	jfif := func(tail string) []byte {
 		return jpegSegment(0xE0, []byte("JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"+tail))
 	}
@@ -220,8 +220,58 @@ func TestStripJPEGKeepsOnlyTheFirstJFIFHeader(t *testing.T) {
 	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), jfif("first"), jfif("second")), stripMaxBytes)
 	require.NoError(t, err)
 
-	require.Contains(t, string(clean.Data), "first")
+	require.Equal(t, 1, bytes.Count(clean.Data, []byte("JFIF")))
+	require.NotContains(t, string(clean.Data), "first")
 	require.NotContains(t, string(clean.Data), "second")
+}
+
+func TestStripJPEGRemovesTheThumbnailOfTheJFIFHeader(t *testing.T) {
+	// the header says that a thumbnail of 2 by 2 pixels follows, and its 12 bytes could hold anything
+	header := []byte("JFIF\x00\x01\x02\x01\x00\x48\x00\x48\x02\x02SecretThumb")
+
+	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), jpegSegment(0xE0, header)), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.NotContains(t, string(clean.Data), "SecretThumb")
+
+	want := jpegSegment(0xE0, []byte("JFIF\x00\x01\x02\x01\x00\x48\x00\x48\x00\x00"))
+	require.Equal(t, want, clean.Data[2:2+len(want)], "the version, units and density stay and the thumbnail is 0 by 0")
+}
+
+func TestStripJPEGDropsAJFIFHeaderThatIsTooShort(t *testing.T) {
+	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), jpegSegment(0xE0, []byte("JFIF\x00\x01\x01"))), stripMaxBytes)
+	require.NoError(t, err)
+	require.NotContains(t, string(clean.Data), "JFIF")
+}
+
+func TestStripJPEGCutsTheAdobeSegmentToItsFields(t *testing.T) {
+	adobe := jpegSegment(0xEE, []byte("Adobe\x00\x64\x00\x00\x00\x00\x01SecretAdobe"))
+
+	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), adobe), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.NotContains(t, string(clean.Data), "SecretAdobe")
+	require.Contains(t, string(clean.Data), string(jpegSegment(0xEE, []byte("Adobe\x00\x64\x00\x00\x00\x00\x01"))))
+
+	short, err := Inspect(withJPEGMetadata(t, encodeJPEG(t), jpegSegment(0xEE, []byte("Adobe\x00"))), stripMaxBytes)
+	require.NoError(t, err)
+	require.NotContains(t, string(short.Data), "Adobe")
+}
+
+func TestStripJPEGDropsContentCredentialsAndMarkersItDoesNotKnow(t *testing.T) {
+	clean, err := Inspect(withJPEGMetadata(t, encodeJPEG(t),
+		jpegSegment(0xEB, []byte("JP\x00\x00jumbc2paSecretC2PA")),
+		jpegSegment(0x02, []byte("SecretReserved")),
+		jpegSegment(0xC8, []byte("SecretJPG")),
+		jpegSegment(0xDE, []byte("SecretHierarchical")),
+		jpegSegment(0xF3, []byte("SecretExtension")),
+	), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.NotContains(t, string(clean.Data), "Secret")
+
+	_, err = jpeg.Decode(bytes.NewReader(clean.Data))
+	require.NoError(t, err)
 }
 
 func TestStripJPEGIsAFixedPoint(t *testing.T) {
@@ -381,7 +431,7 @@ func TestStripWebPRemovesExifAndXMPAndKeepsTheOrientation(t *testing.T) {
 	dirty := webpFile(
 		webpChunk("VP8X", flags),
 		webpChunk("ICCP", []byte("profile")),
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.LittleEndian, 3)),
 		webpChunk("XMP ", []byte("SecretXMP")),
 	)
@@ -394,7 +444,7 @@ func TestStripWebPRemovesExifAndXMPAndKeepsTheOrientation(t *testing.T) {
 
 	chunks := webpChunks(t, clean.Data)
 	require.Equal(t, byte(0x10|webpFlagsEXIF), chunks["VP8X"][0])
-	require.Equal(t, []byte("pixel data"), chunks["VP8L"])
+	require.Equal(t, vp8l(16, 16), chunks["VP8L"])
 	require.Equal(t, []byte("profile"), chunks["ICCP"])
 	require.NotContains(t, chunks, "XMP ")
 	require.Equal(t, 3, exifOrientation(chunks["EXIF"]))
@@ -406,7 +456,7 @@ func TestStripWebPClearsTheFlagsWhenNoOrientationStays(t *testing.T) {
 
 	clean, err := Inspect(webpFile(
 		webpChunk("VP8X", flags),
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.BigEndian, 1)),
 		webpChunk("XMP ", []byte("SecretXMP")),
 	), stripMaxBytes)
@@ -420,13 +470,13 @@ func TestStripWebPClearsTheFlagsWhenNoOrientationStays(t *testing.T) {
 
 func TestStripWebPWithoutTheExtendedHeaderCannotCarryAnOrientation(t *testing.T) {
 	clean, err := Inspect(webpFile(
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.BigEndian, 6)),
 	), stripMaxBytes)
 	require.NoError(t, err)
 
 	chunks := webpChunks(t, clean.Data)
-	require.Equal(t, []byte("pixel data"), chunks["VP8L"])
+	require.Equal(t, vp8l(16, 16), chunks["VP8L"])
 	require.NotContains(t, chunks, "EXIF")
 }
 
@@ -443,5 +493,129 @@ func TestExifOrientationIgnoresDamagedBlocks(t *testing.T) {
 		"entries past the end": valid[:20],
 	} {
 		require.Zero(t, exifOrientation(tiff), name)
+	}
+}
+
+func TestStripPNGKeepsOnlyTheChunksThatTheImageNeeds(t *testing.T) {
+	encoded := encodePNG(t)
+	headerEnd := len(pngSignature) + 25
+
+	var dirty []byte
+	dirty = append(dirty, encoded[:headerEnd]...)
+
+	for _, kind := range []string{"gAMA", "cHRM", "sRGB", "iCCP", "sBIT", "cICP", "bKGD", "pHYs", "tRNS"} {
+		dirty = append(dirty, pngChunk(kind, []byte{0, 0, 0, 1, 0, 0, 0, 1})...)
+	}
+
+	// content credentials, a private chunk, a suggested palette, a stereo marker and a chunk that does not exist yet
+	for _, kind := range []string{"caBX", "prVt", "sPLT", "sTER", "xyZZ", "oFFs", "pCAL"} {
+		dirty = append(dirty, pngChunk(kind, []byte("SecretChunk"))...)
+	}
+
+	dirty = append(dirty, encoded[headerEnd:]...)
+
+	clean, err := Inspect(dirty, stripMaxBytes)
+	require.NoError(t, err)
+	require.NotContains(t, string(clean.Data), "SecretChunk")
+
+	types := pngChunkTypes(t, clean.Data)
+	for _, kind := range []string{"gAMA", "cHRM", "sRGB", "iCCP", "sBIT", "cICP", "bKGD", "pHYs", "tRNS"} {
+		require.Contains(t, types, kind)
+	}
+
+	for _, kind := range []string{"caBX", "prVt", "sPLT", "sTER", "xyZZ", "oFFs", "pCAL"} {
+		require.NotContains(t, types, kind)
+	}
+
+	require.Equal(t, "IHDR", types[0])
+	require.Contains(t, types, "IDAT")
+	require.Equal(t, "IEND", types[len(types)-1])
+}
+
+func TestStripPNGRefusesACriticalChunkItDoesNotKnow(t *testing.T) {
+	encoded := encodePNG(t)
+	headerEnd := len(pngSignature) + 25
+
+	var dirty []byte
+	dirty = append(dirty, encoded[:headerEnd]...)
+	dirty = append(dirty, pngChunk("XTRA", []byte("a chunk that decides how the image reads"))...)
+	dirty = append(dirty, encoded[headerEnd:]...)
+
+	_, err := Inspect(dirty, stripMaxBytes)
+	require.ErrorIs(t, err, apperror.ErrInvalidImage)
+
+	// the same chunk with a lower case first letter is optional, so it is only dropped
+	dirty = append([]byte{}, encoded[:headerEnd]...)
+	dirty = append(dirty, pngChunk("xTRA", []byte("optional"))...)
+	dirty = append(dirty, encoded[headerEnd:]...)
+
+	clean, err := Inspect(dirty, stripMaxBytes)
+	require.NoError(t, err)
+	require.NotContains(t, pngChunkTypes(t, clean.Data), "xTRA")
+}
+
+func TestStripWebPKeepsOnlyTheChunksThatTheImageNeeds(t *testing.T) {
+	flags := []byte{0x10, 0, 0, 0, 15, 0, 0, 15, 0, 0}
+
+	clean, err := Inspect(webpFile(
+		webpChunk("VP8X", flags),
+		webpChunk("ICCP", []byte("profile")),
+		webpChunk("C2PA", []byte("SecretC2PA")),
+		webpChunk("ALPH", []byte("alpha")),
+		webpChunk("VP8L", vp8l(16, 16)),
+		webpChunk("xyZZ", []byte("SecretUnknown")),
+	), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.NotContains(t, string(clean.Data), "Secret")
+
+	chunks := webpChunks(t, clean.Data)
+	require.Equal(t, []byte("profile"), chunks["ICCP"])
+	require.Equal(t, []byte("alpha"), chunks["ALPH"])
+	require.Contains(t, chunks, "VP8X")
+	require.Contains(t, chunks, "VP8L")
+	require.NotContains(t, chunks, "C2PA")
+	require.NotContains(t, chunks, "xyZZ")
+}
+
+func TestStripWebPCleansTheChunksInsideTheFramesOfAnAnimation(t *testing.T) {
+	frame := func(chunks ...[]byte) []byte {
+		payload := make([]byte, 16)
+		for _, chunk := range chunks {
+			payload = append(payload, chunk...)
+		}
+
+		return payload
+	}
+
+	flags := []byte{0x02, 0, 0, 0, 15, 0, 0, 15, 0, 0}
+
+	clean, err := Inspect(webpFile(
+		webpChunk("VP8X", flags),
+		webpChunk("ANIM", []byte{0, 0, 0, 0, 0, 0}),
+		webpChunk("ANMF", frame(webpChunk("VP8L", vp8l(16, 16)), webpChunk("xyZZ", []byte("SecretFrame")))),
+		webpChunk("ANMF", frame(webpChunk("ALPH", []byte("a")), webpChunk("VP8 ", vp8(16, 16)), webpChunk("EXIF", []byte("SecretFrameExif")))),
+	), stripMaxBytes)
+	require.NoError(t, err)
+
+	require.NotContains(t, string(clean.Data), "Secret")
+	require.Equal(t, 2, bytes.Count(clean.Data, []byte("ANMF")))
+	require.Contains(t, string(clean.Data), "ANIM")
+
+	// the sizes of the file and of the frames were written again, so the structure still parses
+	_, err = Inspect(clean.Data, stripMaxBytes)
+	require.NoError(t, err)
+}
+
+func TestStripWebPRefusesAFrameWithoutAnImage(t *testing.T) {
+	flags := []byte{0x02, 0, 0, 0, 15, 0, 0, 15, 0, 0}
+
+	for name, payload := range map[string][]byte{
+		"a frame shorter than its header":   make([]byte, 4),
+		"a frame with only unknown chunks":  append(make([]byte, 16), webpChunk("xyZZ", []byte("x"))...),
+		"a chunk past the end of the frame": append(make([]byte, 16), []byte("VP8L\xff\x00\x00\x00")...),
+	} {
+		_, err := Inspect(webpFile(webpChunk("VP8X", flags), webpChunk("ANMF", payload)), stripMaxBytes)
+		require.ErrorIs(t, err, apperror.ErrInvalidImage, name)
 	}
 }

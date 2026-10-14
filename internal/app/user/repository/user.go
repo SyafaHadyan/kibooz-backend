@@ -13,6 +13,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
+	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 )
 
 type UserDBItf interface {
@@ -157,7 +158,12 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 		// a retried transaction starts from nothing
 		deleted = DeletedAccount{}
 
-		var err error
+		// refresh tokens have no soft delete, removing them ends every session. This comes first because it waits for a
+		// refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
+		err := sessions.EndUser(tx, userID)
+		if err != nil {
+			return err
+		}
 
 		switch role {
 		case constants.RoleWali:
@@ -175,12 +181,7 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
 		}
 
-		if err != nil {
-			return err
-		}
-
-		// refresh tokens have no soft delete, removing them ends every session
-		return tx.Where("user_id = ?", userID).Delete(&entity.RefreshToken{}).Error
+		return err
 	})
 	if err != nil {
 		return DeletedAccount{}, err

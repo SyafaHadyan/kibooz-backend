@@ -45,6 +45,7 @@ jobs:
             # the scan sends thousands of requests and the default limits would answer 429 and hide the real responses
             echo "USER_LIMITER_MAX=10000000"
             echo "AUTH_LIMITER_MAX=10000000"
+            echo "CLASS_CODE_LIMITER_MAX=10000000"
             echo "KEEPALIVE_SECONDS=0"
           } > .env
 

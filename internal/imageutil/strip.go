@@ -10,7 +10,9 @@ var errMalformed = errors.New("malformed image")
 
 // strip removes the metadata of an image without decoding it, so the pixels stay exactly as they were. Location, camera,
 // time and software details live in the metadata, so none of them is stored. Only the orientation of an EXIF block is
-// kept, because a photo from a phone would show up sideways without it.
+// kept, because a photo from a phone would show up sideways without it. Each format has a list of the parts that stay,
+// and everything else is dropped, so a part that this code does not know, such as the signed content credentials of
+// C2PA or a chunk that a future tool adds, is never carried along.
 func strip(contentType string, data []byte) ([]byte, error) {
 	switch contentType {
 	case "image/jpeg":
@@ -89,10 +91,10 @@ func stripJPEG(data []byte) ([]byte, error) {
 
 		switch {
 		case marker == jpegAPP0:
-			// only the JFIF header stays, because the JFXX extension and the other uses of this segment can carry a thumbnail
-			// or any other data
-			if app0 == nil && bytes.HasPrefix(payload, []byte("JFIF\x00")) {
-				app0 = segment
+			// only the JFIF header stays, rewritten without a thumbnail, because the thumbnail and the JFXX extension and
+			// the other uses of this segment can carry a picture or any other data
+			if app0 == nil && bytes.HasPrefix(payload, []byte("JFIF\x00")) && len(payload) >= jfifHeaderSize {
+				app0 = jfifWithoutThumbnail(payload)
 			}
 		case marker == jpegAPP1:
 			if bytes.HasPrefix(payload, []byte("Exif\x00\x00")) && orientation == 0 {
@@ -103,13 +105,14 @@ func stripJPEG(data []byte) ([]byte, error) {
 				rest.Write(segment)
 			}
 		case marker == jpegAPP14:
-			if bytes.HasPrefix(payload, []byte("Adobe")) {
-				rest.Write(segment)
+			// the color transform is in the first 12 bytes, and anything after them is not part of the segment
+			if bytes.HasPrefix(payload, []byte("Adobe")) && len(payload) >= adobeSegmentSize {
+				rest.Write(markerSegment(jpegAPP14, payload[:adobeSegmentSize]))
 			}
-		case marker > jpegAPP0 && marker <= 0xEF, marker == 0xFE:
-			// the other application segments and the comments hold metadata only
-		default:
+		case jpegStructure(marker):
 			rest.Write(segment)
+		default:
+			// the other application segments, the comments and the markers that no decoder needs hold metadata or nothing
 		}
 
 		if marker != jpegSOS {
@@ -153,6 +156,40 @@ func stripJPEG(data []byte) ([]byte, error) {
 	}
 }
 
+const (
+	// the JFIF header is the identifier, the version, the units and the two densities, and then the size of a thumbnail
+	jfifHeaderSize = 14
+
+	// the Adobe segment is the identifier, a version, two flags and the color transform
+	adobeSegmentSize = 12
+)
+
+// jfifWithoutThumbnail returns the JFIF segment of payload with a thumbnail of 0 by 0 pixels, which is none
+func jfifWithoutThumbnail(payload []byte) []byte {
+	return markerSegment(jpegAPP0, append(bytes.Clone(payload[:jfifHeaderSize-2]), 0, 0))
+}
+
+func markerSegment(marker byte, payload []byte) []byte {
+	segment := []byte{jpegMarkerPrefix, marker}
+	segment = binary.BigEndian.AppendUint16(segment, uint16(len(payload)+2)) //nolint:gosec // a payload that came out of a segment fits
+
+	return append(segment, payload...)
+}
+
+// jpegStructure tells the markers whose segments say how the picture is coded: the frame header, the tables, the restart
+// interval, the number of lines and the scan header
+func jpegStructure(marker byte) bool {
+	switch {
+	case marker >= 0xC0 && marker <= 0xCF:
+		// the frame headers, the Huffman and the arithmetic tables, without the reserved JPG marker
+		return marker != 0xC8
+	case marker == 0xDA, marker == 0xDB, marker == 0xDC, marker == 0xDD:
+		return true
+	default:
+		return false
+	}
+}
+
 func assembleJPEG(app0 []byte, orientation int, rest []byte) []byte {
 	out := make([]byte, 0, 2+len(app0)+36+len(rest))
 	out = append(out, jpegMarkerPrefix, jpegSOI)
@@ -170,14 +207,33 @@ func assembleJPEG(app0 []byte, orientation int, rest []byte) []byte {
 
 var pngSignature = []byte("\x89PNG\r\n\x1a\n")
 
-// the chunks of a PNG that carry text, time or EXIF details
-var pngMetadataChunks = map[string]bool{
-	"eXIf": true,
-	"tEXt": true,
-	"zTXt": true,
-	"iTXt": true,
-	"tIME": true,
+// the chunks of a PNG that stay. They are the ones the picture needs to be drawn, which are the critical chunks, the
+// transparency, the color and gamma details, the physical size, the background and the chunks of an animation. The
+// chunks that carry text, time, EXIF details, content credentials or anything that is not listed here are dropped.
+var pngKeptChunks = map[string]bool{
+	"IHDR": true,
+	"PLTE": true,
+	"IDAT": true,
+	"IEND": true,
+	"tRNS": true,
+	"gAMA": true,
+	"cHRM": true,
+	"sRGB": true,
+	"iCCP": true,
+	"sBIT": true,
+	"cICP": true,
+	"mDCV": true,
+	"cLLI": true,
+	"bKGD": true,
+	"hIST": true,
+	"pHYs": true,
+	"acTL": true,
+	"fcTL": true,
+	"fdAT": true,
 }
+
+// pngAncillaryBit is set in the first letter of the name of a chunk that a reader may skip, which makes it lower case
+const pngAncillaryBit = 0x20
 
 func stripPNG(data []byte) ([]byte, error) {
 	if !bytes.HasPrefix(data, pngSignature) {
@@ -201,8 +257,13 @@ func stripPNG(data []byte) ([]byte, error) {
 			return nil, errMalformed
 		}
 
-		if !pngMetadataChunks[chunkType] {
+		switch {
+		case pngKeptChunks[chunkType]:
 			out = append(out, data[i:end]...)
+		case chunkType[0]&pngAncillaryBit == 0:
+			// a capital first letter marks a chunk that a reader needs to interpret the image, so an editor that does not
+			// know it has to stop and not hand on a picture that may now show something else
+			return nil, errMalformed
 		}
 
 		i = end
@@ -211,6 +272,25 @@ func stripPNG(data []byte) ([]byte, error) {
 			return out, nil
 		}
 	}
+}
+
+// the chunks of a WebP file that stay, besides the EXIF chunk that is rebuilt with the orientation only. They are the
+// extended header, the image data with its alpha channel, the animation with its frames and the color profile.
+var webpKeptChunks = map[string]bool{
+	"VP8X": true,
+	"VP8 ": true,
+	"VP8L": true,
+	"ALPH": true,
+	"ANIM": true,
+	"ANMF": true,
+	"ICCP": true,
+}
+
+// the chunks inside the frame of an animation that stay
+var webpKeptFrameChunks = map[string]bool{
+	"VP8 ": true,
+	"VP8L": true,
+	"ALPH": true,
 }
 
 const (
@@ -263,8 +343,19 @@ func stripWebP(data []byte) ([]byte, error) {
 			if orientation == 0 {
 				orientation = exifOrientation(bytes.TrimPrefix(payload, []byte("Exif\x00\x00")))
 			}
-		case "XMP ":
+		case "ANMF":
+			// the frame of an animation holds chunks of its own, and the unknown ones among them are dropped as well
+			frame, err := cleanWebPFrame(payload)
+			if err != nil {
+				return nil, err
+			}
+
+			chunks.Write(buildWebPChunk("ANMF", frame))
 		default:
+			if !webpKeptChunks[fourCC] {
+				break
+			}
+
 			if fourCC == "VP8X" {
 				// the extended header is flags, a reserved field and two sizes, which makes exactly 10 bytes
 				if size != webpExtendedHeaderSize {
@@ -308,6 +399,55 @@ func stripWebP(data []byte) ([]byte, error) {
 	out = append(out, "WEBP"...)
 
 	return append(out, body...), nil
+}
+
+// buildWebPChunk builds a chunk with its header and the byte that pads it to an even size
+func buildWebPChunk(fourCC string, payload []byte) []byte {
+	chunk := append([]byte(fourCC), binary.LittleEndian.AppendUint32(nil, uint32(len(payload)))...) //nolint:gosec // see stripWebP
+	chunk = append(chunk, payload...)
+
+	if len(payload)%2 == 1 {
+		chunk = append(chunk, 0)
+	}
+
+	return chunk
+}
+
+// cleanWebPFrame keeps the header of a frame and the chunks of its image and drops the rest
+func cleanWebPFrame(payload []byte) ([]byte, error) {
+	if len(payload) < webpFrameHeaderSize {
+		return nil, errMalformed
+	}
+
+	frame := bytes.Clone(payload[:webpFrameHeaderSize])
+	seenImage := false
+
+	for i := webpFrameHeaderSize; i < len(payload); {
+		if i+webpChunkHeader > len(payload) {
+			return nil, errMalformed
+		}
+
+		fourCC := string(payload[i : i+4])
+		size := int(binary.LittleEndian.Uint32(payload[i+4 : i+8]))
+
+		end := i + webpChunkHeader + size + size%2
+		if size < 0 || size > len(payload) || end > len(payload) {
+			return nil, errMalformed
+		}
+
+		if webpKeptFrameChunks[fourCC] {
+			frame = append(frame, payload[i:end]...)
+			seenImage = seenImage || fourCC != "ALPH"
+		}
+
+		i = end
+	}
+
+	if !seenImage {
+		return nil, errMalformed
+	}
+
+	return frame, nil
 }
 
 const (
