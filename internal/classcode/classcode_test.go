@@ -29,6 +29,11 @@ func TestNewCodeUsesTheAlphabetAndTheFixedLength(t *testing.T) {
 	require.Greater(t, len(seen), 150, "codes must be random")
 }
 
+func TestACodeHasEightCharactersFromAnAlphabetOf32(t *testing.T) {
+	require.Equal(t, 8, length)
+	require.Len(t, alphabet, 32)
+}
+
 func TestTheAlphabetLeavesOutConfusingCharacters(t *testing.T) {
 	for _, char := range "01IO" {
 		require.False(t, strings.ContainsRune(alphabet, char), "%q is easy to confuse", char)

@@ -41,11 +41,24 @@ type fakeRepo struct {
 	registered     *entity.RefreshToken
 	separateTokens int
 	createErr      error
+
+	// unknownClassCode makes every class code a code that no class uses, and classLookups counts the lookups
+	unknownClassCode bool
+	classLookups     int
+	lookupErr        error
+	lookedUp         string
 }
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
 
 func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) { return f.user, nil }
+
+func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, error) {
+	f.classLookups++
+	f.lookedUp = joinCode
+
+	return !f.unknownClassCode, f.lookupErr
+}
 
 func (f *fakeRepo) CreateGuru(_ context.Context, _ *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
 	if f.createErr != nil {
@@ -398,4 +411,59 @@ func TestASessionStartsWithItsOwnFamilyAndNeverOutlastsItsMaximum(t *testing.T) 
 	require.NotEqual(t, uuid.Nil, session.FamilyID)
 	require.Equal(t, session.CreatedAt, session.SessionStartedAt)
 	require.Equal(t, 7*24*time.Hour, session.ExpiresAt.Sub(session.CreatedAt), "the shorter of the two limits")
+}
+
+func waliRegistration(code string) dto.RegisterRequest {
+	return dto.RegisterRequest{
+		Email: "parent@example.com", Password: "correct horse", FullName: "New Parent", Role: constants.RoleWali,
+		ClassCode: code, Student: &dto.RegisterStudent{FullName: "New Child"},
+	}
+}
+
+func TestACodeThatNoClassUsesIsRefusedBeforeAnythingIsCreated(t *testing.T) {
+	repo := &fakeRepo{unknownClassCode: true}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	res, err := useCase.Register(context.Background(), waliRegistration(" ab12cd34 "))
+
+	require.ErrorIs(t, err, apperror.ErrClassCodeNotFound)
+	require.Empty(t, res.RefreshToken)
+	require.Equal(t, 1, repo.classLookups)
+	require.Equal(t, "AB12CD34", repo.lookedUp, "the code is looked up the way the registration stores it")
+	require.Nil(t, repo.registered)
+}
+
+func TestACodeThatAClassUsesGoesOnToRegisterTheParent(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	res, err := useCase.Register(context.Background(), waliRegistration("ab12cd34"))
+
+	require.NoError(t, err)
+	require.NotEmpty(t, res.RefreshToken)
+	require.Equal(t, 1, repo.classLookups)
+	require.NotNil(t, repo.registered)
+}
+
+func TestARegistrationFailsWhenTheClassCodeCannotBeLookedUp(t *testing.T) {
+	repo := &fakeRepo{lookupErr: errors.New("connection reset")}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	_, err := useCase.Register(context.Background(), waliRegistration("ab12cd34"))
+
+	require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
+	require.Nil(t, repo.registered)
+}
+
+func TestATeacherRegistrationLooksUpNoClassCode(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	_, err := useCase.Register(context.Background(), dto.RegisterRequest{
+		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru,
+		Class: &dto.RegisterClass{Name: "Bunga"},
+	})
+
+	require.NoError(t, err)
+	require.Zero(t, repo.classLookups)
 }

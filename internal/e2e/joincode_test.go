@@ -27,7 +27,7 @@ func TestRotateJoinCode(t *testing.T) {
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 
 		newCode = res.data("joinCode").(string)
-		require.Len(t, newCode, 6)
+		require.Len(t, newCode, 8)
 		require.NotEqual(t, oldCode, newCode)
 
 		dashboard := call(t, http.MethodGet, "/api/v1/guru/dashboard?classId="+classID, guru.Token, nil)
