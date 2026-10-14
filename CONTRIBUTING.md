@@ -2,6 +2,8 @@
 
 Thanks for helping with Kibooz Backend. This guide keeps changes easy to review and release.
 
+Everyone who takes part in this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Set up
 
 You need the Go version in `go.mod`, Docker, and a PostgreSQL database. Redis is optional.
