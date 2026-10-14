@@ -6,19 +6,19 @@ x-logging: &default-logging
 
 services:
   api:
-    image: syafa/kibooz-backend:latest
+    image: syafa/kibooz-backend:${IMAGE_TAG:-latest}
     container_name: kibooz-api
     restart: always
     env_file: .env
     environment:
-      APP_ENV: ${APP_ENV}
       DB_HOST: db
       DB_PORT: 5432
       REDIS_ADDRESS: redis
       REDIS_PORT: 6379
       GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
     ports:
-      - "${APP_PORT}:${APP_PORT}"
+      # only the reverse proxy on this host reaches the API, so it is never exposed on a public address by accident
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
     depends_on:
       db:
         condition: service_healthy
