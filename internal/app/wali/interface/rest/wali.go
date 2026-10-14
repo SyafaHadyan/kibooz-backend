@@ -20,7 +20,7 @@ type WaliHandler struct {
 	useCase usecase.WaliUseCaseItf
 }
 
-func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.WaliUseCaseItf) {
+func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeLimiter fiber.Handler, useCase usecase.WaliUseCaseItf) {
 	handler := WaliHandler{useCase: useCase}
 
 	group := router.Group("/wali", mw.Authentication, mw.RequireRole(constants.RoleWali))
@@ -28,6 +28,9 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Get("/dashboard", handler.Dashboard)
 	group.Post("/guidance/apply", handler.ApplyGuidance)
 	group.Get("/child/:studentId", handler.Child)
+	group.Get("/children", handler.Children)
+	// the class code is the secret between a stranger and a class, so naming one is limited for the whole API
+	group.Post("/children", classCodeLimiter, handler.AddChild)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
 }
@@ -60,6 +63,31 @@ func (h *WaliHandler) ApplyGuidance(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Handling status recorded", nil)
+}
+
+func (h *WaliHandler) Children(c fiber.Ctx) error {
+	res, err := h.useCase.Children(c.Context(), middleware.UserIDFrom(c))
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *WaliHandler) AddChild(c fiber.Ctx) error {
+	var req dto.AddChildRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.AddChild(c.Context(), middleware.UserIDFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusCreated, "Child added", res)
 }
 
 func (h *WaliHandler) Child(c fiber.Ctx) error {

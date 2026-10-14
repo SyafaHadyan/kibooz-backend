@@ -7,11 +7,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
+
+const uniqueViolation = "23505"
 
 // StudentRow is a student joined with the class columns the dashboard needs
 type StudentRow struct {
@@ -49,6 +54,11 @@ type WaliDBItf interface {
 	// FindGuardian returns nil when the account or the parent profile does not exist
 	FindGuardian(ctx context.Context, userID uuid.UUID) (*GuardianRow, error)
 	CreateGuidanceApplication(ctx context.Context, application *entity.GuidanceApplication) error
+	// ListChildren returns the children of the wali, the oldest first
+	ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error)
+	// AddChild stores student as one more child of the wali inside the class that owns joinCode. It refuses a code that
+	// nobody has, a class without an active teacher, and a parent who already has maxChildren children.
+	AddChild(ctx context.Context, waliID uuid.UUID, joinCode string, student *entity.Student, maxChildren int) (classID uuid.UUID, err error)
 }
 
 type WaliDB struct {
@@ -204,4 +214,94 @@ func (r *WaliDB) FindGuardian(ctx context.Context, userID uuid.UUID) (*GuardianR
 	}
 
 	return &rows[0], nil
+}
+
+func (r *WaliDB) ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error) {
+	var rows []StudentRow
+
+	err := r.db.WithContext(ctx).
+		Table("students AS s").
+		Select("s.*, c.name AS class_name, c.grade_level AS grade_level, c.school_name AS school_name, c.academic_year AS academic_year").
+		Joins("JOIN classes AS c ON c.id = s.class_id").
+		Where("s.wali_id = ? AND s.deleted_at IS NULL", waliID).
+		Order("s.created_at ASC, s.id ASC").
+		Scan(&rows).Error
+
+	return rows, err
+}
+
+func (r *WaliDB) AddChild(
+	ctx context.Context, waliID uuid.UUID, joinCode string, student *entity.Student, maxChildren int,
+) (uuid.UUID, error) {
+	var classID uuid.UUID
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var class entity.Class
+
+		// the code comes first, so a wrong guess is answered the same way whatever the parent already has
+		err := tx.Where("join_code = ?", joinCode).Take(&class).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return apperror.ErrClassCodeNotFound
+		}
+
+		if err != nil {
+			return err
+		}
+
+		classID = class.ID
+
+		// a class whose teachers were all deleted keeps its code but must not take in new children
+		var teachers int64
+
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ?", class.ID).
+			Count(&teachers).Error
+		if err != nil {
+			return err
+		}
+
+		if teachers == 0 {
+			return apperror.ErrClassNoTeacher
+		}
+
+		// the lock on the parent makes two requests of the same parent count the children one after the other
+		err = tx.Exec("SELECT id FROM walis WHERE id = ? AND deleted_at IS NULL FOR UPDATE", waliID).Error
+		if err != nil {
+			return err
+		}
+
+		var children int64
+
+		err = tx.Model(&entity.Student{}).Where("wali_id = ?", waliID).Count(&children).Error
+		if err != nil {
+			return err
+		}
+
+		if int(children) >= maxChildren {
+			return apperror.ErrChildLimitReached
+		}
+
+		student.WaliID = waliID
+		student.ClassID = class.ID
+
+		err = tx.Create(student).Error
+		if err != nil {
+			return err
+		}
+
+		return ranking.Recompute(tx, class.ID)
+	})
+
+	return classID, mapNISNTaken(err)
+}
+
+// mapNISNTaken turns the unique violation of the NISN into its API error and leaves any other error as it is
+func mapNISNTaken(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == "students_nisn_key" {
+		return apperror.ErrNISNTaken
+	}
+
+	return err
 }

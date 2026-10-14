@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 )
 
 // trashTypes fixes the order of the categories in the statistics
@@ -25,20 +27,28 @@ var trashTypes = []constants.TrashType{constants.TrashOrganik, constants.TrashAn
 type WaliUseCaseItf interface {
 	Dashboard(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.WaliDashboardResponse, error)
 	ApplyGuidance(ctx context.Context, userID uuid.UUID, req dto.ApplyGuidanceRequest) error
+	// Children lists the children of the caller with their classes
+	Children(ctx context.Context, userID uuid.UUID) (dto.ChildList, error)
+	// AddChild registers one more child of the caller in the class that owns the class code
+	AddChild(ctx context.Context, userID uuid.UUID, req dto.AddChildRequest) (dto.ChildSummary, error)
 	// Child shows the registered details of one child of the caller
 	Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error)
 	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
 	TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error)
 }
 
+// MaxChildren is the largest number of children one parent account can hold
+const MaxChildren = 10
+
 type WaliUseCase struct {
-	repo repository.WaliDBItf
-	cfg  *env.Env
-	now  func() time.Time
+	repo  repository.WaliDBItf
+	cache redis.CacheItf
+	cfg   *env.Env
+	now   func() time.Time
 }
 
-func NewWaliUseCase(repo repository.WaliDBItf, cfg *env.Env) WaliUseCaseItf {
-	return &WaliUseCase{repo: repo, cfg: cfg, now: time.Now}
+func NewWaliUseCase(repo repository.WaliDBItf, cache redis.CacheItf, cfg *env.Env) WaliUseCaseItf {
+	return &WaliUseCase{repo: repo, cache: cache, cfg: cfg, now: time.Now}
 }
 
 func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.WaliDashboardResponse, error) {
@@ -207,6 +217,81 @@ func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentI
 }
 
 // resolveStudent only ever returns a child that belongs to the caller
+func (u *WaliUseCase) Children(ctx context.Context, userID uuid.UUID) (dto.ChildList, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.ChildList{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.ChildList{}, apperror.ErrProfileNotFound
+	}
+
+	rows, err := u.repo.ListChildren(ctx, wali.ID)
+	if err != nil {
+		return dto.ChildList{}, apperror.Internal(err)
+	}
+
+	res := dto.ChildList{Children: make([]dto.ChildSummary, 0, len(rows))}
+	for i := range rows {
+		res.Children = append(res.Children, childSummary(&rows[i]))
+	}
+
+	return res, nil
+}
+
+func (u *WaliUseCase) AddChild(ctx context.Context, userID uuid.UUID, req dto.AddChildRequest) (dto.ChildSummary, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.ChildSummary{}, apperror.ErrProfileNotFound
+	}
+
+	student := &entity.Student{
+		ID:       uuid.New(),
+		NISN:     strings.TrimSpace(req.Student.NISN),
+		FullName: strings.TrimSpace(req.Student.FullName),
+	}
+
+	classID, err := u.repo.AddChild(ctx, wali.ID, strings.ToUpper(strings.TrimSpace(req.ClassCode)), student, MaxChildren)
+	if err != nil {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return dto.ChildSummary{}, err
+		}
+
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	// a new child changes the ranking so the cached leaderboard is stale
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+
+	created, err := u.repo.FindStudent(ctx, wali.ID, &student.ID)
+	if err != nil {
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	if created == nil {
+		return dto.ChildSummary{}, apperror.ErrStudentNotFound
+	}
+
+	return childSummary(created), nil
+}
+
+func childSummary(row *repository.StudentRow) dto.ChildSummary {
+	return dto.ChildSummary{
+		ID:        row.ID,
+		FullName:  row.FullName,
+		NISN:      row.NISN,
+		AvatarURL: row.AvatarURL,
+		ClassID:   row.ClassID,
+		ClassName: row.ClassName,
+	}
+}
+
 func (u *WaliUseCase) resolveStudent(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (*repository.StudentRow, error) {
 	wali, err := u.repo.FindWaliByUserID(ctx, userID)
 	if err != nil {
