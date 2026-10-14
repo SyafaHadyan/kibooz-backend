@@ -561,7 +561,7 @@ paths:
         A teacher of the class adds another registered teacher by the email of that account. The new teacher sees the whole
         class from then on, which is its children, moods and forum, so add only people who should have that access. There
         is no way to take a teacher off a class yet. The answer for an email that is not a teacher account is the same
-        whoever asks, and the request counts against the limit of the signed in user.
+        for every requester after class access succeeds, and the request counts against the limit of the signed in user.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
