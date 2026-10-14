@@ -48,6 +48,17 @@ func ForMood(mood constants.Mood) (Guidance, bool) {
 	return item, ok
 }
 
+// ByID returns the guide with the id
+func ByID(id string) (Guidance, bool) {
+	for _, item := range catalogue {
+		if item.ID == id {
+			return item, true
+		}
+	}
+
+	return Guidance{}, false
+}
+
 // Exists reports whether id belongs to a known guide
 func Exists(id string) bool {
 	for _, item := range catalogue {

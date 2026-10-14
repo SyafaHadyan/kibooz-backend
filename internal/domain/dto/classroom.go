@@ -125,6 +125,23 @@ type ClassStudent struct {
 	TodayMood     *constants.Mood `json:"todayMood"`
 }
 
+// GuidanceReport tells a teacher that a parent applied a guide for a child
+type GuidanceReport struct {
+	ID            uuid.UUID `json:"id"`
+	StudentID     uuid.UUID `json:"studentId"`
+	StudentName   string    `json:"studentName"`
+	GuidanceID    string    `json:"guidanceId"`
+	GuidanceTitle string    `json:"guidanceTitle"`
+	Category      string    `json:"category"`
+	ParentNotes   *string   `json:"parentNotes"`
+	AppliedAt     time.Time `json:"appliedAt"`
+}
+
+type GuidanceReportList struct {
+	Reports []GuidanceReport `json:"reports"`
+	PageInfo
+}
+
 type ClassStudentList struct {
 	Students []ClassStudent `json:"students"`
 	PageInfo
