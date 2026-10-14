@@ -27,6 +27,7 @@ type TodayMood struct {
 
 type PointsSummary struct {
 	TotalPoints    int `json:"totalPoints"`
+	SeasonPoints   int `json:"seasonPoints"`
 	ClassRank      int `json:"classRank"`
 	OrganicCount   int `json:"organicCount"`
 	AnorganicCount int `json:"anorganicCount"`
@@ -71,6 +72,7 @@ type ChildProfile struct {
 	SchoolName    string    `json:"schoolName"`
 	AcademicYear  string    `json:"academicYear"`
 	CurrentPoints int       `json:"currentPoints"`
+	SeasonPoints  int       `json:"seasonPoints"`
 	ClassRank     int       `json:"classRank"`
 	Guardian      Guardian  `json:"guardian"`
 }

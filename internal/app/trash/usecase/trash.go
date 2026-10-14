@@ -134,6 +134,7 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 	return dto.ScanClaimResponse{
 		PointsAdded:         scan.PointsAwarded,
 		TotalPoints:         result.TotalPoints,
+		SeasonPoints:        result.SeasonPoints,
 		NewRank:             result.Rank,
 		RemainingDailyScans: result.Remaining,
 	}, nil
@@ -262,7 +263,7 @@ func buildLeaderboard(students []entity.Student) dto.LeaderboardResponse {
 		entry := dto.LeaderboardEntry{
 			Rank:        i + 1,
 			StudentName: student.FullName,
-			Points:      student.CurrentPoints,
+			Points:      student.SeasonPoints,
 			AvatarURL:   student.AvatarURL,
 		}
 

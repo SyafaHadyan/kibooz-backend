@@ -15,9 +15,10 @@ import (
 )
 
 type ClaimResult struct {
-	TotalPoints int
-	Rank        int
-	Remaining   int
+	TotalPoints  int
+	SeasonPoints int
+	Rank         int
+	Remaining    int
 }
 
 type TrashDBItf interface {
@@ -124,7 +125,10 @@ func (r *TrashDB) Claim(
 
 		update := tx.Model(&entity.Student{}).
 			Where("id = ?", scan.StudentID).
-			UpdateColumn("current_points", gorm.Expr("current_points + ?", scan.PointsAwarded))
+			UpdateColumns(map[string]any{
+				"current_points": gorm.Expr("current_points + ?", scan.PointsAwarded),
+				"season_points":  gorm.Expr("season_points + ?", scan.PointsAwarded),
+			})
 		if update.Error != nil {
 			return update.Error
 		}
@@ -141,15 +145,16 @@ func (r *TrashDB) Claim(
 
 		var student entity.Student
 
-		err = tx.Select("current_points", "rank_position").Where("id = ?", scan.StudentID).Take(&student).Error
+		err = tx.Select("current_points", "season_points", "rank_position").Where("id = ?", scan.StudentID).Take(&student).Error
 		if err != nil {
 			return err
 		}
 
 		result = ClaimResult{
-			TotalPoints: student.CurrentPoints,
-			Rank:        student.RankPosition,
-			Remaining:   limit - used - 1,
+			TotalPoints:  student.CurrentPoints,
+			SeasonPoints: student.SeasonPoints,
+			Rank:         student.RankPosition,
+			Remaining:    limit - used - 1,
 		}
 
 		return nil
@@ -162,9 +167,9 @@ func (r *TrashDB) ListClassStudents(ctx context.Context, classID uuid.UUID) ([]e
 	var students []entity.Student
 
 	err := r.db.WithContext(ctx).
-		Select("id", "full_name", "avatar_url", "current_points").
+		Select("id", "full_name", "avatar_url", "season_points").
 		Where("class_id = ?", classID).
-		Order("current_points DESC, full_name ASC, id ASC").
+		Order("season_points DESC, full_name ASC, id ASC").
 		Find(&students).Error
 
 	return students, err

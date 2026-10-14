@@ -799,6 +799,7 @@ func (u *ClassroomUseCase) ListStudents(
 			NISN:          rows[i].NISN,
 			AvatarURL:     rows[i].AvatarURL,
 			CurrentPoints: rows[i].CurrentPoints,
+			SeasonPoints:  rows[i].SeasonPoints,
 			ClassRank:     rows[i].RankPosition,
 			TodayMood:     rows[i].TodayMood,
 		})
