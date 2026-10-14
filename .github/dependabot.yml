@@ -18,7 +18,10 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: github-actions
-    directory: /
+    # the local composite action has its own action.yml, which Dependabot only reads when its folder is named
+    directories:
+      - /
+      - /.github/actions/pull-images
     schedule:
       interval: weekly
       day: monday
