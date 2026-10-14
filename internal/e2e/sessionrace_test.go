@@ -172,3 +172,61 @@ func TestDeletingAnAccountDuringARefreshRemovesEveryToken(t *testing.T) {
 
 	require.Zero(t, tokensWhere(t, "user_id", userID), "no token of a deleted account may stay")
 }
+
+// A refresh cleans up the expired tokens of its user after it stored the next one. If that cleanup waited for a row that
+// a deletion holds, the deletion could be waiting for the refresh at the same time and PostgreSQL would have to abort one
+// of them. So the cleanup leaves a row that is locked and goes on.
+func TestARefreshDoesNotWaitForAnExpiredTokenThatSomeoneElseHolds(t *testing.T) {
+	guru := registerGuru(t, "Cleanup Lock")
+
+	login := call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
+		"email": guru.Email, "password": guru.Password, "role": "GURU",
+	})
+	require.Equal(t, http.StatusOK, login.Status, "body %v", login.Body)
+
+	second := login.data("refreshToken").(string)
+
+	// the token of the first sign in is left to expire without being used
+	expired := testDB.Exec("UPDATE refresh_tokens SET expires_at = now() - interval '1 day' WHERE token_hash = ?", refreshHash(guru.RefreshToken))
+	require.NoError(t, expired.Error)
+	require.EqualValues(t, 1, expired.RowsAffected)
+
+	holder := testDB.Begin()
+	require.NoError(t, holder.Error)
+
+	t.Cleanup(func() { _ = holder.Rollback().Error })
+
+	require.NoError(t, holder.Exec("SELECT id FROM refresh_tokens WHERE token_hash = ? FOR UPDATE", refreshHash(guru.RefreshToken)).Error)
+
+	repo := authrepository.NewAuthDB(testDB)
+	next := &entity.RefreshToken{ID: uuid.New(), TokenHash: refreshHash(uuid.NewString()), ExpiresAt: time.Now().Add(time.Hour)}
+
+	var rotation authrepository.Rotation
+
+	done := make(chan error, 1)
+
+	go func() {
+		var err error
+
+		rotation, err = repo.RotateRefreshToken(
+			context.Background(), refreshHash(second), time.Now(), next,
+			authrepository.RotationPolicy{SessionMax: 90 * 24 * time.Hour, ReuseGrace: time.Minute},
+		)
+
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the refresh waited for a row that it only had to clean up")
+	}
+
+	require.NotNil(t, rotation.User, "the refresh went through")
+
+	var left int64
+
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&left).Error)
+	require.EqualValues(t, 1, left, "the locked row was left for the next time")
+}

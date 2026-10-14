@@ -14,7 +14,8 @@ import (
 // started. It waits for the lock on the used token, deletes that one when the refresh commits, and never sees the new
 // token, so the session would live on. The statement that locks the live tokens waits the same way, but the DELETE that
 // follows starts after the refresh committed and reads its result. Locking the live tokens in the order of their id
-// keeps two sessions that end at once from waiting on each other.
+// keeps two sessions that end at once from waiting on each other. The cleanup that a refresh does after it stored the
+// next token skips the rows that are locked, so it never waits for a transaction that waits for the refresh.
 func EndFamily(tx *gorm.DB, familyID uuid.UUID) error {
 	return end(tx, "family_id", familyID)
 }
@@ -23,10 +24,11 @@ func EndUser(tx *gorm.DB, userID uuid.UUID) error {
 	return end(tx, "user_id", userID)
 }
 
-// end only locks the tokens that have not been used. A refresh has to mark one of those first, and a token that was used
-// long ago would only add locks that a refresh needs to clean up after itself, which could make the two wait on each other.
+// end only locks the tokens that have not been used and have not expired, because a refresh has to mark one of those
+// first. A token that was used or has expired cannot be taken by a refresh, so locking it would only make the deletion
+// wait for the cleanup of a refresh that is under way.
 func end(tx *gorm.DB, column string, id uuid.UUID) error {
-	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL ORDER BY id FOR UPDATE", id).Error
+	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL AND expires_at > now() ORDER BY id FOR UPDATE", id).Error
 	if err != nil {
 		return err
 	}
