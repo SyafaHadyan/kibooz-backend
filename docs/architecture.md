@@ -29,6 +29,7 @@ The features are `auth` for registration, login and tokens, `user` for the profi
 | `internal/domain` | Entities for the database and DTOs for requests and responses |
 | `internal/apperror` | The error codes and their HTTP status, one list for the whole API |
 | `internal/middleware` | Authentication and the per user rate limit |
+| `internal/filecleanup` | Retries the removal of bucket files that a deleted account left behind |
 | `internal/infra` | Fiber setup and limits, JWT, device tokens, validation, environment settings, Redis, S3 and the database with its migrations |
 | `internal/imageutil` | Checking the type and size of uploaded images |
 | `internal/pagination` | The `page` and `limit` query parameters of the list endpoints |

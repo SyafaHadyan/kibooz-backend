@@ -26,15 +26,23 @@ type UserDBItf interface {
 	// FindUserByID returns nil when the account does not exist or is already deleted
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	// SoftDeleteAccount hides the account with its profile and children, revokes every session and clears the
-	// addresses of their files. It returns the classes whose ranking changed and the addresses that were cleared,
-	// so the caller can delete the files.
-	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) (DeletedAccount, error)
+	// addresses of their files. fileKey turns an address into the object key of a file to delete, and false for an
+	// address that is not ours. The keys are queued for cleanup in the same transaction, so a file is never forgotten
+	// after the address that pointed at it is gone. It returns the classes whose ranking changed and the queued keys,
+	// so the caller can delete the files and then take them off the queue.
+	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, fileKey FileKeyFunc) (DeletedAccount, error)
+	// UnqueueFileCleanups takes keys off the cleanup queue once their files are gone from the bucket
+	UnqueueFileCleanups(ctx context.Context, keys []string) error
 }
+
+// FileKeyFunc turns the public address of a file into its object key
+type FileKeyFunc func(url string) (key string, ok bool)
 
 // DeletedAccount is what a deleted account leaves behind for the caller to clean up
 type DeletedAccount struct {
 	ClassIDs []uuid.UUID
-	FileURLs []string
+	// FileKeys are the files to delete from the bucket, they are already on the cleanup queue
+	FileKeys []string
 }
 
 type UserDB struct {
@@ -151,12 +159,16 @@ func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 	return &user, nil
 }
 
-func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) (DeletedAccount, error) {
+func (r *UserDB) SoftDeleteAccount(
+	ctx context.Context, userID uuid.UUID, role constants.Role, fileKey FileKeyFunc,
+) (DeletedAccount, error) {
 	var deleted DeletedAccount
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// a retried transaction starts from nothing
 		deleted = DeletedAccount{}
+
+		var urls []string
 
 		// refresh tokens have no soft delete, removing them ends every session. This comes first because it waits for a
 		// refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
@@ -167,7 +179,7 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 
 		switch role {
 		case constants.RoleWali:
-			deleted.ClassIDs, err = softDeleteWali(tx, userID, &deleted.FileURLs)
+			deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)
 		case constants.RoleGuru:
 			err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
 		}
@@ -176,12 +188,18 @@ func (r *UserDB) SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role c
 			return err
 		}
 
-		err = takeAddresses(&deleted.FileURLs, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
+		err = takeAddresses(&urls, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
 		if err == nil {
 			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
 		}
 
-		return err
+		if err != nil {
+			return err
+		}
+
+		deleted.FileKeys = keysOf(urls, fileKey)
+
+		return queueKeys(tx, deleted.FileKeys)
 	})
 	if err != nil {
 		return DeletedAccount{}, err
@@ -265,3 +283,46 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID
 
 	return classIDs, nil
 }
+
+// keysOf maps the addresses to object keys and leaves out the ones that are not files of this storage
+func keysOf(urls []string, fileKey FileKeyFunc) []string {
+	keys := make([]string, 0, len(urls))
+
+	for _, url := range urls {
+		if key, ok := fileKey(url); ok {
+			keys = append(keys, key)
+		}
+	}
+
+	return keys
+}
+
+// queueKeys adds the keys to the cleanup queue and keeps the ones that are already there as they are
+func queueKeys(tx *gorm.DB, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	rows := make([]fileCleanup, 0, len(keys))
+	for _, key := range keys {
+		rows = append(rows, fileCleanup{ObjectKey: key})
+	}
+
+	// attempts and queued_at are left to the defaults of the table
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+func (r *UserDB) UnqueueFileCleanups(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Where("object_key IN ?", keys).Delete(&fileCleanup{}).Error
+}
+
+// fileCleanup is a row of the queue of files that still have to be removed from the bucket
+type fileCleanup struct {
+	ObjectKey string `gorm:"primaryKey"`
+}
+
+func (fileCleanup) TableName() string { return "file_cleanups" }
