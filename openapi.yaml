@@ -1644,7 +1644,7 @@ components:
           description: The grade level and the name of the class in brackets, such as `Class A (Bunga)`
         joinCode:
           type: string
-          description: Eight characters that a parent uses to register a child into the class. A class created before the codes grew keeps a six character code until a teacher replaces it.
+          description: Eight characters that a parent uses to register a child into the class
         totalStudents:
           type: integer
         presentStudents:
