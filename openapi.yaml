@@ -984,7 +984,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScanClaimEnvelope"
         "400":
-          description: The input is invalid, or the photo is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          description: The input is invalid, the photo is not an image, or the image has more than 40 megapixels or a side longer than 8192 pixels (`VALIDATION_ERROR`, `INVALID_IMAGE`, `IMAGE_DIMENSIONS_TOO_LARGE`)
           content:
             application/json:
               schema:
@@ -1088,7 +1088,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AvatarEnvelope"
         "400":
-          description: The input is invalid, or the file is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          description: The input is invalid, the file is not an image, or the image has more than 40 megapixels or a side longer than 8192 pixels (`VALIDATION_ERROR`, `INVALID_IMAGE`, `IMAGE_DIMENSIONS_TOO_LARGE`)
           content:
             application/json:
               schema:
