@@ -86,6 +86,22 @@ func TestStorageProbeReportsAWriteThatFailsAndKeepsItForTheTTL(t *testing.T) {
 	require.NoError(t, p.Ping(context.Background()), "a bucket that works again is picked up")
 }
 
+func TestStorageProbeDoesNotKeepTheErrorOfACallerThatGaveUp(t *testing.T) {
+	storage := &recordingStorage{uploadErr: context.Canceled}
+	now := time.Now()
+	p := probeWithClock(storage, &now)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	require.Error(t, p.Ping(ctx))
+
+	storage.uploadErr = nil
+
+	require.NoError(t, p.Ping(context.Background()), "the next health check probes the bucket again")
+	require.Equal(t, 2, storage.uploads)
+}
+
 func TestStorageProbeReportsADeleteThatFails(t *testing.T) {
 	refused := errors.New("delete refused")
 	storage := &recordingStorage{deleteErr: refused}

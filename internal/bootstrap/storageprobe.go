@@ -45,8 +45,11 @@ func (p *storageProbe) Ping(ctx context.Context) error {
 		err = p.storage.Delete(ctx, storageProbeKey)
 	}
 
-	p.checked = p.now()
-	p.result = err
+	// a caller that gave up says nothing about the bucket, so its error must not be reused for the next minute
+	if err == nil || ctx.Err() == nil {
+		p.checked = p.now()
+		p.result = err
+	}
 
 	return err
 }
