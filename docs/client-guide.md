@@ -34,7 +34,7 @@ Every list returns one page at a time. Send `page` (from 1) and `limit` (from 1 
 
 ## Send photos
 
-The server never decodes, resizes or compresses a photo. It checks the type and the size, cuts out the metadata and stores the file as it arrived, so the app has to make the photo small before it uploads it. Scale the longest side down to about 1600 pixels and save it as a JPEG with a quality of about 80, which keeps a phone photo far under the limit of 2 MiB for an avatar and 4 MiB for a trash photo and is enough for a screen. An image of more than 40 megapixels or with a side longer than 8192 pixels is refused with `IMAGE_DIMENSIONS_TOO_LARGE`, even when the file is small, and a file that is not an image is refused with `INVALID_IMAGE`. Show the person a short message for both and let them pick another photo.
+The server never decodes, resizes or compresses a photo. It checks the type and the size, cuts out the metadata and stores the picture with its pixels unchanged, so the app has to make the photo small before it uploads it. Scale the longest side down to about 1600 pixels and save it as a JPEG with a quality of about 80, which keeps a phone photo far under the limit of 2 MiB for an avatar and 4 MiB for a trash photo and is enough for a screen. An image of more than 40 megapixels or with a side longer than 8192 pixels is refused with `IMAGE_DIMENSIONS_TOO_LARGE`, even when the file is small, and a file that is not an image is refused with `INVALID_IMAGE`. Show the person a short message for both and let them pick another photo.
 
 ## Handle rate limits
 
