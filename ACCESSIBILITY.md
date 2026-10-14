@@ -6,7 +6,7 @@ Kibooz Backend is the API behind the Kibooz app for teachers and parents of kind
 
 - Every failure has a stable `errorCode` and a plain English `message`, so an app can show the person its own text, in their language and in the form that works for them, and never has to read out a code.
 - A response carries data and text and never layout, color or markup, so the app decides how everything is presented.
-- A refused request tells the app how long to wait with a `Retry-After` header, so the person can be told when to try again.
+- A rate limit response includes a `Retry-After` header, so the app can tell the person when to try again. The daily limit of trash claims is the exception, because it answers with `TRASH_DAILY_LIMIT_REACHED` and no header, and it starts over with the next local day.
 - The limits on uploads, such as the size and the pixels of a photo, are documented with their error codes, so an app can explain them before a person loses their work.
 - Documentation changes are checked by CI, including a prose linter for the writing style.
 
