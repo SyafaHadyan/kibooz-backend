@@ -24,11 +24,11 @@ func EndUser(tx *gorm.DB, userID uuid.UUID) error {
 	return end(tx, "user_id", userID)
 }
 
-// end only locks the tokens that have not been used and have not expired, because a refresh has to mark one of those
-// first. A token that was used or has expired cannot be taken by a refresh, so locking it would only make the deletion
-// wait for the cleanup of a refresh that is under way.
+// end locks every token that has not been used, whether it has expired or not, because a refresh has to mark one of those
+// first and it judges the expiry by the clock of the API, which can differ from the clock of PostgreSQL. A token that
+// was used cannot be taken by a refresh again, so it needs no lock.
 func end(tx *gorm.DB, column string, id uuid.UUID) error {
-	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL AND expires_at > now() ORDER BY id FOR UPDATE", id).Error
+	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL ORDER BY id FOR UPDATE", id).Error
 	if err != nil {
 		return err
 	}
