@@ -19,7 +19,7 @@ func valid() *Env {
 
 		AppPort: 8080, DBPort: 5432, RedisPort: 6379,
 		BodyLimitMB: 8, VideoMaxMB: 100, VideoUploadURLSeconds: 900,
-		UserLimiterMax: 120, AuthLimiterMax: 10, LimiterExpirationSeconds: 60,
+		UserLimiterMax: 120, AuthLimiterMax: 10, ClassCodeLimiterMax: 60, LimiterExpirationSeconds: 60,
 		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90,
 	}
 }
@@ -139,6 +139,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"VIDEO_UPLOAD_URL_SECONDS":   func(e *Env) { e.VideoUploadURLSeconds = -1 },
 		"USER_LIMITER_MAX":           func(e *Env) { e.UserLimiterMax = 0 },
 		"AUTH_LIMITER_MAX":           func(e *Env) { e.AuthLimiterMax = 0 },
+		"CLASS_CODE_LIMITER_MAX":     func(e *Env) { e.ClassCodeLimiterMax = 0 },
 		"LIMITER_EXPIRATION_SECONDS": func(e *Env) { e.LimiterExpirationSeconds = 0 },
 		"LEADERBOARD_CACHE_SECONDS":  func(e *Env) { e.LeaderboardCacheSeconds = 0 },
 		"JWT_ACCESS_EXPIRED_MINUTES": func(e *Env) { e.JWTAccessExpiredMinutes = 0 },
