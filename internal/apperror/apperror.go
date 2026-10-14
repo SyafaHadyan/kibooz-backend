@@ -89,6 +89,7 @@ var (
 	ErrDailyLimitReached  = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Today's limit for trash sorting point claims has been reached")
 	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
 	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
+	ErrImageDimensions    = New(http.StatusBadRequest, "IMAGE_DIMENSIONS_TOO_LARGE", "The image may be at most 8192 pixels on a side and 40 megapixels in all")
 	ErrStorageDisabled    = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is not configured")
 	ErrStorageFailed      = New(http.StatusBadGateway, "STORAGE_ERROR", "Failed to store the file")
 	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")

@@ -81,7 +81,7 @@ paths:
                   password: "{{password}}"
                   fullName: Bapak Budi
                   role: WALI
-                  classCode: ABC234
+                  classCode: ABC23456
                   student:
                     nisn: "1234567890"
                     fullName: Ani
@@ -984,7 +984,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ScanClaimEnvelope"
         "400":
-          description: The input is invalid, or the photo is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          description: The input is invalid, the photo is not an image, or the image has more than 40 megapixels or a side longer than 8192 pixels (`VALIDATION_ERROR`, `INVALID_IMAGE`, `IMAGE_DIMENSIONS_TOO_LARGE`)
           content:
             application/json:
               schema:
@@ -1088,7 +1088,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AvatarEnvelope"
         "400":
-          description: The input is invalid, or the file is not an image (`VALIDATION_ERROR`, `INVALID_IMAGE`)
+          description: The input is invalid, the file is not an image, or the image has more than 40 megapixels or a side longer than 8192 pixels (`VALIDATION_ERROR`, `INVALID_IMAGE`, `IMAGE_DIMENSIONS_TOO_LARGE`)
           content:
             application/json:
               schema:
@@ -1291,7 +1291,7 @@ components:
       description: Too many requests from this user or for this account (`RATE_LIMITED`)
       headers:
         Retry-After:
-          description: Seconds to wait before the next try
+          description: Seconds to wait before the next try. A try before that is refused again and counts, so it makes the wait longer.
           schema:
             type: string
         X-RateLimit-Limit:
@@ -1439,7 +1439,7 @@ components:
           pattern: "^[A-Za-z0-9]+$"
           minLength: 4
           maxLength: 12
-          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter.
+          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter. Registrations that name a code share one budget for the whole API, and when it is used up they are answered with `429` whether the code is right or not.
         student:
           allOf:
             - $ref: "#/components/schemas/RegisterStudent"
@@ -1656,7 +1656,7 @@ components:
           description: The grade level and the name of the class in brackets, such as `Class A (Bunga)`
         joinCode:
           type: string
-          description: Six characters that a parent uses to register a child into the class
+          description: Eight characters that a parent uses to register a child into the class
         totalStudents:
           type: integer
         presentStudents:
@@ -2328,7 +2328,7 @@ components:
         joinCode:
           type: string
           description: The new code of the class
-          example: K7M2QX
+          example: K7M2QX4R
     JoinCodeEnvelope:
       type: object
       required: [success, data]

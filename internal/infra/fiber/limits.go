@@ -34,14 +34,23 @@ func (f *Fiber) newLimiter(limit int, key func(fiber.Ctx) string, skip func(fibe
 		}
 
 		used := hits.Estimate(f.window)
-		untilNext := max(int((f.window-hits.Elapsed+time.Second-1)/time.Second), 1)
+		refused := used > int64(limit)
+
+		// the end of the window is when the counter starts over, but the previous window still weighs on the next one, so
+		// a client that was refused is told when a request fits again and not when the window ends
+		reset := f.window - hits.Elapsed
+		if refused {
+			reset = hits.RetryAfter(f.window, int64(limit))
+		}
+
+		untilReset := strconv.Itoa(max(int((reset+time.Second-1)/time.Second), 1))
 
 		c.Set("X-RateLimit-Limit", strconv.Itoa(limit))
 		c.Set("X-RateLimit-Remaining", strconv.FormatInt(max(int64(limit)-used, 0), 10))
-		c.Set("X-RateLimit-Reset", strconv.Itoa(untilNext))
+		c.Set("X-RateLimit-Reset", untilReset)
 
-		if used > int64(limit) {
-			c.Set(fiber.HeaderRetryAfter, strconv.Itoa(untilNext))
+		if refused {
+			c.Set(fiber.HeaderRetryAfter, untilReset)
 
 			return apperror.ErrRateLimited
 		}
@@ -68,7 +77,7 @@ func (f *Fiber) PasswordLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
 // who can only use up the shared budget of the email, cannot lock out a device that has signed in before.
 // A request that names no email is not limited.
 func (f *Fiber) EmailLimiter() fiber.Handler {
-	return f.accountLimiter(func(body accountRequest) (string, string) {
+	return f.accountLimiter(f.authMax, func(body accountRequest) (string, string) {
 		email := strings.ToLower(strings.TrimSpace(body.Email))
 
 		if deviceID, ok := f.devices.Verify(body.DeviceToken, email); ok && email != "" {
@@ -82,8 +91,22 @@ func (f *Fiber) EmailLimiter() fiber.Handler {
 // TokenLimiter gives every refresh token AUTH_LIMITER_MAX requests per window on each route it guards. Those routes
 // read only the token, so an email in the same body must not give a caller a new budget.
 func (f *Fiber) TokenLimiter() fiber.Handler {
-	return f.accountLimiter(func(body accountRequest) (string, string) {
+	return f.accountLimiter(f.authMax, func(body accountRequest) (string, string) {
 		return "token", body.RefreshToken
+	})
+}
+
+// ClassCodeLimiter gives the whole API CLASS_CODE_LIMITER_MAX requests per window that name a class code. A code is the
+// only secret between a stranger and a class, and a wrong code is answered at once, so guessing is limited by the number
+// of guesses and not by who sends them. The budget is shared by every caller, because a guesser can use any number of
+// emails, devices and addresses. A request that names no class code looks nothing up and is not limited.
+func (f *Fiber) ClassCodeLimiter() fiber.Handler {
+	return f.accountLimiter(f.classCodeMax, func(body accountRequest) (string, string) {
+		if body.ClassCode == "" {
+			return "", ""
+		}
+
+		return "classcode", "all"
 	})
 }
 
@@ -91,6 +114,7 @@ type accountRequest struct {
 	Email        string
 	RefreshToken string
 	DeviceToken  string
+	ClassCode    string
 }
 
 // rawAccountRequest reads the same fields as the handlers do and by the same rules, because encoding/json matches the
@@ -100,6 +124,7 @@ type rawAccountRequest struct {
 	Email        json.RawMessage `json:"email"`
 	RefreshToken json.RawMessage `json:"refreshToken"`
 	DeviceToken  json.RawMessage `json:"deviceToken"`
+	ClassCode    json.RawMessage `json:"classCode"`
 }
 
 // text returns the value of a JSON string, and "" for a missing field or any other type
@@ -114,17 +139,19 @@ func text(raw json.RawMessage) string {
 	return value
 }
 
-// limiterKeyLocal keeps the key of a request between the skip check and the limiter, so the body is parsed once
-type limiterKeyLocal struct{}
+// limiterKeyLocal names where one limiter keeps the key of a request between its skip check and the limiter, so the body
+// is parsed once. Every limiter has a slot of its own, because two limiters on one route have different keys.
+type limiterKeyLocal struct{ _ byte }
 
-// accountLimiter limits by the identifier that identify picks from the body, and each route keeps its own budget.
+// accountLimiter lets limit requests per window through for the identifier that identify picks from the body, and each
+// route keeps its own budget.
 // The identifier is hashed so that neither an email, a refresh token nor a device id is kept in clear in the limiter storage.
 // A request without an identifier is not limited, because the handler rejects it before it touches the database.
 // That holds for a body that is not a JSON object and for a field that is not a string, and a field that the handler
 // does read is always read here the same way.
 // The route is named by the path it was registered with and not by the path the client sent, because the router ignores
 // the case and a trailing slash, so each spelling of the path would otherwise get a budget of its own.
-func (f *Fiber) accountLimiter(identify func(accountRequest) (string, string)) fiber.Handler {
+func (f *Fiber) accountLimiter(limit int, identify func(accountRequest) (string, string)) fiber.Handler {
 	key := func(c fiber.Ctx) string {
 		var raw rawAccountRequest
 
@@ -137,6 +164,7 @@ func (f *Fiber) accountLimiter(identify func(accountRequest) (string, string)) f
 			Email:        text(raw.Email),
 			RefreshToken: text(raw.RefreshToken),
 			DeviceToken:  text(raw.DeviceToken),
+			ClassCode:    text(raw.ClassCode),
 		})
 		if identifier == "" {
 			return ""
@@ -147,16 +175,18 @@ func (f *Fiber) accountLimiter(identify func(accountRequest) (string, string)) f
 		return kind + ":" + c.Route().Path + ":" + hex.EncodeToString(sum[:])
 	}
 
+	slot := new(limiterKeyLocal)
+
 	keyOf := func(c fiber.Ctx) string {
-		if cached, ok := c.Locals(limiterKeyLocal{}).(string); ok {
+		if cached, ok := c.Locals(slot).(string); ok {
 			return cached
 		}
 
 		computed := key(c)
-		c.Locals(limiterKeyLocal{}, computed)
+		c.Locals(slot, computed)
 
 		return computed
 	}
 
-	return f.newLimiter(f.authMax, keyOf, func(c fiber.Ctx) bool { return keyOf(c) == "" })
+	return f.newLimiter(limit, keyOf, func(c fiber.Ctx) bool { return keyOf(c) == "" })
 }

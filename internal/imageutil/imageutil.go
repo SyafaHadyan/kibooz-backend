@@ -23,7 +23,8 @@ var allowed = map[string]string{
 }
 
 // Inspect checks the real content type of data and its size against maxBytes and removes the metadata of the image,
-// such as the location and the camera that an EXIF block holds
+// such as the location and the camera that an EXIF block holds. An image with more than MaxPixels pixels or a side longer
+// than MaxSide is refused, judged by its header and without decoding it.
 func Inspect(data []byte, maxBytes int) (Image, error) {
 	if len(data) == 0 {
 		return Image{}, apperror.ErrInvalidImage
@@ -48,6 +49,18 @@ func Inspect(data []byte, maxBytes int) (Image, error) {
 	clean, err := strip(contentType, data)
 	if err != nil {
 		return Image{}, apperror.ErrInvalidImage
+	}
+
+	// the size is read from what is stored, so it is the one that the apps will see
+	found, err := sizes(contentType, clean)
+	if err != nil {
+		return Image{}, apperror.ErrInvalidImage
+	}
+
+	for _, announced := range found {
+		if announced.tooLarge() {
+			return Image{}, apperror.ErrImageDimensions
+		}
 	}
 
 	return Image{Data: clean, ContentType: contentType, Extension: extension}, nil
