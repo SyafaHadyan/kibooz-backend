@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.6.0...v0.7.0) (2026-10-14)
+
+
+### Features
+
+* **classcode:** issue join codes of eight characters ([4f57ab1](https://github.com/SyafaHadyan/kibooz-backend/commit/4f57ab161aef01eecad6e566538483f697813911))
+* **db:** give the classes with a short join code a new eight character one ([abef6ea](https://github.com/SyafaHadyan/kibooz-backend/commit/abef6ea65dffc476ac8aaa25e296c9275baa7cae))
+
+
+### Bug Fixes
+
+* **auth:** end a session without missing the token that a refresh stores at the same moment ([5be951e](https://github.com/SyafaHadyan/kibooz-backend/commit/5be951e1a1cf2ac53ffd855dc31597f9338fc22c))
+* **auth:** limit registrations that name a class code for the whole API ([8161ac7](https://github.com/SyafaHadyan/kibooz-backend/commit/8161ac752bca59689a23723f0f3e54ef70774113))
+* **auth:** lock every unused token when a session ends, whatever the clocks say ([700bcd3](https://github.com/SyafaHadyan/kibooz-backend/commit/700bcd382281a13eb9e6a14c9355f582319105fa))
+* **auth:** look the class up before hashing the password of a parent ([eb1d2ca](https://github.com/SyafaHadyan/kibooz-backend/commit/eb1d2ca097f24cd6b66ba09b9339b1bb20d87b0b))
+* **auth:** never let the token cleanup of a refresh wait for a locked row ([c0ec482](https://github.com/SyafaHadyan/kibooz-backend/commit/c0ec4826f38bd181b17f67d43ec2d644c63ae5de))
+* **compose:** publish the API on localhost only and let the image tag be chosen ([faab601](https://github.com/SyafaHadyan/kibooz-backend/commit/faab601c20594af62ab0a062bb4af04a3f2dfa21))
+* **limiter:** tell a refused client when a request fits again and not when the window ends ([ca72706](https://github.com/SyafaHadyan/kibooz-backend/commit/ca72706b141d2c4467040e5719de8a433ab8f1ac))
+* **redis:** count a client timeout as an outage while the caller still waits ([ac33445](https://github.com/SyafaHadyan/kibooz-backend/commit/ac334453565f301da918217b3dc2540b2b10da2f))
+* **redis:** test a Redis that was down with one call and keep command errors from opening the breaker ([f048099](https://github.com/SyafaHadyan/kibooz-backend/commit/f04809951bf7b40d33bba31d7001a4f2bd5d41a5))
+* **upload:** hold every frame of an animated WebP to the pixel limits ([5a69cfa](https://github.com/SyafaHadyan/kibooz-backend/commit/5a69cfa5bd6532f2381a908d501cb5b3d9d26aac))
+* **upload:** keep only the parts of an image that the picture needs ([f56920d](https://github.com/SyafaHadyan/kibooz-backend/commit/f56920d26b22a7b9686e044a112ee1e99def3882))
+* **upload:** refuse a PNG that has a critical chunk the server does not know ([b03ecd8](https://github.com/SyafaHadyan/kibooz-backend/commit/b03ecd89e7e257c76b41abc7e3ea7769c60514fd))
+* **upload:** refuse an image that announces more pixels than the apps can safely show ([a5eb13f](https://github.com/SyafaHadyan/kibooz-backend/commit/a5eb13fb71a54cdd41b1e00a887094ef1eeec778))
+* **validation:** refuse a NUL character in text instead of failing with a 500 ([8bc0394](https://github.com/SyafaHadyan/kibooz-backend/commit/8bc0394e4c27a2104582e8b847b2d5aba1f058db))
+
 ## [0.6.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.5.2...v0.6.0) (2026-10-10)
 
 
