@@ -43,4 +43,4 @@ jobs:
           level: error
           # The action trims whitespace from its inputs, so a newline separator would silently lint the whole directory
           separator: ","
-          files: "README.md,CONTRIBUTING.md,SECURITY.md,.github/PULL_REQUEST_TEMPLATE.md,docs"
+          files: "README.md,CONTRIBUTING.md,SECURITY.md,ACCESSIBILITY.md,.github/PULL_REQUEST_TEMPLATE.md,docs"
