@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.8.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.7.0...v0.8.0) (2026-10-14)
+
+
+### Features
+
+* **classroom:** let teachers read the guides that parents applied ([e6873c4](https://github.com/SyafaHadyan/kibooz-backend/commit/e6873c44877c4ad96190e43ff9df6e01cd9509f9))
+* **guru:** let a teacher of a class add another teacher ([7246115](https://github.com/SyafaHadyan/kibooz-backend/commit/7246115729d36b6d6b21b55a45d05154f33feaee))
+* **leaderboard:** start the ranking over at the beginning of every semester ([15b8447](https://github.com/SyafaHadyan/kibooz-backend/commit/15b84479df3972319b1f92af116bdc0705668c4c))
+* **user:** retry removing the bucket files of a deleted account ([79d35a8](https://github.com/SyafaHadyan/kibooz-backend/commit/79d35a81f7db85f9cb1130f918e2bb401ee88924))
+* **wali:** let a parent list and add more children ([d210256](https://github.com/SyafaHadyan/kibooz-backend/commit/d2102565031f0d231f223df82220cbcd34d4ba4a))
+
+
+### Bug Fixes
+
+* **health:** do not cache a storage probe that the caller cancelled ([8e05447](https://github.com/SyafaHadyan/kibooz-backend/commit/8e05447c625d1e0b2395a45d1a73fa5b043c429e))
+* **leaderboard:** check the semester every minute to shrink the gap ([381950b](https://github.com/SyafaHadyan/kibooz-backend/commit/381950b69af151b2e3d36fa5f351c5c45d925b81))
+* **user:** back off failed cleanups, bound the response wait and lock the rollback ([c4f320c](https://github.com/SyafaHadyan/kibooz-backend/commit/c4f320c93cbcafc0d4943a4016ad3b11e74285bd))
+* **user:** queue deleted files in the deletion transaction and sweep fairly ([54078f8](https://github.com/SyafaHadyan/kibooz-backend/commit/54078f8342bec6774237e2928246dcb934ea50d1))
+* **user:** return the context error when a cleanup sweep is cut short ([cd2f76c](https://github.com/SyafaHadyan/kibooz-backend/commit/cd2f76ca457c8703187ff9ba13544e4bcf36eb4d))
+
 ## [0.7.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.6.0...v0.7.0) (2026-10-14)
 
 
