@@ -73,7 +73,7 @@ OSSF Scorecard is not required because it only runs on `main`, and the Cloudflar
 
 ### Prose style
 
-Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because Dependabot does not read them. To see the hints that do not gate the build, run Vale locally.
+Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because Dependabot does not read them. To see the hints that do not gate the build, run Vale locally.
 
 ```sh
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 sync
