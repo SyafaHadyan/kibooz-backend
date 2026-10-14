@@ -33,6 +33,7 @@ The features are `auth` for registration, login and tokens, `user` for the profi
 | `internal/imageutil` | Checking the type and size of uploaded images |
 | `internal/pagination` | The `page` and `limit` query parameters of the list endpoints |
 | `internal/classcode` | Stores a class under a random join code that no other class uses |
+| `internal/repocheck` | Tests that keep files of the repository in step, such as the Go image of the Dockerfile and of the CI compose file |
 | `internal/bootstrap` | Builds everything from the settings and connects the layers |
 | `internal/e2e` | End to end tests that also check every response against `openapi.yaml` |
 
