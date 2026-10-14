@@ -16,7 +16,7 @@ import (
 const (
 	// the alphabet leaves out the characters that are easy to confuse when a code is read aloud or copied by hand
 	alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	// eight characters from 32 make about 1.1e12 codes, and the codes that were issued with six keep working until a teacher replaces them
+	// eight characters from 32 make about 1.1e12 codes, and migration 000010 gave the classes that had six characters a new code
 	length  = 8
 	retries = 8
 
