@@ -45,4 +45,4 @@ Messages and the weekday names in `weeklyTrend` are in English (`Monday` to `Fri
 - The PRD defines points only for organic and inorganic trash, so B3 is recorded with `POINTS_B3` (0 by default).
 - BR-04 (confirm AI results below 75% confidence) is a client dialog, so the server stores whatever confidence the confirmed result carries.
 - `averageHappyScore` is the share of that day's students whose latest mood is SENANG.
-- Resetting rankings at a new semester (BR-03) is not automated yet.
+- BR-03 resets the rankings and not the points of a child. The leaderboard ranks `season_points`, which start from zero on the first day of each month in `SEMESTER_START_MONTHS` (January and July by default), while `current_points` keeps the points of all semesters. The API saves the final standings of the semester that ended in `leaderboard_history` first. No route reads that history yet.

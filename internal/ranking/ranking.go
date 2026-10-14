@@ -1,4 +1,4 @@
-// Package ranking keeps students.rank_position in sync with points inside a class
+// Package ranking keeps students.rank_position in sync with the points of the current semester inside a class
 package ranking
 
 import (
@@ -10,7 +10,7 @@ const recomputeSQL = `
 UPDATE students AS s
 SET rank_position = ranked.position
 FROM (
-    SELECT id, ROW_NUMBER() OVER (ORDER BY current_points DESC, full_name ASC, id ASC) AS position
+    SELECT id, ROW_NUMBER() OVER (ORDER BY season_points DESC, full_name ASC, id ASC) AS position
     FROM students
     WHERE class_id = ? AND deleted_at IS NULL
 ) AS ranked

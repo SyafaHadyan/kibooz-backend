@@ -10,10 +10,11 @@ import (
 
 func valid() *Env {
 	return &Env{
-		JWTSecretKey:       strings.Repeat("k", 32),
-		AppTimezone:        "UTC",
-		TrashDailyLimit:    1,
-		DeviceTokenTTLDays: 90,
+		JWTSecretKey:        strings.Repeat("k", 32),
+		AppTimezone:         "UTC",
+		TrashDailyLimit:     1,
+		DeviceTokenTTLDays:  90,
+		SemesterStartMonths: []int{1, 7},
 
 		RequestTimeoutSeconds: 10,
 
@@ -202,4 +203,36 @@ func TestTheTimezoneIsLoadedOnce(t *testing.T) {
 	bare := &Env{AppTimezone: "Asia/Jakarta"}
 	require.Equal(t, "Asia/Jakarta", bare.Location().String())
 	require.Equal(t, "UTC", (&Env{AppTimezone: "Not/AZone"}).Location().String())
+}
+
+func TestTheSemestersDefaultToJanuaryAndJuly(t *testing.T) {
+	setRequired(t)
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 7}, cfg.SemesterStartMonths)
+}
+
+func TestTheSemesterMonthsCanBeSet(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SEMESTER_START_MONTHS", "1,5,9")
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, []int{1, 5, 9}, cfg.SemesterStartMonths)
+}
+
+func TestASemesterMonthThatIsNotAMonthIsRejected(t *testing.T) {
+	for _, months := range []string{"0", "13", "1,13", "-1"} {
+		setRequired(t)
+		t.Setenv("SEMESTER_START_MONTHS", months)
+
+		_, err := New()
+		require.ErrorContains(t, err, "SEMESTER_START_MONTHS", "months %q", months)
+	}
+
+	cfg := valid()
+	cfg.SemesterStartMonths = nil
+
+	require.ErrorContains(t, cfg.validate(), "SEMESTER_START_MONTHS")
 }

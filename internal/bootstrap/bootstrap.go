@@ -37,6 +37,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"gorm.io/gorm"
 )
 
@@ -48,6 +49,7 @@ type Bootstrap struct {
 
 	stopKeepalive func()
 	stopCleanup   func()
+	stopSeason    func()
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -127,6 +129,8 @@ func Start(version string) (*Bootstrap, error) {
 		keepalive.Target{Name: "redis", Ping: cache.Ping},
 	)
 
+	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).Start(season.Interval)
+
 	stopCleanup := func() {}
 	if storage.Enabled() {
 		stopCleanup = filecleanup.New(database, storage).Start(filecleanup.Interval)
@@ -134,6 +138,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
+		stopSeason: stopSeason,
 	}, nil
 }
 
@@ -141,6 +146,7 @@ func Start(version string) (*Bootstrap, error) {
 func (b *Bootstrap) Close() {
 	b.stopKeepalive()
 	b.stopCleanup()
+	b.stopSeason()
 
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()

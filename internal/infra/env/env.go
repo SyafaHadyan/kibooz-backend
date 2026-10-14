@@ -56,6 +56,8 @@ type Env struct {
 	PointsAnorganik          int    `env:"POINTS_ANORGANIK" envDefault:"15"`
 	PointsB3                 int    `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit          int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	// SemesterStartMonths are the months in which a semester begins, the leaderboard starts from zero on the first day of each
+	SemesterStartMonths []int `env:"SEMESTER_START_MONTHS" envSeparator:"," envDefault:"1,7"`
 
 	// location is the parsed AppTimezone, set by validate so that it is not loaded from the zone data on every request
 	location *time.Location
@@ -101,6 +103,16 @@ func (e *Env) validate() error {
 	}
 
 	e.location = loc
+
+	if len(e.SemesterStartMonths) == 0 {
+		return errors.New("SEMESTER_START_MONTHS needs at least one month")
+	}
+
+	for _, month := range e.SemesterStartMonths {
+		if month < 1 || month > 12 {
+			return fmt.Errorf("SEMESTER_START_MONTHS has %d, a month is a number from 1 to 12", month)
+		}
+	}
 
 	// A limit of 0 would switch a limiter off, and a lifetime that is not positive gives tokens, caches and signed addresses
 	// that are over when they are issued, or in the case of the leaderboard cache that never end

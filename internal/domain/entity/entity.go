@@ -58,13 +58,15 @@ type ClassTeacher struct {
 }
 
 type Student struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
-	WaliID        uuid.UUID `gorm:"type:uuid;not null"`
-	ClassID       uuid.UUID `gorm:"type:uuid;not null"`
-	NISN          string    `gorm:"column:nisn;size:30;not null;uniqueIndex"`
-	FullName      string    `gorm:"size:150;not null"`
-	AvatarURL     *string
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	WaliID    uuid.UUID `gorm:"type:uuid;not null"`
+	ClassID   uuid.UUID `gorm:"type:uuid;not null"`
+	NISN      string    `gorm:"column:nisn;size:30;not null;uniqueIndex"`
+	FullName  string    `gorm:"size:150;not null"`
+	AvatarURL *string
+	// CurrentPoints holds the points of all semesters, SeasonPoints the ones of the semester that is under way
 	CurrentPoints int            `gorm:"not null;default:0"`
+	SeasonPoints  int            `gorm:"not null;default:0"`
 	RankPosition  int            `gorm:"not null;default:0"`
 	CreatedAt     time.Time      `gorm:"autoCreateTime"`
 	DeletedAt     gorm.DeletedAt `gorm:"index"`

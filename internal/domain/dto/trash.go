@@ -16,6 +16,7 @@ type ScanClaimRequest struct {
 type ScanClaimResponse struct {
 	PointsAdded         int `json:"pointsAdded"`
 	TotalPoints         int `json:"totalPoints"`
+	SeasonPoints        int `json:"seasonPoints"`
 	NewRank             int `json:"newRank"`
 	RemainingDailyScans int `json:"remainingDailyScans"`
 }
@@ -50,6 +51,7 @@ type TrashStatsStudent struct {
 type TrashStatsResponse struct {
 	Student             TrashStatsStudent `json:"student"`
 	TotalPoints         int               `json:"totalPoints"`
+	SeasonPoints        int               `json:"seasonPoints"`
 	ClassRank           int               `json:"classRank"`
 	TotalScans          int               `json:"totalScans"`
 	Breakdown           []TrashTypeStat   `json:"breakdown"`

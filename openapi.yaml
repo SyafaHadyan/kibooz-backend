@@ -1194,7 +1194,9 @@ paths:
       tags: [Trash]
       operationId: leaderboard
       summary: Podium and ranking of a class
-      description: Ranked by points, then name. A parent sees the class of their child and a teacher sees a class they teach.
+      description: |
+        Ranked by the points of the semester that is under way, then name, and every class starts from zero when a new
+        semester begins. A parent sees the class of their child and a teacher sees a class they teach.
       parameters:
         - $ref: "#/components/parameters/ClassId"
       responses:
@@ -1789,10 +1791,14 @@ components:
           nullable: true
     PointsSummary:
       type: object
-      required: [totalPoints, classRank, organicCount, anorganicCount]
+      required: [totalPoints, seasonPoints, classRank, organicCount, anorganicCount]
       properties:
         totalPoints:
           type: integer
+          description: The points of all semesters
+        seasonPoints:
+          type: integer
+          description: The points of the semester that is under way, which the class rank and the leaderboard use
         classRank:
           type: integer
         organicCount:
@@ -2040,12 +2046,16 @@ components:
           description: Optional evidence photo as base64 or a data URI, at most 4 MiB once decoded
     ScanClaimData:
       type: object
-      required: [pointsAdded, totalPoints, newRank, remainingDailyScans]
+      required: [pointsAdded, totalPoints, seasonPoints, newRank, remainingDailyScans]
       properties:
         pointsAdded:
           type: integer
         totalPoints:
           type: integer
+          description: The points of all semesters
+        seasonPoints:
+          type: integer
+          description: The points of the semester that is under way
         newRank:
           type: integer
         remainingDailyScans:
@@ -2642,7 +2652,7 @@ components:
           $ref: "#/components/schemas/GuruProfileDetail"
     ClassStudent:
       type: object
-      required: [id, fullName, nisn, avatarUrl, currentPoints, classRank, todayMood]
+      required: [id, fullName, nisn, avatarUrl, currentPoints, seasonPoints, classRank, todayMood]
       properties:
         id:
           type: string
@@ -2658,6 +2668,11 @@ components:
         currentPoints:
           type: integer
           minimum: 0
+          description: The points of all semesters
+        seasonPoints:
+          type: integer
+          minimum: 0
+          description: The points of the semester that is under way, which the class rank follows
         classRank:
           type: integer
           minimum: 0
@@ -2812,7 +2827,7 @@ components:
           nullable: true
     ChildProfile:
       type: object
-      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, classRank, guardian]
+      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, seasonPoints, classRank, guardian]
       properties:
         id:
           type: string
@@ -2840,6 +2855,11 @@ components:
         currentPoints:
           type: integer
           minimum: 0
+          description: The points of all semesters
+        seasonPoints:
+          type: integer
+          minimum: 0
+          description: The points of the semester that is under way, which the class rank follows
         classRank:
           type: integer
           minimum: 0
@@ -2870,7 +2890,7 @@ components:
           minimum: 0
     TrashStats:
       type: object
-      required: [student, totalPoints, classRank, totalScans, breakdown, todayScans, dailyLimit, remainingDailyScans]
+      required: [student, totalPoints, seasonPoints, classRank, totalScans, breakdown, todayScans, dailyLimit, remainingDailyScans]
       properties:
         student:
           type: object
@@ -2884,6 +2904,11 @@ components:
         totalPoints:
           type: integer
           minimum: 0
+          description: The points of all semesters
+        seasonPoints:
+          type: integer
+          minimum: 0
+          description: The points of the semester that is under way, which the class rank follows
         classRank:
           type: integer
           minimum: 0

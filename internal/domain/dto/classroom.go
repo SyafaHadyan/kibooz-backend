@@ -121,6 +121,7 @@ type ClassStudent struct {
 	NISN          string          `json:"nisn"`
 	AvatarURL     *string         `json:"avatarUrl"`
 	CurrentPoints int             `json:"currentPoints"`
+	SeasonPoints  int             `json:"seasonPoints"`
 	ClassRank     int             `json:"classRank"`
 	TodayMood     *constants.Mood `json:"todayMood"`
 }

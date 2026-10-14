@@ -80,6 +80,7 @@ func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID
 		},
 		PointsSummary: dto.PointsSummary{
 			TotalPoints:    student.CurrentPoints,
+			SeasonPoints:   student.SeasonPoints,
 			ClassRank:      student.RankPosition,
 			OrganicCount:   counts[constants.TrashOrganik],
 			AnorganicCount: counts[constants.TrashAnorganik],
@@ -167,6 +168,7 @@ func (u *WaliUseCase) Child(ctx context.Context, userID uuid.UUID, studentID uui
 		SchoolName:    student.SchoolName,
 		AcademicYear:  student.AcademicYear,
 		CurrentPoints: student.CurrentPoints,
+		SeasonPoints:  student.SeasonPoints,
 		ClassRank:     student.RankPosition,
 		Guardian: dto.Guardian{
 			FullName:       guardian.FullName,
@@ -199,6 +201,7 @@ func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentI
 	res := dto.TrashStatsResponse{
 		Student:             dto.TrashStatsStudent{ID: student.ID, FullName: student.FullName},
 		TotalPoints:         student.CurrentPoints,
+		SeasonPoints:        student.SeasonPoints,
 		ClassRank:           student.RankPosition,
 		Breakdown:           make([]dto.TrashTypeStat, 0, len(trashTypes)),
 		TodayScans:          today,
