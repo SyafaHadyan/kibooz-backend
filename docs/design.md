@@ -8,7 +8,7 @@ There is no seed data. Accounts come from `POST /auth/register`.
 
 - A GURU registers together with a new class (`class.name` is required) and becomes its teacher. The class gets an eight character `joinCode` that the dashboard returns. A class that was created when codes had six characters got a new eight character code from migration 000010 when the API first started with it, and the old code stopped working.
 - A WALI registers with the teacher's `classCode` and the child's `student.nisn` and `student.fullName`.
-- A GURU cannot join an existing class, so knowing a class code never gives access to its children's data.
+- A GURU cannot join an existing class with its code, so knowing a class code never gives access to its children's data. A teacher of the class can add another registered teacher by email with `POST /guru/classes/{classId}/teachers`, and that is the only way a class gets more than one teacher.
 - ADMIN exists in the role enum but cannot be registered.
 
 ## Rate limits

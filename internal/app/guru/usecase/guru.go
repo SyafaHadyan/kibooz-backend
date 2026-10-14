@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -36,6 +37,10 @@ type GuruUseCaseItf interface {
 	CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error)
 	// RotateJoinCode replaces the join code of a class the teacher teaches, and parents can no longer join with the old one
 	RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error)
+	// Teachers lists the teachers of a class the caller teaches
+	Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error)
+	// AddTeacher lets a teacher of the class add another registered teacher by email, who then sees the whole class
+	AddTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddTeacherRequest) (dto.Teacher, error)
 	Profile(ctx context.Context, userID uuid.UUID) (dto.GuruProfile, error)
 	ProfileDetail(ctx context.Context, userID uuid.UUID) (dto.GuruProfileDetail, error)
 	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateGuruProfileRequest) (dto.GuruProfileDetail, error)
@@ -319,6 +324,54 @@ func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, clas
 	}
 
 	return dto.JoinCodeResponse{JoinCode: code}, nil
+}
+
+func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.TeacherList{}, err
+	}
+
+	rows, err := u.repo.ListTeachers(ctx, class.ID)
+	if err != nil {
+		return dto.TeacherList{}, apperror.Internal(err)
+	}
+
+	res := dto.TeacherList{Teachers: make([]dto.Teacher, 0, len(rows))}
+	for i := range rows {
+		res.Teachers = append(res.Teachers, teacherResponse(&rows[i]))
+	}
+
+	return res, nil
+}
+
+func (u *GuruUseCase) AddTeacher(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddTeacherRequest,
+) (dto.Teacher, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.Teacher{}, err
+	}
+
+	added, err := u.repo.AddTeacher(ctx, class.ID, strings.ToLower(strings.TrimSpace(req.Email)))
+	if err != nil {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return dto.Teacher{}, err
+		}
+
+		return dto.Teacher{}, apperror.Internal(err)
+	}
+
+	if added == nil {
+		return dto.Teacher{}, apperror.ErrTeacherNotFound
+	}
+
+	return teacherResponse(added), nil
+}
+
+func teacherResponse(row *repository.TeacherRow) dto.Teacher {
+	return dto.Teacher{ID: row.ID, FullName: row.FullName, NIP: row.NIP, AvatarURL: row.AvatarURL, JoinedAt: row.JoinedAt}
 }
 
 func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error) {
