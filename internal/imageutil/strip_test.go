@@ -381,7 +381,7 @@ func TestStripWebPRemovesExifAndXMPAndKeepsTheOrientation(t *testing.T) {
 	dirty := webpFile(
 		webpChunk("VP8X", flags),
 		webpChunk("ICCP", []byte("profile")),
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.LittleEndian, 3)),
 		webpChunk("XMP ", []byte("SecretXMP")),
 	)
@@ -394,7 +394,7 @@ func TestStripWebPRemovesExifAndXMPAndKeepsTheOrientation(t *testing.T) {
 
 	chunks := webpChunks(t, clean.Data)
 	require.Equal(t, byte(0x10|webpFlagsEXIF), chunks["VP8X"][0])
-	require.Equal(t, []byte("pixel data"), chunks["VP8L"])
+	require.Equal(t, vp8l(16, 16), chunks["VP8L"])
 	require.Equal(t, []byte("profile"), chunks["ICCP"])
 	require.NotContains(t, chunks, "XMP ")
 	require.Equal(t, 3, exifOrientation(chunks["EXIF"]))
@@ -406,7 +406,7 @@ func TestStripWebPClearsTheFlagsWhenNoOrientationStays(t *testing.T) {
 
 	clean, err := Inspect(webpFile(
 		webpChunk("VP8X", flags),
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.BigEndian, 1)),
 		webpChunk("XMP ", []byte("SecretXMP")),
 	), stripMaxBytes)
@@ -420,13 +420,13 @@ func TestStripWebPClearsTheFlagsWhenNoOrientationStays(t *testing.T) {
 
 func TestStripWebPWithoutTheExtendedHeaderCannotCarryAnOrientation(t *testing.T) {
 	clean, err := Inspect(webpFile(
-		webpChunk("VP8L", []byte("pixel data")),
+		webpChunk("VP8L", vp8l(16, 16)),
 		webpChunk("EXIF", exifBlock(binary.BigEndian, 6)),
 	), stripMaxBytes)
 	require.NoError(t, err)
 
 	chunks := webpChunks(t, clean.Data)
-	require.Equal(t, []byte("pixel data"), chunks["VP8L"])
+	require.Equal(t, vp8l(16, 16), chunks["VP8L"])
 	require.NotContains(t, chunks, "EXIF")
 }
 
