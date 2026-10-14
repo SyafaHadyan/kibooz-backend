@@ -729,6 +729,34 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/guidance-reports:
+    get:
+      tags: [Classroom]
+      operationId: listGuidanceReports
+      summary: List the guides that parents applied
+      description: |
+        Only for the teachers of the class. Newest report first. A report is made when a parent records with
+        `POST /wali/guidance/apply` that a guide for the emotion of a child is being followed, so a teacher can see that the
+        handling is under way. The notes are the ones the parent wrote and are `null` when there were none.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The reports of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuidanceReportListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /classes/{classId}/forum:
     get:
       tags: [Classroom]
@@ -2469,6 +2497,54 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/ClassStudentList"
+    GuidanceReport:
+      type: object
+      required: [id, studentId, studentName, guidanceId, guidanceTitle, category, parentNotes, appliedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        guidanceId:
+          type: string
+          example: guidance-sedih-4step
+        guidanceTitle:
+          type: string
+          example: Be There for Your Child When They Feel Sad
+        category:
+          type: string
+          example: Sad
+        parentNotes:
+          type: string
+          nullable: true
+        appliedAt:
+          type: string
+          format: date-time
+    GuidanceReportList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [reports]
+          properties:
+            reports:
+              type: array
+              items:
+                $ref: "#/components/schemas/GuidanceReport"
+    GuidanceReportListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GuidanceReportList"
     Guardian:
       type: object
       required: [fullName, email, phoneNumber, whatsappNumber, address]

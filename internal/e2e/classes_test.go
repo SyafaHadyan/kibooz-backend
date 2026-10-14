@@ -392,3 +392,81 @@ func TestTrashStatistics(t *testing.T) {
 		call(t, http.MethodGet, "/api/v1/trash/stats", "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 	})
 }
+
+func TestGuidanceReports(t *testing.T) {
+	guru := registerGuru(t, "Anggrek")
+	classID, joinCode := classOf(t, guru)
+
+	amelia, ameliaID := registerWali(t, joinCode, "Amelia Siti")
+	zahra, zahraID := registerWali(t, joinCode, "Zahra Putri")
+
+	otherGuru := registerGuru(t, "Cempaka")
+	otherClassID, otherCode := classOf(t, otherGuru)
+	other, otherID := registerWali(t, otherCode, "Other Child")
+
+	reports := fmt.Sprintf("/api/v1/classes/%s/guidance-reports", classID)
+
+	apply := func(token string, studentID any, guide string, notes string) {
+		t.Helper()
+
+		res := call(t, http.MethodPost, "/api/v1/wali/guidance/apply", token, map[string]any{
+			"guidanceId": guide, "studentId": studentID, "parentNotes": notes,
+		})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+	}
+
+	t.Run("a class without reports gives an empty page", func(t *testing.T) {
+		res := call(t, http.MethodGet, reports, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.EqualValues(t, 0, res.data("total"))
+		require.Empty(t, listOf(t, res, "reports"))
+	})
+
+	apply(amelia.Token, ameliaID, "guidance-sedih-4step", "Talked to her gently.")
+	apply(zahra.Token, zahraID, "guidance-marah-4step", "")
+	apply(other.Token, otherID, "guidance-senang-4step", "Another class")
+
+	t.Run("reports of the class come newest first with the guide and the notes", func(t *testing.T) {
+		res := call(t, http.MethodGet, reports, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.EqualValues(t, 2, res.data("total"))
+
+		list := listOf(t, res, "reports")
+		require.Equal(t, []string{"Zahra Putri", "Amelia Siti"}, titles(t, list, "studentName"))
+		require.Equal(t, zahraID, dig(list[0], "studentId"))
+		require.Equal(t, "guidance-marah-4step", dig(list[0], "guidanceId"))
+		require.Equal(t, "Help Your Child Calm Down", dig(list[0], "guidanceTitle"))
+		require.Equal(t, "Angry", dig(list[0], "category"))
+		require.Nil(t, dig(list[0], "parentNotes"))
+		require.Equal(t, "Talked to her gently.", dig(list[1], "parentNotes"))
+		require.NotEmpty(t, dig(list[1], "appliedAt"))
+	})
+
+	t.Run("paging", func(t *testing.T) {
+		res := call(t, http.MethodGet, reports+"?page=2&limit=1", guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, []string{"Amelia Siti"}, titles(t, listOf(t, res, "reports"), "studentName"))
+
+		call(t, http.MethodGet, reports+"?limit=0", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("only the teachers of the class read the reports", func(t *testing.T) {
+		call(t, http.MethodGet, reports, amelia.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, reports, otherGuru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodGet, reports, "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodGet, "/api/v1/classes/not-a-uuid/guidance-reports", guru.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		res := call(t, http.MethodGet, fmt.Sprintf("/api/v1/classes/%s/guidance-reports", otherClassID), otherGuru.Token, nil)
+		require.EqualValues(t, 1, res.data("total"))
+	})
+
+	t.Run("a deleted child leaves the reports", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, deleteAccount(t, amelia.Token, amelia.Password).Status)
+
+		res := call(t, http.MethodGet, reports, guru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.EqualValues(t, 1, res.data("total"))
+		require.Equal(t, []string{"Zahra Putri"}, titles(t, listOf(t, res, "reports"), "studentName"))
+	})
+}
