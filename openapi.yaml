@@ -1294,6 +1294,18 @@ components:
           description: Seconds to wait before the next try
           schema:
             type: string
+        X-RateLimit-Limit:
+          description: The requests that the limit allows in one window
+          schema:
+            type: string
+        X-RateLimit-Remaining:
+          description: The requests that are left in the window, 0 when the request was refused
+          schema:
+            type: string
+        X-RateLimit-Reset:
+          description: Seconds until the window ends, and the same as Retry-After when the request was refused
+          schema:
+            type: string
       content:
         application/json:
           schema:
