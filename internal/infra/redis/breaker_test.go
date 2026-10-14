@@ -291,6 +291,20 @@ func TestACallThatTheCallerGaveUpOnSaysNothingAboutRedis(t *testing.T) {
 	})
 }
 
+func TestATimeoutOfTheClientOpensTheBreakerWhileTheCallerStillWaits(t *testing.T) {
+	s := startServer(t, func([]string) string { return "" })
+	cache := connect(t, s)
+
+	// the context of the caller is alive for a long time, so the timeout that ends the call is the one of the client
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	_, _, err := cache.Get(ctx, "key")
+	require.Error(t, err)
+	require.NoError(t, ctx.Err())
+	require.False(t, cache.Available())
+}
+
 func TestAvailableDoesNotTakeTheCallThatTestsRedis(t *testing.T) {
 	silent := startServer(t, func([]string) string { return "" })
 	cache := connect(t, silent)

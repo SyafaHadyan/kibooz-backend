@@ -36,7 +36,7 @@ const limiterPrefix = "limiter:"
 func (s *RateStore) Hit(ctx context.Context, key string, window time.Duration) (ratelimit.Hits, error) {
 	if s.r.allow() == nil {
 		hits, err := s.hit(ctx, key, window)
-		if s.r.record(err) == nil {
+		if s.r.record(ctx, err) == nil {
 			return hits, nil
 		}
 	}

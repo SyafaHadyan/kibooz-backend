@@ -114,8 +114,8 @@ func (r *Redis) allow() error {
 }
 
 // record updates the breaker from the result of a call and logs only when the state changes
-func (r *Redis) record(err error) error {
-	switch kind := classify(err); kind {
+func (r *Redis) record(ctx context.Context, err error) error {
+	switch kind := classify(ctx, err); kind {
 	case healthy, rejected:
 		// Redis answered, so it is reachable even when it refused the command
 		r.downUntil.Store(0)
@@ -167,12 +167,14 @@ const (
 // unavailableReplies are the errors that Redis answers with while it cannot serve the call, and not because of the call
 var unavailableReplies = []string{"LOADING", "READONLY", "MASTERDOWN", "CLUSTERDOWN", "BUSY", "TRYAGAIN", "OOM"}
 
-func classify(err error) outcome {
+func classify(ctx context.Context, err error) outcome {
 	if err == nil || errors.Is(err, redis.Nil) {
 		return healthy
 	}
 
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// only a caller whose own context has ended gave up. A timeout that the client raises on its own, while the context is
+	// still alive, says that Redis did not answer in time.
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return abandoned
 	}
 
@@ -207,7 +209,7 @@ func (r *Redis) Set(ctx context.Context, key string, value string, ttl time.Dura
 		return err
 	}
 
-	return r.record(r.Client.Set(ctx, r.key(key), value, ttl).Err())
+	return r.record(ctx, r.Client.Set(ctx, r.key(key), value, ttl).Err())
 }
 
 func (r *Redis) Get(ctx context.Context, key string) (string, bool, error) {
@@ -217,14 +219,14 @@ func (r *Redis) Get(ctx context.Context, key string) (string, bool, error) {
 
 	value, err := r.Client.Get(ctx, r.key(key)).Result()
 	if errors.Is(err, redis.Nil) {
-		return "", false, r.record(nil)
+		return "", false, r.record(ctx, nil)
 	}
 
 	if err != nil {
-		return "", false, r.record(err)
+		return "", false, r.record(ctx, err)
 	}
 
-	return value, true, r.record(nil)
+	return value, true, r.record(ctx, nil)
 }
 
 func (r *Redis) Del(ctx context.Context, keys ...string) error {
@@ -237,7 +239,7 @@ func (r *Redis) Del(ctx context.Context, keys ...string) error {
 		prefixed[i] = r.key(key)
 	}
 
-	return r.record(r.Client.Del(ctx, prefixed...).Err())
+	return r.record(ctx, r.Client.Del(ctx, prefixed...).Err())
 }
 
 func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bool, error) {
@@ -247,14 +249,14 @@ func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bo
 
 	previous, err := r.Client.SetArgs(ctx, r.key(key), usedMarker, redis.SetArgs{Mode: "XX", Get: true, TTL: ttl}).Result()
 	if errors.Is(err, redis.Nil) {
-		return false, r.record(nil)
+		return false, r.record(ctx, nil)
 	}
 
 	if err != nil {
-		return false, r.record(err)
+		return false, r.record(ctx, err)
 	}
 
-	return previous == usedMarker, r.record(nil)
+	return previous == usedMarker, r.record(ctx, nil)
 }
 
 func (r *Redis) Ping(ctx context.Context) error {
@@ -262,7 +264,7 @@ func (r *Redis) Ping(ctx context.Context) error {
 		return err
 	}
 
-	return r.record(r.Client.Ping(ctx).Err())
+	return r.record(ctx, r.Client.Ping(ctx).Err())
 }
 
 func (r *Redis) Close() error {
