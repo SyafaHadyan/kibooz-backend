@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
@@ -229,4 +231,70 @@ func TestARefreshDoesNotWaitForAnExpiredTokenThatSomeoneElseHolds(t *testing.T) 
 
 	require.NoError(t, testDB.Raw("SELECT count(*) FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&left).Error)
 	require.EqualValues(t, 1, left, "the locked row was left for the next time")
+}
+
+// impatient returns a handle on one connection that gives up on a lock after 300 ms, which is how a deletion fails when
+// another transaction holds the tokens it has to lock
+func impatient(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	pool, err := testDB.DB()
+	require.NoError(t, err)
+
+	conn, err := pool.Conn(context.Background())
+	require.NoError(t, err)
+
+	_, err = conn.ExecContext(context.Background(), "SET lock_timeout = '300ms'")
+	require.NoError(t, err)
+
+	// the connection goes back to the pool, so it must not keep the setting for the tests that follow
+	t.Cleanup(func() {
+		_, _ = conn.ExecContext(context.Background(), "RESET lock_timeout")
+		_ = conn.Close()
+	})
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: conn}), &gorm.Config{})
+	require.NoError(t, err)
+
+	return db
+}
+
+func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *testing.T) {
+	guru := registerGuru(t, "Lock Timeout")
+
+	var userID string
+
+	require.NoError(t, testDB.Raw("SELECT user_id::text FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&userID).Error)
+
+	holder := testDB.Begin()
+	require.NoError(t, holder.Error)
+
+	t.Cleanup(func() { _ = holder.Rollback().Error })
+
+	require.NoError(t, holder.Exec("SELECT id FROM refresh_tokens WHERE token_hash = ? FOR UPDATE", refreshHash(guru.RefreshToken)).Error)
+
+	db := impatient(t)
+
+	t.Run("logging out", func(t *testing.T) {
+		require.Error(t, authrepository.NewAuthDB(db).DeleteRefreshToken(context.Background(), refreshHash(guru.RefreshToken)))
+	})
+
+	t.Run("deleting the account", func(t *testing.T) {
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru)
+		require.Error(t, err)
+
+		var active int64
+
+		require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE id = ?::uuid AND deleted_at IS NULL", userID).Scan(&active).Error)
+		require.EqualValues(t, 1, active, "the account is still there because the whole deletion was rolled back")
+		require.EqualValues(t, 1, tokensWhere(t, "user_id", userID))
+	})
+}
+
+func TestLoggingOutWithATokenNobodyKnowsChangesNothing(t *testing.T) {
+	guru := registerGuru(t, "Unknown Logout")
+	family := familyOf(t, guru.RefreshToken)
+
+	require.NoError(t, authrepository.NewAuthDB(testDB).DeleteRefreshToken(context.Background(), refreshHash(uuid.NewString())))
+	require.EqualValues(t, 1, tokensWhere(t, "family_id", family))
 }
