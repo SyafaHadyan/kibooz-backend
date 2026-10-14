@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -52,6 +53,11 @@ func BindBody(c fiber.Ctx, dst any) error {
 
 // Struct validates dst and returns an application error describing every failed field
 func Struct(dst any) error {
+	// PostgreSQL cannot store a NUL character in text, so it has to be refused here and not left to fail in a query as a 500
+	if found := nulFields(dst); len(found) > 0 {
+		return apperror.Validation(found)
+	}
+
 	err := get().Struct(dst)
 	if err == nil {
 		return nil
@@ -100,5 +106,72 @@ func describe(fieldErr validator.FieldError) string {
 		return "is outside the allowed range"
 	default:
 		return "is invalid"
+	}
+}
+
+// nulFields lists the text fields of dst that hold a NUL character, which JSON can carry as \u0000
+func nulFields(dst any) map[string]string {
+	found := map[string]string{}
+
+	value := reflect.ValueOf(dst)
+	if value.Kind() == reflect.Pointer && !value.IsNil() {
+		value = value.Elem()
+	}
+
+	if value.Kind() == reflect.Struct {
+		for i := range value.NumField() {
+			field := value.Type().Field(i)
+			if field.IsExported() {
+				collectNul(value.Field(i), fieldName(field), found)
+			}
+		}
+	} else {
+		collectNul(value, "body", found)
+	}
+
+	return found
+}
+
+func fieldName(field reflect.StructField) string {
+	name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
+	if name == "-" || name == "" {
+		return field.Name
+	}
+
+	return name
+}
+
+func collectNul(value reflect.Value, path string, found map[string]string) {
+	const message = "must not contain a null character"
+
+	switch value.Kind() {
+	case reflect.String:
+		if strings.ContainsRune(value.String(), 0) {
+			found[path] = message
+		}
+	case reflect.Pointer, reflect.Interface:
+		if !value.IsNil() {
+			collectNul(value.Elem(), path, found)
+		}
+	case reflect.Struct:
+		for i := range value.NumField() {
+			field := value.Type().Field(i)
+			if field.IsExported() {
+				collectNul(value.Field(i), path+"."+fieldName(field), found)
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := range value.Len() {
+			collectNul(value.Index(i), path+"["+strconv.Itoa(i)+"]", found)
+		}
+	case reflect.Map:
+		for _, key := range value.MapKeys() {
+			if key.Kind() == reflect.String && strings.ContainsRune(key.String(), 0) {
+				found[path] = message
+			}
+
+			collectNul(value.MapIndex(key), path+"."+key.String(), found)
+		}
+	default:
 	}
 }
