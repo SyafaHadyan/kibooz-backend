@@ -3,6 +3,7 @@ package redis_test
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"strconv"
@@ -168,7 +169,7 @@ func TestOnlyOneCallTestsARedisThatWasDown(t *testing.T) {
 			defer group.Done()
 
 			_, _, err := cache.Get(context.Background(), "key")
-			if err == redis.ErrUnavailable {
+			if errors.Is(err, redis.ErrUnavailable) {
 				refused.Add(1)
 				longest.Store(max(longest.Load(), int64(time.Since(started))))
 
