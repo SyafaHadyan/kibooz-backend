@@ -143,15 +143,17 @@ func app(t *testing.T) *fiber.App {
 
 	once.Do(func() {
 		defaults := map[string]string{
-			"USER_LIMITER_MAX":     "100000",
-			"AUTH_LIMITER_MAX":     "100000",
-			"JWT_SECRET_KEY":       uuid.NewString() + uuid.NewString(),
-			"S3_ENDPOINT":          startMockS3().URL,
-			"S3_REGION":            "us-east-1",
-			"S3_BUCKET_NAME":       testBucket,
-			"S3_ACCESS_KEY_ID":     "test",
-			"S3_ACCESS_KEY_SECRET": "test",
-			"S3_PUBLIC_URL":        testPublicURL,
+			"USER_LIMITER_MAX": "100000",
+			"AUTH_LIMITER_MAX": "100000",
+			// every test that registers a parent names a class code and they all share this budget
+			"CLASS_CODE_LIMITER_MAX": "100000",
+			"JWT_SECRET_KEY":         uuid.NewString() + uuid.NewString(),
+			"S3_ENDPOINT":            startMockS3().URL,
+			"S3_REGION":              "us-east-1",
+			"S3_BUCKET_NAME":         testBucket,
+			"S3_ACCESS_KEY_ID":       "test",
+			"S3_ACCESS_KEY_SECRET":   "test",
+			"S3_PUBLIC_URL":          testPublicURL,
 		}
 
 		for key, value := range defaults {
