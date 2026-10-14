@@ -19,6 +19,7 @@ func FuzzStruct(f *testing.F) {
 	f.Add(`{"email":"a@b.co","password":"12345678","role":"WALI","classCode":"ABCD12","student":{"fullName":"Budi"}}`)
 	f.Add(`{"studentId":"not-a-uuid","moodType":"SENANG","confidenceScore":2}`)
 	f.Add(`{"refreshToken":""}`)
+	f.Add(`{"title":"a\u0000","body":"b","refreshToken":"x\u0000"}`)
 	f.Add(`{}`)
 	f.Add(`null`)
 	f.Add(`[]`)
