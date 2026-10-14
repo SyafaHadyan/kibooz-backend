@@ -15,11 +15,11 @@ import (
 func ok(context.Context) error   { return nil }
 func down(context.Context) error { return errors.New("down") }
 
-func probe(t *testing.T, pingDB pinger, pingRedis pinger, storage bool) (int, map[string]any) {
+func probe(t *testing.T, pingDB pinger, pingRedis pinger, pingStorage pinger) (int, map[string]any) {
 	t.Helper()
 
 	app := fiber.New()
-	app.Get("/healthz", healthHandler(pingDB, pingRedis, storage, "test"))
+	app.Get("/healthz", healthHandler(pingDB, pingRedis, pingStorage, "test"))
 
 	res, err := app.Test(httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	require.NoError(t, err)
@@ -38,7 +38,7 @@ func checks(body map[string]any) map[string]any {
 }
 
 func TestHealthEverythingUp(t *testing.T) {
-	status, body := probe(t, ok, ok, true)
+	status, body := probe(t, ok, ok, ok)
 
 	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, "ok", body["status"])
@@ -47,7 +47,7 @@ func TestHealthEverythingUp(t *testing.T) {
 }
 
 func TestHealthReportsDisabledStorageWithoutChangingStatus(t *testing.T) {
-	status, body := probe(t, ok, ok, false)
+	status, body := probe(t, ok, ok, nil)
 
 	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, "ok", body["status"])
@@ -55,7 +55,7 @@ func TestHealthReportsDisabledStorageWithoutChangingStatus(t *testing.T) {
 }
 
 func TestHealthRedisDownIsDegraded(t *testing.T) {
-	status, body := probe(t, ok, down, true)
+	status, body := probe(t, ok, down, ok)
 
 	require.Equal(t, http.StatusOK, status)
 	require.Equal(t, "degraded", body["status"])
@@ -63,7 +63,7 @@ func TestHealthRedisDownIsDegraded(t *testing.T) {
 }
 
 func TestHealthDatabaseDownFails(t *testing.T) {
-	status, body := probe(t, down, ok, true)
+	status, body := probe(t, down, ok, ok)
 
 	require.Equal(t, http.StatusServiceUnavailable, status)
 	require.Equal(t, false, body["success"])
@@ -71,6 +71,23 @@ func TestHealthDatabaseDownFails(t *testing.T) {
 	require.Equal(t, "down", checks(body)["database"])
 
 	// a database outage stays "down" even when Redis is also gone
-	_, both := probe(t, down, down, false)
+	_, both := probe(t, down, down, nil)
 	require.Equal(t, "down", both["status"])
+}
+
+func TestHealthStorageThatRefusesWritesIsDegraded(t *testing.T) {
+	status, body := probe(t, ok, ok, down)
+
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "degraded", body["status"])
+	require.Equal(t, "down", checks(body)["storage"])
+	require.Equal(t, "ok", checks(body)["redis"])
+}
+
+func TestHealthStorageDownDoesNotHideADatabaseOutage(t *testing.T) {
+	status, body := probe(t, down, ok, down)
+
+	require.Equal(t, http.StatusServiceUnavailable, status)
+	require.Equal(t, "down", body["status"])
+	require.Equal(t, "down", checks(body)["storage"])
 }

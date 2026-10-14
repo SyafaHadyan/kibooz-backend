@@ -42,7 +42,7 @@ cp .env.example .env        # then edit the DB_*, REDIS_* and JWT_SECRET_KEY val
 go run ./cmd/api
 ```
 
-`GET /healthz` reports database and Redis status, answering 200 with `"status": "degraded"` when only Redis is down and 503 when the database is down. The `checks` object also lists `storage` as `ok` or `disabled`, which only reflects whether the S3 settings are complete and never changes the status. The `kibooz-backend healthcheck` command runs the same probe for container health checks and treats a degraded service as healthy.
+`GET /healthz` reports database and Redis status, answering 200 with `"status": "degraded"` when only Redis is down and 503 when the database is down. The `checks` object also lists `storage` as `ok`, `disabled` when the S3 settings are incomplete, or `down` when the bucket refuses a write, which also makes the status `degraded`. The storage check stores and deletes a small object under `healthcheck/` and reuses its answer for a minute, so a bucket whose credentials cannot write shows up here and not on the first upload. The `kibooz-backend healthcheck` command runs the same probe for container health checks and treats a degraded service as healthy.
 
 ## Production deployment
 

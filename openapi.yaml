@@ -1153,7 +1153,7 @@ paths:
       operationId: health
       summary: Health of the service and its dependencies
       description: |
-        Answers `200` when the database works, with `degraded` when Redis is down, and `503` when the database is down.
+        Answers `200` when the database works, with `degraded` when Redis is down or the bucket refuses a write, and `503` when the database is down. The storage check writes and deletes a small object and reuses its answer for a minute.
         This route lives at the root and not under `/api/v1`.
       security: []
       servers:
@@ -2615,4 +2615,4 @@ components:
               enum: [ok, down]
             storage:
               type: string
-              enum: [ok, disabled]
+              enum: [ok, disabled, down]
