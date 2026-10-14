@@ -29,6 +29,8 @@ type UserDBItf interface {
 	// addresses of their files. It returns the classes whose ranking changed and the addresses that were cleared,
 	// so the caller can delete the files.
 	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role) (DeletedAccount, error)
+	// QueueFileCleanups remembers files that could not be removed from the bucket, so they are tried again later
+	QueueFileCleanups(ctx context.Context, keys []string) error
 }
 
 // DeletedAccount is what a deleted account leaves behind for the caller to clean up
@@ -265,3 +267,24 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID
 
 	return classIDs, nil
 }
+
+func (r *UserDB) QueueFileCleanups(ctx context.Context, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	rows := make([]fileCleanup, 0, len(keys))
+	for _, key := range keys {
+		rows = append(rows, fileCleanup{ObjectKey: key})
+	}
+
+	// attempts and queued_at are left to the defaults of the table
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// fileCleanup is a row of the queue of files that still have to be removed from the bucket
+type fileCleanup struct {
+	ObjectKey string `gorm:"primaryKey"`
+}
+
+func (fileCleanup) TableName() string { return "file_cleanups" }

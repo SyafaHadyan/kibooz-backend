@@ -39,6 +39,10 @@ type fakeRepo struct {
 	err     error
 	deleted int
 
+	// queued collects the files that were handed over for a later try
+	queued   []string
+	queueErr error
+
 	// waliID and studentClass drive the student avatar path, a nil studentClass means the child is not theirs
 	waliID       *uuid.UUID
 	studentClass *uuid.UUID
@@ -69,6 +73,12 @@ func (f *fakeRepo) SoftDeleteAccount(context.Context, uuid.UUID, constants.Role)
 	f.deleted++
 
 	return repository.DeletedAccount{ClassIDs: f.classes, FileURLs: f.files}, f.err
+}
+
+func (f *fakeRepo) QueueFileCleanups(_ context.Context, keys []string) error {
+	f.queued = append(f.queued, keys...)
+
+	return f.queueErr
 }
 
 type fakeCache struct{ deleted []string }
@@ -175,6 +185,8 @@ type fakeStorage struct {
 	uploads int
 	keys    []string
 	deleted []string
+	// failing lists the keys whose deletion is refused
+	failing map[string]bool
 }
 
 func (f *fakeStorage) Enabled() bool { return true }
@@ -196,6 +208,10 @@ func (f *fakeStorage) Delete(_ context.Context, key string) error {
 	defer f.mu.Unlock()
 
 	f.deleted = append(f.deleted, key)
+
+	if f.failing[key] {
+		return errors.New("bucket refused the delete")
+	}
 
 	return nil
 }
@@ -387,6 +403,44 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 
 		require.Error(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password"))
 		require.Empty(t, storage.deleted)
+	})
+
+	t.Run("a file that cannot be deleted is queued for a later try and the deletion still succeeds", func(t *testing.T) {
+		repo := &fakeRepo{
+			user: accountOf(t, constants.RoleWali, "correct-password"),
+			files: []string{
+				"https://example.com/avatars/user/a.png",
+				"https://example.com/trash-scans/child/stuck.png",
+			},
+		}
+		storage := &fakeStorage{failing: map[string]bool{"trash-scans/child/stuck.png": true}}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.Equal(t, []string{"trash-scans/child/stuck.png"}, repo.queued)
+	})
+
+	t.Run("nothing is queued when every file is deleted", func(t *testing.T) {
+		repo := &fakeRepo{
+			user:  accountOf(t, constants.RoleWali, "correct-password"),
+			files: []string{"https://example.com/avatars/user/a.png"},
+		}
+		useCase := usecase.NewUserUseCase(repo, &fakeStorage{}, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.Empty(t, repo.queued)
+	})
+
+	t.Run("a queue that cannot be written does not fail the deletion", func(t *testing.T) {
+		repo := &fakeRepo{
+			user:     accountOf(t, constants.RoleWali, "correct-password"),
+			files:    []string{"https://example.com/avatars/user/a.png"},
+			queueErr: errors.New("database gone"),
+		}
+		storage := &fakeStorage{failing: map[string]bool{"avatars/user/a.png": true}}
+		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
 	})
 
 	t.Run("a disabled storage deletes nothing and does not fail", func(t *testing.T) {

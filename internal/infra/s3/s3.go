@@ -59,13 +59,18 @@ const httpTimeout = 30 * time.Second
 // Discard removes an object that was uploaded for a request that then failed, so no file is left without a record.
 // It still runs when the client already gave up and only logs a failure, because the caller is returning another error.
 func Discard(ctx context.Context, storage StorageItf, objectKey string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), discardTimeout)
-	defer cancel()
-
-	err := storage.Delete(ctx, objectKey)
+	err := TryDiscard(ctx, storage, objectKey)
 	if err != nil {
 		log.Printf("storage cleanup of %s failed %v", objectKey, err)
 	}
+}
+
+// TryDiscard is Discard for a caller that wants to know whether the object is gone, so it can try again later
+func TryDiscard(ctx context.Context, storage StorageItf, objectKey string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), discardTimeout)
+	defer cancel()
+
+	return storage.Delete(ctx, objectKey)
 }
 
 type Storage struct {

@@ -4,6 +4,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -194,7 +195,7 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 }
 
 // discardFiles removes the avatars and the trash photos of a deleted account. The rows no longer point at them, so a
-// file that cannot be deleted now is only logged and left in the bucket.
+// file that cannot be deleted now is queued and removed by a later sweep.
 func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
 	var keys []string
 
@@ -205,7 +206,11 @@ func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
 		}
 	}
 
-	var group sync.WaitGroup
+	var (
+		group  sync.WaitGroup
+		mu     sync.Mutex
+		failed []string
+	)
 
 	limit := make(chan struct{}, discardConcurrency)
 
@@ -218,11 +223,24 @@ func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
 			defer group.Done()
 			defer func() { <-limit }()
 
-			s3.Discard(ctx, u.storage, key)
+			err := s3.TryDiscard(ctx, u.storage, key)
+			if err != nil {
+				log.Printf("storage cleanup of %s failed, it will be tried again %v", key, err)
+
+				mu.Lock()
+				failed = append(failed, key)
+				mu.Unlock()
+			}
 		}()
 	}
 
 	group.Wait()
+
+	// the account is already deleted, so a queue that cannot be written only costs the leftover files
+	err := u.repo.QueueFileCleanups(context.WithoutCancel(ctx), failed)
+	if err != nil {
+		log.Printf("queue the failed storage cleanups %v %v", failed, err)
+	}
 }
 
 // inDirectory tells whether key lies under one of the directories this service writes to

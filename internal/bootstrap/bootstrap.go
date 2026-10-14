@@ -28,6 +28,7 @@ import (
 	walihandler "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/interface/rest"
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	fiberapp "github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
@@ -46,6 +47,7 @@ type Bootstrap struct {
 	Redis    *redis.Redis
 
 	stopKeepalive func()
+	stopCleanup   func()
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -120,12 +122,20 @@ func Start(version string) (*Bootstrap, error) {
 		keepalive.Target{Name: "redis", Ping: cache.Ping},
 	)
 
-	return &Bootstrap{App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive}, nil
+	stopCleanup := func() {}
+	if storage.Enabled() {
+		stopCleanup = filecleanup.New(database, storage).Start(filecleanup.Interval)
+	}
+
+	return &Bootstrap{
+		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
+	}, nil
 }
 
 // Close stops the keepalive, then releases the database and Redis connections
 func (b *Bootstrap) Close() {
 	b.stopKeepalive()
+	b.stopCleanup()
 
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()
