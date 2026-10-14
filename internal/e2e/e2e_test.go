@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -933,10 +934,19 @@ func redisClient(t *testing.T) *goredis.Client {
 	// the same logical database as the server, so that emptying it never touches the others of the instance
 	database, _ := strconv.Atoi(os.Getenv("REDIS_DATABASE"))
 
-	client := goredis.NewClient(&goredis.Options{
-		Addr: os.Getenv("REDIS_ADDRESS") + ":" + os.Getenv("REDIS_PORT"),
-		DB:   database,
-	})
+	opts := &goredis.Options{
+		Addr:     os.Getenv("REDIS_ADDRESS") + ":" + os.Getenv("REDIS_PORT"),
+		Username: os.Getenv("REDIS_USERNAME"),
+		Password: os.Getenv("REDIS_PASSWORD"),
+		DB:       database,
+	}
+
+	// the credentials must not travel in clear to a Redis that the server reaches over TLS
+	if useTLS, _ := strconv.ParseBool(os.Getenv("REDIS_TLS")); useTLS {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: os.Getenv("REDIS_ADDRESS")}
+	}
+
+	client := goredis.NewClient(opts)
 
 	t.Cleanup(func() { _ = client.Close() })
 

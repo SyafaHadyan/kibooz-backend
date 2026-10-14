@@ -1294,6 +1294,18 @@ components:
           description: Seconds to wait before the next try. A try before that is refused again and counts, so it makes the wait longer.
           schema:
             type: string
+        X-RateLimit-Limit:
+          description: The requests that the limit allows in one window
+          schema:
+            type: string
+        X-RateLimit-Remaining:
+          description: The requests that are left in the window, 0 when the request was refused
+          schema:
+            type: string
+        X-RateLimit-Reset:
+          description: Seconds until the window ends. On a refused request it is the wait until a request fits again, the same as Retry-After, which can be longer than the rest of the window
+          schema:
+            type: string
       content:
         application/json:
           schema:
