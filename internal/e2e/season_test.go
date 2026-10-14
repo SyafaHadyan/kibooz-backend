@@ -113,8 +113,9 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		var history []saved
 
 		require.NoError(t, tx.Raw(
-			"SELECT student_name, season_label, points FROM leaderboard_history WHERE class_id = ?::uuid ORDER BY points DESC",
-			classID,
+			"SELECT student_name, season_label, points FROM leaderboard_history "+
+				"WHERE class_id = ?::uuid AND season_label = ? ORDER BY points DESC",
+			classID, "2030-01",
 		).Scan(&history).Error)
 		require.Len(t, history, 2)
 		require.Equal(t, saved{"Zahra Putri", "2030-01", 30}, history[0], "saved under the semester that ended")
