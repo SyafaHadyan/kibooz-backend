@@ -14,6 +14,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
+	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 )
 
 const uniqueViolation = "23505"
@@ -294,7 +295,7 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 
 	if !next.ExpiresAt.After(now) {
 		// the session reached its longest lifetime, so it ends here and the user signs in again
-		return nil, tx.Exec("DELETE FROM refresh_tokens WHERE family_id = ?", used.FamilyID).Error
+		return nil, sessions.EndFamily(tx, used.FamilyID)
 	}
 
 	err = tx.Create(next).Error
@@ -315,13 +316,20 @@ func endReusedSession(tx *gorm.DB, tokenHash string, now time.Time, grace time.D
 		return false, uuid.Nil, err
 	}
 
-	return true, seen[0].UserID, tx.Exec("DELETE FROM refresh_tokens WHERE family_id = ?", seen[0].FamilyID).Error
+	return true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
-	return r.db.WithContext(ctx).Exec(
-		"DELETE FROM refresh_tokens WHERE family_id IN (SELECT family_id FROM refresh_tokens WHERE token_hash = ?)", tokenHash,
-	).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var families []uuid.UUID
+
+		err := tx.Raw("SELECT family_id FROM refresh_tokens WHERE token_hash = ?", tokenHash).Scan(&families).Error
+		if err != nil || len(families) == 0 {
+			return err
+		}
+
+		return sessions.EndFamily(tx, families[0])
+	})
 }
 
 // purgeExpiredTokens keeps the table small without a background job by cleaning one user at a time. It removes the
