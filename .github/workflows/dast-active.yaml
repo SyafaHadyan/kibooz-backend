@@ -45,6 +45,8 @@ jobs:
             echo "USER_LIMITER_MAX=10000000"
             echo "AUTH_LIMITER_MAX=10000000"
             echo "CLASS_CODE_LIMITER_MAX=10000000"
+            # a child can claim five times a day, and the scan would use them up on the first requests and never reach the photo check
+            echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
           } > .env
 
@@ -54,7 +56,8 @@ jobs:
       - name: Build the scan plan
         run: |
           mkdir -p zap-out
-          .zap/seed.sh zap-out/requests.json
+          # the full list also covers registration, sessions, the class pages, the forum and photos
+          ZAP_FULL=true .zap/seed.sh zap-out/requests.json
           # the placeholder in the plan takes one line holding the whole list of requests
           jq -c --arg base "http://127.0.0.1:8080" '[.[] | {
               url: ($base + .path),
@@ -98,7 +101,26 @@ jobs:
             echo "| Status | Requests |"
             echo "|:---|---:|"
             grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* [0-9]{3} ' zap-out/api.log | awk '{print $NF}' | sort | uniq -c | awk '{print "| " $2 " | " $1 " |"}'
+            # a 5xx is a failure of the API itself, which ZAP does not raise as an alert, so the routes and the logged errors are listed
+            echo
+            echo "Requests that the API answered with a server error, where a 503 from the video upload address is expected because the scan stack has no object storage"
+            echo
+            echo "| Request | Status | Count |"
+            echo "|:---|:---|---:|"
+            { grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* 5[0-9]{2} ' zap-out/api.log || true; } \
+              | sed -E 's/[0-9a-f]{8}-[0-9a-f-]{27}/{id}/g; s/\?[^ ]*//' | sort | uniq -c | awk '{print "| " $2 " " $3 " | " $4 " | " $1 " |"}'
+            echo
+            echo "Errors that the API logged, with how often"
+            echo
+            echo '```'
+            { grep -E '^[0-9]{4}/[0-9]{2}/[0-9]{2} ' zap-out/api.log || true; } | sed -E 's/^[0-9/]+ [0-9:]+ //' | sort | uniq -c | sort -rn | head -15
+            echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY"
+          # the scan stack has no object storage, so a 503 from the video upload address is expected and must not drown out a real failure
+          errors="$({ grep -o -E ' (GET|POST|PUT|PATCH|DELETE) /[^ ]* 5[0-9]{2} ' zap-out/api.log || true; } | awk '!($3 == 503 && $2 ~ /^\/api\/v1\/classes\/[^\/]+\/videos\/upload-url\/?(\?.*)?$/)' | wc -l)"
+          if [ "${errors:-0}" -gt 0 ]; then
+            echo "::warning title=ZAP active scan::The API answered $errors request(s) with a server error other than 503, see the summary"
+          fi
 
       # plan.yaml and requests.json hold the tokens of the throwaway accounts, so only the reports are uploaded
       - name: Upload the reports
