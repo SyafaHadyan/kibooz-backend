@@ -2316,7 +2316,7 @@ components:
         joinCode:
           type: string
           description: The new code of the class
-          example: K7M2QX
+          example: K7M2QX4R
     JoinCodeEnvelope:
       type: object
       required: [success, data]
