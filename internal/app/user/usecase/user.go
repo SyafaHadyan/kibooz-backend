@@ -4,8 +4,10 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -178,7 +180,7 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 		return apperror.ErrPasswordIncorrect
 	}
 
-	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role)
+	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, u.fileKey)
 	if err != nil {
 		return apperror.Internal(err)
 	}
@@ -188,28 +190,46 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 		_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 	}
 
-	u.discardFiles(ctx, deleted.FileURLs)
+	u.discardFiles(ctx, deleted.FileKeys)
 
 	return nil
 }
 
-// discardFiles removes the avatars and the trash photos of a deleted account. The rows no longer point at them, so a
-// file that cannot be deleted now is only logged and left in the bucket.
-func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
-	var keys []string
+// fileKey picks the avatars and the trash photos of this storage out of the addresses a deleted account held
+func (u *UserUseCase) fileKey(url string) (string, bool) {
+	key, ok := u.storage.KeyFromURL(url)
 
-	for _, url := range urls {
-		key, ok := u.storage.KeyFromURL(url)
-		if ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory) {
-			keys = append(keys, key)
-		}
-	}
+	return key, ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory)
+}
 
-	var group sync.WaitGroup
+// cleanupBudget is the longest the response of a deletion waits for the bucket. The files it did not reach stay on the
+// queue for the sweep.
+const cleanupBudget = 10 * time.Second
+
+// queueTimeout bounds the write that takes deleted files off the queue
+const queueTimeout = 5 * time.Second
+
+// discardFiles removes the avatars and the trash photos of a deleted account. Their keys are already on the cleanup
+// queue, so a file that cannot be deleted now, or that the time budget did not leave room for, stays there and a later
+// sweep removes it. The ones that are gone leave the queue.
+func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
+	var (
+		group sync.WaitGroup
+		mu    sync.Mutex
+		gone  []string
+	)
+
+	// the client may give up, the cleanup still has to run, but not for longer than the budget
+	budget, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBudget)
+	defer cancel()
 
 	limit := make(chan struct{}, discardConcurrency)
 
 	for _, key := range keys {
+		if budget.Err() != nil {
+			break
+		}
+
 		group.Add(1)
 
 		limit <- struct{}{}
@@ -218,11 +238,29 @@ func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
 			defer group.Done()
 			defer func() { <-limit }()
 
-			s3.Discard(ctx, u.storage, key)
+			err := u.storage.Delete(budget, key)
+			if err != nil {
+				log.Printf("storage cleanup of %s failed, it will be tried again %v", key, err)
+
+				return
+			}
+
+			mu.Lock()
+			gone = append(gone, key)
+			mu.Unlock()
 		}()
 	}
 
 	group.Wait()
+
+	// the account is already deleted, so a queue that cannot be updated only means a later sweep deletes the file again
+	queueCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
+	defer stop()
+
+	err := u.repo.UnqueueFileCleanups(queueCtx, gone)
+	if err != nil {
+		log.Printf("take the deleted storage files off the cleanup queue %v", err)
+	}
 }
 
 // inDirectory tells whether key lies under one of the directories this service writes to

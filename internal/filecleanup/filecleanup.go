@@ -1,0 +1,128 @@
+// Package filecleanup retries the removal of files that a deleted account left in the bucket. A file is queued when the
+// first attempt failed, because the rows that pointed at it are gone and nothing else would find it again.
+package filecleanup
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+)
+
+const (
+	// Interval is how often the queue is swept
+	Interval = 10 * time.Minute
+	// batch is how many files one sweep tries, so a long outage is worked off over several sweeps
+	batch = 100
+	// attemptTimeout bounds the removal of one file
+	attemptTimeout = 5 * time.Second
+	// maxSteps caps the wait between tries, which grows by 10 minutes with each failed attempt, at 24 hours
+	maxSteps = 144
+)
+
+// Sweeper removes the queued files from the bucket
+type Sweeper struct {
+	db      *gorm.DB
+	storage s3.StorageItf
+}
+
+func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
+	return &Sweeper{db: db, storage: storage}
+}
+
+// Sweep tries the queued files that are due, the longest waiting first, up to one batch. A file that is gone leaves the
+// queue, and one that still fails waits longer before the next try, so files that keep failing cannot keep newer ones
+// from being tried. It returns how many files were removed.
+func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
+	var keys []string
+
+	err := s.db.WithContext(ctx).
+		Raw("SELECT object_key FROM file_cleanups WHERE next_try_at <= now() ORDER BY next_try_at, object_key LIMIT ?", batch).
+		Scan(&keys).Error
+	if err != nil {
+		return 0, err
+	}
+
+	removed := 0
+
+	for _, key := range keys {
+		if s.attempt(ctx, key) {
+			removed++
+		}
+
+		if ctx.Err() != nil {
+			return removed, ctx.Err()
+		}
+	}
+
+	return removed, nil
+}
+
+// attempt deletes one file and takes it off the queue, and tells whether that worked
+func (s *Sweeper) attempt(ctx context.Context, key string) bool {
+	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
+
+	err := s.storage.Delete(attemptCtx, key)
+	if err != nil {
+		log.Printf("storage cleanup of %s failed again %v", key, err)
+
+		if err := s.db.WithContext(ctx).Exec(
+			"UPDATE file_cleanups SET attempts = attempts + 1, next_try_at = now() + LEAST(attempts + 1, ?) * interval '10 minutes' "+
+				"WHERE object_key = ?",
+			maxSteps, key,
+		).Error; err != nil {
+			log.Printf("count the cleanup attempt of %s failed %v", key, err)
+		}
+
+		return false
+	}
+
+	if err := s.db.WithContext(ctx).Exec("DELETE FROM file_cleanups WHERE object_key = ?", key).Error; err != nil {
+		log.Printf("take %s off the cleanup queue failed %v", key, err)
+
+		return false
+	}
+
+	return true
+}
+
+// Start sweeps once per interval until the returned stop function is called, which waits for a sweep that is running.
+// A zero or negative interval disables it.
+func (s *Sweeper) Start(interval time.Duration) (stop func()) {
+	if interval <= 0 {
+		return func() {}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				removed, err := s.Sweep(ctx)
+				if err != nil && ctx.Err() == nil {
+					log.Printf("storage cleanup sweep failed %v", err)
+				} else if removed > 0 {
+					log.Printf("storage cleanup removed %d files that an earlier try missed", removed)
+				}
+			}
+		}
+	})
+
+	return func() {
+		cancel()
+		wg.Wait()
+	}
+}
