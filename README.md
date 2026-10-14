@@ -46,7 +46,7 @@ go run ./cmd/api
 
 ## Production deployment
 
-`compose.yml` is the production stack with the API, PostgreSQL and Redis, all restarting automatically. PostgreSQL and Redis are not published to the host. The API is published on port 8080, so put a reverse proxy with TLS in front of it and set `TRUST_PROXY=true` so the access log shows real client IPs.
+`compose.yml` is the production stack with the API, PostgreSQL and Redis, all restarting automatically. PostgreSQL and Redis are not published to the host. The API is published on `127.0.0.1:8080` only, so a reverse proxy with TLS on the same host has to sit in front of it, and set `TRUST_PROXY=true` so the access log shows real client IPs. The image is `syafa/kibooz-backend:latest`, which moves with every push to main, so set `IMAGE_TAG` in `.env`, for example to `0.6.0`, to stay on a release until you choose to update.
 
 Every response carries security headers (`nosniff`, `X-Frame-Options: DENY`, a `default-src 'none'` content security policy, `no-referrer` and same-origin cross-origin policies). `Strict-Transport-Security` is not set by the API, so enable it on the proxy that ends TLS, where you know which subdomains are HTTPS only.
 
