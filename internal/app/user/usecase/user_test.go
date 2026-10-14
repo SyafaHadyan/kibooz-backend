@@ -39,9 +39,10 @@ type fakeRepo struct {
 	err     error
 	deleted int
 
-	// queued collects the files that were handed over for a later try
-	queued   []string
-	queueErr error
+	// queued holds the keys the deletion put on the cleanup queue, unqueued the ones taken off it again
+	queued     []string
+	unqueued   []string
+	unqueueErr error
 
 	// waliID and studentClass drive the student avatar path, a nil studentClass means the child is not theirs
 	waliID       *uuid.UUID
@@ -69,16 +70,32 @@ func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error
 	return f.user, nil
 }
 
-func (f *fakeRepo) SoftDeleteAccount(context.Context, uuid.UUID, constants.Role) (repository.DeletedAccount, error) {
+func (f *fakeRepo) SoftDeleteAccount(
+	_ context.Context, _ uuid.UUID, _ constants.Role, fileKey repository.FileKeyFunc,
+) (repository.DeletedAccount, error) {
 	f.deleted++
 
-	return repository.DeletedAccount{ClassIDs: f.classes, FileURLs: f.files}, f.err
+	if f.err != nil {
+		return repository.DeletedAccount{}, f.err
+	}
+
+	var keys []string
+
+	for _, url := range f.files {
+		if key, ok := fileKey(url); ok {
+			keys = append(keys, key)
+		}
+	}
+
+	f.queued = keys
+
+	return repository.DeletedAccount{ClassIDs: f.classes, FileKeys: keys}, nil
 }
 
-func (f *fakeRepo) QueueFileCleanups(_ context.Context, keys []string) error {
-	f.queued = append(f.queued, keys...)
+func (f *fakeRepo) UnqueueFileCleanups(_ context.Context, keys []string) error {
+	f.unqueued = append(f.unqueued, keys...)
 
-	return f.queueErr
+	return f.unqueueErr
 }
 
 type fakeCache struct{ deleted []string }
@@ -405,7 +422,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		require.Empty(t, storage.deleted)
 	})
 
-	t.Run("a file that cannot be deleted is queued for a later try and the deletion still succeeds", func(t *testing.T) {
+	t.Run("a file that cannot be deleted stays on the queue and the deletion still succeeds", func(t *testing.T) {
 		repo := &fakeRepo{
 			user: accountOf(t, constants.RoleWali, "correct-password"),
 			files: []string{
@@ -417,28 +434,29 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
 
 		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
-		require.Equal(t, []string{"trash-scans/child/stuck.png"}, repo.queued)
+		require.ElementsMatch(t, []string{"avatars/user/a.png", "trash-scans/child/stuck.png"}, repo.queued)
+		require.Equal(t, []string{"avatars/user/a.png"}, repo.unqueued, "only the file that is gone leaves the queue")
 	})
 
-	t.Run("nothing is queued when every file is deleted", func(t *testing.T) {
+	t.Run("every deleted file leaves the queue", func(t *testing.T) {
 		repo := &fakeRepo{
 			user:  accountOf(t, constants.RoleWali, "correct-password"),
-			files: []string{"https://example.com/avatars/user/a.png"},
+			files: []string{"https://example.com/avatars/user/a.png", "https://elsewhere.test/avatars/user/c.png"},
 		}
 		useCase := usecase.NewUserUseCase(repo, &fakeStorage{}, &fakeCache{})
 
 		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
-		require.Empty(t, repo.queued)
+		require.Equal(t, []string{"avatars/user/a.png"}, repo.queued, "an address of another host is not queued")
+		require.Equal(t, repo.queued, repo.unqueued)
 	})
 
-	t.Run("a queue that cannot be written does not fail the deletion", func(t *testing.T) {
+	t.Run("a queue that cannot be updated does not fail the deletion", func(t *testing.T) {
 		repo := &fakeRepo{
-			user:     accountOf(t, constants.RoleWali, "correct-password"),
-			files:    []string{"https://example.com/avatars/user/a.png"},
-			queueErr: errors.New("database gone"),
+			user:       accountOf(t, constants.RoleWali, "correct-password"),
+			files:      []string{"https://example.com/avatars/user/a.png"},
+			unqueueErr: errors.New("database gone"),
 		}
-		storage := &fakeStorage{failing: map[string]bool{"avatars/user/a.png": true}}
-		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
+		useCase := usecase.NewUserUseCase(repo, &fakeStorage{}, &fakeCache{})
 
 		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
 	})

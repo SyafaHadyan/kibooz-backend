@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -179,7 +180,7 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 		return apperror.ErrPasswordIncorrect
 	}
 
-	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role)
+	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, u.fileKey)
 	if err != nil {
 		return apperror.Internal(err)
 	}
@@ -189,27 +190,29 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 		_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 	}
 
-	u.discardFiles(ctx, deleted.FileURLs)
+	u.discardFiles(ctx, deleted.FileKeys)
 
 	return nil
 }
 
-// discardFiles removes the avatars and the trash photos of a deleted account. The rows no longer point at them, so a
-// file that cannot be deleted now is queued and removed by a later sweep.
-func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
-	var keys []string
+// fileKey picks the avatars and the trash photos of this storage out of the addresses a deleted account held
+func (u *UserUseCase) fileKey(url string) (string, bool) {
+	key, ok := u.storage.KeyFromURL(url)
 
-	for _, url := range urls {
-		key, ok := u.storage.KeyFromURL(url)
-		if ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory) {
-			keys = append(keys, key)
-		}
-	}
+	return key, ok && inDirectory(key, constants.AvatarDirectory, constants.TrashDirectory)
+}
 
+// queueTimeout bounds the write that takes deleted files off the queue
+const queueTimeout = 5 * time.Second
+
+// discardFiles removes the avatars and the trash photos of a deleted account. Their keys are already on the cleanup
+// queue, so a file that cannot be deleted now stays there and a later sweep removes it. The ones that are gone leave
+// the queue.
+func (u *UserUseCase) discardFiles(ctx context.Context, keys []string) {
 	var (
-		group  sync.WaitGroup
-		mu     sync.Mutex
-		failed []string
+		group sync.WaitGroup
+		mu    sync.Mutex
+		gone  []string
 	)
 
 	limit := make(chan struct{}, discardConcurrency)
@@ -227,19 +230,24 @@ func (u *UserUseCase) discardFiles(ctx context.Context, urls []string) {
 			if err != nil {
 				log.Printf("storage cleanup of %s failed, it will be tried again %v", key, err)
 
-				mu.Lock()
-				failed = append(failed, key)
-				mu.Unlock()
+				return
 			}
+
+			mu.Lock()
+			gone = append(gone, key)
+			mu.Unlock()
 		}()
 	}
 
 	group.Wait()
 
-	// the account is already deleted, so a queue that cannot be written only costs the leftover files
-	err := u.repo.QueueFileCleanups(context.WithoutCancel(ctx), failed)
+	// the account is already deleted, so a queue that cannot be updated only means a later sweep deletes the file again
+	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
+	defer cancel()
+
+	err := u.repo.UnqueueFileCleanups(queueCtx, gone)
 	if err != nil {
-		log.Printf("queue the failed storage cleanups %v %v", failed, err)
+		log.Printf("take the deleted storage files off the cleanup queue %v", err)
 	}
 }
 

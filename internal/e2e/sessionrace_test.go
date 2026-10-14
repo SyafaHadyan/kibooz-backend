@@ -164,7 +164,7 @@ func TestDeletingAnAccountDuringARefreshRemovesEveryToken(t *testing.T) {
 
 	repo := userrepository.NewUserDB(testDB)
 	done := startWhileRefreshing(t, func(ctx context.Context) error {
-		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru)
+		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru, noFiles)
 
 		return err
 	})
@@ -280,7 +280,7 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 	})
 
 	t.Run("deleting the account", func(t *testing.T) {
-		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru)
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, noFiles)
 		require.Error(t, err)
 
 		var active int64

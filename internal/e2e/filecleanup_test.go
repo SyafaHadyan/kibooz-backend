@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
@@ -50,21 +52,47 @@ func queuedAttempts(t *testing.T, key string) (rows int, attempts int) {
 	return len(found), found[0]
 }
 
+// noFiles is the file key function of a storage that holds nothing of ours
+func noFiles(string) (string, bool) { return "", false }
+
+func TestAccountDeletionQueuesItsFilesInTheSameTransaction(t *testing.T) {
+	guru := registerGuru(t, "Seruni")
+	prefix := "avatars/" + uuid.NewString()
+
+	require.NoError(t, testDB.Exec("UPDATE users SET avatar_url = ? WHERE email = ?", "https://media.test/"+prefix+"/me.jpg", guru.Email).Error)
+
+	var userID string
+	require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", guru.Email).Scan(&userID).Error)
+
+	repo := userrepository.NewUserDB(testDB)
+	fileKey := func(url string) (string, bool) { return strings.CutPrefix(url, "https://media.test/") }
+
+	deleted, err := repo.SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, fileKey)
+	require.NoError(t, err)
+	require.Equal(t, []string{prefix + "/me.jpg"}, deleted.FileKeys)
+
+	rows, attempts := queuedAttempts(t, prefix+"/me.jpg")
+	require.Equal(t, 1, rows, "the key was queued together with the deletion")
+	require.Zero(t, attempts)
+
+	var avatar *string
+	require.NoError(t, testDB.Raw("SELECT avatar_url FROM users WHERE id = ?::uuid", userID).Scan(&avatar).Error)
+	require.Nil(t, avatar, "the address that pointed at the file is cleared")
+
+	t.Run("a key leaves the queue once its file is gone", func(t *testing.T) {
+		require.NoError(t, repo.UnqueueFileCleanups(context.Background(), deleted.FileKeys))
+		require.NoError(t, repo.UnqueueFileCleanups(context.Background(), nil))
+
+		rows, _ := queuedAttempts(t, prefix+"/me.jpg")
+		require.Zero(t, rows)
+	})
+}
+
 func TestFileCleanupSweep(t *testing.T) {
 	prefix := "avatars/" + uuid.NewString()
 	fine, stuck := prefix+"/fine.jpg", prefix+"/stuck.jpg"
 
-	repo := userrepository.NewUserDB(testDB)
-	require.NoError(t, repo.QueueFileCleanups(context.Background(), []string{fine, stuck}))
-
-	t.Run("queueing a key twice keeps one row", func(t *testing.T) {
-		require.NoError(t, repo.QueueFileCleanups(context.Background(), []string{fine}))
-		require.NoError(t, repo.QueueFileCleanups(context.Background(), nil))
-
-		rows, attempts := queuedAttempts(t, fine)
-		require.Equal(t, 1, rows)
-		require.Zero(t, attempts)
-	})
+	require.NoError(t, testDB.Exec("INSERT INTO file_cleanups (object_key) VALUES (?), (?)", fine, stuck).Error)
 
 	bucket := &bucketStub{refused: map[string]bool{stuck: true}}
 	sweeper := filecleanup.New(testDB, bucket)

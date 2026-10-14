@@ -32,12 +32,13 @@ func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
 	return &Sweeper{db: db, storage: storage}
 }
 
-// Sweep tries every queued file of one batch, oldest first. A file that is gone leaves the queue, and one that still
+// Sweep tries every queued file of one batch, the ones with the fewest failed attempts first and the oldest among them,
+// so files that keep failing cannot keep newer ones from being tried. A file that is gone leaves the queue, and one that still
 // fails stays with one more attempt counted. It returns how many files were removed.
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	var keys []string
 
-	err := s.db.WithContext(ctx).Raw("SELECT object_key FROM file_cleanups ORDER BY queued_at, object_key LIMIT ?", batch).
+	err := s.db.WithContext(ctx).Raw("SELECT object_key FROM file_cleanups ORDER BY attempts, queued_at, object_key LIMIT ?", batch).
 		Scan(&keys).Error
 	if err != nil {
 		return 0, err
