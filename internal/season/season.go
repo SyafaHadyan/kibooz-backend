@@ -19,8 +19,10 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
-// Interval is how often the job looks at the calendar, a semester that starts while the API is down is picked up by the next look
-const Interval = time.Hour
+// Interval is how often the job looks at the calendar. The look is a single cheap query, and it bounds how many points
+// earned right after a semester begins are still counted in the semester that ended. A semester that begins while the API is
+// down is picked up by the first look after it starts.
+const Interval = time.Minute
 
 // Label names the semester that holds t by the day it began, such as "2026-07" for a semester that began on 1 July 2026.
 // startMonths are the months in which a semester begins, in any order, and a semester begins on the first day of its month in loc.
