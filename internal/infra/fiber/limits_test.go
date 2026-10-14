@@ -75,6 +75,19 @@ func publicServer(accountMax int, store ratelimit.Store) *gofiber.App {
 	return server.Fiber
 }
 
+// codeServer has one register route behind the email limiter and the class code limiter
+func codeServer(emailMax int, codeMax int) *gofiber.App {
+	server := fiber.New(&env.Env{
+		UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: emailMax, ClassCodeLimiterMax: codeMax, BodyLimitMB: 1,
+	}, newRecordingStore())
+
+	server.Router.Post("/register", server.EmailLimiter(), server.ClassCodeLimiter(), func(c gofiber.Ctx) error {
+		return c.JSON(map[string]string{"ok": "yes"})
+	})
+
+	return server.Fiber
+}
+
 func status(t *testing.T, app *gofiber.App, path string, body string) int {
 	t.Helper()
 
@@ -434,7 +447,8 @@ func TestTheAnswerTellsTheBudgetAndWhenToComeBack(t *testing.T) {
 	wait, err := strconv.Atoi(refused.Header.Get("Retry-After"))
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, wait, 1)
-	require.LessOrEqual(t, wait, 60, "never longer than a window")
+	// the refused request counts too, so the next window starts with three requests behind it and has to fade them out
+	require.LessOrEqual(t, wait, 120, "never longer than the rest of this window and the next one")
 	require.Equal(t, refused.Header.Get("Retry-After"), refused.Header.Get("X-RateLimit-Reset"))
 }
 
@@ -447,7 +461,38 @@ func TestThePreviousWindowStillCountsForPartOfTheNextOne(t *testing.T) {
 	require.Equal(t, http.StatusOK, status(t, publicServer(6, half), "/login", `{"email":"a@example.com"}`))
 
 	refused := post(t, publicServer(5, half), "/api/v1/login", `{"email":"a@example.com"}`)
-	require.Equal(t, "30", refused.Header.Get("Retry-After"), "the rest of the window")
+	require.Equal(t, "12", refused.Header.Get("Retry-After"), "until the previous window weighs 3 requests or less, and not until the window ends")
+	require.Equal(t, "12", refused.Header.Get("X-RateLimit-Reset"))
+
+	allowed := post(t, publicServer(6, half), "/api/v1/login", `{"email":"a@example.com"}`)
+	require.Equal(t, "30", allowed.Header.Get("X-RateLimit-Reset"), "a request that is not refused is told when the window ends")
+}
+
+// A client that waits as long as it was told must not be refused again, wherever in the window it was refused
+func TestAClientThatWaitsForRetryAfterIsLetThrough(t *testing.T) {
+	for _, offset := range []time.Duration{0, 15 * time.Second, 40 * time.Second, 59 * time.Second} {
+		for _, extra := range []int{0, 1, 5, 40} {
+			clock := time.Unix(0, 0).Add(10*time.Minute + offset)
+			store := ratelimit.NewMemoryWithClock(func() time.Time { return clock })
+			app := publicServer(3, store)
+			body := `{"email":"waits@example.com"}`
+
+			var refused *http.Response
+
+			for range 3 + 1 + extra {
+				refused = post(t, app, "/api/v1/login", body)
+			}
+
+			require.Equal(t, http.StatusTooManyRequests, refused.StatusCode, "offset %s extra %d", offset, extra)
+
+			wait, err := strconv.Atoi(refused.Header.Get("Retry-After"))
+			require.NoError(t, err)
+
+			clock = clock.Add(time.Duration(wait) * time.Second)
+
+			require.Equal(t, http.StatusOK, status(t, app, "/login", body), "offset %s extra %d waited %ds", offset, extra, wait)
+		}
+	}
 }
 
 // A burst from many instances must not lose a request, which is what a counter that is read and written back does
@@ -472,4 +517,43 @@ func TestConcurrentRequestsAreAllCounted(t *testing.T) {
 	hits, err := store.Hit(context.Background(), "email:/api/v1/login:"+sha("burst@example.com"), time.Minute)
 	require.NoError(t, err)
 	require.EqualValues(t, 101, hits.Current)
+}
+
+func TestClassCodeLimiterSharesOneBudgetBetweenAllCallers(t *testing.T) {
+	app := codeServer(100, 3)
+
+	for i := range 3 {
+		body := `{"email":"guesser` + strconv.Itoa(i) + `@example.com","classCode":"AAAAAAAA"}`
+		require.Equal(t, http.StatusOK, status(t, app, "/register", body), "guess %d", i+1)
+	}
+
+	t.Run("another email and another code are refused as well", func(t *testing.T) {
+		res := post(t, app, "/api/v1/register", `{"email":"other@example.com","classCode":"BBBBBBBB"}`)
+		require.Equal(t, http.StatusTooManyRequests, res.StatusCode)
+		require.NotEmpty(t, res.Header.Get("Retry-After"))
+	})
+
+	t.Run("a registration that names no class code is not counted", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher@example.com"}`))
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher@example.com","classCode":""}`))
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher2@example.com","classCode":5}`))
+	})
+}
+
+func TestClassCodeLimiterReadsTheFieldWithoutRegardToCase(t *testing.T) {
+	app := codeServer(100, 1)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"a@example.com","CLASSCODE":"AAAAAAAA"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", `{"email":"b@example.com","classCode":"BBBBBBBB"}`))
+}
+
+func TestClassCodeLimiterSitsBehindTheEmailLimiter(t *testing.T) {
+	app := codeServer(1, 2)
+	body := `{"email":"one@example.com","classCode":"AAAAAAAA"}`
+
+	require.Equal(t, http.StatusOK, status(t, app, "/register", body))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", body), "the email is over its budget")
+
+	// the refused request did not reach the class code budget, so one more guess fits
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"two@example.com","classCode":"AAAAAAAA"}`))
 }

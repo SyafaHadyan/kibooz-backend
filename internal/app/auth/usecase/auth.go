@@ -100,6 +100,19 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": "too long, maximum 72 bytes"})
 	}
 
+	// a code that no class uses is refused before the password hash, which costs far more than the lookup
+	// and would otherwise be spent on every wrong guess. The transaction of CreateWali looks the class up again.
+	if req.Role == constants.RoleWali {
+		found, err := u.repo.ClassCodeExists(ctx, normalizeClassCode(req.ClassCode))
+		if err != nil {
+			return dto.AuthResponse{}, apperror.Internal(err)
+		}
+
+		if !found {
+			return dto.AuthResponse{}, apperror.ErrClassCodeNotFound
+		}
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return dto.AuthResponse{}, apperror.Internal(err)
@@ -177,7 +190,7 @@ func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req d
 		FullName: strings.TrimSpace(req.Student.FullName),
 	}
 
-	classID, err := u.repo.CreateWali(ctx, user, wali, strings.ToUpper(strings.TrimSpace(req.ClassCode)), student, session)
+	classID, err := u.repo.CreateWali(ctx, user, wali, normalizeClassCode(req.ClassCode), student, session)
 	if err != nil {
 		return wrap(err)
 	}
@@ -354,6 +367,10 @@ func hashToken(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
 
 	return hex.EncodeToString(sum[:])
+}
+
+func normalizeClassCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
 }
 
 func normalizeEmail(email string) string {

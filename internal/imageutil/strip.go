@@ -285,9 +285,6 @@ var webpKeptFrameChunks = map[string]bool{
 	"ALPH": true,
 }
 
-// webpFrameHeaderSize is the position, the size, the duration and the flags of a frame, which come before its chunks
-const webpFrameHeaderSize = 16
-
 const (
 	webpHeaderSize  = 12
 	webpFlagsEXIF   = 0x08

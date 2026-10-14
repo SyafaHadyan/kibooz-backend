@@ -30,7 +30,9 @@ type Fiber struct {
 	window  time.Duration
 	userMax int
 	authMax int
-	devices *devicetoken.Tokens
+	// classCodeMax is the allowance of the whole API for requests that name a class code, see ClassCodeLimiter
+	classCodeMax int
+	devices      *devicetoken.Tokens
 }
 
 // New builds the server. limits counts the requests for the rate limiters, and a nil store counts in the memory of the process.
@@ -82,7 +84,9 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		window:  time.Duration(cfg.LimiterExpirationSeconds) * time.Second,
 		userMax: cfg.UserLimiterMax,
 		authMax: cfg.AuthLimiterMax,
-		devices: devicetoken.New(cfg),
+
+		classCodeMax: cfg.ClassCodeLimiterMax,
+		devices:      devicetoken.New(cfg),
 	}
 }
 
