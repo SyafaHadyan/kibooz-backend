@@ -26,6 +26,6 @@ Kibooz Backend is the API behind the Kibooz app for teachers and parents of kind
 
 ## Report a barrier
 
-Open an issue with the bug report form and say that it is an accessibility barrier. Describe what you were trying to do, where it went wrong and which tools you use, such as a browser and a screen reader. The maintainer labels it `accessibility` and aims to reply within a few business days.
+Open an issue with the bug report form and say that it is an accessibility barrier. Describe what you were trying to do, where it went wrong and which tools you use, such as a browser and a screen reader. The form applies the `bug` label, and this repository does not promise an accessibility label or a reply time for these reports.
 
 A barrier in the Kibooz Android app itself belongs to the app project and not to this repository.
