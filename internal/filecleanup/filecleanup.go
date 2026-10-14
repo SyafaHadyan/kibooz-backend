@@ -48,7 +48,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 
 	for _, key := range keys {
 		if ctx.Err() != nil {
-			break
+			return removed, ctx.Err()
 		}
 
 		if s.attempt(ctx, key) {
@@ -105,7 +105,7 @@ func (s *Sweeper) Start(interval time.Duration) (stop func()) {
 				return
 			case <-ticker.C:
 				removed, err := s.Sweep(ctx)
-				if err != nil {
+				if err != nil && ctx.Err() == nil {
 					log.Printf("storage cleanup sweep failed %v", err)
 				} else if removed > 0 {
 					log.Printf("storage cleanup removed %d files that an earlier try missed", removed)
