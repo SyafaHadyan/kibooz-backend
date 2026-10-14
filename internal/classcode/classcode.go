@@ -16,8 +16,9 @@ import (
 const (
 	// the alphabet leaves out the characters that are easy to confuse when a code is read aloud or copied by hand
 	alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	length   = 6
-	retries  = 8
+	// eight characters from 32 make about 1.1e12 codes, and migration 000010 gave the classes that had six characters a new code
+	length  = 8
+	retries = 8
 
 	uniqueViolation = "23505"
 	codeConstraint  = "classes_join_code_key"

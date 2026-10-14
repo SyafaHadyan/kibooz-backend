@@ -75,6 +75,19 @@ func publicServer(accountMax int, store ratelimit.Store) *gofiber.App {
 	return server.Fiber
 }
 
+// codeServer has one register route behind the email limiter and the class code limiter
+func codeServer(emailMax int, codeMax int) *gofiber.App {
+	server := fiber.New(&env.Env{
+		UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: emailMax, ClassCodeLimiterMax: codeMax, BodyLimitMB: 1,
+	}, newRecordingStore())
+
+	server.Router.Post("/register", server.EmailLimiter(), server.ClassCodeLimiter(), func(c gofiber.Ctx) error {
+		return c.JSON(map[string]string{"ok": "yes"})
+	})
+
+	return server.Fiber
+}
+
 func status(t *testing.T, app *gofiber.App, path string, body string) int {
 	t.Helper()
 
@@ -472,4 +485,43 @@ func TestConcurrentRequestsAreAllCounted(t *testing.T) {
 	hits, err := store.Hit(context.Background(), "email:/api/v1/login:"+sha("burst@example.com"), time.Minute)
 	require.NoError(t, err)
 	require.EqualValues(t, 101, hits.Current)
+}
+
+func TestClassCodeLimiterSharesOneBudgetBetweenAllCallers(t *testing.T) {
+	app := codeServer(100, 3)
+
+	for i := range 3 {
+		body := `{"email":"guesser` + strconv.Itoa(i) + `@example.com","classCode":"AAAAAAAA"}`
+		require.Equal(t, http.StatusOK, status(t, app, "/register", body), "guess %d", i+1)
+	}
+
+	t.Run("another email and another code are refused as well", func(t *testing.T) {
+		res := post(t, app, "/api/v1/register", `{"email":"other@example.com","classCode":"BBBBBBBB"}`)
+		require.Equal(t, http.StatusTooManyRequests, res.StatusCode)
+		require.NotEmpty(t, res.Header.Get("Retry-After"))
+	})
+
+	t.Run("a registration that names no class code is not counted", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher@example.com"}`))
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher@example.com","classCode":""}`))
+		require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"teacher2@example.com","classCode":5}`))
+	})
+}
+
+func TestClassCodeLimiterReadsTheFieldWithoutRegardToCase(t *testing.T) {
+	app := codeServer(100, 1)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"a@example.com","CLASSCODE":"AAAAAAAA"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", `{"email":"b@example.com","classCode":"BBBBBBBB"}`))
+}
+
+func TestClassCodeLimiterSitsBehindTheEmailLimiter(t *testing.T) {
+	app := codeServer(1, 2)
+	body := `{"email":"one@example.com","classCode":"AAAAAAAA"}`
+
+	require.Equal(t, http.StatusOK, status(t, app, "/register", body))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", body), "the email is over its budget")
+
+	// the refused request did not reach the class code budget, so one more guess fits
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"two@example.com","classCode":"AAAAAAAA"}`))
 }

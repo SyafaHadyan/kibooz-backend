@@ -61,6 +61,7 @@ jobs:
             # the default limits would answer 429 and fail every claim during the test
             echo "USER_LIMITER_MAX=1000000"
             echo "AUTH_LIMITER_MAX=1000000"
+            echo "CLASS_CODE_LIMITER_MAX=1000000"
             echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
           } > .env

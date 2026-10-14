@@ -81,7 +81,7 @@ paths:
                   password: "{{password}}"
                   fullName: Bapak Budi
                   role: WALI
-                  classCode: ABC234
+                  classCode: ABC23456
                   student:
                     nisn: "1234567890"
                     fullName: Ani
@@ -1427,7 +1427,7 @@ components:
           pattern: "^[A-Za-z0-9]+$"
           minLength: 4
           maxLength: 12
-          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter.
+          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter. Registrations that name a code share one budget for the whole API, and when it is used up they are answered with `429` whether the code is right or not.
         student:
           allOf:
             - $ref: "#/components/schemas/RegisterStudent"
@@ -1644,7 +1644,7 @@ components:
           description: The grade level and the name of the class in brackets, such as `Class A (Bunga)`
         joinCode:
           type: string
-          description: Six characters that a parent uses to register a child into the class
+          description: Eight characters that a parent uses to register a child into the class
         totalStudents:
           type: integer
         presentStudents:
@@ -2316,7 +2316,7 @@ components:
         joinCode:
           type: string
           description: The new code of the class
-          example: K7M2QX
+          example: K7M2QX4R
     JoinCodeEnvelope:
       type: object
       required: [success, data]
