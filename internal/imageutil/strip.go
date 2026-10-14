@@ -232,6 +232,9 @@ var pngKeptChunks = map[string]bool{
 	"fdAT": true,
 }
 
+// pngAncillaryBit is set in the first letter of the name of a chunk that a reader may skip, which makes it lower case
+const pngAncillaryBit = 0x20
+
 func stripPNG(data []byte) ([]byte, error) {
 	if !bytes.HasPrefix(data, pngSignature) {
 		return nil, errMalformed
@@ -254,8 +257,13 @@ func stripPNG(data []byte) ([]byte, error) {
 			return nil, errMalformed
 		}
 
-		if pngKeptChunks[chunkType] {
+		switch {
+		case pngKeptChunks[chunkType]:
 			out = append(out, data[i:end]...)
+		case chunkType[0]&pngAncillaryBit == 0:
+			// a capital first letter marks a chunk that a reader needs to interpret the image, so an editor that does not
+			// know it has to stop and not hand on a picture that may now show something else
+			return nil, errMalformed
 		}
 
 		i = end

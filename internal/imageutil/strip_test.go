@@ -532,6 +532,28 @@ func TestStripPNGKeepsOnlyTheChunksThatTheImageNeeds(t *testing.T) {
 	require.Equal(t, "IEND", types[len(types)-1])
 }
 
+func TestStripPNGRefusesACriticalChunkItDoesNotKnow(t *testing.T) {
+	encoded := encodePNG(t)
+	headerEnd := len(pngSignature) + 25
+
+	var dirty []byte
+	dirty = append(dirty, encoded[:headerEnd]...)
+	dirty = append(dirty, pngChunk("XTRA", []byte("a chunk that decides how the image reads"))...)
+	dirty = append(dirty, encoded[headerEnd:]...)
+
+	_, err := Inspect(dirty, stripMaxBytes)
+	require.ErrorIs(t, err, apperror.ErrInvalidImage)
+
+	// the same chunk with a lower case first letter is optional, so it is only dropped
+	dirty = append([]byte{}, encoded[:headerEnd]...)
+	dirty = append(dirty, pngChunk("xTRA", []byte("optional"))...)
+	dirty = append(dirty, encoded[headerEnd:]...)
+
+	clean, err := Inspect(dirty, stripMaxBytes)
+	require.NoError(t, err)
+	require.NotContains(t, pngChunkTypes(t, clean.Data), "xTRA")
+}
+
 func TestStripWebPKeepsOnlyTheChunksThatTheImageNeeds(t *testing.T) {
 	flags := []byte{0x10, 0, 0, 0, 15, 0, 0, 15, 0, 0}
 
