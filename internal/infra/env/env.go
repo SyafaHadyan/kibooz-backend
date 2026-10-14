@@ -13,7 +13,6 @@ import (
 )
 
 type Env struct {
-	AppEnv                   string `env:"APP_ENV" envDefault:"development"`
 	AppPort                  uint   `env:"APP_PORT" envDefault:"8080"`
 	AppTimezone              string `env:"APP_TIMEZONE" envDefault:"Asia/Jakarta"`
 	BodyLimitMB              int    `env:"BODY_LIMIT_MB" envDefault:"8"`
