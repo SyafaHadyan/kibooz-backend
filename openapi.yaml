@@ -275,6 +275,64 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/children:
+    get:
+      tags: [Parent]
+      operationId: listChildren
+      summary: List the children of the parent
+      description: The children of the signed in parent, the oldest first. Use an `id` as `studentId` on the routes that take one.
+      responses:
+        "200":
+          description: The children
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChildListEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Parent]
+      operationId: addChild
+      summary: Add one more child
+      description: |
+        Registers another child of the signed in parent in the class that owns `classCode`, which can be another class than
+        the one of the first child. A parent can have up to 10 children. A request that names a class code uses the same
+        budget for the whole API as registration, so it can answer `429` while many codes are being tried.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddChildRequest"
+      responses:
+        "201":
+          description: The child was added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChildEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
+            or the parent already has 10 children (`CHILD_LIMIT_REACHED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
     get:
       tags: [Teacher]
@@ -1476,6 +1534,67 @@ components:
         schoolName:
           type: string
           maxLength: 150
+    AddChildRequest:
+      type: object
+      required: [classCode, student]
+      properties:
+        classCode:
+          type: string
+          minLength: 4
+          maxLength: 12
+          example: K7M2QX4R
+        student:
+          $ref: "#/components/schemas/RegisterStudent"
+    ChildSummary:
+      type: object
+      required: [id, fullName, nisn, avatarUrl, classId, className]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        nisn:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+    ChildEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChildSummary"
+    ChildList:
+      type: object
+      required: [children]
+      properties:
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChildSummary"
+    ChildListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChildList"
     RegisterStudent:
       type: object
       required: [nisn, fullName]

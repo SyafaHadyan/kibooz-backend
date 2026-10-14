@@ -533,3 +533,92 @@ func TestMoreTeachersForOneClass(t *testing.T) {
 		add(first.Token, second.Email).requireError(t, http.StatusNotFound, "TEACHER_NOT_FOUND")
 	})
 }
+
+func TestMoreChildrenForOneParent(t *testing.T) {
+	guru := registerGuru(t, "Dahlia")
+	_, joinCode := classOf(t, guru)
+	otherGuru := registerGuru(t, "Edelweis")
+	otherClassID, otherCode := classOf(t, otherGuru)
+
+	parent, firstID := registerWali(t, joinCode, "Amelia Siti")
+	other, _ := registerWali(t, joinCode, "Someone Else")
+
+	addChild := func(token string, code string, name string, number string) result {
+		return call(t, http.MethodPost, "/api/v1/wali/children", token, map[string]any{
+			"classCode": code, "student": map[string]any{"nisn": number, "fullName": name},
+		})
+	}
+
+	t.Run("a parent starts with the child of the registration", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		children := listOf(t, res, "children")
+		require.Len(t, children, 1)
+		require.Equal(t, firstID, dig(children[0], "id"))
+		require.Equal(t, "Dahlia", dig(children[0], "className"))
+	})
+
+	var secondID string
+
+	t.Run("another child joins the same class or another one", func(t *testing.T) {
+		number := nisn()
+		res := addChild(parent.Token, joinCode, "Brother Siti", number)
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+		require.Equal(t, "Brother Siti", res.data("fullName"))
+		require.Equal(t, number, res.data("nisn"))
+
+		res = addChild(parent.Token, strings.ToLower(otherCode), "Cousin Siti", nisn())
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+		require.Equal(t, otherClassID, res.data("classId"), "the class code is not case sensitive")
+
+		secondID = res.data("id").(string)
+
+		list := listOf(t, call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil), "children")
+		require.Equal(t, []string{"Amelia Siti", "Brother Siti", "Cousin Siti"}, titles(t, list, "fullName"))
+	})
+
+	t.Run("the dashboard and the child route follow the studentId", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+secondID, parent.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Cousin Siti", res.data("student", "fullName"))
+		require.Equal(t, otherClassID, res.data("student", "classId"))
+
+		call(t, http.MethodGet, "/api/v1/wali/child/"+secondID, other.Token, nil).requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+	})
+
+	t.Run("refused requests", func(t *testing.T) {
+		addChild(parent.Token, "ZZZZZZZZ", "Nobody", nisn()).requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
+		addChild(parent.Token, joinCode, "Duplicate", firstNISN(t, parent.Token)).requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")
+		addChild(parent.Token, joinCode, "A", nisn()).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		addChild(guru.Token, joinCode, "Teacher Child", nisn()).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		addChild("", joinCode, "Anonymous", nisn()).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodGet, "/api/v1/wali/children", guru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+	})
+
+	t.Run("a parent can have 10 children and no more", func(t *testing.T) {
+		for i := range 7 {
+			res := addChild(parent.Token, joinCode, fmt.Sprintf("Child %d", i+4), nisn())
+			require.Equal(t, http.StatusCreated, res.Status, "child %d body %v", i+4, res.Body)
+		}
+
+		addChild(parent.Token, joinCode, "One too many", nisn()).requireError(t, http.StatusConflict, "CHILD_LIMIT_REACHED")
+		require.Len(t, listOf(t, call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil), "children"), 10)
+	})
+
+	t.Run("the roster of the class lists the new child", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/classes/"+otherClassID+"/students", otherGuru.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, []string{"Cousin Siti"}, titles(t, listOf(t, res, "students"), "fullName"))
+	})
+}
+
+// firstNISN reads the NISN of the first child of a parent
+func firstNISN(t *testing.T, token string) string {
+	t.Helper()
+
+	res := call(t, http.MethodGet, "/api/v1/wali/children", token, nil)
+	require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+	return dig(listOf(t, res, "children")[0], "nisn").(string)
+}

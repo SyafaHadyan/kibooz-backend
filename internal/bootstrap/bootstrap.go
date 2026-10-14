@@ -99,8 +99,8 @@ func Start(version string) (*Bootstrap, error) {
 	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg,
 	))
-	walihandler.NewWaliHandler(app.Router, mw, waliusecase.NewWaliUseCase(
-		walirepository.NewWaliDB(database), cfg,
+	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
+		walirepository.NewWaliDB(database), cache, cfg,
 	))
 	guruhandler.NewGuruHandler(app.Router, mw, guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database), cfg,

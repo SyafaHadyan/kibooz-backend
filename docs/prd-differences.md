@@ -25,6 +25,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - The lists of videos, threads and replies take `page` and `limit` and return `page`, `limit` and `total` next to the items.
 - `GET` and `POST /guru/classes` list and create classes, and `GET /guru/classes/{classId}` shows one with its number of children, learning videos and forum threads. A teacher can teach several classes and every class has its own join code, which the teacher replaces with `POST /guru/classes/{classId}/join-code`. The roadmap mentions six subjects on the class screen, which the PRD never defines, so the response carries counts instead.
 - `GET /guru/classes/{classId}/teachers` lists the teachers of a class and `POST /guru/classes/{classId}/teachers` lets one of them add another registered teacher by email. The new teacher sees the whole class, so the route is only open to teachers of that class, and a teacher still cannot join a class on their own with its join code. A teacher cannot be taken off a class yet.
+- `GET /wali/children` lists the children of a parent and `POST /wali/children` adds one more with a class code, in the same class or another one, up to 10 per parent. A class code is guessable only through the shared budget, so this route uses `CLASS_CODE_LIMITER_MAX` like registration does. The `studentId` of the other parent routes picks the child.
 - `GET /classes/{classId}/guidance-reports` shows the teachers of the class which guides the parents applied for their children, newest first, with the name of the child, the title and category of the guide and the notes of the parent. It is how a teacher knows that the handling is under way, and the PRD does not describe a route for it.
 - `GET /classes/{classId}/students` lists the children of a class with their points, rank and latest mood of today. It is for the teachers of the class only because it shows the NISN.
 - `GET /guru/profile` and `GET /guru/profile/detail` show the teacher, and `PUT /guru/profile` changes the phone number and the address. The address is a new `gurus.address` column and the photo is still changed with `POST /users/avatar`.
@@ -32,7 +33,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
-- Several children for one parent and several teachers for one class. Registration creates one child, and there is no route to add another child or another teacher, although the data model allows both.
+- Taking a teacher off a class. A teacher can be added but not removed, and a class without any active teacher stops taking in new children.
 - Removing an uploaded video file that was never added to a class. Such a file waits under the `pending/` prefix of the bucket, and a bucket lifecycle rule that expires `pending/` after one day removes it. The rule is set in the bucket and not in this API, and it must never cover `videos/` because that holds the real videos.
 
 ## Language

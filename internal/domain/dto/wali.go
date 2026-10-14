@@ -74,3 +74,23 @@ type ChildProfile struct {
 	ClassRank     int       `json:"classRank"`
 	Guardian      Guardian  `json:"guardian"`
 }
+
+// AddChildRequest registers one more child of a parent in the class that owns classCode
+type AddChildRequest struct {
+	ClassCode string          `json:"classCode" validate:"required,alphanum,min=4,max=12"`
+	Student   RegisterStudent `json:"student" validate:"required"`
+}
+
+// ChildSummary is a child of the parent with the class the child is in
+type ChildSummary struct {
+	ID        uuid.UUID `json:"id"`
+	FullName  string    `json:"fullName"`
+	NISN      string    `json:"nisn"`
+	AvatarURL *string   `json:"avatarUrl"`
+	ClassID   uuid.UUID `json:"classId"`
+	ClassName string    `json:"className"`
+}
+
+type ChildList struct {
+	Children []ChildSummary `json:"children"`
+}
