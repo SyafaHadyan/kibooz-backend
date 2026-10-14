@@ -65,7 +65,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | Vale prose lint | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
-| DeepSource Docker, Go, SQL and Secrets | DeepSource |
+| DeepSource Docker, Go, SQL, Secrets and JavaScript | DeepSource |
 | codecov/patch | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
@@ -85,7 +85,7 @@ docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 README.md CONTRIBUT
 Versions are decided by [release-please](https://github.com/googleapis/release-please) from the Conventional Commit messages that reach `main`. `fix` bumps the patch version, `feat` bumps the minor version, and `feat!` or a `BREAKING CHANGE` footer bumps the major version. While the version is below 1.0.0 a breaking change only bumps the minor version.
 
 1. Merge pull requests into `main` with a Conventional Commit title.
-2. release-please opens or updates a pull request named like `chore(main) release 0.2.0` with the new version and changelog.
+2. release-please opens or updates a pull request named like `chore(main): release 0.2.0` with the new version and changelog.
 3. Merge that pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0`, `0.2` and `0` image tags.
 
 For the release pull request to run CI and for the tag to trigger the Docker workflow, add a repository secret named `RELEASE_PLEASE_TOKEN` holding a personal access token with contents and pull requests write access. GitHub does not start workflows for events created with the default token. Also allow GitHub Actions to create pull requests in the repository settings.
