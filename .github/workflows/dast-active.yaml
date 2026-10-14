@@ -45,6 +45,8 @@ jobs:
             echo "USER_LIMITER_MAX=10000000"
             echo "AUTH_LIMITER_MAX=10000000"
             echo "CLASS_CODE_LIMITER_MAX=10000000"
+            # a child can claim five times a day, and the scan would use them up on the first requests and never reach the photo check
+            echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
           } > .env
 
@@ -54,7 +56,8 @@ jobs:
       - name: Build the scan plan
         run: |
           mkdir -p zap-out
-          .zap/seed.sh zap-out/requests.json
+          # the full list also covers registration, sessions, the class pages, the forum and photos
+          ZAP_FULL=true .zap/seed.sh zap-out/requests.json
           # the placeholder in the plan takes one line holding the whole list of requests
           jq -c --arg base "http://127.0.0.1:8080" '[.[] | {
               url: ($base + .path),
