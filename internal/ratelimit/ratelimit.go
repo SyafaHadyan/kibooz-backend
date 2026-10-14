@@ -61,18 +61,21 @@ func (h Hits) RetryAfter(window time.Duration, limit int64) time.Duration {
 // share is the part of window that count of total covers, rounded down. The product is taken in 128 bits, because counts
 // can grow without a bound while a client keeps hammering.
 func share(count int64, window time.Duration, total int64) time.Duration {
-	if count <= 0 || total <= 0 {
+	if count <= 0 || total <= 0 || window <= 0 {
 		return 0
 	}
 
-	high, low := bits.Mul64(uint64(count), uint64(window))
+	high, low := bits.Mul64(uint64(count), uint64(window)) //nolint:gosec // both are positive
 	if high >= uint64(total) {
 		return window
 	}
 
 	quotient, _ := bits.Div64(high, low, uint64(total))
+	if quotient > uint64(window) { //nolint:gosec // the window is positive
+		return window
+	}
 
-	return min(time.Duration(quotient), window)
+	return time.Duration(quotient) //nolint:gosec // it is not above the window, which is a duration
 }
 
 // Window returns the number of the window that a moment falls in and how far into it the moment is
