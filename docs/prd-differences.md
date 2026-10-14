@@ -24,6 +24,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - `PATCH` and `DELETE /classes/{classId}/forum/{postId}` and `/classes/{classId}/forum/{postId}/replies/{replyId}` change and delete a thread or a reply. Only the author can change a post. The author and the teachers of the class can delete one, and deleting a thread deletes its replies. A thread or a reply that is not where the path says returns `FORUM_POST_NOT_FOUND`. A thread and a reply carry `editedAt`, the time the author last changed the words, and it is `null` for a post that was never edited. A save that leaves the title and the text as they were does not count as an edit.
 - The lists of videos, threads and replies take `page` and `limit` and return `page`, `limit` and `total` next to the items.
 - `GET` and `POST /guru/classes` list and create classes, and `GET /guru/classes/{classId}` shows one with its number of children, learning videos and forum threads. A teacher can teach several classes and every class has its own join code, which the teacher replaces with `POST /guru/classes/{classId}/join-code`. The roadmap mentions six subjects on the class screen, which the PRD never defines, so the response carries counts instead.
+- `GET /wali/children` lists the children of a parent and `POST /wali/children` adds one more with a class code, in the same class or another one, up to 10 per parent. A class code is guessable only through the shared budget, so this route uses `CLASS_CODE_LIMITER_MAX` like registration does. The `studentId` of the other parent routes picks the child.
 - `GET /classes/{classId}/guidance-reports` shows the teachers of the class which guides the parents applied for their children, newest first, with the name of the child, the title and category of the guide and the notes of the parent. It is how a teacher knows that the handling is under way, and the PRD does not describe a route for it.
 - `GET /classes/{classId}/students` lists the children of a class with their points, rank and latest mood of today. It is for the teachers of the class only because it shows the NISN.
 - `GET /guru/profile` and `GET /guru/profile/detail` show the teacher, and `PUT /guru/profile` changes the phone number and the address. The address is a new `gurus.address` column and the photo is still changed with `POST /users/avatar`.
@@ -31,7 +32,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
-- Several children for one parent and several teachers for one class. Registration creates one child, and there is no route to add another child or another teacher, although the data model allows both.
+- Several teachers for one class. There is no route to add another teacher, although the data model allows it.
 - Removing an uploaded video file that was never added to a class. Such a file waits under the `pending/` prefix of the bucket, and a bucket lifecycle rule that expires `pending/` after one day removes it. The rule is set in the bucket and not in this API, and it must never cover `videos/` because that holds the real videos.
 
 ## Language
