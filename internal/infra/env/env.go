@@ -23,6 +23,7 @@ type Env struct {
 	UserLimiterMax           int    `env:"USER_LIMITER_MAX" envDefault:"120"`
 	LimiterExpirationSeconds int    `env:"LIMITER_EXPIRATION_SECONDS" envDefault:"60"`
 	AuthLimiterMax           int    `env:"AUTH_LIMITER_MAX" envDefault:"10"`
+	ClassCodeLimiterMax      int    `env:"CLASS_CODE_LIMITER_MAX" envDefault:"60"`
 	TrustProxy               bool   `env:"TRUST_PROXY" envDefault:"false"`
 	ProxyHeader              string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
 	DBHost                   string `env:"DB_HOST" envDefault:"127.0.0.1"`
@@ -114,6 +115,7 @@ func (e *Env) validate() error {
 		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
 		{"USER_LIMITER_MAX", e.UserLimiterMax, 1},
 		{"AUTH_LIMITER_MAX", e.AuthLimiterMax, 1},
+		{"CLASS_CODE_LIMITER_MAX", e.ClassCodeLimiterMax, 1},
 		{"LIMITER_EXPIRATION_SECONDS", e.LimiterExpirationSeconds, 1},
 		{"LEADERBOARD_CACHE_SECONDS", e.LeaderboardCacheSeconds, 1},
 		{"JWT_ACCESS_EXPIRED_MINUTES", e.JWTAccessExpiredMinutes, 1},

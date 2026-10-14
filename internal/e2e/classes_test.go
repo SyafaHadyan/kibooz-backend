@@ -47,7 +47,7 @@ func TestTeacherClasses(t *testing.T) {
 		require.Equal(t, "2027/2028", res.data("academicYear"))
 		require.Equal(t, "TK Harapan Baru", res.data("schoolName"))
 		require.EqualValues(t, 0, res.data("totalStudents"))
-		require.Len(t, res.data("joinCode"), 6)
+		require.Len(t, res.data("joinCode"), 8)
 		require.NotEqual(t, firstCode, res.data("joinCode"))
 
 		melatiID, melatiCode = res.data("id").(string), res.data("joinCode").(string)
