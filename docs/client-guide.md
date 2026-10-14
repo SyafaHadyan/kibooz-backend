@@ -32,6 +32,10 @@ A teacher can create more classes with `POST /api/v1/guru/classes`, and every cl
 
 Every list returns one page at a time. Send `page` (from 1) and `limit` (from 1 to 50, 20 by default) in the query string, and use `total` in the response to know when the last page is reached. A page past the end returns an empty list. Videos and threads come newest first and replies come oldest first.
 
+## Send photos
+
+The server never decodes, resizes or compresses a photo. It checks the type and the size, cuts out the metadata and stores the file as it arrived, so the app has to make the photo small before it uploads it. Scale the longest side down to about 1600 pixels and save it as a JPEG with a quality of about 80, which keeps a phone photo far under the limit of 2 MiB for an avatar and 4 MiB for a trash photo and is enough for a screen. An image of more than 40 megapixels or with a side longer than 8192 pixels is refused with `IMAGE_DIMENSIONS_TOO_LARGE`, even when the file is small, and a file that is not an image is refused with `INVALID_IMAGE`. Show the person a short message for both and let them pick another photo.
+
 ## Handle rate limits
 
 A request over a limit gets `429` with the code `RATE_LIMITED` and a `Retry-After` header. Wait that long before the next try and show the person a short message. An earlier try is refused and counted, so it only makes the wait longer. A reverse proxy in front of the API can also answer `429` with no body and no `Retry-After` header, so check the status code first and wait about 30 seconds when the header is missing, doubling the wait on each further `429`. `POST /api/v1/trash/scan-claim` can also answer `429` with `TRASH_DAILY_LIMIT_REACHED` once a child has used the claims of the day. That answer has no `Retry-After` header and the limit resets at midnight of the local day, so tell the person to come back tomorrow and do not retry. Always branch on `errorCode`. Do not retry in a loop, because every retry counts against the same limit. A `429` that has no JSON body comes from a proxy in front of the API and means the same thing.
