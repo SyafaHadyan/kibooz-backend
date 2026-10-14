@@ -132,3 +132,21 @@ type UpdateGuruProfileRequest struct {
 	PhoneNumber *string `json:"phoneNumber" validate:"omitempty,max=30"`
 	Address     *string `json:"address" validate:"omitempty,max=1000"`
 }
+
+// AddTeacherRequest names the account of the teacher to add to a class
+type AddTeacherRequest struct {
+	Email string `json:"email" validate:"required,email,max=255"`
+}
+
+// Teacher is a teacher of a class
+type Teacher struct {
+	ID        uuid.UUID `json:"id"`
+	FullName  string    `json:"fullName"`
+	NIP       *string   `json:"nip"`
+	AvatarURL *string   `json:"avatarUrl"`
+	JoinedAt  time.Time `json:"joinedAt"`
+}
+
+type TeacherList struct {
+	Teachers []Teacher `json:"teachers"`
+}

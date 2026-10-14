@@ -470,3 +470,66 @@ func TestGuidanceReports(t *testing.T) {
 		require.Equal(t, []string{"Zahra Putri"}, titles(t, listOf(t, res, "reports"), "studentName"))
 	})
 }
+
+func TestMoreTeachersForOneClass(t *testing.T) {
+	first := registerGuru(t, "Flamboyan")
+	classID, joinCode := classOf(t, first)
+	second := registerGuru(t, "Gardenia")
+	outsider := registerGuru(t, "Heliconia")
+	wali, _ := registerWali(t, joinCode, "Amelia Siti")
+
+	teachers := fmt.Sprintf("/api/v1/guru/classes/%s/teachers", classID)
+	add := func(token string, email string) result {
+		return call(t, http.MethodPost, teachers, token, map[string]any{"email": email})
+	}
+
+	t.Run("a class starts with the teacher who made it", func(t *testing.T) {
+		res := call(t, http.MethodGet, teachers, first.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Len(t, listOf(t, res, "teachers"), 1)
+	})
+
+	t.Run("another teacher cannot see the class before being added", func(t *testing.T) {
+		call(t, http.MethodGet, teachers, second.Token, nil).requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+		call(t, http.MethodGet, "/api/v1/classes/"+classID+"/students", second.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+	})
+
+	t.Run("a teacher of the class adds a teacher by email, whatever the letter case", func(t *testing.T) {
+		res := add(first.Token, strings.ToUpper(second.Email))
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+		require.Equal(t, "Siti Rahayu, S.Pd.", res.data("fullName"))
+		require.NotEmpty(t, res.data("joinedAt"))
+
+		list := listOf(t, call(t, http.MethodGet, teachers, second.Token, nil), "teachers")
+		require.Len(t, list, 2)
+	})
+
+	t.Run("the added teacher sees the class like the first one", func(t *testing.T) {
+		res := call(t, http.MethodGet, "/api/v1/classes/"+classID+"/students", second.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, []string{"Amelia Siti"}, titles(t, listOf(t, res, "students"), "fullName"))
+
+		dashboard := call(t, http.MethodGet, "/api/v1/guru/dashboard?classId="+classID, second.Token, nil)
+		require.Equal(t, http.StatusOK, dashboard.Status, "body %v", dashboard.Body)
+	})
+
+	t.Run("refused requests", func(t *testing.T) {
+		add(first.Token, second.Email).requireError(t, http.StatusConflict, "TEACHER_ALREADY_IN_CLASS")
+		add(first.Token, "nobody@example.com").requireError(t, http.StatusNotFound, "TEACHER_NOT_FOUND")
+		add(first.Token, wali.Email).requireError(t, http.StatusNotFound, "TEACHER_NOT_FOUND")
+		add(first.Token, "not-an-email").requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		add(outsider.Token, outsider.Email).requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+		add(wali.Token, second.Email).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		add("", second.Email).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		call(t, http.MethodGet, "/api/v1/guru/classes/not-a-uuid/teachers", first.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a deleted teacher leaves the list and cannot be added", func(t *testing.T) {
+		require.Equal(t, http.StatusOK, deleteAccount(t, second.Token, second.Password).Status)
+
+		list := listOf(t, call(t, http.MethodGet, teachers, first.Token, nil), "teachers")
+		require.Len(t, list, 1)
+
+		add(first.Token, second.Email).requireError(t, http.StatusNotFound, "TEACHER_NOT_FOUND")
+	})
+}

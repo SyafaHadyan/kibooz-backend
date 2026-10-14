@@ -8,7 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -21,6 +23,14 @@ type GuruRow struct {
 	AvatarURL   *string
 	Email       string
 	PhoneNumber *string
+	JoinedAt    time.Time
+}
+
+// TeacherRow is a teacher of a class together with the account columns and the time the teacher joined the class
+type TeacherRow struct {
+	entity.Guru `gorm:"embedded"`
+	FullName    string
+	AvatarURL   *string
 	JoinedAt    time.Time
 }
 
@@ -65,6 +75,11 @@ type GuruDBItf interface {
 	CreateClass(ctx context.Context, guruID uuid.UUID, class *entity.Class) error
 	// RotateJoinCode gives the class a new join code and returns it, the old code stops working at once
 	RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error)
+	// ListTeachers returns the active teachers of the class, the one who joined first at the top
+	ListTeachers(ctx context.Context, classID uuid.UUID) ([]TeacherRow, error)
+	// AddTeacher makes the active teacher account with the email a teacher of the class. It returns nil when no such
+	// account exists and apperror.ErrTeacherInClass when the account already teaches the class.
+	AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error)
 }
 
 type GuruDB struct {
@@ -275,4 +290,72 @@ func (r *GuruDB) classQuery(ctx context.Context) *gorm.DB {
 		Table("classes AS c").
 		Select("c.*, (SELECT COUNT(*) FROM students AS s WHERE s.class_id = c.id AND s.deleted_at IS NULL) AS total_students").
 		Joins("JOIN class_teachers AS ct ON ct.class_id = c.id")
+}
+
+func teacherQuery(tx *gorm.DB) *gorm.DB {
+	return tx.Table("class_teachers AS ct").
+		Select("g.*, u.full_name AS full_name, u.avatar_url AS avatar_url, ct.created_at AS joined_at").
+		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+		Joins("JOIN users AS u ON u.id = g.user_id AND u.deleted_at IS NULL")
+}
+
+func (r *GuruDB) ListTeachers(ctx context.Context, classID uuid.UUID) ([]TeacherRow, error) {
+	var rows []TeacherRow
+
+	err := teacherQuery(r.db.WithContext(ctx)).
+		Where("ct.class_id = ?", classID).
+		Order("ct.created_at ASC, g.id ASC").
+		Scan(&rows).Error
+
+	return rows, err
+}
+
+func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error) {
+	var added *TeacherRow
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		added = nil
+
+		var guruIDs []uuid.UUID
+
+		err := tx.Table("users AS u").
+			Select("g.id").
+			Joins("JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL").
+			Where("u.email = ? AND u.role = ? AND u.deleted_at IS NULL", email, constants.RoleGuru).
+			Limit(1).
+			Scan(&guruIDs).Error
+		if err != nil {
+			return err
+		}
+
+		if len(guruIDs) == 0 {
+			return nil
+		}
+
+		link := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&entity.ClassTeacher{ClassID: classID, GuruID: guruIDs[0]})
+		if link.Error != nil {
+			return link.Error
+		}
+
+		if link.RowsAffected == 0 {
+			return apperror.ErrTeacherInClass
+		}
+
+		var rows []TeacherRow
+
+		err = teacherQuery(tx).Where("ct.class_id = ? AND ct.guru_id = ?", classID, guruIDs[0]).Scan(&rows).Error
+		if err != nil || len(rows) == 0 {
+			return err
+		}
+
+		added = &rows[0]
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return added, nil
 }

@@ -33,6 +33,8 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Post("/classes", handler.CreateClass)
 	group.Get("/classes/:classId", handler.Class)
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
+	group.Get("/classes/:classId/teachers", handler.Teachers)
+	group.Post("/classes/:classId/teachers", handler.AddTeacher)
 	group.Get("/profile", handler.Profile)
 	group.Put("/profile", handler.UpdateProfile)
 	group.Get("/profile/detail", handler.ProfileDetail)
@@ -122,6 +124,41 @@ func (h *GuruHandler) RotateJoinCode(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Join code replaced", res)
+}
+
+func (h *GuruHandler) Teachers(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.Teachers(c.Context(), middleware.UserIDFrom(c), classID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *GuruHandler) AddTeacher(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	var req dto.AddTeacherRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.AddTeacher(c.Context(), middleware.UserIDFrom(c), classID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusCreated, "Teacher added", res)
 }
 
 func (h *GuruHandler) CreateClass(c fiber.Ctx) error {

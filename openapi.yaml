@@ -470,6 +470,77 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/teachers:
+    get:
+      tags: [Teacher]
+      operationId: listClassTeachers
+      summary: List the teachers of a class
+      description: The teachers of a class the signed in teacher teaches, the one who joined first at the top.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The teachers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeacherListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Teacher]
+      operationId: addClassTeacher
+      summary: Add a teacher to a class
+      description: |
+        A teacher of the class adds another registered teacher by the email of that account. The new teacher sees the whole
+        class from then on, which is its children, moods and forum, so add only people who should have that access. There
+        is no way to take a teacher off a class yet. The answer for an email that is not a teacher account is the same
+        whoever asks, and the request counts against the limit of the signed in user.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddTeacherRequest"
+      responses:
+        "201":
+          description: The teacher was added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeacherEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or no active teacher account has the email
+            (`TEACHER_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/profile:
     get:
       tags: [Teacher]
@@ -2545,6 +2616,63 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/GuidanceReportList"
+    AddTeacherRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+    Teacher:
+      type: object
+      required: [id, fullName, nip, avatarUrl, joinedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        nip:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        joinedAt:
+          type: string
+          format: date-time
+    TeacherEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Teacher"
+    TeacherList:
+      type: object
+      required: [teachers]
+      properties:
+        teachers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Teacher"
+    TeacherListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/TeacherList"
     Guardian:
       type: object
       required: [fullName, email, phoneNumber, whatsappNumber, address]
