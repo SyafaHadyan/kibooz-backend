@@ -339,7 +339,7 @@ func TestHealth(t *testing.T) {
 func TestRegistrationAndLogin(t *testing.T) {
 	guru := registerGuru(t, "Mawar")
 	_, joinCode := classOf(t, guru)
-	require.Len(t, joinCode, 6)
+	require.Len(t, joinCode, 8)
 
 	t.Run("duplicate email", func(t *testing.T) {
 		res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
