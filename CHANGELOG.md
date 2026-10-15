@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.8.0...v0.9.0) (2026-10-15)
+
+
+### Features
+
+* **account:** require a successor when the only teacher of a class deletes the account ([f80f06a](https://github.com/SyafaHadyan/kibooz-backend/commit/f80f06aba9811e4afd333d4f39897b56c273e00a))
+* **classes:** let the owner remove teachers and hand a class over ([27a55fd](https://github.com/SyafaHadyan/kibooz-backend/commit/27a55fdc7e709c5cd6bdde7c8942708b34c00271))
+* **leaderboard:** list the finished semesters of a class ([43cc052](https://github.com/SyafaHadyan/kibooz-backend/commit/43cc052e1a0ff9b3ea84b3270ebe1f598eaa1179))
+
+
+### Bug Fixes
+
+* **classes:** lock every class of a deleted teacher before handing it over ([2f0a68a](https://github.com/SyafaHadyan/kibooz-backend/commit/2f0a68a444d17042ed8b972affe4d31c63fafb88))
+* **leaderboard:** keep a semester listed when its children were deleted ([b8c1089](https://github.com/SyafaHadyan/kibooz-backend/commit/b8c1089e04fad6d2ac649b6a11c90c1f82fec805))
+
 ## [0.8.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.7.0...v0.8.0) (2026-10-14)
 
 
