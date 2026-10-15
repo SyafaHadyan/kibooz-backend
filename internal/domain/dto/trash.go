@@ -33,6 +33,25 @@ type LeaderboardResponse struct {
 	Rankings []LeaderboardEntry `json:"rankings"`
 }
 
+// LeaderboardHistoryEntry is one place in the final standings of a semester that ended
+type LeaderboardHistoryEntry struct {
+	Rank        int    `json:"rank"`
+	StudentName string `json:"studentName"`
+	Points      int    `json:"points"`
+}
+
+// LeaderboardSeason holds the final standings of one semester, labelled by the month it began such as 2026-07
+type LeaderboardSeason struct {
+	Label    string                    `json:"label"`
+	Podium   []LeaderboardHistoryEntry `json:"podium"`
+	Rankings []LeaderboardHistoryEntry `json:"rankings"`
+}
+
+type LeaderboardHistoryResponse struct {
+	Seasons []LeaderboardSeason `json:"seasons"`
+	PageInfo
+}
+
 type AvatarResponse struct {
 	AvatarURL string `json:"avatarUrl"`
 }

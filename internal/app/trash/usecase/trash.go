@@ -19,6 +19,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
 const podiumSize = 3
@@ -26,6 +27,10 @@ const podiumSize = 3
 type TrashUseCaseItf interface {
 	ScanClaim(ctx context.Context, userID uuid.UUID, req dto.ScanClaimRequest) (dto.ScanClaimResponse, error)
 	Leaderboard(ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID) (dto.LeaderboardResponse, error)
+	// LeaderboardHistory shows the final standings of the semesters that ended, newest first, to whoever may see the leaderboard
+	LeaderboardHistory(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID, page pagination.Params,
+	) (dto.LeaderboardHistoryResponse, error)
 }
 
 type TrashUseCase struct {
@@ -176,6 +181,27 @@ func (u *TrashUseCase) Leaderboard(
 	return res, nil
 }
 
+func (u *TrashUseCase) LeaderboardHistory(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID, page pagination.Params,
+) (dto.LeaderboardHistoryResponse, error) {
+	resolved, err := u.authorizeClass(ctx, userID, role, classID)
+	if err != nil {
+		return dto.LeaderboardHistoryResponse{}, err
+	}
+
+	labels, total, err := u.repo.ListHistorySeasons(ctx, resolved, page.Limit, page.Offset())
+	if err != nil {
+		return dto.LeaderboardHistoryResponse{}, apperror.Internal(err)
+	}
+
+	rows, err := u.repo.ListHistoryEntries(ctx, resolved, labels)
+	if err != nil {
+		return dto.LeaderboardHistoryResponse{}, apperror.Internal(err)
+	}
+
+	return buildHistory(labels, rows, dto.PageInfo{Page: page.Page, Limit: page.Limit, Total: total}), nil
+}
+
 // authorizeClass resolves the class to show and confirms the caller belongs to it
 func (u *TrashUseCase) authorizeClass(
 	ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID,
@@ -271,6 +297,39 @@ func buildLeaderboard(students []entity.Student) dto.LeaderboardResponse {
 			res.Podium = append(res.Podium, entry)
 		} else {
 			res.Rankings = append(res.Rankings, entry)
+		}
+	}
+
+	return res
+}
+
+// buildHistory groups the saved places under the label of their semester and keeps the order of labels. A place within the first
+// podiumSize is on the podium, so a semester whose podium child was deleted since shows a shorter podium and no gap is filled.
+func buildHistory(labels []string, rows []repository.HistoryRow, info dto.PageInfo) dto.LeaderboardHistoryResponse {
+	res := dto.LeaderboardHistoryResponse{Seasons: make([]dto.LeaderboardSeason, 0, len(labels)), PageInfo: info}
+	index := make(map[string]int, len(labels))
+
+	for _, label := range labels {
+		index[label] = len(res.Seasons)
+		res.Seasons = append(res.Seasons, dto.LeaderboardSeason{
+			Label:    label,
+			Podium:   make([]dto.LeaderboardHistoryEntry, 0, podiumSize),
+			Rankings: []dto.LeaderboardHistoryEntry{},
+		})
+	}
+
+	for _, row := range rows {
+		at, found := index[row.SeasonLabel]
+		if !found {
+			continue
+		}
+
+		entry := dto.LeaderboardHistoryEntry{Rank: row.RankPosition, StudentName: row.StudentName, Points: row.Points}
+
+		if row.RankPosition <= podiumSize {
+			res.Seasons[at].Podium = append(res.Seasons[at].Podium, entry)
+		} else {
+			res.Seasons[at].Rankings = append(res.Seasons[at].Rankings, entry)
 		}
 	}
 
