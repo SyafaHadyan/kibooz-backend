@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -225,4 +226,48 @@ func TestTheMigrationNamesTheFirstActiveTeacherOwner(t *testing.T) {
 		"SELECT count(*) FROM (SELECT class_id FROM class_teachers WHERE is_owner GROUP BY class_id HAVING count(*) > 1) AS many",
 	).Scan(&twice).Error)
 	require.Zero(t, twice, "no class got two owners")
+}
+
+// A teacher who deletes the account while another teacher hands the class to them must never leave the class with a
+// deleted owner, because nobody could remove teachers or hand the class on after that
+func TestHandingAClassToATeacherWhoIsDeletingTheAccountNeverLeavesNoOwner(t *testing.T) {
+	for round := range 6 {
+		owner := registerGuru(t, fmt.Sprintf("Cempaka %d", round))
+		leaving := registerGuru(t, fmt.Sprintf("Dahlia %d", round))
+		classID, _ := classOf(t, owner)
+		base := fmt.Sprintf("/api/v1/guru/classes/%s", classID)
+
+		added := call(t, http.MethodPost, base+"/teachers", owner.Token, map[string]any{"email": leaving.Email})
+		require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
+
+		leavingID, _ := added.data("id").(string)
+		ownerID, _ := ownerOf(t, owner.Token, classID)
+
+		var wg sync.WaitGroup
+
+		var gave, deleted result
+
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+
+			gave = call(t, http.MethodPut, base+"/owner", owner.Token, map[string]any{"teacherId": leavingID})
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			deleted = deleteAccount(t, leaving.Token, leaving.Password)
+		}()
+
+		wg.Wait()
+
+		require.Equal(t, http.StatusOK, deleted.Status, "body %v", deleted.Body)
+		require.Contains(t, []int{http.StatusOK, http.StatusNotFound}, gave.Status, "round %d, body %v", round, gave.Body)
+
+		who, count := ownerOf(t, owner.Token, classID)
+		require.Equal(t, ownerID, who, "round %d, the one teacher who is left owns the class", round)
+		require.Equal(t, 1, count)
+	}
 }

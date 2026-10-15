@@ -53,10 +53,12 @@ func HandOver(tx *gorm.DB, classID uuid.UUID, leaving uuid.UUID) error {
 	return Transfer(tx, classID, leaving, next[0])
 }
 
-// ReleaseAll hands over every class that the account owns. The classes are locked in one fixed order, so two deletions
-// that touch the same classes cannot wait for each other.
+// ReleaseAll hands over every class that the account owns. It locks every class that the account teaches before it looks
+// at which of them it owns, because a teacher of such a class can hand it to this account at any moment until the lock is
+// held, and the account would then be deleted while still owning it. The classes are locked in one fixed order, so two
+// deletions that touch the same classes cannot wait for each other.
 func ReleaseAll(tx *gorm.DB, userID uuid.UUID) error {
-	var owned []struct {
+	var taught []struct {
 		ClassID uuid.UUID
 		GuruID  uuid.UUID
 	}
@@ -65,18 +67,21 @@ func ReleaseAll(tx *gorm.DB, userID uuid.UUID) error {
 		SELECT ct.class_id, ct.guru_id
 		FROM class_teachers AS ct
 		JOIN gurus AS g ON g.id = ct.guru_id
-		WHERE g.user_id = ? AND ct.is_owner
-		ORDER BY ct.class_id`, userID).Scan(&owned).Error
+		WHERE g.user_id = ?
+		ORDER BY ct.class_id`, userID).Scan(&taught).Error
 	if err != nil {
 		return err
 	}
 
-	for _, item := range owned {
+	for _, item := range taught {
 		err = Lock(tx, item.ClassID)
 		if err != nil {
 			return err
 		}
+	}
 
+	// HandOver looks at the owner flag again, so it only moves the classes that this account owns now that they are locked
+	for _, item := range taught {
 		err = HandOver(tx, item.ClassID, item.GuruID)
 		if err != nil {
 			return err
