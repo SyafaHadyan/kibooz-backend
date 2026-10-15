@@ -174,7 +174,7 @@ func TestDeletingTheAccountOfTheOwnerHandsTheClassOver(t *testing.T) {
 	// a deleted teacher that is not the owner changes nothing
 	third := registerGuru(t, "Rose")
 	require.Equal(t, http.StatusCreated, call(t, http.MethodPost, base+"/teachers", next.Token, map[string]any{"email": third.Email}).Status)
-	require.Equal(t, http.StatusOK, deleteAccount(t, third.Token, third.Password).Status)
+	require.Equal(t, http.StatusOK, deleteTeacher(t, third).Status)
 
 	who, count = ownerOf(t, next.Token, classID)
 	require.Equal(t, nextID, who)
@@ -258,7 +258,8 @@ func TestHandingAClassToATeacherWhoIsDeletingTheAccountNeverLeavesNoOwner(t *tes
 		go func() {
 			defer wg.Done()
 
-			deleted = deleteAccount(t, leaving.Token, leaving.Password)
+			// the class that the account made has no other teacher, so the owner takes it
+			deleted = deleteAccountTo(t, leaving.Token, leaving.Password, owner.Email)
 		}()
 
 		wg.Wait()

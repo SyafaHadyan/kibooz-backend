@@ -1084,6 +1084,21 @@ func deleteAccount(t *testing.T, token string, password string) result {
 	return call(t, http.MethodDelete, "/api/v1/users/me", token, map[string]any{"password": password})
 }
 
+// deleteAccountTo deletes a teacher account and names the teacher who takes over the classes that nobody else teaches
+func deleteAccountTo(t *testing.T, token string, password string, successorEmail string) result {
+	t.Helper()
+
+	return call(t, http.MethodDelete, "/api/v1/users/me", token, map[string]any{"password": password, "successorEmail": successorEmail})
+}
+
+// deleteTeacher deletes a teacher account. Every teacher starts as the only teacher of the class made at registration,
+// so a new teacher takes the classes over.
+func deleteTeacher(t *testing.T, guru account) result {
+	t.Helper()
+
+	return deleteAccountTo(t, guru.Token, guru.Password, registerGuru(t, "Successor").Email)
+}
+
 // requireLockedOut checks that an access token of a deleted account, which stays valid until it expires, reaches nothing
 func requireLockedOut(t *testing.T, token string, classID string) {
 	t.Helper()
@@ -1192,9 +1207,10 @@ func TestAccountSoftDelete(t *testing.T) {
 
 	t.Run("deleting a teacher ends their sessions and frees the email and NIP", func(t *testing.T) {
 		teacher := registerGuru(t, "Melati")
+		successor := registerGuru(t, "Mawar")
 		teacherClassID, teacherCode := classOf(t, teacher)
 
-		res := deleteAccount(t, teacher.Token, testPassword)
+		res := deleteAccountTo(t, teacher.Token, teacher.Password, successor.Email)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 
 		call(t, http.MethodPost, "/api/v1/auth/login", "", map[string]any{
@@ -1203,9 +1219,9 @@ func TestAccountSoftDelete(t *testing.T) {
 		refresh(t, teacher.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 		requireLockedOut(t, teacher.Token, teacherClassID)
 
-		// the class keeps its code, but nobody teaches it any more
-		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), nisn(), teacherCode, "Late Child").
-			requireError(t, http.StatusConflict, "CLASS_NO_ACTIVE_TEACHER")
+		// the class keeps its code and goes on with the successor
+		late := registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), nisn(), teacherCode, "Late Child")
+		require.Equal(t, http.StatusCreated, late.Status, "body %v", late.Body)
 
 		again := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
 			"email": teacher.Email, "password": testPassword, "fullName": "Returning Teacher",
