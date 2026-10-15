@@ -21,6 +21,14 @@ type ClaimResult struct {
 	Remaining    int
 }
 
+// HistoryRow is one saved place of a semester that ended
+type HistoryRow struct {
+	SeasonLabel  string
+	RankPosition int
+	StudentName  string
+	Points       int
+}
+
 type TrashDBItf interface {
 	FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error)
 	FindGuruIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error)
@@ -29,6 +37,10 @@ type TrashDBItf interface {
 	// Claim checks the daily limit, stores the scan, adds the points and renumbers the class in one transaction
 	Claim(ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, from time.Time, to time.Time) (ClaimResult, error)
 	ListClassStudents(ctx context.Context, classID uuid.UUID) ([]entity.Student, error)
+	// ListHistorySeasons returns the labels of the semesters that ended and left standings in the class, newest first
+	ListHistorySeasons(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]string, int, error)
+	// ListHistoryEntries returns the saved standings of the given semesters, newest semester first and best place first
+	ListHistoryEntries(ctx context.Context, classID uuid.UUID, labels []string) ([]HistoryRow, error)
 	FirstWaliClass(ctx context.Context, waliID uuid.UUID) (*uuid.UUID, error)
 	WaliHasStudentInClass(ctx context.Context, waliID uuid.UUID, classID uuid.UUID) (bool, error)
 	FirstGuruClass(ctx context.Context, guruID uuid.UUID) (*uuid.UUID, error)
@@ -173,6 +185,54 @@ func (r *TrashDB) ListClassStudents(ctx context.Context, classID uuid.UUID) ([]e
 		Find(&students).Error
 
 	return students, err
+}
+
+// A semester is listed for as long as the class has standings saved under it, even when every child in them was deleted
+// since, so the pages and the total do not shift when an account goes
+const historySeasons = `FROM leaderboard_history AS h WHERE h.class_id = ?`
+
+// The standings keep the name of a child as it was when the semester ended, so a child whose account was deleted since is
+// left out of them and no name outlives the account
+const historyJoin = `FROM leaderboard_history AS h
+	JOIN students AS s ON s.id = h.student_id AND s.deleted_at IS NULL
+	WHERE h.class_id = ?`
+
+func (r *TrashDB) ListHistorySeasons(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]string, int, error) {
+	var total int64
+
+	err := r.db.WithContext(ctx).Raw("SELECT COUNT(DISTINCT h.season_label) "+historySeasons, classID).Scan(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var labels []string
+
+	err = r.db.WithContext(ctx).
+		Raw("SELECT DISTINCT h.season_label "+historySeasons+" ORDER BY h.season_label DESC LIMIT ? OFFSET ?", classID, limit, offset).
+		Scan(&labels).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return labels, int(total), nil
+}
+
+func (r *TrashDB) ListHistoryEntries(ctx context.Context, classID uuid.UUID, labels []string) ([]HistoryRow, error) {
+	if len(labels) == 0 {
+		return nil, nil
+	}
+
+	var rows []HistoryRow
+
+	err := r.db.WithContext(ctx).
+		Raw(
+			"SELECT h.season_label, h.rank_position, h.student_name, h.points "+historyJoin+
+				" AND h.season_label IN ? ORDER BY h.season_label DESC, h.rank_position ASC, h.student_name ASC, h.id ASC",
+			classID, labels,
+		).
+		Scan(&rows).Error
+
+	return rows, err
 }
 
 func (r *TrashDB) firstID(ctx context.Context, query string, args ...any) (*uuid.UUID, error) {
