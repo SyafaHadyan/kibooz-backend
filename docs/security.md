@@ -52,7 +52,7 @@ The argument has three parts.
 
 - A flood with new emails is only limited by the proxy or CDN in front of the API.
 - Anyone can send `AUTH_LIMITER_MAX` failed logins for someone else's email to block that person's new devices for one window. Devices that signed in before keep working.
-- A teacher of a class can add any registered teacher to it by email, and from then on that teacher sees the whole class. Nothing asks the new teacher or the school first, and a teacher cannot be taken off a class yet. The route answers `TEACHER_NOT_FOUND` for an email that is not a teacher account, so a teacher can learn which emails belong to teachers, within the limit of the signed in user.
+- A teacher of a class can add any registered teacher to it by email, and from then on that teacher sees the whole class. Nothing asks the new teacher or the school first. Only the owner of the class, who is the teacher that made it until the class is handed over, can take a teacher off it, so an added teacher cannot evict the one who made the class. Every teacher can leave, and the only teacher of a class cannot. The route answers `TEACHER_NOT_FOUND` for an email that is not a teacher account, so a teacher can learn which emails belong to teachers, within the limit of the signed in user.
 - TLS and `Strict-Transport-Security` belong to the proxy. The API never terminates TLS.
 - Permanent deletion of a removed account is not automated. A deleted account is hidden from every query and login.
 - The project has one maintainer, so there is no second reviewer for changes.
