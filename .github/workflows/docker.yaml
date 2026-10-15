@@ -131,6 +131,7 @@ jobs:
           format: sarif
           output: trivy-image.sarif
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
 
       - name: Upload Trivy results to code scanning (amd64)
         if: ${{ env.PUSH == 'true' && always() }}
@@ -148,6 +149,7 @@ jobs:
           format: sarif
           output: trivy-image-arm64.sarif
           severity: CRITICAL,HIGH
+          limit-severities-for-sarif: true
 
       - name: Upload Trivy results to code scanning (arm64)
         if: ${{ env.PUSH == 'true' && always() }}
