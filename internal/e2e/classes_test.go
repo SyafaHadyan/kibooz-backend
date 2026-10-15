@@ -525,7 +525,7 @@ func TestMoreTeachersForOneClass(t *testing.T) {
 	})
 
 	t.Run("a deleted teacher leaves the list and cannot be added", func(t *testing.T) {
-		require.Equal(t, http.StatusOK, deleteAccount(t, second.Token, second.Password).Status)
+		require.Equal(t, http.StatusOK, deleteTeacher(t, second).Status)
 
 		list := listOf(t, call(t, http.MethodGet, teachers, first.Token, nil), "teachers")
 		require.Len(t, list, 1)

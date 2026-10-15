@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
@@ -38,6 +39,9 @@ type fakeRepo struct {
 	files   []string
 	err     error
 	deleted int
+
+	// successor is the email the last deletion passed on
+	successor string
 
 	// queued holds the keys the deletion put on the cleanup queue, unqueued the ones taken off it again
 	queued     []string
@@ -71,9 +75,10 @@ func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error
 }
 
 func (f *fakeRepo) SoftDeleteAccount(
-	_ context.Context, _ uuid.UUID, _ constants.Role, fileKey repository.FileKeyFunc,
+	_ context.Context, _ uuid.UUID, _ constants.Role, successorEmail string, fileKey repository.FileKeyFunc,
 ) (repository.DeletedAccount, error) {
 	f.deleted++
+	f.successor = successorEmail
 
 	if f.err != nil {
 		return repository.DeletedAccount{}, f.err
@@ -132,7 +137,7 @@ func TestDeleteAccount(t *testing.T) {
 		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
-		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "wrong-password")
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "wrong-password"})
 
 		appErr := apperror.As(err)
 		require.Equal(t, http.StatusForbidden, appErr.Status)
@@ -145,7 +150,7 @@ func TestDeleteAccount(t *testing.T) {
 		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, registered)}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
-		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, registered+"z")
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: registered + "z"})
 
 		require.Equal(t, "AUTH_PASSWORD_INCORRECT", apperror.As(err).Code)
 		require.Zero(t, repo.deleted)
@@ -155,7 +160,7 @@ func TestDeleteAccount(t *testing.T) {
 		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
-		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password")
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"})
 
 		require.Equal(t, "AUTH_FORBIDDEN", apperror.As(err).Code)
 		require.Zero(t, repo.deleted)
@@ -164,7 +169,7 @@ func TestDeleteAccount(t *testing.T) {
 	t.Run("an account that is already gone is reported", func(t *testing.T) {
 		useCase := usecase.NewUserUseCase(&fakeRepo{}, s3.Disabled{}, &fakeCache{})
 
-		err := useCase.DeleteAccount(ctx, uuid.New(), constants.RoleWali, "anything")
+		err := useCase.DeleteAccount(ctx, uuid.New(), constants.RoleWali, dto.DeleteAccountRequest{Password: "anything"})
 
 		require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
 	})
@@ -175,7 +180,7 @@ func TestDeleteAccount(t *testing.T) {
 		cache := &fakeCache{}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, cache)
 
-		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password")
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"})
 
 		require.NoError(t, err)
 		require.Equal(t, 1, repo.deleted)
@@ -185,11 +190,46 @@ func TestDeleteAccount(t *testing.T) {
 		}, cache.deleted)
 	})
 
+	t.Run("the successor email is trimmed and lowercased before it reaches the database", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "correct-password")}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{
+			Password: "correct-password", SuccessorEmail: "  Next.Teacher@Example.com ",
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, "next.teacher@example.com", repo.successor)
+	})
+
+	t.Run("a refusal of the database reaches the caller as it is", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "correct-password"), err: apperror.ErrSuccessorRequired}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"})
+
+		appErr := apperror.As(err)
+		require.Equal(t, http.StatusConflict, appErr.Status)
+		require.Equal(t, "SUCCESSOR_REQUIRED", appErr.Code)
+	})
+
+	t.Run("a wrapped refusal is still an answer and not a failure", func(t *testing.T) {
+		repo := &fakeRepo{
+			user: accountOf(t, constants.RoleGuru, "correct-password"),
+			err:  fmt.Errorf("transaction: %w", apperror.ErrTeacherNotFound),
+		}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"})
+
+		require.Equal(t, "TEACHER_NOT_FOUND", apperror.As(err).Code)
+	})
+
 	t.Run("a database failure becomes an internal error", func(t *testing.T) {
 		repo := &fakeRepo{user: accountOf(t, constants.RoleGuru, "correct-password"), err: errors.New("boom")}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
-		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password")
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"})
 
 		require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
 	})
@@ -387,7 +427,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		storage := &fakeStorage{}
 		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"}))
 
 		require.ElementsMatch(t, []string{
 			"avatars/user/a.png",
@@ -405,7 +445,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		storage := &fakeStorage{}
 		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"}))
 		require.Len(t, storage.deleted, 40)
 	})
 
@@ -418,7 +458,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		storage := &fakeStorage{}
 		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
 
-		require.Error(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password"))
+		require.Error(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"}))
 		require.Empty(t, storage.deleted)
 	})
 
@@ -433,7 +473,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		storage := &fakeStorage{failing: map[string]bool{"trash-scans/child/stuck.png": true}}
 		useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"}))
 		require.ElementsMatch(t, []string{"avatars/user/a.png", "trash-scans/child/stuck.png"}, repo.queued)
 		require.Equal(t, []string{"avatars/user/a.png"}, repo.unqueued, "only the file that is gone leaves the queue")
 	})
@@ -445,7 +485,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		}
 		useCase := usecase.NewUserUseCase(repo, &fakeStorage{}, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"}))
 		require.Equal(t, []string{"avatars/user/a.png"}, repo.queued, "an address of another host is not queued")
 		require.Equal(t, repo.queued, repo.unqueued)
 	})
@@ -458,7 +498,7 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		}
 		useCase := usecase.NewUserUseCase(repo, &fakeStorage{}, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"}))
 	})
 
 	t.Run("a disabled storage deletes nothing and does not fail", func(t *testing.T) {
@@ -468,6 +508,6 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		}
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
-		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, "correct-password"))
+		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"}))
 	})
 }

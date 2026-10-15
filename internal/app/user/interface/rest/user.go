@@ -37,7 +37,7 @@ func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
 		return err
 	}
 
-	err = h.useCase.DeleteAccount(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req.Password)
+	err = h.useCase.DeleteAccount(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req)
 	if err != nil {
 		return err
 	}

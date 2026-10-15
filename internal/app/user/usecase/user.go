@@ -3,6 +3,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -32,7 +33,7 @@ type UserUseCaseItf interface {
 	// UploadAvatar stores the image for the caller, or for one of their children when studentID is set
 	UploadAvatar(ctx context.Context, userID uuid.UUID, role constants.Role, studentID *uuid.UUID, data []byte) (dto.AvatarResponse, error)
 	// DeleteAccount soft deletes the caller after checking their password. A parent's children are deleted with them.
-	DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, password string) error
+	DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.DeleteAccountRequest) error
 }
 
 type UserUseCase struct {
@@ -156,7 +157,9 @@ func (u *UserUseCase) discardReplaced(ctx context.Context, previous string) {
 	s3.Discard(ctx, u.storage, key)
 }
 
-func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, password string) error {
+func (u *UserUseCase) DeleteAccount(
+	ctx context.Context, userID uuid.UUID, role constants.Role, req dto.DeleteAccountRequest,
+) error {
 	user, err := u.repo.FindUserByID(ctx, userID)
 	if err != nil {
 		return apperror.Internal(err)
@@ -171,17 +174,23 @@ func (u *UserUseCase) DeleteAccount(ctx context.Context, userID uuid.UUID, role 
 	}
 
 	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
-	if len([]byte(password)) > bcryptMaxBytes {
+	if len([]byte(req.Password)) > bcryptMaxBytes {
 		return apperror.ErrPasswordIncorrect
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
 	if err != nil {
 		return apperror.ErrPasswordIncorrect
 	}
 
-	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, u.fileKey)
+	// a refusal such as SUCCESSOR_REQUIRED is an answer for the caller, anything else is a failure
+	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, strings.ToLower(strings.TrimSpace(req.SuccessorEmail)), u.fileKey)
 	if err != nil {
+		var refusal *apperror.Error
+		if errors.As(err, &refusal) {
+			return refusal
+		}
+
 		return apperror.Internal(err)
 	}
 

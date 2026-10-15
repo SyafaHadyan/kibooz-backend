@@ -160,11 +160,12 @@ func TestDeletingAnAccountDuringARefreshRemovesEveryToken(t *testing.T) {
 
 	require.NoError(t, testDB.Raw("SELECT user_id::text FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&userID).Error)
 
+	successor := registerGuru(t, "Successor During Refresh")
 	finish := inFlightRefresh(t, guru.RefreshToken)
 
 	repo := userrepository.NewUserDB(testDB)
 	done := startWhileRefreshing(t, func(ctx context.Context) error {
-		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru, noFiles)
+		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru, successor.Email, noFiles)
 
 		return err
 	})
@@ -280,7 +281,9 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 	})
 
 	t.Run("deleting the account", func(t *testing.T) {
-		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, noFiles)
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(
+			context.Background(), uuid.MustParse(userID), constants.RoleGuru, registerGuru(t, "Successor Lock Timeout").Email, noFiles,
+		)
 		require.Error(t, err)
 
 		var active int64

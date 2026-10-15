@@ -67,7 +67,9 @@ func TestAccountDeletionQueuesItsFilesInTheSameTransaction(t *testing.T) {
 	repo := userrepository.NewUserDB(testDB)
 	fileKey := func(url string) (string, bool) { return strings.CutPrefix(url, "https://media.test/") }
 
-	deleted, err := repo.SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, fileKey)
+	deleted, err := repo.SoftDeleteAccount(
+		context.Background(), uuid.MustParse(userID), constants.RoleGuru, registerGuru(t, "Successor Files").Email, fileKey,
+	)
 	require.NoError(t, err)
 	require.Equal(t, []string{prefix + "/me.jpg"}, deleted.FileKeys)
 

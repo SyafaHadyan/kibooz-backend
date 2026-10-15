@@ -74,7 +74,7 @@ func TestAccountDeletionRemovesItsFiles(t *testing.T) {
 	})
 
 	t.Run("a teacher takes their avatar with them", func(t *testing.T) {
-		require.Equal(t, http.StatusOK, deleteAccount(t, guru.Token, guru.Password).Status)
+		require.Equal(t, http.StatusOK, deleteTeacher(t, guru).Status)
 
 		require.Empty(t, uploaded(guruAvatar))
 		require.Len(t, uploaded(otherChildAvatar), 1)

@@ -1,10 +1,17 @@
-// Package classteam keeps the ownership of a class with one of its active teachers. The owner can remove other teachers and
-// hand the class over, and when the owner leaves or deletes the account the teacher who joined next becomes the owner.
+// Package classteam keeps every class with an active teacher and an owner. The owner can remove other teachers and hand the
+// class over, and when the owner leaves or deletes the account the teacher who joined next becomes the owner. A teacher who is
+// the only one of a class has to name a successor to delete the account, so a class is never left without a teacher.
 package classteam
 
 import (
+	"slices"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 )
 
 // Lock serializes every change of the teachers of one class until the transaction ends, so two teachers that leave at the
@@ -53,40 +60,119 @@ func HandOver(tx *gorm.DB, classID uuid.UUID, leaving uuid.UUID) error {
 	return Transfer(tx, classID, leaving, next[0])
 }
 
-// ReleaseAll hands over every class that the account owns. It locks every class that the account teaches before it looks
-// at which of them it owns, because a teacher of such a class can hand it to this account at any moment until the lock is
-// held, and the account would then be deleted while still owning it. The classes are locked in one fixed order, so two
-// deletions that touch the same classes cannot wait for each other.
-func ReleaseAll(tx *gorm.DB, userID uuid.UUID) error {
-	var taught []struct {
-		ClassID uuid.UUID
-		GuruID  uuid.UUID
+// Leave readies the deletion of a teacher account so that no class is left without an active teacher or without an owner.
+// A class that another teacher also teaches goes on with that teacher, who becomes the owner when this account owns it. A
+// class that nobody else teaches goes to the teacher with the email successorEmail, who is added as its owner, and when the
+// account is the only teacher of such a class and no active teacher has that email nothing is changed and an error says so.
+//
+// The rows of the two accounts are locked first, in the order of their ids, and the classes after them in the order of their
+// ids. A successor who deletes the account at the same moment is then either seen as deleted here or finishes its own
+// handover first, so a class is never given to an account that is on its way out, and two deletions cannot wait for each other.
+func Leave(tx *gorm.DB, userID uuid.UUID, successorEmail string) error {
+	var own []uuid.UUID
+
+	err := tx.Raw("SELECT id FROM gurus WHERE user_id = ? AND deleted_at IS NULL", userID).Scan(&own).Error
+	if err != nil || len(own) == 0 {
+		return err
 	}
 
-	err := tx.Raw(`
-		SELECT ct.class_id, ct.guru_id
-		FROM class_teachers AS ct
-		JOIN gurus AS g ON g.id = ct.guru_id
-		WHERE g.user_id = ?
-		ORDER BY ct.class_id`, userID).Scan(&taught).Error
+	guruID := own[0]
+
+	var successor *uuid.UUID
+
+	if successorEmail != "" {
+		var found []uuid.UUID
+
+		err = tx.Raw(`
+			SELECT g.id
+			FROM users AS u
+			JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL
+			WHERE u.email = ? AND u.role = ? AND u.deleted_at IS NULL
+			LIMIT 1`, successorEmail, constants.RoleGuru).Scan(&found).Error
+		if err != nil {
+			return err
+		}
+
+		if len(found) > 0 {
+			successor = &found[0]
+		}
+	}
+
+	ids := []uuid.UUID{guruID}
+	if successor != nil && *successor != guruID {
+		ids = append(ids, *successor)
+	}
+
+	var locked []uuid.UUID
+
+	err = tx.Raw("SELECT id FROM gurus WHERE id IN ? AND deleted_at IS NULL ORDER BY id FOR UPDATE", ids).Scan(&locked).Error
 	if err != nil {
 		return err
 	}
 
-	for _, item := range taught {
-		err = Lock(tx, item.ClassID)
+	// the successor was deleted between the lookup and the lock
+	if successor != nil && !slices.Contains(locked, *successor) {
+		successor = nil
+	}
+
+	var taught []uuid.UUID
+
+	err = tx.Raw("SELECT class_id FROM class_teachers WHERE guru_id = ? ORDER BY class_id", guruID).Scan(&taught).Error
+	if err != nil {
+		return err
+	}
+
+	for _, classID := range taught {
+		err = Lock(tx, classID)
 		if err != nil {
 			return err
 		}
 	}
 
-	// HandOver looks at the owner flag again, so it only moves the classes that this account owns now that they are locked
-	for _, item := range taught {
-		err = HandOver(tx, item.ClassID, item.GuruID)
+	for _, classID := range taught {
+		err = leaveClass(tx, classID, guruID, successorEmail, successor)
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// leaveClass moves one class away from the account that is going, the caller holds Lock for it
+func leaveClass(tx *gorm.DB, classID uuid.UUID, guruID uuid.UUID, successorEmail string, successor *uuid.UUID) error {
+	var others int64
+
+	err := tx.Raw(`
+		SELECT COUNT(*)
+		FROM class_teachers AS ct
+		JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
+		WHERE ct.class_id = ? AND ct.guru_id <> ?`, classID, guruID).Scan(&others).Error
+	if err != nil {
+		return err
+	}
+
+	if others > 0 {
+		return HandOver(tx, classID, guruID)
+	}
+
+	if successorEmail == "" {
+		return apperror.ErrSuccessorRequired
+	}
+
+	if successor == nil {
+		return apperror.ErrTeacherNotFound
+	}
+
+	if *successor == guruID {
+		return apperror.Validation(map[string]string{"successorEmail": "must be another teacher"})
+	}
+
+	// the owner index is checked after each statement, so the account steps down before the successor takes the class
+	err = tx.Exec("UPDATE class_teachers SET is_owner = false WHERE class_id = ? AND guru_id = ?", classID, guruID).Error
+	if err != nil {
+		return err
+	}
+
+	return tx.Create(&entity.ClassTeacher{ClassID: classID, GuruID: *successor, IsOwner: true}).Error
 }

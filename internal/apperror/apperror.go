@@ -89,6 +89,7 @@ var (
 	ErrTeacherInClass     = New(http.StatusConflict, "TEACHER_ALREADY_IN_CLASS", "This teacher already teaches the class")
 	ErrTeacherNotInClass  = New(http.StatusNotFound, "TEACHER_NOT_IN_CLASS", "This teacher does not teach the class")
 	ErrNotClassOwner      = New(http.StatusForbidden, "CLASS_OWNER_REQUIRED", "Only the owner of the class can do this")
+	ErrSuccessorRequired  = New(http.StatusConflict, "SUCCESSOR_REQUIRED", "You are the only teacher of a class, so name another teacher as the successor to delete your account")
 	ErrLastTeacher        = New(http.StatusConflict, "LAST_TEACHER", "The only teacher of a class cannot leave it")
 	ErrForumPostNotFound  = New(http.StatusNotFound, "FORUM_POST_NOT_FOUND", "Forum post not found")
 	ErrVideoNotFound      = New(http.StatusNotFound, "VIDEO_NOT_FOUND", "Learning video not found")
