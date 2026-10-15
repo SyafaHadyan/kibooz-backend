@@ -33,7 +33,6 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Not built yet
 
-- Taking a teacher off a class. A teacher can be added but not removed, and a class without any active teacher stops taking in new children.
 - Removing an uploaded video file that was never added to a class. Such a file waits under the `pending/` prefix of the bucket, and a bucket lifecycle rule that expires `pending/` after one day removes it. The rule is set in the bucket and not in this API, and it must never cover `videos/` because that holds the real videos.
 
 ## Language
