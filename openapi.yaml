@@ -1313,6 +1313,38 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /leaderboard/history:
+    get:
+      tags: [Trash]
+      operationId: leaderboardHistory
+      summary: Final standings of the semesters that ended
+      description: |
+        The podium and ranking a class ended each semester with, the newest semester first. A semester is named by the
+        month it began, such as `2026-07`, and it shows up once it has ended, so the semester under way is only on
+        `GET /leaderboard`. `page` and `limit` count semesters and not children. A child gets the name and the points it
+        had when the semester ended, and a child whose account was deleted since is left out, so a place can be missing
+        from the list and a semester can have no place left at all. A parent sees the class of their child and a teacher sees a class they teach.
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The semesters of the requested page, which is an empty list for a class that has none yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaderboardHistoryEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /users/avatar:
     post:
       tags: [Account]
@@ -2215,6 +2247,56 @@ components:
           enum: [true]
         data:
           $ref: "#/components/schemas/Leaderboard"
+    LeaderboardHistoryEntry:
+      type: object
+      required: [rank, studentName, points]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+        studentName:
+          type: string
+        points:
+          type: integer
+    LeaderboardSeason:
+      type: object
+      required: [label, podium, rankings]
+      properties:
+        label:
+          type: string
+          pattern: "^[0-9]{4}-[0-9]{2}$"
+          description: The month the semester began, such as `2026-07`
+          example: 2026-07
+        podium:
+          type: array
+          maxItems: 3
+          description: The places 1 to 3 that are left
+          items:
+            $ref: "#/components/schemas/LeaderboardHistoryEntry"
+        rankings:
+          type: array
+          description: The places after the podium that are left
+          items:
+            $ref: "#/components/schemas/LeaderboardHistoryEntry"
+    LeaderboardHistory:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [seasons]
+          properties:
+            seasons:
+              type: array
+              items:
+                $ref: "#/components/schemas/LeaderboardSeason"
+    LeaderboardHistoryEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/LeaderboardHistory"
     AvatarData:
       type: object
       required: [avatarUrl]
