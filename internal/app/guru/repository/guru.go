@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 )
@@ -31,7 +32,14 @@ type TeacherRow struct {
 	entity.Guru `gorm:"embedded"`
 	FullName    string
 	AvatarURL   *string
+	IsOwner     bool
 	JoinedAt    time.Time
+}
+
+// teamRow is an active teacher of a class and whether the teacher owns it
+type teamRow struct {
+	GuruID  uuid.UUID
+	IsOwner bool
 }
 
 // ClassRow is a class with the number of children in it
@@ -80,6 +88,13 @@ type GuruDBItf interface {
 	// AddTeacher makes the active teacher account with the email a teacher of the class. It returns nil when no such
 	// account exists and apperror.ErrTeacherInClass when the account already teaches the class.
 	AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error)
+	// RemoveTeacher takes target off the class on behalf of actor. The owner can remove anyone and any teacher can remove
+	// themselves, and the owner who goes hands the class to the teacher who joined next. It returns
+	// apperror.ErrTeacherNotInClass, apperror.ErrNotClassOwner or apperror.ErrLastTeacher when the change is refused.
+	RemoveTeacher(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) error
+	// TransferOwnership makes target the owner of the class on behalf of actor, who has to be the current owner. It
+	// returns the new owner, apperror.ErrNotClassOwner or apperror.ErrTeacherNotInClass.
+	TransferOwnership(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) (*TeacherRow, error)
 }
 
 type GuruDB struct {
@@ -266,7 +281,7 @@ func (r *GuruDB) CreateClass(ctx context.Context, guruID uuid.UUID, class *entit
 			return err
 		}
 
-		return tx.Create(&entity.ClassTeacher{ClassID: class.ID, GuruID: guruID}).Error
+		return tx.Create(&entity.ClassTeacher{ClassID: class.ID, GuruID: guruID, IsOwner: true}).Error
 	})
 }
 
@@ -294,7 +309,7 @@ func (r *GuruDB) classQuery(ctx context.Context) *gorm.DB {
 
 func teacherQuery(tx *gorm.DB) *gorm.DB {
 	return tx.Table("class_teachers AS ct").
-		Select("g.*, u.full_name AS full_name, u.avatar_url AS avatar_url, ct.created_at AS joined_at").
+		Select("g.*, u.full_name AS full_name, u.avatar_url AS avatar_url, ct.is_owner AS is_owner, ct.created_at AS joined_at").
 		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
 		Joins("JOIN users AS u ON u.id = g.user_id AND u.deleted_at IS NULL")
 }
@@ -358,4 +373,123 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 	}
 
 	return added, nil
+}
+
+// loadTeam reads the active teachers of the class. The caller holds classteam.Lock, so the answer holds until the end of the
+// transaction.
+func loadTeam(tx *gorm.DB, classID uuid.UUID) (map[uuid.UUID]teamRow, error) {
+	var rows []teamRow
+
+	err := tx.Table("class_teachers AS ct").
+		Select("ct.guru_id AS guru_id, ct.is_owner AS is_owner").
+		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+		Where("ct.class_id = ?", classID).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	team := make(map[uuid.UUID]teamRow, len(rows))
+	for _, row := range rows {
+		team[row.GuruID] = row
+	}
+
+	return team, nil
+}
+
+func (r *GuruDB) RemoveTeacher(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		err := classteam.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		team, err := loadTeam(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		// the caller stopped teaching the class since the request was checked
+		self, teaches := team[actor]
+		if !teaches {
+			return apperror.ErrForbidden
+		}
+
+		goer, found := team[target]
+		if !found {
+			return apperror.ErrTeacherNotInClass
+		}
+
+		if target != actor && !self.IsOwner {
+			return apperror.ErrNotClassOwner
+		}
+
+		if len(team) == 1 {
+			return apperror.ErrLastTeacher
+		}
+
+		if goer.IsOwner {
+			err = classteam.HandOver(tx, classID, target)
+			if err != nil {
+				return err
+			}
+		}
+
+		return tx.Where("class_id = ? AND guru_id = ?", classID, target).Delete(&entity.ClassTeacher{}).Error
+	})
+}
+
+func (r *GuruDB) TransferOwnership(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) (*TeacherRow, error) {
+	var owner *TeacherRow
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		owner = nil
+
+		err := classteam.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		team, err := loadTeam(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		self, teaches := team[actor]
+		if !teaches {
+			return apperror.ErrForbidden
+		}
+
+		if !self.IsOwner {
+			return apperror.ErrNotClassOwner
+		}
+
+		if _, found := team[target]; !found {
+			return apperror.ErrTeacherNotInClass
+		}
+
+		if target != actor {
+			err = classteam.Transfer(tx, classID, actor, target)
+			if err != nil {
+				return err
+			}
+		}
+
+		var rows []TeacherRow
+
+		err = teacherQuery(tx).Where("ct.class_id = ? AND ct.guru_id = ?", classID, target).Scan(&rows).Error
+		if err != nil || len(rows) == 0 {
+			return err
+		}
+
+		owner = &rows[0]
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return owner, nil
 }

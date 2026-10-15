@@ -142,7 +142,7 @@ func (r *AuthDB) CreateGuru(
 		}
 
 		// a new account has no earlier tokens, so there is nothing to purge
-		return createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID}, session)
+		return createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID, IsOwner: true}, session)
 	})
 
 	return mapUniqueViolation(err)

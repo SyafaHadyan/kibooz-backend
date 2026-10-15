@@ -35,6 +35,8 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Get("/classes/:classId/teachers", handler.Teachers)
 	group.Post("/classes/:classId/teachers", handler.AddTeacher)
+	group.Delete("/classes/:classId/teachers/:teacherId", handler.RemoveTeacher)
+	group.Put("/classes/:classId/owner", handler.TransferOwnership)
 	group.Get("/profile", handler.Profile)
 	group.Put("/profile", handler.UpdateProfile)
 	group.Get("/profile/detail", handler.ProfileDetail)
@@ -223,4 +225,44 @@ func optionalUUID(c fiber.Ctx, name string) (*uuid.UUID, error) {
 	}
 
 	return &parsed, nil
+}
+
+func (h *GuruHandler) RemoveTeacher(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	teacherID, err := uuid.Parse(c.Params("teacherId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"teacherId": "invalid UUID format"})
+	}
+
+	err = h.useCase.RemoveTeacher(c.Context(), middleware.UserIDFrom(c), classID, teacherID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Teacher removed", nil)
+}
+
+func (h *GuruHandler) TransferOwnership(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	var req dto.TransferOwnershipRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.TransferOwnership(c.Context(), middleware.UserIDFrom(c), classID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Ownership handed over", res)
 }

@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
@@ -181,7 +182,11 @@ func (r *UserDB) SoftDeleteAccount(
 		case constants.RoleWali:
 			deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)
 		case constants.RoleGuru:
-			err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
+			// a class this teacher owns goes to the teacher who joined next, before the account is hidden
+			err = classteam.ReleaseAll(tx, userID)
+			if err == nil {
+				err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
+			}
 		}
 
 		if err != nil {
