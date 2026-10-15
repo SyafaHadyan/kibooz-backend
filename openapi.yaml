@@ -1226,7 +1226,7 @@ paths:
         month it began, such as `2026-07`, and it shows up once it has ended, so the semester under way is only on
         `GET /leaderboard`. `page` and `limit` count semesters and not children. A child gets the name and the points it
         had when the semester ended, and a child whose account was deleted since is left out, so a place can be missing
-        from the list. A parent sees the class of their child and a teacher sees a class they teach.
+        from the list and a semester can have no place left at all. A parent sees the class of their child and a teacher sees a class they teach.
       parameters:
         - $ref: "#/components/parameters/ClassId"
         - $ref: "#/components/parameters/Page"

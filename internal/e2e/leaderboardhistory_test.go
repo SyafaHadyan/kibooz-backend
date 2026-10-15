@@ -24,6 +24,8 @@ func TestLeaderboardHistoryShowsTheSemestersThatEnded(t *testing.T) {
 		).Error)
 	}
 
+	// the only child of this semester is deleted below, and the semester stays in the list without a place
+	save("2028-07", gone, "Dimas Gone", 20, 1)
 	save("2029-01", amelia, "Amelia Siti", 40, 1)
 	save("2029-07", zahra, "Zahra Putri", 90, 1)
 	save("2029-07", amelia, "Amelia Siti", 80, 2)
@@ -38,14 +40,17 @@ func TestLeaderboardHistoryShowsTheSemestersThatEnded(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/leaderboard/history?classId="+classID, guru.Token, nil)
 
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
-		require.EqualValues(t, 2, res.data("total"))
+		require.EqualValues(t, 3, res.data("total"))
 		require.EqualValues(t, 1, res.data("page"))
 
 		seasons, ok := res.data("seasons").([]any)
 		require.True(t, ok)
-		require.Len(t, seasons, 2)
+		require.Len(t, seasons, 3)
 		require.Equal(t, "2029-07", dig(seasons[0], "label"))
 		require.Equal(t, "2029-01", dig(seasons[1], "label"))
+		require.Equal(t, "2028-07", dig(seasons[2], "label"), "a semester whose only child was deleted is still listed")
+		require.Empty(t, dig(seasons[2], "podium"))
+		require.Empty(t, dig(seasons[2], "rankings"))
 
 		podium, ok := dig(seasons[0], "podium").([]any)
 		require.True(t, ok)
@@ -69,21 +74,21 @@ func TestLeaderboardHistoryShowsTheSemestersThatEnded(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/leaderboard/history", parent.Token, nil)
 
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
-		require.EqualValues(t, 2, res.data("total"))
+		require.EqualValues(t, 3, res.data("total"))
 	})
 
 	t.Run("a page holds that many semesters", func(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/leaderboard/history?classId="+classID+"&page=2&limit=1", guru.Token, nil)
 
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
-		require.EqualValues(t, 2, res.data("total"))
+		require.EqualValues(t, 3, res.data("total"))
 
 		seasons, ok := res.data("seasons").([]any)
 		require.True(t, ok)
 		require.Len(t, seasons, 1)
 		require.Equal(t, "2029-01", dig(seasons[0], "label"))
 
-		past := call(t, http.MethodGet, "/api/v1/leaderboard/history?classId="+classID+"&page=3&limit=1", guru.Token, nil)
+		past := call(t, http.MethodGet, "/api/v1/leaderboard/history?classId="+classID+"&page=4&limit=1", guru.Token, nil)
 
 		require.Equal(t, http.StatusOK, past.Status)
 		require.Empty(t, past.data("seasons"))

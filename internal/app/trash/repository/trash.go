@@ -187,6 +187,10 @@ func (r *TrashDB) ListClassStudents(ctx context.Context, classID uuid.UUID) ([]e
 	return students, err
 }
 
+// A semester is listed for as long as the class has standings saved under it, even when every child in them was deleted
+// since, so the pages and the total do not shift when an account goes
+const historySeasons = `FROM leaderboard_history AS h WHERE h.class_id = ?`
+
 // The standings keep the name of a child as it was when the semester ended, so a child whose account was deleted since is
 // left out of them and no name outlives the account
 const historyJoin = `FROM leaderboard_history AS h
@@ -196,7 +200,7 @@ const historyJoin = `FROM leaderboard_history AS h
 func (r *TrashDB) ListHistorySeasons(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]string, int, error) {
 	var total int64
 
-	err := r.db.WithContext(ctx).Raw("SELECT COUNT(DISTINCT h.season_label) "+historyJoin, classID).Scan(&total).Error
+	err := r.db.WithContext(ctx).Raw("SELECT COUNT(DISTINCT h.season_label) "+historySeasons, classID).Scan(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -204,7 +208,7 @@ func (r *TrashDB) ListHistorySeasons(ctx context.Context, classID uuid.UUID, lim
 	var labels []string
 
 	err = r.db.WithContext(ctx).
-		Raw("SELECT DISTINCT h.season_label "+historyJoin+" ORDER BY h.season_label DESC LIMIT ? OFFSET ?", classID, limit, offset).
+		Raw("SELECT DISTINCT h.season_label "+historySeasons+" ORDER BY h.season_label DESC LIMIT ? OFFSET ?", classID, limit, offset).
 		Scan(&labels).Error
 	if err != nil {
 		return nil, 0, err
