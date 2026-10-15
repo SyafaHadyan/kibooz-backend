@@ -31,7 +31,9 @@ type UserDBItf interface {
 	// address that is not ours. The keys are queued for cleanup in the same transaction, so a file is never forgotten
 	// after the address that pointed at it is gone. It returns the classes whose ranking changed and the queued keys,
 	// so the caller can delete the files and then take them off the queue.
-	SoftDeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, fileKey FileKeyFunc) (DeletedAccount, error)
+	SoftDeleteAccount(
+		ctx context.Context, userID uuid.UUID, role constants.Role, successorEmail string, fileKey FileKeyFunc,
+	) (DeletedAccount, error)
 	// UnqueueFileCleanups takes keys off the cleanup queue once their files are gone from the bucket
 	UnqueueFileCleanups(ctx context.Context, keys []string) error
 }
@@ -161,7 +163,7 @@ func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 }
 
 func (r *UserDB) SoftDeleteAccount(
-	ctx context.Context, userID uuid.UUID, role constants.Role, fileKey FileKeyFunc,
+	ctx context.Context, userID uuid.UUID, role constants.Role, successorEmail string, fileKey FileKeyFunc,
 ) (DeletedAccount, error) {
 	var deleted DeletedAccount
 
@@ -182,8 +184,8 @@ func (r *UserDB) SoftDeleteAccount(
 		case constants.RoleWali:
 			deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)
 		case constants.RoleGuru:
-			// a class this teacher owns goes to the teacher who joined next, before the account is hidden
-			err = classteam.ReleaseAll(tx, userID)
+			// every class goes on with another teacher before the account is hidden, or the deletion is refused
+			err = classteam.Leave(tx, userID, successorEmail)
 			if err == nil {
 				err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
 			}
