@@ -54,6 +54,7 @@ type Class struct {
 type ClassTeacher struct {
 	ClassID   uuid.UUID `gorm:"type:uuid;primaryKey"`
 	GuruID    uuid.UUID `gorm:"type:uuid;primaryKey"`
+	IsOwner   bool      `gorm:"not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 

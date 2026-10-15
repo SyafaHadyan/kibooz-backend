@@ -41,6 +41,10 @@ type GuruUseCaseItf interface {
 	Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error)
 	// AddTeacher lets a teacher of the class add another registered teacher by email, who then sees the whole class
 	AddTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddTeacherRequest) (dto.Teacher, error)
+	// RemoveTeacher lets the owner of the class take any teacher off it and any teacher leave it, except the last one
+	RemoveTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, teacherID uuid.UUID) error
+	// TransferOwnership lets the owner of the class hand it to another teacher of the class
+	TransferOwnership(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.TransferOwnershipRequest) (dto.Teacher, error)
 	Profile(ctx context.Context, userID uuid.UUID) (dto.GuruProfile, error)
 	ProfileDetail(ctx context.Context, userID uuid.UUID) (dto.GuruProfileDetail, error)
 	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateGuruProfileRequest) (dto.GuruProfileDetail, error)
@@ -370,8 +374,54 @@ func (u *GuruUseCase) AddTeacher(
 	return teacherResponse(added), nil
 }
 
+func (u *GuruUseCase) RemoveTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, teacherID uuid.UUID) error {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return err
+	}
+
+	return teamError(u.repo.RemoveTeacher(ctx, class.ID, guru.ID, teacherID))
+}
+
+func (u *GuruUseCase) TransferOwnership(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.TransferOwnershipRequest,
+) (dto.Teacher, error) {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.Teacher{}, err
+	}
+
+	owner, err := u.repo.TransferOwnership(ctx, class.ID, guru.ID, req.TeacherID)
+	if err != nil {
+		return dto.Teacher{}, teamError(err)
+	}
+
+	// the teacher left or was deleted between the check and the lock
+	if owner == nil {
+		return dto.Teacher{}, apperror.ErrTeacherNotInClass
+	}
+
+	return teacherResponse(owner), nil
+}
+
+// teamError keeps a refusal of the repository as it is and turns any other failure into an internal error
+func teamError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return err
+	}
+
+	return apperror.Internal(err)
+}
+
 func teacherResponse(row *repository.TeacherRow) dto.Teacher {
-	return dto.Teacher{ID: row.ID, FullName: row.FullName, NIP: row.NIP, AvatarURL: row.AvatarURL, JoinedAt: row.JoinedAt}
+	return dto.Teacher{
+		ID: row.ID, FullName: row.FullName, NIP: row.NIP, AvatarURL: row.AvatarURL, IsOwner: row.IsOwner, JoinedAt: row.JoinedAt,
+	}
 }
 
 func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error) {

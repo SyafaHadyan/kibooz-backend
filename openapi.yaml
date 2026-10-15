@@ -533,7 +533,9 @@ paths:
       tags: [Teacher]
       operationId: listClassTeachers
       summary: List the teachers of a class
-      description: The teachers of a class the signed in teacher teaches, the one who joined first at the top.
+      description: |
+        The teachers of a class the signed in teacher teaches, the one who joined first at the top. `isOwner` is true for
+        the one teacher who owns the class.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       responses:
@@ -559,9 +561,10 @@ paths:
       summary: Add a teacher to a class
       description: |
         A teacher of the class adds another registered teacher by the email of that account. The new teacher sees the whole
-        class from then on, which is its children, moods and forum, so add only people who should have that access. There
-        is no way to take a teacher off a class yet. The answer for an email that is not a teacher account is the same
-        for every requester after class access succeeds, and the request counts against the limit of the signed in user.
+        class from then on, which is its children, moods and forum, so add only people who should have that access. Only the
+        owner of the class can take a teacher off it again, with `DELETE /guru/classes/{classId}/teachers/{teacherId}`.
+        The new teacher is never the owner. The answer for an email that is not a teacher account is the same for every
+        requester after class access succeeds, and the request counts against the limit of the signed in user.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
@@ -593,6 +596,100 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "409":
           description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/teachers/{teacherId}:
+    delete:
+      tags: [Teacher]
+      operationId: removeClassTeacher
+      summary: Remove a teacher from a class, or leave it
+      description: |
+        The owner of the class can remove any other teacher, and every teacher can remove themselves to leave the class.
+        Whoever is removed no longer sees the class, its children, moods or forum, while what they wrote stays. When the
+        owner leaves, the teacher who joined next becomes the owner. The only teacher of a class cannot be removed, so a
+        class always has a teacher and an owner. Use `PUT /guru/classes/{classId}/owner` first to hand the class to someone
+        on purpose. The `teacherId` is the `id` of an entry of `GET /guru/classes/{classId}/teachers`.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/TeacherPath"
+      responses:
+        "200":
+          description: The teacher was removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            The role may not do this (`AUTH_FORBIDDEN`), or a teacher who is not the owner tried to remove someone else
+            (`CLASS_OWNER_REQUIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or the teacher does not teach it
+            (`TEACHER_NOT_IN_CLASS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The teacher is the only one left in the class (`LAST_TEACHER`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/owner:
+    put:
+      tags: [Teacher]
+      operationId: transferClassOwnership
+      summary: Hand a class to another teacher
+      description: |
+        Only the owner can do this. The new owner can remove teachers and hand the class on, and the old owner stays a
+        teacher of the class. Naming the owner again changes nothing and answers with the owner.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransferOwnershipRequest"
+      responses:
+        "200":
+          description: The new owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeacherEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: |
+            The role may not do this (`AUTH_FORBIDDEN`), or the signed in teacher is not the owner
+            (`CLASS_OWNER_REQUIRED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or the teacher does not teach it
+            (`TEACHER_NOT_IN_CLASS`)
           content:
             application/json:
               schema:
@@ -1385,6 +1482,14 @@ components:
       in: path
       required: true
       description: A class of the signed in user
+      schema:
+        type: string
+        format: uuid
+    TeacherPath:
+      name: teacherId
+      in: path
+      required: true
+      description: A teacher of the class, the `id` of an entry of the list of teachers
       schema:
         type: string
         format: uuid
@@ -2840,9 +2945,17 @@ components:
           type: string
           format: email
           maxLength: 255
+    TransferOwnershipRequest:
+      type: object
+      required: [teacherId]
+      properties:
+        teacherId:
+          type: string
+          format: uuid
+          description: A teacher of the class
     Teacher:
       type: object
-      required: [id, fullName, nip, avatarUrl, joinedAt]
+      required: [id, fullName, nip, avatarUrl, isOwner, joinedAt]
       properties:
         id:
           type: string
@@ -2856,6 +2969,9 @@ components:
           type: string
           format: uri
           nullable: true
+        isOwner:
+          type: boolean
+          description: Whether the teacher owns the class, which is true for one teacher of a class
         joinedAt:
           type: string
           format: date-time

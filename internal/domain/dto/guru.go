@@ -144,7 +144,13 @@ type Teacher struct {
 	FullName  string    `json:"fullName"`
 	NIP       *string   `json:"nip"`
 	AvatarURL *string   `json:"avatarUrl"`
+	IsOwner   bool      `json:"isOwner"`
 	JoinedAt  time.Time `json:"joinedAt"`
+}
+
+// TransferOwnershipRequest names the teacher of the class who becomes its owner
+type TransferOwnershipRequest struct {
+	TeacherID uuid.UUID `json:"teacherId" validate:"required"`
 }
 
 type TeacherList struct {
