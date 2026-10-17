@@ -5,6 +5,7 @@
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job |
+| `commits.yaml` | pull requests | Checks that the first line of every commit in the pull request and the pull request title are Conventional Commits with one of the types in the contributing guide. Merge commits are skipped, and only the first line is read because Dependabot adds a body |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
 | `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
@@ -64,6 +65,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Trivy filesystem scan | GitHub Actions |
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | Vale prose lint | GitHub Actions |
+| Conventional commits | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
 | DeepSource Docker, Go, SQL, Secrets and JavaScript | DeepSource |
 | codecov/patch | Codecov |
