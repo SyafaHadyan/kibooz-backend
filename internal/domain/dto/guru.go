@@ -49,6 +49,30 @@ type LogMoodResponse struct {
 	RecordedAt time.Time `json:"recordedAt"`
 }
 
+type LogMoodBatchEntry struct {
+	StudentID       uuid.UUID            `json:"studentId" validate:"required"`
+	MoodType        constants.Mood       `json:"moodType" validate:"required,oneof=SENANG SEDIH MARAH BINGUNG"`
+	Source          constants.MoodSource `json:"source" validate:"omitempty,oneof=AI_CAMERA MANUAL_INPUT"`
+	ConfidenceScore *float32             `json:"confidenceScore" validate:"omitempty,gte=0,lte=1"`
+	Notes           string               `json:"notes" validate:"omitempty,max=2000"`
+}
+
+// LogMoodBatchRequest max must match constants.MoodBatchMax
+type LogMoodBatchRequest struct {
+	ClassID uuid.UUID           `json:"classId" validate:"required"`
+	Entries []LogMoodBatchEntry `json:"entries" validate:"required,min=1,max=30,dive"`
+}
+
+type LogMoodBatchItem struct {
+	LogID      uuid.UUID `json:"logId"`
+	StudentID  uuid.UUID `json:"studentId"`
+	RecordedAt time.Time `json:"recordedAt"`
+}
+
+type LogMoodBatchResponse struct {
+	Logs []LogMoodBatchItem `json:"logs"`
+}
+
 type MoodAnalyticsQuery struct {
 	ClassID uuid.UUID
 	Range   string

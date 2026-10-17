@@ -73,6 +73,8 @@ type GuruDBItf interface {
 	FindStudent(ctx context.Context, studentID uuid.UUID) (*entity.Student, error)
 	TeachesClass(ctx context.Context, guruID uuid.UUID, classID uuid.UUID) (bool, error)
 	CreateMoodLog(ctx context.Context, moodLog *entity.MoodLog) error
+	// CreateMoodLogs stores every mood log in one transaction, so a failure writes none of them
+	CreateMoodLogs(ctx context.Context, moodLogs []entity.MoodLog) error
 	UpdateProfile(ctx context.Context, userID uuid.UUID, guruID uuid.UUID, update ProfileUpdate) error
 	ListTaughtClasses(ctx context.Context, guruID uuid.UUID, limit int, offset int) ([]ClassRow, int, error)
 	// FindClassRow returns nil when the guru does not teach the class
@@ -202,6 +204,16 @@ func (r *GuruDB) TeachesClass(ctx context.Context, guruID uuid.UUID, classID uui
 
 func (r *GuruDB) CreateMoodLog(ctx context.Context, moodLog *entity.MoodLog) error {
 	return r.db.WithContext(ctx).Create(moodLog).Error
+}
+
+func (r *GuruDB) CreateMoodLogs(ctx context.Context, moodLogs []entity.MoodLog) error {
+	if len(moodLogs) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Create(&moodLogs).Error
+	})
 }
 
 func (r *GuruDB) UpdateProfile(ctx context.Context, userID uuid.UUID, guruID uuid.UUID, update ProfileUpdate) error {

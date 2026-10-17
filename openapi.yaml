@@ -387,6 +387,39 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /guru/mood/log/batch:
+    post:
+      tags: [Teacher]
+      operationId: logMoodBatch
+      summary: Record the mood of several children of a class
+      description: |
+        Saves one mood log per entry in a single transaction with one shared `recordedAt`, so any failure saves nothing. The
+        teacher has to teach the class, every child has to be in it, and a child can appear only once. Only the latest mood of a
+        child per local day counts in the dashboards and charts, so a later batch supersedes earlier entries. Unlike the single
+        log, the `source` defaults to `AI_CAMERA`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogMoodBatchRequest"
+      responses:
+        "201":
+          description: Mood logs saved, in request order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogMoodBatchEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/mood/analytics:
     get:
       tags: [Teacher]
@@ -2156,6 +2189,73 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/LogMoodData"
+    LogMoodBatchEntry:
+      type: object
+      required: [studentId, moodType]
+      properties:
+        studentId:
+          type: string
+          format: uuid
+        moodType:
+          $ref: "#/components/schemas/Mood"
+        source:
+          type: string
+          enum: [AI_CAMERA, MANUAL_INPUT]
+          default: AI_CAMERA
+        confidenceScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Required for the AI_CAMERA source, 1 by default for MANUAL_INPUT
+        notes:
+          type: string
+          maxLength: 2000
+    LogMoodBatchRequest:
+      type: object
+      required: [classId, entries]
+      properties:
+        classId:
+          type: string
+          format: uuid
+        entries:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            $ref: "#/components/schemas/LogMoodBatchEntry"
+    LogMoodBatchItem:
+      type: object
+      required: [logId, studentId, recordedAt]
+      properties:
+        logId:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        recordedAt:
+          type: string
+          format: date-time
+    LogMoodBatchData:
+      type: object
+      required: [logs]
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogMoodBatchItem"
+    LogMoodBatchEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/LogMoodBatchData"
     DonutSlice:
       type: object
       required: [mood, percentage, colorHex]

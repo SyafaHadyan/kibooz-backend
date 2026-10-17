@@ -28,6 +28,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 
 	group.Get("/dashboard", handler.Dashboard)
 	group.Post("/mood/log", handler.LogMood)
+	group.Post("/mood/log/batch", handler.LogMoodBatch)
 	group.Get("/mood/analytics", handler.MoodAnalytics)
 	group.Get("/classes", handler.ListClasses)
 	group.Post("/classes", handler.CreateClass)
@@ -70,6 +71,22 @@ func (h *GuruHandler) LogMood(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusCreated, "Student mood log saved", res)
+}
+
+func (h *GuruHandler) LogMoodBatch(c fiber.Ctx) error {
+	var req dto.LogMoodBatchRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.LogMoodBatch(c.Context(), middleware.UserIDFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusCreated, "Mood logs saved", res)
 }
 
 func (h *GuruHandler) MoodAnalytics(c fiber.Ctx) error {
