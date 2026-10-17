@@ -19,7 +19,7 @@ The README has the quick start and the full list of settings. The `docs/` folder
 
 1. Branch from `main`. Name the branch `type/short-description`, for example `fix/refresh-retry`, using the same type as your commits.
 2. Keep one pull request to one concern. Unrelated changes go into separate branches and pull requests.
-3. Write commits in the [Conventional Commits](https://www.conventionalcommits.org/) style, as `type(scope): summary`. The summary is the whole message, so do not add a body. The types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` and `revert`. A required check fails the pull request when a commit or the title does not follow this.
+3. Write commits in the [Conventional Commits](https://www.conventionalcommits.org/) style, as `type(scope): summary`. The summary is the whole message, so do not add a body. The types are `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore` and `revert`. A pull request cannot be merged while a commit message or its title does not follow this, because the required check "Conventional commits" fails. Fix the message with `git commit --amend` for the last commit, or an interactive rebase for an older one, and push again.
 4. Sign your commits. The `main` branch only accepts verified signatures.
 5. Write code, comments, log lines, documentation and API messages in English. Match the style of the code around your change. Prose is checked by Vale, so write without em dashes and semicolons, as described in [docs/ci-cd.md](docs/ci-cd.md).
 
@@ -46,7 +46,7 @@ Add tests with every behaviour change. A bug fix should come with a test that fa
 
 ## Pull requests
 
-- The title is a Conventional Commit, such as `fix(auth): keep refresh retryable after a database error`.
+- The title is a Conventional Commit, such as `fix(auth): keep refresh retryable after a database error`. The "Conventional commits" check blocks the merge when the title or any commit does not follow it.
 - The body is only the list of commits in the pull request, one bullet per commit.
 - Add one label, `bug` for fixes, `enhancement` for features and `documentation` for documentation only.
 - Pull requests are merged with a merge commit, never squashed or rebased.
