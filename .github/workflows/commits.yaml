@@ -15,45 +15,42 @@ jobs:
   conventional-commits:
     name: Conventional commits
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The commits of the pull request are read with git log, so the whole history is needed
-          fetch-depth: 0
           persist-credentials: false
 
-      - name: Check the commit messages and the title
+      # The commitlint action runs as a Docker image from Docker Hub, which limits anonymous pulls
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # Lints the commits of the pull request. Merge commits are ignored by commitlint, and the rules are in commitlint.config.mjs.
+      - name: Commit messages
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
+        with:
+          configFile: ./commitlint.config.mjs
+          helpURL: https://github.com/SyafaHadyan/kibooz-backend/blob/main/CONTRIBUTING.md
+
+      # With merge commits the title never reaches main, so commitlint does not see it, and CONTRIBUTING.md asks for the same format
+      - name: Pull request title
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          # The types are the ones in CONTRIBUTING.md. Only the first line is checked, because Dependabot adds a body to its commits.
           pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*$'
-          failed=0
-
-          # Merge commits are made by GitHub or by merging main into the branch, so they are not checked
-          while IFS=$'\t' read -r sha subject; do
-            if ! [[ "$subject" =~ $pattern ]]; then
-              echo "::error title=Commit message::${sha:0:7} does not follow Conventional Commits"
-              echo "  ${sha:0:7} $subject"
-              failed=1
-            fi
-          done < <(git log --no-merges --format='%H%x09%s' "$BASE..$HEAD")
 
           if ! [[ "$TITLE" =~ $pattern ]]; then
             echo "::error title=Pull request title::The title does not follow Conventional Commits"
             echo "  title: $TITLE"
-            failed=1
-          fi
-
-          if [ "$failed" -ne 0 ]; then
-            echo "Write each message as type(scope): summary with one of feat, fix, docs, style, refactor, perf, test, build, ci, chore or revert, as described in CONTRIBUTING.md."
+            echo "Write it as type(scope): summary with one of feat, fix, docs, style, refactor, perf, test, build, ci, chore or revert, as described in CONTRIBUTING.md."
             exit 1
           fi
 
-          echo "Every commit and the title follow Conventional Commits."
+          echo "The title follows Conventional Commits."
