@@ -105,3 +105,41 @@ func TestStrictTransportSecurityIsNotSet(t *testing.T) {
 
 	require.Empty(t, res.Header.Get("Strict-Transport-Security"))
 }
+
+// Fiber decodes a body by its Content-Encoding when a handler reads it, and the size limit counts only the bytes that were
+// sent, so an encoded body is refused before anything reads it
+func TestARequestWithAnEncodedBodyIsRefused(t *testing.T) {
+	app := newServer(100)
+
+	// the start of a zstd frame, which is never read because the request is refused first
+	zstd := "\x28\xb5\x2f\xfd\x20\x00\x01\x00\x00"
+
+	for _, encoding := range []string{"zstd", "gzip", "br", "deflate", "GZIP", " zstd ", "gzip, zstd", "unknown"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(zstd))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", encoding)
+
+		res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = res.Body.Close() })
+
+		require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode, "encoding %q", encoding)
+	}
+
+	for _, encoding := range []string{"", "identity", "Identity"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(`{"email":"a@example.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+
+		if encoding != "" {
+			req.Header.Set("Content-Encoding", encoding)
+		}
+
+		res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = res.Body.Close() })
+
+		require.Equal(t, http.StatusOK, res.StatusCode, "encoding %q", encoding)
+	}
+}

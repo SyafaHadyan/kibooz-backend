@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -64,6 +65,7 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 
 	app.Use(
 		recover.New(),
+		plainBody(),
 		deadline(time.Duration(cfg.RequestTimeoutSeconds)*time.Second),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
 		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
@@ -87,6 +89,20 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 
 		classCodeMax: cfg.ClassCodeLimiterMax,
 		devices:      devicetoken.New(cfg),
+	}
+}
+
+// plainBody refuses a request that says its body is encoded. Fiber decodes a body by its Content-Encoding when a handler
+// reads it, and the size limit only counts the bytes that were sent, so a few kilobytes of zstd or gzip could grow to the
+// memory of the decoder. No client of this API compresses what it sends, so the encoding is never needed.
+func plainBody() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		encoding := strings.TrimSpace(c.Get(fiber.HeaderContentEncoding))
+		if encoding != "" && !strings.EqualFold(encoding, "identity") {
+			return fiber.ErrUnsupportedMediaType
+		}
+
+		return c.Next()
 	}
 }
 
