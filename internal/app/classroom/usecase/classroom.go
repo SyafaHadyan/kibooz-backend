@@ -38,6 +38,8 @@ type ClassroomUseCaseItf interface {
 	DeleteVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID) error
 	// CreateVideoUpload signs a URL the teacher sends a video file to, the file is then registered with AddVideo
 	CreateVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest) (dto.VideoUpload, error)
+	// DiscardVideoUpload deletes a file that was uploaded for a class and never added as a video, instead of waiting for the bucket to expire it
+	DiscardVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoURL string) error
 	ListThreads(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.ForumThreadList, error)
 	CreateThread(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, req dto.CreateThreadRequest) (dto.ForumThread, error)
 	ListReplies(
@@ -417,6 +419,37 @@ func (u *ClassroomUseCase) CreateVideoUpload(
 		VideoURL:  u.storage.PublicURL(key),
 		ExpiresAt: u.now().Add(ttl).UTC(),
 	}, nil
+}
+
+func (u *ClassroomUseCase) DiscardVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoURL string) error {
+	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return err
+	}
+
+	videoURL = strings.TrimSpace(videoURL)
+	if videoURL == "" {
+		return apperror.Validation(map[string]string{"videoUrl": "is required"})
+	}
+
+	// only a file that waits under pending/ for this class can go, so a video that was added or a file of another class is never touched
+	stagedKey := u.stagedVideoKey(classID, videoURL)
+	if stagedKey == "" {
+		return apperror.Validation(map[string]string{"videoUrl": "is not an upload that waits for this class"})
+	}
+
+	// adding the video takes the lock of the permanent address, so the file cannot go while it is being copied
+	permanentURL := u.storage.PublicURL(strings.TrimPrefix(stagedKey, pendingPrefix))
+
+	err = u.withFileLock(ctx, permanentURL, func(repository.ClassroomDBItf) error {
+		// deleting a key that is not there is not an error, so asking twice is safe
+		return u.storage.Delete(ctx, stagedKey)
+	})
+	if err != nil {
+		return asAppError(err)
+	}
+
+	return nil
 }
 
 // checkUploadedVideo makes sure a video address that points into our own bucket is a finished upload made for this class,

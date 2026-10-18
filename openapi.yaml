@@ -836,7 +836,8 @@ paths:
         Only a teacher of the class can ask for one. Send the file with a PUT request to `uploadUrl` before `expiresAt`, with exactly
         `sizeBytes` bytes and the headers of the answer, and no other header is needed. The bucket refuses a file of another size or
         type. Then add the video with `POST /classes/{classId}/videos` and the `videoUrl` of this answer. The file waits in a `pending/`
-        folder of the bucket until it is added, and the bucket removes whatever is never added after a day.
+        folder of the bucket until it is added, and the bucket removes whatever is never added after a day. A teacher who gives up can delete the file at once with
+        `DELETE /classes/{classId}/videos/upload-url`.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
@@ -868,6 +869,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+    delete:
+      tags: [Classroom]
+      operationId: discardVideoUpload
+      summary: Delete a file that was uploaded and never added
+      description: >-
+        Only a teacher of the class can do it. Send the `videoUrl` of the answer of `POST /classes/{classId}/videos/upload-url` for a file
+        that was not added as a video, for example when the teacher cancels the form. The file is removed from the `pending/` folder of the
+        bucket straight away, so it does not have to wait for the lifecycle rule. A file that is already gone also answers 200, so a
+        retry is safe. An address of another class, of an added video, of another kind of file or of another site answers 400 and nothing
+        is deleted.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - name: videoUrl
+          in: query
+          required: true
+          description: The `videoUrl` that the upload address answered with
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "200":
+          description: Upload deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
   /classes/{classId}/videos/{videoId}:
     patch:
       tags: [Classroom]

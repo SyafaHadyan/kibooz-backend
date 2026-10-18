@@ -461,6 +461,79 @@ func TestVideoUpload(t *testing.T) {
 		}
 	})
 
+	discard := func(token string, class string, videoURL string) result {
+		return call(t, http.MethodDelete,
+			fmt.Sprintf("/api/v1/classes/%s/videos/upload-url?videoUrl=%s", class, url.QueryEscape(videoURL)), token, nil)
+	}
+
+	t.Run("a file that waits can be deleted before it is added", func(t *testing.T) {
+		upload := sign(guru.Token, classID, map[string]any{"contentType": "video/mp4", "sizeBytes": 32})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+		sendFile(t, upload, "video/mp4", 32)
+
+		videoURL := upload.data("videoUrl").(string)
+		stagedKey := strings.TrimPrefix(videoURL, testPublicURL+"/")
+		require.Contains(t, uploaded("pending/videos/"+classID+"/"), stagedKey)
+
+		res := discard(guru.Token, classID, videoURL)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Upload deleted", res.Body["message"])
+		require.NotContains(t, uploaded("pending/videos/"+classID+"/"), stagedKey)
+
+		again := discard(guru.Token, classID, videoURL)
+		require.Equal(t, http.StatusOK, again.Status, "a file that is gone is not an error, body %v", again.Body)
+
+		late := add(guru.Token, classID, videoURL)
+		late.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "has no uploaded file yet", dig(late.Body, "details", "videoUrl"))
+	})
+
+	t.Run("only a teacher of the class can delete a file that waits", func(t *testing.T) {
+		upload := sign(guru.Token, classID, map[string]any{"contentType": "video/mp4", "sizeBytes": 16})
+		require.Equal(t, http.StatusOK, upload.Status, "body %v", upload.Body)
+		sendFile(t, upload, "video/mp4", 16)
+
+		videoURL := upload.data("videoUrl").(string)
+		stagedKey := strings.TrimPrefix(videoURL, testPublicURL+"/")
+
+		call(t, http.MethodDelete, "/api/v1/classes/"+classID+"/videos/upload-url", "", nil).
+			requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		discard(wali.Token, classID, videoURL).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		discard(otherGuru.Token, classID, videoURL).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+		call(t, http.MethodDelete, "/api/v1/classes/not-a-uuid/videos/upload-url?videoUrl=x", guru.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		missing := call(t, http.MethodDelete, "/api/v1/classes/"+classID+"/videos/upload-url", guru.Token, nil)
+		missing.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Equal(t, "is required", dig(missing.Body, "details", "videoUrl"))
+
+		theirs := sign(otherGuru.Token, otherClassID, map[string]any{"contentType": "video/mp4", "sizeBytes": 16})
+		require.Equal(t, http.StatusOK, theirs.Status, "body %v", theirs.Body)
+		sendFile(t, theirs, "video/mp4", 16)
+
+		own := sign(guru.Token, classID, map[string]any{"contentType": "video/mp4", "sizeBytes": 16})
+		require.Equal(t, http.StatusOK, own.Status, "body %v", own.Body)
+		sendFile(t, own, "video/mp4", 16)
+
+		added := add(guru.Token, classID, own.data("videoUrl").(string))
+		require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
+
+		for name, address := range map[string]string{
+			"a file of another class": theirs.data("videoUrl").(string),
+			"an avatar":               testPublicURL + "/avatars/" + uuid.NewString() + "/a.png",
+			"a link to another site":  "https://videos.example.com/lesson.mp4",
+			"an added video":          added.data("videoUrl").(string),
+		} {
+			res := discard(guru.Token, classID, address)
+			res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+			require.Equal(t, "is not an upload that waits for this class", dig(res.Body, "details", "videoUrl"), name)
+		}
+
+		require.Contains(t, uploaded("pending/videos/"+classID+"/"), stagedKey, "nothing above may remove the waiting file")
+		require.Contains(t, uploaded("pending/videos/"+otherClassID+"/"), strings.TrimPrefix(theirs.data("videoUrl").(string), testPublicURL+"/"))
+		require.Contains(t, uploaded("videos/"+classID+"/"), strings.TrimPrefix(added.data("videoUrl").(string), testPublicURL+"/"))
+	})
+
 	t.Run("a link to another site still works", func(t *testing.T) {
 		res := add(guru.Token, classID, "https://videos.example.com/lesson.mp4")
 		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
