@@ -147,9 +147,8 @@ func TestARequestWithAnEncodedBodyIsRefused(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(`{"email":"a@example.com"}`))
 		req.Header.Set("Content-Type", "application/json")
 
-		if encoding != "" {
-			req.Header.Set("Content-Encoding", encoding)
-		}
+		// an empty value is a header that is present and says nothing
+		req.Header.Set("Content-Encoding", encoding)
 
 		res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
 		require.NoError(t, err)
