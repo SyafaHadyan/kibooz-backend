@@ -27,7 +27,7 @@ The enum types are `user_role`, `mood_enum` (`SENANG`, `SEDIH`, `MARAH`, `BINGUN
 
 ## Who belongs to whom
 
-A user has exactly one role row, either a `gurus` row or a `walis` row, and both point at `users` with a unique foreign key. A parent owns children, and each child belongs to one class. A class is taught by any number of teachers through `class_teachers`. Everything a child produces, which means moods, scans and guidance, points at `students`. The forum and the videos point at the class and at the teacher or user who wrote them.
+A `GURU` user has exactly one `gurus` row, and a `WALI` user has exactly one `walis` row. Both rows point at `users` with a unique foreign key. A parent owns children, and each child belongs to one class. A class is taught by any number of teachers through `class_teachers`. Everything a child produces, which means moods, scans and guidance, points at `students`. The forum and the videos point at the class and at the teacher or user who wrote them.
 
 ## Rules the database enforces
 
@@ -37,7 +37,7 @@ A user has exactly one role row, either a `gurus` row or a `walis` row, and both
 - **Points never go negative.** `current_points`, `season_points` and `points_awarded` have `CHECK` constraints, and so does a confidence score, which has to be between 0 and 1.
 - **Forum shape.** A thread has a title and no parent, and a reply has a parent and no title. A check makes the title and the parent agree, and a composite foreign key on the parent and the class keeps a reply in the class of its thread.
 - **Refresh tokens.** The hash is unique. A used token keeps its row with `used_at` set, so that a second use is seen as a replay, and every token has a `family_id` that its session shares.
-- **Idempotency.** `(user_id, idempotency_key)` is the primary key, so two requests with the same key cannot both claim it. Each claim has its own `claim_id`, so a try that was taken for dead cannot change the row of the try that took over.
+- **Idempotency.** `(user_id, idempotency_key)` is the primary key, so two requests with the same key cannot both claim it. Taking over a stale claim is guarded by the application and not by the database. Each claim has its own `claim_id`, and every update or delete of a claim names it in its `WHERE` clause, so a try that was taken for dead matches no row and cannot change the row of the try that took over.
 
 ## Deleting
 
