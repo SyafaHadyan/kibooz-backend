@@ -25,17 +25,18 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	handler := GuruHandler{useCase: useCase}
 
 	group := router.Group("/guru", mw.Authentication, mw.RequireRole(constants.RoleGuru))
+	idempotent := mw.Idempotent()
 
 	group.Get("/dashboard", handler.Dashboard)
-	group.Post("/mood/log", handler.LogMood)
-	group.Post("/mood/log/batch", handler.LogMoodBatch)
+	group.Post("/mood/log", idempotent, handler.LogMood)
+	group.Post("/mood/log/batch", idempotent, handler.LogMoodBatch)
 	group.Get("/mood/analytics", handler.MoodAnalytics)
 	group.Get("/classes", handler.ListClasses)
-	group.Post("/classes", handler.CreateClass)
+	group.Post("/classes", idempotent, handler.CreateClass)
 	group.Get("/classes/:classId", handler.Class)
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Get("/classes/:classId/teachers", handler.Teachers)
-	group.Post("/classes/:classId/teachers", handler.AddTeacher)
+	group.Post("/classes/:classId/teachers", idempotent, handler.AddTeacher)
 	group.Delete("/classes/:classId/teachers/:teacherId", handler.RemoveTeacher)
 	group.Put("/classes/:classId/owner", handler.TransferOwnership)
 	group.Get("/profile", handler.Profile)

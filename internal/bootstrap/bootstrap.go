@@ -29,6 +29,7 @@ import (
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	fiberapp "github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
@@ -50,6 +51,7 @@ type Bootstrap struct {
 	stopKeepalive func()
 	stopCleanup   func()
 	stopSeason    func()
+	stopKeys      func()
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -89,7 +91,10 @@ func Start(version string) (*Bootstrap, error) {
 
 	jwtService := jwt.New(cfg)
 	app := fiberapp.New(cfg, redis.NewRateStore(cache))
-	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey))
+	keys := idempotency.New(
+		database, time.Duration(cfg.IdempotencyTTLHours)*time.Hour, time.Duration(cfg.RequestTimeoutSeconds)*time.Second,
+	)
+	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey), keys.Handler())
 
 	var pingStorage pinger
 	if storage.Enabled() {
@@ -130,6 +135,7 @@ func Start(version string) (*Bootstrap, error) {
 	)
 
 	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).Start(season.Interval)
+	stopKeys := keys.Start(idempotency.Interval)
 
 	stopCleanup := func() {}
 	if storage.Enabled() {
@@ -138,7 +144,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason,
+		stopSeason: stopSeason, stopKeys: stopKeys,
 	}, nil
 }
 
@@ -147,6 +153,7 @@ func (b *Bootstrap) Close() {
 	b.stopKeepalive()
 	b.stopCleanup()
 	b.stopSeason()
+	b.stopKeys()
 
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()
