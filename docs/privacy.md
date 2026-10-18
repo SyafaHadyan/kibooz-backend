@@ -43,7 +43,7 @@ The access log holds the time, the client address, the method, the path, the sta
 
 ## What deleting an account does
 
-`DELETE /users/me` asks for the password and then does the following in one transaction.
+For a teacher or a parent account, `DELETE /users/me` asks for the password and then does the following in one transaction.
 
 - Hides the account, and for a parent every child, by setting `deleted_at`. The API no longer returns them and the email, NIP and NISN can be used for a new account.
 - Ends every session by deleting the refresh tokens.
