@@ -99,6 +99,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 - [Design notes](docs/design.md) covers how accounts work, the rate limits, why Redis is optional and the business rules.
 - [Data model](docs/data-model.md) covers the tables, the rules the database enforces, what deleting an account does and how the schema changes.
 - [Security](docs/security.md) covers what is protected, the threats, the measures and what is not covered.
+- [Privacy](docs/privacy.md) covers which personal data is kept, who can read it, how long it stays and what deleting an account does.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Operations](docs/operations.md) covers deploying a version, migrations, background jobs, logs, what to check when something is wrong and how to roll back.
