@@ -337,23 +337,33 @@ type fileCleanup struct {
 
 func (fileCleanup) TableName() string { return "file_cleanups" }
 
-func (r *UserDB) UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash string, newHash string) (bool, error) {
-	changed := false
+// errPasswordStale rolls the transaction of UpdatePassword back when the stored hash is no longer the one that was checked
+var errPasswordStale = errors.New("password hash changed")
 
+func (r *UserDB) UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash string, newHash string) (bool, error) {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the sessions come first, like in SoftDeleteAccount, because ending them waits for a refresh that is under way and
+		// nothing it waits for may hold the lock of the user row. Two requests of the same account then lock in one order.
+		err := sessions.EndUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
 		res := tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, oldHash).Update("password_hash", newHash)
 		if res.Error != nil {
 			return res.Error
 		}
 
+		// nothing was changed, so the rollback also keeps the sessions that were just ended
 		if res.RowsAffected == 0 {
-			return nil
+			return errPasswordStale
 		}
 
-		changed = true
-
-		return sessions.EndUser(tx, userID)
+		return nil
 	})
+	if errors.Is(err, errPasswordStale) {
+		return false, nil
+	}
 
-	return changed, err
+	return err == nil, err
 }

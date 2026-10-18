@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -74,4 +76,40 @@ func TestChangePassword(t *testing.T) {
 		call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": guru.RefreshToken}).
 			requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	})
+}
+
+// A password change and an account deletion of the same account end its sessions and touch the user row. They have to take
+// their locks in the same order, or PostgreSQL aborts one of them with a deadlock and the caller gets a 500.
+func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) {
+	guru := registerGuru(t, "Sandi Balapan")
+	_, joinCode := classOf(t, guru)
+
+	for round := range 6 {
+		wali, _ := registerWali(t, joinCode, fmt.Sprintf("Sandi Anak %d", round))
+
+		var (
+			wg      sync.WaitGroup
+			changed result
+			removed result
+		)
+
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+
+			changed = changePassword(t, wali.Token, wali.Password, "Race-"+suffix()+"!")
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			removed = deleteAccount(t, wali.Token, wali.Password)
+		}()
+
+		wg.Wait()
+
+		require.Equal(t, http.StatusOK, removed.Status, "round %d, body %v", round, removed.Body)
+		require.NotEqual(t, http.StatusInternalServerError, changed.Status, "round %d, body %v", round, changed.Body)
+	}
 }
