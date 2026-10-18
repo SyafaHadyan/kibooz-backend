@@ -125,7 +125,23 @@ func TestARequestWithAnEncodedBodyIsRefused(t *testing.T) {
 		t.Cleanup(func() { _ = res.Body.Close() })
 
 		require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode, "encoding %q", encoding)
+		requireSecurityHeaders(t, res)
 	}
+
+	t.Run("a repeated header is read line by line", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(zstd))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Add("Content-Encoding", "identity")
+		req.Header.Add("Content-Encoding", "gzip")
+
+		res, err := app.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+
+		t.Cleanup(func() { _ = res.Body.Close() })
+
+		require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode)
+		requireSecurityHeaders(t, res)
+	})
 
 	for _, encoding := range []string{"", "identity", "Identity"} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(`{"email":"a@example.com"}`))

@@ -65,7 +65,6 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 
 	app.Use(
 		recover.New(),
-		plainBody(),
 		deadline(time.Duration(cfg.RequestTimeoutSeconds)*time.Second),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
 		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
@@ -77,6 +76,8 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		logger.New(logger.Config{
 			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
 		}),
+		// after the headers, the request id and the log, so a refused request has all three
+		plainBody(),
 	)
 
 	return &Fiber{
@@ -97,9 +98,12 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 // memory of the decoder. No client of this API compresses what it sends, so the encoding is never needed.
 func plainBody() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		encoding := strings.TrimSpace(c.Get(fiber.HeaderContentEncoding))
-		if encoding != "" && !strings.EqualFold(encoding, "identity") {
-			return fiber.ErrUnsupportedMediaType
+		// a request can repeat the header, and Fiber joins the lines when it decodes the body
+		for _, line := range c.Request().Header.PeekAll(fiber.HeaderContentEncoding) {
+			encoding := strings.TrimSpace(string(line))
+			if encoding != "" && !strings.EqualFold(encoding, "identity") {
+				return fiber.ErrUnsupportedMediaType
+			}
 		}
 
 		return c.Next()
