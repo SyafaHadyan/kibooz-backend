@@ -89,7 +89,13 @@ Going back to an older image is safe only while no migration ran since that imag
 1. If the new version added no migration, set `IMAGE_TAG` to the previous version and run `docker compose up -d`.
 2. If it did, restore the database from a backup taken before the deploy and then start the older image. Alternatively, apply the down files of the new migrations with the golang-migrate command line and then start the older image. Down files drop the columns and tables the new version added, so the data in them is lost.
 
-Nothing in this repository backs up the database. Take a dump before every deploy that carries a migration, for example with `docker compose exec db pg_dump -U "$DB_USERNAME" "$DB_NAME" > backup.sql`, and keep it somewhere off the host. A volume from an older PostgreSQL major version does not start on PostgreSQL 18, see the [README](../README.md#production-deployment).
+Nothing in this repository backs up the database. Take a dump before every deploy that carries a migration, for example with the command below, which reads the user and database name from the `db` container itself, and keep it somewhere off the host.
+
+```sh
+docker compose exec db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql
+```
+
+A volume from an older PostgreSQL major version does not start on PostgreSQL 18, see the [README](../README.md#production-deployment).
 
 ## Secrets
 
