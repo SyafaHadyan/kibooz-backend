@@ -99,6 +99,8 @@ var (
 	ErrImageDimensions    = New(http.StatusBadRequest, "IMAGE_DIMENSIONS_TOO_LARGE", "The image may be at most 8192 pixels on a side and 40 megapixels in all")
 	ErrStorageDisabled    = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is not configured")
 	ErrStorageFailed      = New(http.StatusBadGateway, "STORAGE_ERROR", "Failed to store the file")
+	ErrIdempotencyReused  = New(http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED", "This Idempotency-Key was used for a different request")
+	ErrIdempotencyBusy    = New(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "A request with this Idempotency-Key is still running, try again in a moment")
 	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")
 	ErrNotFound           = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
 )
