@@ -305,6 +305,40 @@ expect("child limit etc validation", call("POST", "/wali/children", w1["token"],
 expect("child profile", call("GET", f"/wali/child/{w1['student']}", w1["token"]), 200)
 expect("other parents child profile", call("GET", f"/wali/child/{w2['student']}", w1["token"]), 404, "STUDENT_NOT_FOUND")
 
+# ---------- 0.11.0 batch mood log, the route does not exist in older versions ----------
+BATCH = "/guru/mood/log/batch"
+
+
+def entry(student, mood, score=0.9, **extra):
+    return {"studentId": student, "moodType": mood, "confidenceScore": score, **extra}
+
+
+def batch(token, entries, class_id=None):
+    return call("POST", BATCH, token, {"classId": class_id or g1["class"], "entries": entries})
+
+
+s, js = batch(g1["token"], [entry(w1["student"], "BINGUNG", 0.88), {"studentId": w2["student"], "moodType": "SENANG", "source": "MANUAL_INPUT", "notes": "smoke"}])
+logs = dig(js, "data", "logs") or []
+check("batch saves every entry", s == 201 and len(logs) == 2, f"{s} {js}")
+check("batch keeps the request order", [l.get("studentId") for l in logs] == [w1["student"], w2["student"]], str(logs))
+check("batch shares one recordedAt", len(logs) == 2 and len({l.get("recordedAt") for l in logs}) == 1, str(logs))
+expect("batch without entries", batch(g1["token"], []), 400, "VALIDATION_ERROR")
+expect("batch with too many entries", batch(g1["token"], [entry(w1["student"], "SENANG")] * 31), 400, "VALIDATION_ERROR")
+expect("batch camera entry without a score", batch(g1["token"], [{"studentId": w1["student"], "moodType": "SENANG"}]), 400, "VALIDATION_ERROR")
+expect("batch unknown mood", batch(g1["token"], [entry(w1["student"], "LAPAR")]), 400, "VALIDATION_ERROR")
+expect("batch score above one", batch(g1["token"], [entry(w1["student"], "SENANG", 1.5)]), 400, "VALIDATION_ERROR")
+expect("batch repeated child", batch(g1["token"], [entry(w1["student"], "SENANG"), entry(w1["student"], "SEDIH")]), 400, "VALIDATION_ERROR")
+expect("batch unknown child", batch(g1["token"], [entry(str(uuid.uuid4()), "SENANG")]), 400, "VALIDATION_ERROR")
+expect("batch without a class", call("POST", BATCH, g1["token"], {"entries": [entry(w1["student"], "SENANG")]}), 400, "VALIDATION_ERROR")
+expect("batch needs a token", call("POST", BATCH, None, {"classId": g1["class"], "entries": [entry(w1["student"], "SENANG")]}), 401, "AUTH_TOKEN_MISSING")
+expect("parent cannot save a batch", batch(w1["token"], [entry(w1["student"], "SENANG")]), 403, "AUTH_FORBIDDEN")
+before_status, before = call("GET", f"/guru/dashboard?classId={g1['class']}", g1["token"])
+expect("teacher of another class cannot save a batch", batch(g2["token"], [entry(w1["student"], "SENANG")], g1["class"]), 404, "CLASS_NOT_FOUND")
+after_status, after = call("GET", f"/guru/dashboard?classId={g1['class']}", g1["token"])
+check("a refused batch changes no mood", before_status == 200 and after_status == 200 and dig(before, "data", "dailyMoodDistribution") is not None
+      and dig(before, "data", "dailyMoodDistribution") == dig(after, "data", "dailyMoodDistribution"), f"{before_status} {after_status}")
+expect("batch for a class that does not exist", batch(g1["token"], [entry(w1["student"], "SENANG")], str(uuid.uuid4())), 404, "CLASS_NOT_FOUND")
+
 # ---------- profile ----------
 expect("guru profile", call("GET", "/guru/profile", g1["token"]), 200)
 expect("guru profile update", call("PUT", "/guru/profile", g1["token"], {"phoneNumber": "+62 812 3456 7890"}), 200)
