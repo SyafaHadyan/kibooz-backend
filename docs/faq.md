@@ -25,9 +25,9 @@ The app and the PRD are in Indonesian, and the API keeps a few of those words in
 
 **Why does the app get a `429` on login when I did nothing wrong?** Login is limited per email, and anyone can use up the budget of an email they know. A device that signed in before sends its `deviceToken` and has a bucket of its own, so it keeps working. See [Trusted devices](design.md#trusted-devices).
 
-**Why is a join code refused when it looks right?** The code is trimmed and read in capitals, so the case does not matter, but the characters `I`, `O`, `0` and `1` never appear in a code, so one of them is a typo. A class that was archived answers `CLASS_CODE_NOT_FOUND` too, because it has no teacher and no child any more.
+**Why is a join code refused when it looks right?** The code is trimmed and read in capitals, so the case does not matter, but the characters `I`, `O`, `0` and `1` never appear in a code, so one of them is a typo. A class that was archived answers `CLASS_CODE_NOT_FOUND` too, because it has no teacher and no active child any more.
 
-**Why can a teacher delete the account without naming a successor, and another teacher cannot?** A class with children that nobody else teaches needs a successor, so it never loses its last teacher. A class with no children is archived instead. See [Error codes](errors.md#classes-and-teachers).
+**Why can a teacher delete the account without naming a successor, and another teacher cannot?** A class with active children that nobody else teaches needs a successor, so it never loses its last teacher. A class with no active child is archived when no `successorEmail` is sent, and a named successor takes every class, empty ones included. See [Error codes](errors.md#classes-and-teachers).
 
 **Why does a trash claim give no points?** `B3` is worth 0 points by default, set by `POINTS_B3`. The other limit is `TRASH_DAILY_LIMIT` claims for each child each day, 5 by default, and it starts again on the next local day.
 
