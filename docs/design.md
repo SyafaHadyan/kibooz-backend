@@ -48,29 +48,36 @@ A request that finds every slot taken waits up to `PASSWORD_HASH_WAIT_MILLISECON
 
 ### A flood limit in the proxy
 
-The proxy limit is a ceiling for floods and not a throttle for people. It still counts by address, so once an address goes over the ceiling the proxy rejects everyone who shares it, including the users who behave. That is why the numbers have to sit far above what one school network sends, and the API already limits every user and account on its own. This nginx example allows each address 30 requests a second with a burst of 60 on the four public auth routes and leaves every other route to the API.
+The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address 5 requests a second with a burst of 30. Several teachers who sign in at the same moment on one school network stay inside the burst, and a single script is held to a few requests a second.
 
 ```nginx
 # http block
-limit_req_zone $binary_remote_addr zone=kibooz_auth:10m rate=30r/s;
+limit_req_zone $binary_remote_addr zone=kibooz_hash:10m rate=5r/s;
 limit_req_status 429;
 
 # server block
-location ~ ^/api/v1/auth/(register|login|refresh-token|logout)$ {
-    limit_req zone=kibooz_auth burst=60 nodelay;
+location ~* ^/api/v1/auth/(register|login)/?$ {
+    limit_req zone=kibooz_hash burst=30 nodelay;
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 
 location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
 
-If a CDN or load balancer sits in front of nginx, restore the visitor address first with `set_real_ip_from` and `real_ip_header`. Without that, every request arrives from the address of the CDN, all visitors share one budget and the limit blocks everyone at once. A request that nginx limits gets a plain `429` without the `RATE_LIMITED` body, so the apps treat any `429` as a signal to wait. A CDN rule on the same four routes works the same way and stops the flood before it reaches your server.
+- **The match ignores case and allows a trailing slash**, because the router does the same. An exact match would let `/API/v1/auth/Login` or `/api/v1/auth/login/` reach the API without the limit.
+- **Keep the plain `location /`.** Without it every other route answers `404`.
+- **Both locations set `X-Forwarded-For` from `$remote_addr`.** `$proxy_add_x_forwarded_for` would append to the value that the client or the CDN sent, so a client could put its own addresses at the front of the header.
+- **A request that nginx limits gets a plain `429`** without the `RATE_LIMITED` body, so the apps treat any `429` as a signal to wait.
+
+If a CDN or load balancer sits in front of nginx, restore the visitor address first. With Cloudflare, set `real_ip_header CF-Connecting-IP;` and add one `set_real_ip_from` line for each range that Cloudflare publishes at `cloudflare.com/ips`. nginx only trusts the header on a connection from a listed range, so a client that reaches the server directly cannot forge it. Without this step every request arrives from the address of the CDN, all visitors share one budget and the limit blocks everyone at once. The ranges change rarely, so compare them with the published list now and then. A request that reaches the server directly skips the CDN and its rules, so allow port 443 only from the CDN if you can. A CDN rule on the same two routes works the same way and stops the flood before it reaches your server.
 
 ## Redis is optional
 
