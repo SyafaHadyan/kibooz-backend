@@ -83,6 +83,23 @@ reply_id="$(pick "$reply" '.data.id')"
 other="$(post_as /guru/classes "$guru_session" '{"name": "zap two", "gradeLevel": "Class Y"}')"
 other_id="$(pick "$other" '.data.id')"
 
+# a teacher whose password the scan really changes, so that no other request loses the login it relies on
+pw_teacher="$(post /auth/register "$(jq -n --arg e "zap.password.$suffix@example.com" --arg p "$pass" \
+  '{email: $e, password: $p, fullName: "ZAP Password", role: "GURU", class: {name: "zap password"}}')")"
+pw_token="$(pick "$pw_teacher" '.data.token')"
+
+# a teacher with a class that has no child who then deletes the account without a successor, which archives the class, and
+# a parent who tries the join code of that class afterwards
+leaver="$(post /auth/register "$(jq -n --arg e "zap.leaver.$suffix@example.com" --arg p "$pass" \
+  '{email: $e, password: $p, fullName: "ZAP Leaver", role: "GURU", class: {name: "zap leaver"}}')")"
+leaver_token="$(pick "$leaver" '.data.token')"
+leaver_code="$(pick "$(get /guru/dashboard "$leaver_token")" '.data.classOverview.joinCode')"
+
+# times for the recordedAt of a mood log that was queued offline
+past="$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)"
+future="$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)"
+ancient="$(date -u -d '-30 days' +%Y-%m-%dT%H:%M:%SZ)"
+
 # a 1x1 PNG, so that the image checks run on a real picture and not only on a refusal
 photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
@@ -90,7 +107,8 @@ photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
 # /videos/upload-url below therefore only attack how the videoUrl query is read and refused, which is all that can run here.
 extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg c "$class" --arg v "$video_id" \
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
-  --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" '[
+  --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" --arg pw "$pw_token" --arg lt "$leaver_token" \
+  --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.nocode." + $x + "@example.com"), password: $p, fullName: "ZAP No Code", role: "WALI", classCode: "ZZZZZZZZ", student: {nisn: "323456789012", fullName: "ZAP Nobody"}}},
@@ -132,6 +150,28 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: "/api/v1/wali/guidance/apply", token: $wt, body: {guidanceId: "guidance-senang-4step", studentId: $s, parentNotes: "ZAP notes"}},
   {method: "GET", path: "/api/v1/trash/stats", token: $wt},
   {method: "POST", path: "/api/v1/trash/scan-claim", token: $wt, body: {studentId: $s, trashType: "ANORGANIK", confidenceScore: 0.9, photoBase64: $photo}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {studentId: $s, moodType: "SEDIH", recordedAt: $past}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {studentId: $s, moodType: "SEDIH", recordedAt: $future}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {studentId: $s, moodType: "SEDIH", recordedAt: $ancient}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {studentId: $s, moodType: "SEDIH", recordedAt: "yesterday"}},
+  {method: "POST", path: "/api/v1/guru/mood/log/batch", token: $gt, body: {classId: $c, recordedAt: $past, entries: [{studentId: $s, moodType: "SENANG", confidenceScore: 0.9}]}},
+  {method: "POST", path: "/api/v1/guru/mood/log/batch", token: $gt, body: {classId: $c, recordedAt: $future, entries: [{studentId: $s, moodType: "SENANG", confidenceScore: 0.9}]}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: ("zapkey-" + $x + "-1"), body: {studentId: $s, moodType: "BINGUNG"}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: ("zapkey-" + $x + "-1"), body: {studentId: $s, moodType: "BINGUNG"}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: ("zapkey-" + $x + "-1"), body: {studentId: $s, moodType: "MARAH"}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: "short", body: {studentId: $s, moodType: "BINGUNG"}},
+  {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: ("bad key with spaces " + $x), body: {studentId: $s, moodType: "BINGUNG"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/forum"), token: $gt, key: ("zapkey-" + $x + "-2"), body: {title: "ZAP keyed thread", body: "ZAP keyed body"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/forum"), token: $gt, key: ("zapkey-" + $x + "-2"), body: {title: "ZAP keyed thread", body: "ZAP keyed body"}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: $p, newPassword: ($p + "-new")}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: $p, newPassword: ($p + "-newer")}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: ($p + "-new"), newPassword: ($p + "-new")}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: ($p + "-new"), newPassword: "short"}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {}},
+  {method: "PUT", path: "/api/v1/users/me/password", token: $wt, body: {currentPassword: $w, newPassword: ($p + "-new")}},
+  {method: "PUT", path: "/api/v1/users/me/password", body: {currentPassword: $p, newPassword: ($p + "-new")}},
+  {method: "DELETE", path: "/api/v1/users/me", token: $lt, body: {password: $p}},
+  {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.latecomer." + $x + "@example.com"), password: $p, fullName: "ZAP Latecomer", role: "WALI", classCode: $lc, student: {nisn: "423456789012", fullName: "ZAP Late Child"}}},
   {method: "DELETE", path: "/api/v1/users/me", token: $wt, body: {password: $w}}
 ]')"
 
