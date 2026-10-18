@@ -6,7 +6,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 )
 
 func archivedAt(t *testing.T, classID string) *string {
@@ -146,4 +151,19 @@ func TestAChildJoiningWhileTheLastTeacherLeavesNeverEndsInAnArchivedClass(t *tes
 		require.Equal(t, http.StatusCreated, joined.Status, "round %d, body %v", round, joined.Body)
 		deletion.requireError(t, http.StatusConflict, "SUCCESSOR_REQUIRED")
 	}
+}
+
+// A join that looked the class up just before it was archived waits for the lock and then has to find it archived. The
+// race itself is too narrow to hit on purpose, so the check after the lock is made on its own.
+func TestLockOpenRefusesAnArchivedClass(t *testing.T) {
+	teacher := registerGuru(t, "Terkunci")
+	classID, _ := classOf(t, teacher)
+	id := uuid.MustParse(classID)
+
+	require.NoError(t, testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id) }), "an open class is locked")
+
+	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?", classID).Error)
+
+	err := testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id) })
+	require.ErrorIs(t, err, apperror.ErrClassCodeNotFound)
 }
