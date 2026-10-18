@@ -4,14 +4,16 @@ It drives the public API with curl, so the user agent is curl's own, creates thr
 keeper teacher stays behind, because deleting the last teacher of a class that has children needs a successor. The test never runs on pull requests.
 
 Settings come from the environment
-  BASE_URL               address of the API without a path, https://kibooz-api.syafahadyan.com by default
+  BASE_URL               address of the API without a path, https://kibooz-api.syafahadyan.com by default. Plain http is only
+                         accepted for 127.0.0.1, which is the throwaway stack that the Smoke stack workflow starts
   EXPECTED_VERSION       version that /healthz has to report, left out to skip that check
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
+  SMOKE_STORAGE          off for a stack that has no bucket. The upload checks then expect STORAGE_UNAVAILABLE instead
 """
 import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
 API = BASE + "/api/v1"
@@ -22,8 +24,16 @@ PW = "Smoke-" + secrets.token_urlsafe(18) + "1!"
 RUN = time.strftime("%m%d%H%M%S")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
-if not BASE.startswith("https://") or not KEEPER_EMAIL or not KEEPER_PASSWORD:
-    sys.exit("set BASE_URL (https), SMOKE_KEEPER_EMAIL and SMOKE_KEEPER_PASSWORD")
+STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
+# The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
+# http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
+URL = urlsplit(BASE)
+PLAIN_URL = URL.username is None and URL.password is None and not URL.path.strip("/") and not URL.query
+LOCAL = PLAIN_URL and URL.scheme == "http" and URL.hostname == "127.0.0.1"
+SECURE = PLAIN_URL and URL.scheme == "https" and bool(URL.hostname)
+
+if not (SECURE or LOCAL) or not KEEPER_EMAIL or not KEEPER_PASSWORD:
+    sys.exit("set BASE_URL (https, or http for 127.0.0.1 only), SMOKE_KEEPER_EMAIL and SMOKE_KEEPER_PASSWORD")
 
 created = []  # every account of this run, so a crash can still clean up
 passed, failed = 0, []
@@ -182,7 +192,8 @@ s, js = call("GET", "/healthz", base=BASE)
 check("healthz ok", s == 200 and js.get("status") == "ok", f"{s} {js}")
 if EXPECTED_VERSION:
     check("healthz version", js.get("version") == EXPECTED_VERSION, f"{js.get('version')} want {EXPECTED_VERSION}")
-check("healthz checks", all(v == "ok" for v in (js.get("checks") or {}).values()), str(js))
+want_checks = {"database": "ok", "redis": "ok", "storage": "ok" if STORAGE_ON else "disabled"}
+check("healthz checks", (js.get("checks") or {}) == want_checks, str(js))
 expect("unknown path 404", call("GET", "/nope"), 404, "NOT_FOUND")
 for m, p in [("GET", "/wali/dashboard"), ("GET", "/guru/dashboard"), ("GET", "/leaderboard"), ("GET", "/leaderboard/history"),
              ("GET", "/trash/stats"), ("GET", "/guru/classes"), ("GET", "/guru/profile"), ("DELETE", "/users/me")]:
@@ -366,9 +377,12 @@ expect("guru profile detail", call("GET", "/guru/profile/detail", g1["token"]), 
 boundary = "----smoke" + uuid.uuid4().hex
 mp = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + PNG + f"\r\n--{boundary}--\r\n".encode()
 s, js = call("POST", "/users/avatar", g1["token"], raw=mp, ctype="multipart/form-data; boundary=" + boundary)
-check("avatar upload", s == 200 and dig(js, "data", "avatarUrl"), f"{s} {js}")
-mp2 = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + b"not an image" + f"\r\n--{boundary}--\r\n".encode()
-expect("avatar rejects non image", call("POST", "/users/avatar", g1["token"], raw=mp2, ctype="multipart/form-data; boundary=" + boundary), 400, "INVALID_IMAGE")
+if STORAGE_ON:
+    check("avatar upload", s == 200 and dig(js, "data", "avatarUrl"), f"{s} {js}")
+    mp2 = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + b"not an image" + f"\r\n--{boundary}--\r\n".encode()
+    expect("avatar rejects non image", call("POST", "/users/avatar", g1["token"], raw=mp2, ctype="multipart/form-data; boundary=" + boundary), 400, "INVALID_IMAGE")
+else:
+    check("avatar upload without storage", s == 503 and js.get("errorCode") == "STORAGE_UNAVAILABLE", f"{s} {js}")
 
 # ---------- videos ----------
 cid = g1["class"]
@@ -382,53 +396,58 @@ check("parent lists videos", s == 200 and dig(js, "data", "total") == 1, f"{s} {
 expect("edit video", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "Smoke Video Edited"}), 200)
 expect("edit video empty body", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {}), 400, "VALIDATION_ERROR")
 s, js = call("POST", f"/classes/{cid}/videos/upload-url", g1["token"], {"contentType": "video/mp4", "sizeBytes": 1048576})
-check("upload url issued", s == 200 and dig(js, "data", "uploadUrl"), f"{s} {js}")
+if STORAGE_ON:
+    check("upload url issued", s == 200 and dig(js, "data", "uploadUrl"), f"{s} {js}")
+else:
+    check("upload url without storage", s == 503 and js.get("errorCode") == "STORAGE_UNAVAILABLE", f"{s} {js}")
 expect("upload url bad type", call("POST", f"/classes/{cid}/videos/upload-url", g1["token"], {"contentType": "video/avi", "sizeBytes": 1000}), 400, "VALIDATION_ERROR")
 
 # ---------- 0.10.0 delete a pending upload ----------
-UP = f"/classes/{cid}/videos/upload-url"
+# the bucket is needed for every check here, so a stack without one skips them
+if STORAGE_ON:
+    UP = f"/classes/{cid}/videos/upload-url"
 
 
-def discard(token, url):
-    return call("DELETE", UP + "?videoUrl=" + quote(url, safe=""), token)
+    def discard(token, url):
+        return call("DELETE", UP + "?videoUrl=" + quote(url, safe=""), token)
 
 
-def send_file(up, size):
-    if not dig(up, "data", "uploadUrl"):
-        return 0, ""
-    return curl("PUT", dig(up, "data", "uploadUrl"), dig(up, "data", "headers"), b"\0" * size)
+    def send_file(up, size):
+        if not dig(up, "data", "uploadUrl"):
+            return 0, ""
+        return curl("PUT", dig(up, "data", "uploadUrl"), dig(up, "data", "headers"), b"\0" * size)
 
 
-s, up = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
-check("upload address for a discard", s == 200 and dig(up, "data", "videoUrl"), f"{s} {up}")
-pending_url = dig(up, "data", "videoUrl") or ""
-check("pending address is under pending/", "/pending/videos/" in (pending_url or ""), str(pending_url))
-ps, _ = send_file(up, 64)
-check("file arrives in the bucket", ps == 200, str(ps))
-expect("discard needs a token", call("DELETE", UP + "?videoUrl=" + quote(pending_url, safe="")), 401, "AUTH_TOKEN_MISSING")
-expect("parent cannot discard", discard(w1["token"], pending_url), 403, "AUTH_FORBIDDEN")
-expect("other class teacher cannot discard", discard(g2["token"], pending_url), 403, "AUTH_FORBIDDEN")
-expect("discard without videoUrl", call("DELETE", UP, g1["token"]), 400, "VALIDATION_ERROR")
-expect("discard a link to another site", discard(g1["token"], "https://example.com/video.mp4"), 400, "VALIDATION_ERROR")
-expect("discard bad class id", call("DELETE", "/classes/nope/videos/upload-url?videoUrl=x", g1["token"]), 400, "VALIDATION_ERROR")
-s, other = call("POST", f"/classes/{g2['class']}/videos/upload-url", g2["token"], {"contentType": "video/mp4", "sizeBytes": 64})
-other_url = dig(other, "data", "videoUrl") or ""
-expect("discard a file of another class", discard(g1["token"], other_url), 400, "VALIDATION_ERROR")
-expect("discard a file that waits", discard(g1["token"], pending_url), 200)
-expect("discard twice is fine", discard(g1["token"], pending_url), 200)
-late = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "late", "videoUrl": pending_url})
-expect("a discarded file cannot be added", late, 400, "VALIDATION_ERROR")
+    s, up = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+    check("upload address for a discard", s == 200 and dig(up, "data", "videoUrl"), f"{s} {up}")
+    pending_url = dig(up, "data", "videoUrl") or ""
+    check("pending address is under pending/", "/pending/videos/" in (pending_url or ""), str(pending_url))
+    ps, _ = send_file(up, 64)
+    check("file arrives in the bucket", ps == 200, str(ps))
+    expect("discard needs a token", call("DELETE", UP + "?videoUrl=" + quote(pending_url, safe="")), 401, "AUTH_TOKEN_MISSING")
+    expect("parent cannot discard", discard(w1["token"], pending_url), 403, "AUTH_FORBIDDEN")
+    expect("other class teacher cannot discard", discard(g2["token"], pending_url), 403, "AUTH_FORBIDDEN")
+    expect("discard without videoUrl", call("DELETE", UP, g1["token"]), 400, "VALIDATION_ERROR")
+    expect("discard a link to another site", discard(g1["token"], "https://example.com/video.mp4"), 400, "VALIDATION_ERROR")
+    expect("discard bad class id", call("DELETE", "/classes/nope/videos/upload-url?videoUrl=x", g1["token"]), 400, "VALIDATION_ERROR")
+    s, other = call("POST", f"/classes/{g2['class']}/videos/upload-url", g2["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+    other_url = dig(other, "data", "videoUrl") or ""
+    expect("discard a file of another class", discard(g1["token"], other_url), 400, "VALIDATION_ERROR")
+    expect("discard a file that waits", discard(g1["token"], pending_url), 200)
+    expect("discard twice is fine", discard(g1["token"], pending_url), 200)
+    late = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "late", "videoUrl": pending_url})
+    expect("a discarded file cannot be added", late, 400, "VALIDATION_ERROR")
 
-# a real upload added as a video, then the permanent address is refused by the discard route
-s, up2 = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
-send_file(up2, 64)
-s, added = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "Smoke Upload", "videoUrl": dig(up2, "data", "videoUrl")})
-upload_vid = dig(added, "data", "id")
-permanent = dig(added, "data", "videoUrl") or ""
-check("uploaded file added as a video", s == 201 and upload_vid and "/pending/" not in permanent, f"{s} {added}")
-expect("discard refuses an added video", discard(g1["token"], permanent), 400, "VALIDATION_ERROR")
-expect("delete the uploaded video", call("DELETE", f"/classes/{cid}/videos/{upload_vid}", g1["token"]), 200)
-expect("their own teacher discards the file of the other class", call("DELETE", f"/classes/{g2['class']}/videos/upload-url?videoUrl=" + quote(other_url, safe=""), g2["token"]), 200)
+    # a real upload added as a video, then the permanent address is refused by the discard route
+    s, up2 = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+    send_file(up2, 64)
+    s, added = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "Smoke Upload", "videoUrl": dig(up2, "data", "videoUrl")})
+    upload_vid = dig(added, "data", "id")
+    permanent = dig(added, "data", "videoUrl") or ""
+    check("uploaded file added as a video", s == 201 and upload_vid and "/pending/" not in permanent, f"{s} {added}")
+    expect("discard refuses an added video", discard(g1["token"], permanent), 400, "VALIDATION_ERROR")
+    expect("delete the uploaded video", call("DELETE", f"/classes/{cid}/videos/{upload_vid}", g1["token"]), 200)
+    expect("their own teacher discards the file of the other class", call("DELETE", f"/classes/{g2['class']}/videos/upload-url?videoUrl=" + quote(other_url, safe=""), g2["token"]), 200)
 expect("delete video", call("DELETE", f"/classes/{cid}/videos/{vid}", g1["token"]), 200)
 expect("deleted video gone", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "x"}), 404, "VIDEO_NOT_FOUND")
 expect("other class videos closed", call("GET", f"/classes/{cid}/videos", g2["token"]), 403, "AUTH_FORBIDDEN")

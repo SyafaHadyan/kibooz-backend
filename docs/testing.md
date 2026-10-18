@@ -53,3 +53,7 @@ Give it the version that `/healthz` has to report. The test registers throwaway 
 The keeper email is the variable `SMOKE_KEEPER_EMAIL` and its password is the secret `SMOKE_KEEPER_PASSWORD`, both in the `smoke-production` environment. That environment only accepts runs from `main`, so a workflow edited on another branch cannot read the password. Add a check to the script in the same change that adds or changes a route.
 
 To run it from a terminal, set `BASE_URL`, `EXPECTED_VERSION`, `SMOKE_KEEPER_EMAIL` and `SMOKE_KEEPER_PASSWORD` and run `python3 -I smoke/smoke.py`. It talks to the API with curl and exits with an error when a check fails.
+
+### The same script on a throwaway stack
+
+The `Smoke stack` workflow runs the same script on every pull request, against a stack that it builds from the branch with `compose.yml` and `compose.ci.yml`. It checks the container of the pull request as a whole before the merge, with a real PostgreSQL and Redis and the default rate limits, while the `Smoke` workflow checks the live deployment after the deploy. The stack has no bucket, so the workflow sets `SMOKE_STORAGE=off`. The script then expects `healthz` to report storage as `disabled`, and `STORAGE_UNAVAILABLE` from the avatar and the video upload routes, and it skips the checks that need a real file in a bucket. Plain `http` is accepted only for `127.0.0.1`, and the keeper teacher gets a random password that only lives in that job. It is not a required check yet, so a failure is a signal to read and not a block.
