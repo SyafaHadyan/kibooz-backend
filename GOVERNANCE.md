@@ -25,7 +25,7 @@ Releases are automated. Release Please opens a release pull request from the com
 
 ## Becoming a collaborator
 
-Anyone can contribute with a fork and a pull request. The maintainer invites a person with write access after a few accepted contributions, or earlier for a person who works on the app side and needs to change the API. Access is removed on request or after a long period without activity, and a removed collaborator keeps the credit for their commits.
+Anyone can contribute with a fork and a pull request. The maintainer decides who gets write access and invites that person, and the maintainer can remove the access again.
 
 ## Conduct and security
 
