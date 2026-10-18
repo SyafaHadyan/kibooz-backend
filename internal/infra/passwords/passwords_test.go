@@ -2,6 +2,7 @@ package passwords
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
@@ -136,8 +137,14 @@ func TestBothAreRefusedWhileEverySlotIsTaken(t *testing.T) {
 	require.ErrorIs(t, err, apperror.ErrBusy)
 }
 
-func TestZeroSlotsMeansOneForEveryCPU(t *testing.T) {
+func TestZeroSlotsLeavesOneCPUFree(t *testing.T) {
 	hasher := New(&env.Env{PasswordHashWaitMilliseconds: 10})
 
-	require.Positive(t, cap(hasher.slots))
+	require.Equal(t, max(runtime.GOMAXPROCS(0)-1, 1), cap(hasher.slots))
+}
+
+func TestAConfiguredNumberOfSlotsIsKept(t *testing.T) {
+	hasher := New(&env.Env{PasswordHashConcurrency: 3, PasswordHashWaitMilliseconds: 10})
+
+	require.Equal(t, 3, cap(hasher.slots))
 }

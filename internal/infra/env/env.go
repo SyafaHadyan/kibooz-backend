@@ -148,7 +148,7 @@ func (e *Env) validate() error {
 		// 0 turns the keepalive off, which is what the pipelines that run against a throwaway stack do
 		// a wait of 0 would refuse a request whenever the slots happen to be taken, even for a spike of a few milliseconds
 		{"PASSWORD_HASH_WAIT_MILLISECONDS", e.PasswordHashWaitMilliseconds, 1},
-		// 0 is one slot for each CPU
+		// 0 is one slot for each CPU except one
 		{"PASSWORD_HASH_CONCURRENCY", e.PasswordHashConcurrency, 0},
 		{"KEEPALIVE_SECONDS", e.KeepaliveSeconds, 0},
 		{"REDIS_DATABASE", e.RedisDatabase, 0},

@@ -22,11 +22,12 @@ type Hasher struct {
 	cost  int
 }
 
-// New sizes the pool from PASSWORD_HASH_CONCURRENCY, and one slot for every CPU when that is 0.
+// New sizes the pool from PASSWORD_HASH_CONCURRENCY. When that is 0 it leaves one CPU free for everything else, so a flood of
+// hashing cannot starve the requests that hash nothing, and a machine with a single CPU still gets one slot.
 func New(cfg *env.Env) *Hasher {
 	slots := cfg.PasswordHashConcurrency
 	if slots <= 0 {
-		slots = runtime.GOMAXPROCS(0)
+		slots = max(runtime.GOMAXPROCS(0)-1, 1)
 	}
 
 	return &Hasher{
