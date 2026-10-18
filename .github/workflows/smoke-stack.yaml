@@ -1,0 +1,69 @@
+name: Smoke stack
+
+# Runs the same script as the Smoke workflow, but against a throwaway stack that is built from the pull request, so the
+# routes of a branch are exercised end to end before they are merged. The Smoke workflow tests the deployed API after a deploy.
+# The stack has no bucket, so the script runs with SMOKE_STORAGE=off and expects STORAGE_UNAVAILABLE for the upload checks.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-stack-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  smoke:
+    name: Smoke test on a throwaway stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # The limits stay at their defaults, as in production, so the script also shows that its own traffic fits in them
+      - name: Create the environment file
+        run: |
+          {
+            echo "APP_PORT=8080"
+            echo "DB_NAME=kibooz"
+            echo "DB_USERNAME=kibooz"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
+            echo "KEEPALIVE_SECONDS=0"
+          } > .env
+
+      - name: Start the stack
+        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+
+      # The keeper teacher is registered by the script on its first run, and the password only lives in this job
+      - name: Run the smoke test
+        run: |
+          SMOKE_KEEPER_PASSWORD="Ci-$(openssl rand -hex 16)1!"
+          export SMOKE_KEEPER_PASSWORD
+          python3 -I smoke/smoke.py
+        env:
+          BASE_URL: http://127.0.0.1:8080
+          SMOKE_KEEPER_EMAIL: kibooz-smoke-keeper-ci@example.com
+          SMOKE_STORAGE: "off"
+
+      - name: Collect container logs
+        if: ${{ failure() }}
+        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+
+      - name: Stop the stack
+        if: ${{ always() }}
+        run: docker compose -f compose.yml -f compose.ci.yml down -v
