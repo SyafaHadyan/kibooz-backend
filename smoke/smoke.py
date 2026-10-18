@@ -1,7 +1,7 @@
 """Smoke test of a deployed Kibooz API, started by hand from the Smoke workflow after a deploy.
 
 It drives the public API with curl, so the user agent is curl's own, creates throwaway accounts and removes them again. One
-keeper teacher stays behind, because deleting the last teacher of a class needs a successor. The test never runs on pull requests.
+keeper teacher stays behind, because deleting the last teacher of a class that has children needs a successor. The test never runs on pull requests.
 
 Settings come from the environment
   BASE_URL               address of the API without a path, https://kibooz-api.syafahadyan.com by default
@@ -10,6 +10,7 @@ Settings come from the environment
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
 """
 import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
+from datetime import datetime
 from urllib.parse import quote
 
 BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
@@ -90,6 +91,21 @@ def call(method, path, token=None, body=None, raw=None, ctype=None, base=API, ti
     except Exception:
         js = {"_raw": text[:200]}
     return status, js
+
+
+def call_key(method, path, token, key, body):
+    """A request with an Idempotency-Key. Returns the status, the body and whether the answer was a replay."""
+    cmd = ["curl", "-sS", "-i", "-X", method, API + path, "--max-time", "60", "-H", "Accept: application/json",
+           "-H", "Content-Type: application/json", "-H", "Authorization: Bearer " + token, "-H", "Idempotency-Key: " + key,
+           "--data-binary", "@-"]
+    out = subprocess.run(cmd, input=json.dumps(body).encode(), capture_output=True, check=False).stdout.decode(errors="replace")
+    head, _, text = out.replace("\r\n", "\n").partition("\n\n")
+    time.sleep(0.12)
+    try:
+        js = json.loads(text)
+    except Exception:
+        js = {"_raw": text[:200]}
+    return int(head.split()[1]) if head.startswith("HTTP") else 0, js, "idempotent-replayed: true" in head.lower()
 
 
 def dig(d, *keys):
@@ -281,6 +297,7 @@ check("classes list has the registration class", s == 200 and dig(js, "data", "t
 s, js = call("POST", "/guru/classes", g1["token"], {"name": "Smoke A2", "gradeLevel": "Class B"})
 check("create class", s == 201 and dig(js, "data", "joinCode"), f"{s} {js}")
 g1_second = dig(js, "data", "id")
+g1_second_code = dig(js, "data", "joinCode")
 expect("create class validation", call("POST", "/guru/classes", g1["token"], {"name": ""}), 400, "VALIDATION_ERROR")
 s, js = call("GET", f"/guru/classes/{g1['class']}", g1["token"])
 check("class detail counts", s == 200 and dig(js, "data", "totalStudents") == 2 and dig(js, "data", "totalVideos") == 0, f"{s} {js}")
@@ -474,6 +491,50 @@ expect("former owner is out", call("GET", tb, g1["token"]), 404, "CLASS_NOT_FOUN
 s, js = call("POST", tb, g2["token"], {"email": g1["email"]})
 check("new owner re-adds the former one", s == 201, f"{s} {js}")
 
+# ---------- 0.11.0 idempotency keys, recordedAt and changing the password ----------
+key = f"smoke-{RUN}-keyed"
+mood = {"studentId": w1["student"], "moodType": "SENANG"}
+s1, j1, r1 = call_key("POST", "/guru/mood/log", g1["token"], key, mood)
+check("keyed mood log is created", s1 == 201 and not r1, f"{s1} {j1}")
+s2, j2, r2 = call_key("POST", "/guru/mood/log", g1["token"], key, mood)
+check("a repeat with the same key is replayed", s2 == 201 and r2 and dig(j2, "data", "logId") == dig(j1, "data", "logId"), f"{s2} {r2} {j2}")
+s3, j3, _ = call_key("POST", "/guru/mood/log", g1["token"], key, {"studentId": w1["student"], "moodType": "MARAH"})
+check("the same key for another request is refused", s3 == 422 and j3.get("errorCode") == "IDEMPOTENCY_KEY_REUSED", f"{s3} {j3}")
+s4, j4, _ = call_key("POST", "/guru/mood/log", g1["token"], "short", mood)
+check("a bad key is refused", s4 == 400 and j4.get("errorCode") == "VALIDATION_ERROR", f"{s4} {j4}")
+s5, j5, _ = call_key("POST", "/classes/" + g1["class"] + "/forum", g1["token"], f"smoke-{RUN}-thread", {"title": "Keyed", "body": "Keyed thread"})
+s6, j6, r6 = call_key("POST", "/classes/" + g1["class"] + "/forum", g1["token"], f"smoke-{RUN}-thread", {"title": "Keyed", "body": "Keyed thread"})
+check("a keyed forum thread is created once", s5 == 201 and s6 == 201 and r6 and dig(j5, "data", "id") == dig(j6, "data", "id"), f"{s5} {s6} {r6}")
+
+def same_time(got, want):
+    try:
+        return datetime.fromisoformat(got.replace("Z", "+00:00")) == datetime.fromisoformat(want.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return False
+
+def iso(offset):
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset))
+
+hour, month = 3600, 30 * 86400
+sent = iso(-hour)
+s, js = call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": sent})
+check("recordedAt in the past is kept", s == 201 and same_time(dig(js, "data", "recordedAt"), sent), f"{s} {js}")
+expect("recordedAt in the future is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": iso(2 * hour)}), 400, "VALIDATION_ERROR")
+expect("recordedAt older than 7 days is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": iso(-month)}), 400, "VALIDATION_ERROR")
+expect("recordedAt that is no time is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": "yesterday"}), 400, "VALIDATION_ERROR")
+
+w5 = register_wali("w5", new_code, "Smoke Child Five")
+new_pw = "Smoke-" + secrets.token_urlsafe(18) + "2!"
+expect("wrong current password", call("PUT", "/users/me/password", w5["token"], {"currentPassword": "wrong-password", "newPassword": new_pw}), 403, "AUTH_PASSWORD_INCORRECT")
+expect("same password", call("PUT", "/users/me/password", w5["token"], {"currentPassword": PW, "newPassword": PW}), 400, "VALIDATION_ERROR")
+expect("short new password", call("PUT", "/users/me/password", w5["token"], {"currentPassword": PW, "newPassword": "short"}), 400, "VALIDATION_ERROR")
+expect("password change needs a token", call("PUT", "/users/me/password", None, {"currentPassword": PW, "newPassword": new_pw}), 401, "AUTH_TOKEN_MISSING")
+expect("a parent changes the password", call("PUT", "/users/me/password", w5["token"], {"currentPassword": PW, "newPassword": new_pw}), 200)
+w5["pw"] = new_pw
+expect("old password no longer signs in", call("POST", "/auth/login", body={"email": w5["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
+expect("new password signs in", call("POST", "/auth/login", body={"email": w5["email"], "password": new_pw, "role": "WALI"}), 200)
+expect("refresh token ended with the change", call("POST", "/auth/refresh-token", body={"refreshToken": w5["refresh"]}), 401, "AUTH_REFRESH_INVALID")
+
 # ---------- 0.9.0 deleting accounts ----------
 expect("parent wrong password", call("DELETE", "/users/me", w2["token"], {"password": "wrong-password"}), 403, "AUTH_PASSWORD_INCORRECT")
 expect("parent delete validation", call("DELETE", "/users/me", w2["token"], {}), 400, "VALIDATION_ERROR")
@@ -481,7 +542,10 @@ expect("parent deletes account", delete_me(w2), 200)
 expect("deleted parent locked out", call("GET", "/wali/dashboard", w2["token"]), 404, "PROFILE_NOT_FOUND")
 expect("deleted parent cannot login", call("POST", "/auth/login", body={"email": w2["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
 
-# g3 is the only teacher of its class
+# g3 is the only teacher of its class. A class without children is archived instead of needing a successor since 0.11.0,
+# so it gets a child first, and g1's second class gets one for the same reason.
+register_wali("w3", g3["code"], "Smoke Child Of G3")
+check("g1's second class has a child", register_wali("w6", g1_second_code, "Smoke Child Of A2")["student"] is not None)
 expect("sole teacher needs a successor", delete_me(g3), 409, "SUCCESSOR_REQUIRED")
 expect("empty successor is the same", delete_me(g3, successorEmail=""), 409, "SUCCESSOR_REQUIRED")
 expect("unknown successor", delete_me(g3, successorEmail=f"nobody-{RUN}@example.com"), 404, "TEACHER_NOT_FOUND")
@@ -495,7 +559,7 @@ expect("successor takes the class (case ignored)", delete_me(g3, successorEmail=
 expect("deleted teacher locked out", call("GET", "/guru/dashboard", g3["token"]), 404, "PROFILE_NOT_FOUND")
 s, js = call("GET", f"/guru/classes/{g3['class']}/teachers", g4["token"])
 check("successor owns the class", s == 200 and len(dig(js, "data", "teachers")) == 1 and dig(js, "data", "teachers", 0, "isOwner") is True, f"{s} {js}")
-check("class keeps taking children", register_wali("w3", g3["code"], "Smoke Child Late")["student"] is not None)
+check("class keeps taking children", register_wali("w3b", g3["code"], "Smoke Child Late")["student"] is not None)
 
 # g1 and g2 share the first class, g1 also owns a second class that nobody else teaches
 expect("shared class alone is not enough", delete_me(g1, successorEmail=""), 409, "SUCCESSOR_REQUIRED")
@@ -524,6 +588,13 @@ for c in classes:
     okowner = okowner and len(ts) == 1 and ts[0].get("isOwner") is True
 check("successor owns each of them", okowner)
 expect("the last teacher cannot delete without another", delete_me(g4), 409, "SUCCESSOR_REQUIRED")
+
+# a class without children is archived when its only teacher deletes the account without a successor
+g5 = register_guru("g5", "Smoke D")
+expect("a teacher with an empty class deletes without a successor", delete_me(g5), 200)
+expect("the join code of an archived class is not found", call("POST", "/auth/register", body={
+    "email": f"kibooz-smoke-{RUN}-late@example.com", "password": PW, "fullName": "Late Parent", "role": "WALI",
+    "classCode": g5["code"], "student": {"nisn": nisn(), "fullName": "Smoke Late Child"}}), 404, "CLASS_CODE_NOT_FOUND")
 
 
 sys.exit(1 if failed else 0)
