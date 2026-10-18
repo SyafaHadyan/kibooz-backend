@@ -332,7 +332,11 @@ expect("batch unknown child", batch(g1["token"], [entry(str(uuid.uuid4()), "SENA
 expect("batch without a class", call("POST", BATCH, g1["token"], {"entries": [entry(w1["student"], "SENANG")]}), 400, "VALIDATION_ERROR")
 expect("batch needs a token", call("POST", BATCH, None, {"classId": g1["class"], "entries": [entry(w1["student"], "SENANG")]}), 401, "AUTH_TOKEN_MISSING")
 expect("parent cannot save a batch", batch(w1["token"], [entry(w1["student"], "SENANG")]), 403, "AUTH_FORBIDDEN")
+before_status, before = call("GET", f"/guru/dashboard?classId={g1['class']}", g1["token"])
 expect("teacher of another class cannot save a batch", batch(g2["token"], [entry(w1["student"], "SENANG")], g1["class"]), 404, "CLASS_NOT_FOUND")
+after_status, after = call("GET", f"/guru/dashboard?classId={g1['class']}", g1["token"])
+check("a refused batch changes no mood", before_status == 200 and after_status == 200 and dig(before, "data", "dailyMoodDistribution") is not None
+      and dig(before, "data", "dailyMoodDistribution") == dig(after, "data", "dailyMoodDistribution"), f"{before_status} {after_status}")
 expect("batch for a class that does not exist", batch(g1["token"], [entry(w1["student"], "SENANG")], str(uuid.uuid4())), 404, "CLASS_NOT_FOUND")
 
 # ---------- profile ----------
