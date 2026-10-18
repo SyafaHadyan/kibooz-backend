@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
@@ -239,7 +240,7 @@ func (r *WaliDB) AddChild(
 		var class entity.Class
 
 		// the code comes first, so a wrong guess is answered the same way whatever the parent already has
-		err := tx.Where("join_code = ?", joinCode).Take(&class).Error
+		err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apperror.ErrClassCodeNotFound
 		}
@@ -249,6 +250,13 @@ func (r *WaliDB) AddChild(
 		}
 
 		classID = class.ID
+
+		// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
+		// while the class is being archived
+		err = classteam.LockOpen(tx, class.ID)
+		if err != nil {
+			return err
+		}
 
 		// a class whose teachers were all deleted keeps its code but must not take in new children
 		var teachers int64

@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -90,7 +91,8 @@ func (r *AuthDB) FindUserByEmail(ctx context.Context, email string) (*entity.Use
 func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, error) {
 	var found int64
 
-	err := r.db.WithContext(ctx).Model(&entity.Class{}).Where("join_code = ?", joinCode).Limit(1).Count(&found).Error
+	err := r.db.WithContext(ctx).Model(&entity.Class{}).
+		Where("join_code = ? AND archived_at IS NULL", joinCode).Limit(1).Count(&found).Error
 
 	return found > 0, err
 }
@@ -156,7 +158,7 @@ func (r *AuthDB) CreateWali(
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var class entity.Class
 
-		err := tx.Where("join_code = ?", joinCode).Take(&class).Error
+		err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return apperror.ErrClassCodeNotFound
 		}
@@ -166,6 +168,13 @@ func (r *AuthDB) CreateWali(
 		}
 
 		classID = class.ID
+
+		// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
+		// while the class is being archived
+		err = classteam.LockOpen(tx, class.ID)
+		if err != nil {
+			return err
+		}
 
 		// a class whose teachers were all deleted keeps its code but must not take in new children
 		var teachers int64

@@ -49,6 +49,8 @@ type Class struct {
 	GradeLevel   string    `gorm:"size:20;not null"`
 	AcademicYear string    `gorm:"size:20;not null"`
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
+	// ArchivedAt is set when the last teacher left a class without children, the join code then no longer works
+	ArchivedAt *time.Time
 }
 
 type ClassTeacher struct {
