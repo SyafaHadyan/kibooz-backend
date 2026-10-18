@@ -392,6 +392,40 @@ func TestTheNameOfAFieldIsMatchedWithoutRegardToCase(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"REFRESHTOKEN":"token-one"}`))
 }
 
+// The handlers decode into string fields, where a member that is null changes nothing and a later member of the same name
+// replaces an earlier one. So {"email":"a","email":null} is a request for a, and the limiter has to count it as one.
+func TestARepeatedMemberSetToNullStillNamesTheAccount(t *testing.T) {
+	app := publicServer(1, nil)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":"a@example.com"}`))
+
+	for _, body := range []string{
+		`{"email":"a@example.com","email":null}`,
+		`{"email":"a@example.com","email":null,"EMAIL":null}`,
+		`{"email":null,"email":"a@example.com"}`,
+		`{"email":"b@example.com","email":"a@example.com","Email":null}`,
+	} {
+		require.Equal(t, http.StatusTooManyRequests, status(t, app, "/login", body), "body %s", body)
+	}
+
+	require.Equal(t, http.StatusOK, status(t, app, "/refresh", `{"refreshToken":"token-one"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/refresh", `{"refreshToken":"token-one","refreshToken":null}`))
+
+	t.Run("a member that is only null still names nobody", func(t *testing.T) {
+		for range 3 {
+			require.Equal(t, http.StatusOK, status(t, app, "/login", `{"email":null,"email":null}`))
+		}
+	})
+}
+
+func TestARepeatedClassCodeSetToNullIsStillCounted(t *testing.T) {
+	app := codeServer(100, 1)
+
+	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"a@example.com","classCode":"ABCD2345"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", `{"email":"b@example.com","classCode":"ABCD2345","classCode":null}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, app, "/register", `{"email":"c@example.com","classCode":"WXYZ2345","CLASSCODE":null}`))
+}
+
 // The router ignores the case and a trailing slash, so every spelling of a path reaches the same handler and has to share its budget
 func TestEverySpellingOfAPathSharesOneBudget(t *testing.T) {
 	app := publicServer(1, nil)

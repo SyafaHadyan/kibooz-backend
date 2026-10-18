@@ -118,25 +118,39 @@ type accountRequest struct {
 }
 
 // rawAccountRequest reads the same fields as the handlers do and by the same rules, because encoding/json matches the
-// names without regard to case in a struct. Each value is kept raw, so a field of the wrong type cannot make the whole
-// parse fail and let a request that the handler goes on to read slip past the limiter.
+// names without regard to case in a struct. Each value goes through jsonText, so a field of the wrong type cannot make the
+// whole parse fail and let a request that the handler goes on to read slip past the limiter.
 type rawAccountRequest struct {
-	Email        json.RawMessage `json:"email"`
-	RefreshToken json.RawMessage `json:"refreshToken"`
-	DeviceToken  json.RawMessage `json:"deviceToken"`
-	ClassCode    json.RawMessage `json:"classCode"`
+	Email        jsonText `json:"email"`
+	RefreshToken jsonText `json:"refreshToken"`
+	DeviceToken  jsonText `json:"deviceToken"`
+	ClassCode    jsonText `json:"classCode"`
 }
 
-// text returns the value of a JSON string, and "" for a missing field or any other type
-func text(raw json.RawMessage) string {
-	var value string
+// jsonText is the text of a JSON string member, read the way a string field of a handler request is read. The handlers
+// decode into a struct with string fields, where a member that is null changes nothing and a later member of the same name
+// replaces an earlier one. A body like {"email":"a@example.com","email":null} therefore names a@example.com for the handler,
+// and the limiter has to see the same account or the request would not be counted. A member that is not a string, which
+// the handler refuses as a whole, reads as empty here.
+type jsonText string
 
-	err := json.Unmarshal(raw, &value)
-	if err != nil {
-		return ""
+func (t *jsonText) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		return nil
 	}
 
-	return value
+	var value string
+
+	err := json.Unmarshal(data, &value)
+	if err != nil {
+		*t = ""
+
+		return nil //nolint:nilerr // a member of another type is the handler's to refuse, so it only reads as empty here
+	}
+
+	*t = jsonText(value)
+
+	return nil
 }
 
 // limiterKeyLocal names where one limiter keeps the key of a request between its skip check and the limiter, so the body
@@ -161,10 +175,10 @@ func (f *Fiber) accountLimiter(limit int, identify func(accountRequest) (string,
 		}
 
 		kind, identifier := identify(accountRequest{
-			Email:        text(raw.Email),
-			RefreshToken: text(raw.RefreshToken),
-			DeviceToken:  text(raw.DeviceToken),
-			ClassCode:    text(raw.ClassCode),
+			Email:        string(raw.Email),
+			RefreshToken: string(raw.RefreshToken),
+			DeviceToken:  string(raw.DeviceToken),
+			ClassCode:    string(raw.ClassCode),
 		})
 		if identifier == "" {
 			return ""
