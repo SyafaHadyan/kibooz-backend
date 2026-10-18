@@ -931,6 +931,10 @@ func requireDisposableDatabase(t *testing.T) {
 func redisClient(t *testing.T) *goredis.Client {
 	t.Helper()
 
+	// starting the server loads the .env file, so the variables below are the ones the server reads, and the test is
+	// skipped when the end to end suite is off
+	app(t)
+
 	// the same logical database as the server, so that emptying it never touches the others of the instance
 	database, _ := strconv.Atoi(os.Getenv("REDIS_DATABASE"))
 
