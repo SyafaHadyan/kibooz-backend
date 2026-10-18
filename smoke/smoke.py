@@ -1,0 +1,475 @@
+"""Smoke test of a deployed Kibooz API, started by hand from the Smoke workflow after a deploy.
+
+It drives the public API with curl, so the user agent is curl's own, creates throwaway accounts and removes them again. One
+keeper teacher stays behind, because deleting the last teacher of a class needs a successor. The test never runs on pull requests.
+
+Settings come from the environment
+  BASE_URL               address of the API without a path, https://kibooz-api.syafahadyan.com by default
+  EXPECTED_VERSION       version that /healthz has to report, left out to skip that check
+  SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
+  SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
+"""
+import base64, json, os, random, secrets, subprocess, sys, time, uuid
+from urllib.parse import quote
+
+BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
+API = BASE + "/api/v1"
+EXPECTED_VERSION = os.environ.get("EXPECTED_VERSION", "")
+KEEPER_EMAIL = os.environ.get("SMOKE_KEEPER_EMAIL", "")
+KEEPER_PASSWORD = os.environ.get("SMOKE_KEEPER_PASSWORD", "")
+PW = "Smoke-" + secrets.token_urlsafe(18) + "1!"
+RUN = time.strftime("%m%d%H%M%S")
+PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+
+if not BASE.startswith("https://") or not KEEPER_EMAIL or not KEEPER_PASSWORD:
+    sys.exit("set BASE_URL (https), SMOKE_KEEPER_EMAIL and SMOKE_KEEPER_PASSWORD")
+
+created = []  # every account of this run, so a crash can still clean up
+passed, failed = 0, []
+
+
+def curl(method, url, headers, data=None):
+    cmd = ["curl", "-sS", "-X", method, url, "--max-time", "60", "-w", "\n%{http_code}"]
+    for k, v in headers.items():
+        cmd += ["-H", f"{k}: {v}"]
+    if data is not None:
+        cmd += ["--data-binary", "@-"]
+    out = subprocess.run(cmd, input=data, capture_output=True, check=False).stdout.decode(errors="replace")
+    text, _, code = out.rpartition("\n")
+    return int(code or 0), text
+
+
+def call(method, path, token=None, body=None, raw=None, ctype=None, base=API):
+    data = None
+    headers = {"Accept": "application/json"}
+    if raw is not None:
+        data = raw
+        headers["Content-Type"] = ctype
+    elif body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    status, text = curl(method, base + path, headers, data)
+    time.sleep(0.12)
+    try:
+        js = json.loads(text)
+    except Exception:
+        js = {"_raw": text[:200]}
+    return status, js
+
+
+def dig(d, *keys):
+    for k in keys:
+        if isinstance(d, dict):
+            d = d.get(k)
+        elif isinstance(d, list) and isinstance(k, int) and -len(d) <= k < len(d):
+            d = d[k]
+        else:
+            return None
+    return d
+
+
+def check(name, cond, detail=""):
+    global passed
+    if cond:
+        passed += 1
+    else:
+        failed.append(f"{name} {detail}")
+
+
+def expect(name, res, status, code=None):
+    s, js = res
+    ok = s == status and (code is None or js.get("errorCode") == code)
+    check(name, ok, f"got {s} {js.get('errorCode')} {str(js.get('message'))[:80]} want {status} {code}")
+    return js
+
+
+def nisn():
+    return "".join(random.choice("0123456789") for _ in range(10))
+
+
+def register_guru(tag, cls):
+    email = f"kibooz-smoke-{RUN}-{tag}@example.com"
+    s, js = call("POST", "/auth/register", body={
+        "email": email, "password": PW, "fullName": f"Smoke Guru {tag}", "role": "GURU",
+        "nip": nisn() + nisn(), "class": {"name": cls, "gradeLevel": "Class A"}})
+    check(f"register guru {tag}", s == 201, f"{s} {js}")
+    d = js.get("data") or {}
+    acc = {"email": email, "token": d.get("token"), "refresh": d.get("refreshToken"), "role": "GURU"}
+    created.append(acc)
+    s, dash = call("GET", "/guru/dashboard", acc["token"])
+    acc["class"] = dig(dash, "data", "classOverview", "classId")
+    acc["code"] = dig(dash, "data", "classOverview", "joinCode")
+    acc["userId"] = None
+    return acc
+
+
+def register_wali(tag, code, child):
+    email = f"kibooz-smoke-{RUN}-{tag}@example.com"
+    s, js = call("POST", "/auth/register", body={
+        "email": email, "password": PW, "fullName": f"Smoke Wali {tag}", "role": "WALI",
+        "classCode": code, "student": {"nisn": nisn(), "fullName": child}})
+    check(f"register wali {tag}", s == 201, f"{s} {js}")
+    d = js.get("data") or {}
+    acc = {"email": email, "token": d.get("token"), "refresh": d.get("refreshToken"), "role": "WALI"}
+    created.append(acc)
+    s, dash = call("GET", "/wali/dashboard", acc["token"])
+    acc["student"] = dig(dash, "data", "student", "id")
+    return acc
+
+
+def delete_me(acc, **extra):
+    body = {"password": acc.get("pw", PW)}
+    body.update(extra)
+    return call("DELETE", "/users/me", acc["token"], body)
+
+
+# ---------- health and public ----------
+s, js = call("GET", "/healthz", base=BASE)
+check("healthz ok", s == 200 and js.get("status") == "ok", f"{s} {js}")
+if EXPECTED_VERSION:
+    check("healthz version", js.get("version") == EXPECTED_VERSION, f"{js.get('version')} want {EXPECTED_VERSION}")
+check("healthz checks", all(v == "ok" for v in (js.get("checks") or {}).values()), str(js))
+expect("unknown path 404", call("GET", "/nope"), 404, "NOT_FOUND")
+for m, p in [("GET", "/wali/dashboard"), ("GET", "/guru/dashboard"), ("GET", "/leaderboard"), ("GET", "/leaderboard/history"),
+             ("GET", "/trash/stats"), ("GET", "/guru/classes"), ("GET", "/guru/profile"), ("DELETE", "/users/me")]:
+    expect(f"{m} {p} needs a token", call(m, p), 401, "AUTH_TOKEN_MISSING")
+expect("bad token", call("GET", "/guru/dashboard", "not-a-token"), 401)
+
+# ---------- registration ----------
+g1 = register_guru("g1", "Smoke A")
+g2 = register_guru("g2", "Smoke B")
+g3 = register_guru("g3", "Smoke C")
+ks, kj = call("POST", "/auth/login", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "role": "GURU"})
+if ks == 200:
+    g4 = {"email": KEEPER_EMAIL, "token": dig(kj, "data", "token"), "refresh": dig(kj, "data", "refreshToken"), "role": "GURU", "pw": KEEPER_PASSWORD}
+    _, kd = call("GET", "/guru/dashboard", g4["token"])
+    g4["class"] = dig(kd, "data", "classOverview", "classId")
+    g4["code"] = dig(kd, "data", "classOverview", "joinCode")
+    g4["reused"] = True
+else:
+    s, js = call("POST", "/auth/register", body={
+        "email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "fullName": "Smoke Keeper", "role": "GURU",
+        "nip": nisn() + nisn(), "class": {"name": "Smoke Keeper", "gradeLevel": "Class A"}})
+    check("register the keeper", s == 201, f"{s} {js}")
+    g4 = {"email": KEEPER_EMAIL, "token": dig(js, "data", "token"), "refresh": dig(js, "data", "refreshToken"), "role": "GURU", "pw": KEEPER_PASSWORD}
+    _, kd = call("GET", "/guru/dashboard", g4["token"])
+    g4["class"] = dig(kd, "data", "classOverview", "classId")
+    g4["code"] = dig(kd, "data", "classOverview", "joinCode")
+    g4["reused"] = False
+_, kc = call("GET", "/guru/classes", g4["token"])
+keeper_before = dig(kc, "data", "total") or 0
+check("guru classes found", all(a["class"] and a["code"] for a in (g1, g2, g3, g4)))
+check("join code has 8 chars", len(g1["code"] or "") == 8, g1["code"])
+
+expect("duplicate email", call("POST", "/auth/register", body={
+    "email": g1["email"], "password": PW, "fullName": "Dup Teacher", "role": "GURU", "nip": nisn() + "1",
+    "class": {"name": "X"}}), 409, "EMAIL_ALREADY_REGISTERED")
+expect("register validation", call("POST", "/auth/register", body={"email": "bad", "password": "x", "role": "GURU"}), 400, "VALIDATION_ERROR")
+expect("register unknown code", call("POST", "/auth/register", body={
+    "email": f"kibooz-smoke-{RUN}-zz@example.com", "password": PW, "fullName": "No Code", "role": "WALI",
+    "classCode": "ZZZZZZZZ", "student": {"nisn": nisn(), "fullName": "Nobody"}}), 404, "CLASS_CODE_NOT_FOUND")
+
+w1 = register_wali("w1", g1["code"], "Smoke Child One")
+w2 = register_wali("w2", g1["code"], "Smoke Child Two")
+check("wali student ids", bool(w1["student"] and w2["student"]))
+expect("duplicate nisn", call("POST", "/auth/register", body={
+    "email": f"kibooz-smoke-{RUN}-dn@example.com", "password": PW, "fullName": "Dup Nisn", "role": "WALI",
+    "classCode": g1["code"], "student": {"nisn": "0", "fullName": "Short Nisn"}}), 400, "VALIDATION_ERROR")
+
+# ---------- login, refresh, logout ----------
+s, js = call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "GURU"})
+check("login ok", s == 200 and dig(js, "data", "token"), f"{s} {js}")
+expect("login wrong password", call("POST", "/auth/login", body={"email": g1["email"], "password": PW + "x", "role": "GURU"}), 401, "AUTH_INVALID_CREDENTIALS")
+expect("login wrong role", call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
+old_refresh = dig(js, "data", "refreshToken")
+s, js2 = call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]})
+check("refresh rotates", s == 200 and dig(js2, "data", "refreshToken") not in (None, old_refresh), f"{s} {js2}")
+expect("refresh reuse rejected", call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]}), 401, "AUTH_REFRESH_INVALID")
+s, js3 = call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "GURU"})
+lr = dig(js3, "data", "refreshToken")
+expect("logout", call("POST", "/auth/logout", body={"refreshToken": lr}), 200)
+expect("refresh after logout", call("POST", "/auth/refresh-token", body={"refreshToken": lr, "email": g1["email"]}), 401, "AUTH_REFRESH_INVALID")
+
+# ---------- dashboards, roles ----------
+expect("wali dashboard", call("GET", "/wali/dashboard", w1["token"]), 200)
+expect("guru dashboard", call("GET", "/guru/dashboard", g1["token"]), 200)
+expect("wali cannot open guru dashboard", call("GET", "/guru/dashboard", w1["token"]), 403, "AUTH_FORBIDDEN")
+expect("guru cannot open wali dashboard", call("GET", "/wali/dashboard", g1["token"]), 403, "AUTH_FORBIDDEN")
+expect("mood analytics", call("GET", "/guru/mood/analytics", g1["token"]), 200)
+
+# ---------- mood ----------
+expect("log mood", call("POST", "/guru/mood/log", g1["token"], {"studentId": w1["student"], "moodType": "BINGUNG", "notes": "api test"}), 201)
+expect("log mood invalid enum", call("POST", "/guru/mood/log", g1["token"], {"studentId": w1["student"], "moodType": "LAPAR"}), 400, "VALIDATION_ERROR")
+s, js = call("POST", "/guru/mood/log", g2["token"], {"studentId": w1["student"], "moodType": "SENANG"})
+check("other class teacher cannot log mood", s in (403, 404), f"{s} {js.get('errorCode')}")
+expect("wali cannot log mood", call("POST", "/guru/mood/log", w1["token"], {"studentId": w1["student"], "moodType": "SENANG"}), 403, "AUTH_FORBIDDEN")
+s, js = call("GET", "/wali/dashboard", w1["token"])
+guide = dig(js, "data", "recommendedGuidance", "id")
+check("guidance recommended after BINGUNG", guide == "guidance-bingung-4step", str(guide))
+
+# ---------- guidance ----------
+expect("apply guidance", call("POST", "/wali/guidance/apply", w1["token"], {"guidanceId": guide or "guidance-bingung-4step", "studentId": w1["student"], "parentNotes": "tried it"}), 200)
+expect("apply unknown guidance", call("POST", "/wali/guidance/apply", w1["token"], {"guidanceId": "not-found", "studentId": w1["student"]}), 404, "GUIDANCE_NOT_FOUND")
+s, js = call("GET", f"/classes/{g1['class']}/guidance-reports", g1["token"])
+check("guru reads guidance reports", s == 200 and dig(js, "data", "total") == 1, f"{s} {js}")
+expect("wali cannot read guidance reports", call("GET", f"/classes/{g1['class']}/guidance-reports", w1["token"]), 403, "AUTH_FORBIDDEN")
+
+# ---------- trash and leaderboard ----------
+expect("scan claim", call("POST", "/trash/scan-claim", w1["token"], {"studentId": w1["student"], "trashType": "ORGANIK", "confidenceScore": 0.9}), 200)
+expect("scan claim second", call("POST", "/trash/scan-claim", w2["token"], {"studentId": w2["student"], "trashType": "B3", "confidenceScore": 0.8}), 200)
+expect("scan claim invalid type", call("POST", "/trash/scan-claim", w1["token"], {"studentId": w1["student"], "trashType": "KACA"}), 400, "VALIDATION_ERROR")
+expect("scan claim other child", call("POST", "/trash/scan-claim", w1["token"], {"studentId": w2["student"], "trashType": "ORGANIK"}), 404, "STUDENT_NOT_FOUND")
+s, js = call("GET", "/trash/stats", w1["token"])
+check("trash stats", s == 200 and dig(js, "data", "seasonPoints") is not None and len(dig(js, "data", "breakdown") or []) == 3, f"{s} {js}")
+s, js = call("GET", "/leaderboard", w1["token"])
+names = [e.get("studentName") for e in (dig(js, "data", "podium") or []) + (dig(js, "data", "rankings") or [])]
+check("leaderboard lists both children", s == 200 and "Smoke Child One" in names and "Smoke Child Two" in names, f"{s} {names}")
+expect("leaderboard by class (guru)", call("GET", f"/leaderboard?classId={g1['class']}", g1["token"]), 200)
+s, js = call("GET", "/leaderboard/history", w1["token"])
+check("history empty for a young class", s == 200 and dig(js, "data", "seasons") == [] and dig(js, "data", "total") == 0, f"{s} {js}")
+check("history page info", dig(js, "data", "page") == 1 and dig(js, "data", "limit") == 20)
+expect("history by class (guru)", call("GET", f"/leaderboard/history?classId={g1['class']}&page=1&limit=5", g1["token"]), 200)
+expect("history bad class id", call("GET", "/leaderboard/history?classId=nope", g1["token"]), 400, "VALIDATION_ERROR")
+expect("history bad page", call("GET", "/leaderboard/history?page=0", g1["token"]), 400, "VALIDATION_ERROR")
+expect("history bad limit", call("GET", "/leaderboard/history?limit=500", g1["token"]), 400, "VALIDATION_ERROR")
+s, js = call("GET", f"/leaderboard/history?classId={g1['class']}", g2["token"])
+check("history of a class you do not teach", s in (403, 404), f"{s} {js.get('errorCode')}")
+s, js = call("GET", f"/leaderboard/history?classId={g1['class']}", w1["token"])
+check("history parent own class", s == 200)
+
+# ---------- classes ----------
+s, js = call("GET", "/guru/classes", g1["token"])
+check("classes list has the registration class", s == 200 and dig(js, "data", "total") == 1 and dig(js, "data", "classes", 0, "totalStudents") == 2, f"{s} {js}")
+s, js = call("POST", "/guru/classes", g1["token"], {"name": "Smoke A2", "gradeLevel": "Class B"})
+check("create class", s == 201 and dig(js, "data", "joinCode"), f"{s} {js}")
+g1_second = dig(js, "data", "id")
+expect("create class validation", call("POST", "/guru/classes", g1["token"], {"name": ""}), 400, "VALIDATION_ERROR")
+s, js = call("GET", f"/guru/classes/{g1['class']}", g1["token"])
+check("class detail counts", s == 200 and dig(js, "data", "totalStudents") == 2 and dig(js, "data", "totalVideos") == 0, f"{s} {js}")
+expect("class detail other teacher", call("GET", f"/guru/classes/{g1['class']}", g2["token"]), 404, "CLASS_NOT_FOUND")
+s, js = call("POST", f"/guru/classes/{g1['class']}/join-code", g1["token"])
+new_code = dig(js, "data", "joinCode")
+check("replace join code", s == 200 and new_code and new_code != g1["code"], f"{s} {js}")
+expect("old code no longer works", call("POST", "/auth/register", body={
+    "email": f"kibooz-smoke-{RUN}-oc@example.com", "password": PW, "fullName": "Old Code", "role": "WALI", "classCode": g1["code"],
+    "student": {"nisn": nisn(), "fullName": "Old Code Child"}}), 404, "CLASS_CODE_NOT_FOUND")
+g1["code"] = new_code
+s, js = call("GET", f"/classes/{g1['class']}/students", g1["token"])
+check("roster", s == 200 and dig(js, "data", "total") == 2, f"{s} {js}")
+expect("roster closed to parents", call("GET", f"/classes/{g1['class']}/students", w1["token"]), 403, "AUTH_FORBIDDEN")
+
+# ---------- wali children ----------
+s, js = call("GET", "/wali/children", w1["token"])
+check("children list", s == 200 and len(dig(js, "data", "children") or []) == 1, f"{s} {js}")
+s, js = call("POST", "/wali/children", w1["token"], {"classCode": g2["code"], "student": {"nisn": nisn(), "fullName": "Smoke Child Three"}})
+check("add child in another class", s == 201, f"{s} {js}")
+expect("child limit etc validation", call("POST", "/wali/children", w1["token"], {"classCode": "ZZZZZZZZ", "student": {"nisn": nisn(), "fullName": "Nope Child"}}), 404, "CLASS_CODE_NOT_FOUND")
+expect("child profile", call("GET", f"/wali/child/{w1['student']}", w1["token"]), 200)
+expect("other parents child profile", call("GET", f"/wali/child/{w2['student']}", w1["token"]), 404, "STUDENT_NOT_FOUND")
+
+# ---------- profile ----------
+expect("guru profile", call("GET", "/guru/profile", g1["token"]), 200)
+expect("guru profile update", call("PUT", "/guru/profile", g1["token"], {"phoneNumber": "+62 812 3456 7890"}), 200)
+expect("guru profile bad phone", call("PUT", "/guru/profile", g1["token"], {"phoneNumber": "abc"}), 400, "VALIDATION_ERROR")
+expect("guru profile detail", call("GET", "/guru/profile/detail", g1["token"]), 200)
+
+# ---------- avatar ----------
+boundary = "----smoke" + uuid.uuid4().hex
+mp = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + PNG + f"\r\n--{boundary}--\r\n".encode()
+s, js = call("POST", "/users/avatar", g1["token"], raw=mp, ctype="multipart/form-data; boundary=" + boundary)
+check("avatar upload", s == 200 and dig(js, "data", "avatarUrl"), f"{s} {js}")
+mp2 = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + b"not an image" + f"\r\n--{boundary}--\r\n".encode()
+expect("avatar rejects non image", call("POST", "/users/avatar", g1["token"], raw=mp2, ctype="multipart/form-data; boundary=" + boundary), 400, "INVALID_IMAGE")
+
+# ---------- videos ----------
+cid = g1["class"]
+s, js = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "Smoke Video", "videoUrl": "https://example.com/video.mp4", "durationSeconds": 60})
+vid = dig(js, "data", "id")
+check("add video", s == 201 and vid, f"{s} {js}")
+expect("add video http rejected", call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "x", "videoUrl": "http://example.com/v.mp4"}), 400, "VALIDATION_ERROR")
+expect("parent cannot add video", call("POST", f"/classes/{cid}/videos", w1["token"], {"title": "x", "videoUrl": "https://example.com/v.mp4"}), 403, "AUTH_FORBIDDEN")
+s, js = call("GET", f"/classes/{cid}/videos", w1["token"])
+check("parent lists videos", s == 200 and dig(js, "data", "total") == 1, f"{s} {js}")
+expect("edit video", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "Smoke Video Edited"}), 200)
+expect("edit video empty body", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {}), 400, "VALIDATION_ERROR")
+s, js = call("POST", f"/classes/{cid}/videos/upload-url", g1["token"], {"contentType": "video/mp4", "sizeBytes": 1048576})
+check("upload url issued", s == 200 and dig(js, "data", "uploadUrl"), f"{s} {js}")
+expect("upload url bad type", call("POST", f"/classes/{cid}/videos/upload-url", g1["token"], {"contentType": "video/avi", "sizeBytes": 1000}), 400, "VALIDATION_ERROR")
+
+# ---------- 0.10.0 delete a pending upload ----------
+UP = f"/classes/{cid}/videos/upload-url"
+
+
+def discard(token, url):
+    return call("DELETE", UP + "?videoUrl=" + quote(url, safe=""), token)
+
+
+def send_file(up, size):
+    return curl("PUT", dig(up, "data", "uploadUrl"), dig(up, "data", "headers"), b"\0" * size)
+
+
+s, up = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+check("upload address for a discard", s == 200 and dig(up, "data", "videoUrl"), f"{s} {up}")
+pending_url = dig(up, "data", "videoUrl")
+check("pending address is under pending/", "/pending/videos/" in (pending_url or ""), str(pending_url))
+ps, _ = send_file(up, 64)
+check("file arrives in the bucket", ps == 200, str(ps))
+expect("discard needs a token", call("DELETE", UP + "?videoUrl=" + quote(pending_url, safe="")), 401, "AUTH_TOKEN_MISSING")
+expect("parent cannot discard", discard(w1["token"], pending_url), 403, "AUTH_FORBIDDEN")
+expect("other class teacher cannot discard", discard(g2["token"], pending_url), 403, "AUTH_FORBIDDEN")
+expect("discard without videoUrl", call("DELETE", UP, g1["token"]), 400, "VALIDATION_ERROR")
+expect("discard a link to another site", discard(g1["token"], "https://example.com/video.mp4"), 400, "VALIDATION_ERROR")
+expect("discard bad class id", call("DELETE", "/classes/nope/videos/upload-url?videoUrl=x", g1["token"]), 400, "VALIDATION_ERROR")
+s, other = call("POST", f"/classes/{g2['class']}/videos/upload-url", g2["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+other_url = dig(other, "data", "videoUrl")
+expect("discard a file of another class", discard(g1["token"], other_url), 400, "VALIDATION_ERROR")
+expect("discard a file that waits", discard(g1["token"], pending_url), 200)
+expect("discard twice is fine", discard(g1["token"], pending_url), 200)
+late = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "late", "videoUrl": pending_url})
+expect("a discarded file cannot be added", late, 400, "VALIDATION_ERROR")
+
+# a real upload added as a video, then the permanent address is refused by the discard route
+s, up2 = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+send_file(up2, 64)
+s, added = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "Smoke Upload", "videoUrl": dig(up2, "data", "videoUrl")})
+upload_vid = dig(added, "data", "id")
+permanent = dig(added, "data", "videoUrl")
+check("uploaded file added as a video", s == 201 and upload_vid and "/pending/" not in (permanent or ""), f"{s} {added}")
+expect("discard refuses an added video", discard(g1["token"], permanent), 400, "VALIDATION_ERROR")
+expect("delete the uploaded video", call("DELETE", f"/classes/{cid}/videos/{upload_vid}", g1["token"]), 200)
+expect("their own teacher discards the file of the other class", call("DELETE", f"/classes/{g2['class']}/videos/upload-url?videoUrl=" + quote(other_url, safe=""), g2["token"]), 200)
+expect("delete video", call("DELETE", f"/classes/{cid}/videos/{vid}", g1["token"]), 200)
+expect("deleted video gone", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "x"}), 404, "VIDEO_NOT_FOUND")
+expect("other class videos closed", call("GET", f"/classes/{cid}/videos", g2["token"]), 403, "AUTH_FORBIDDEN")
+
+# ---------- forum ----------
+s, js = call("POST", f"/classes/{cid}/forum", w1["token"], {"title": "Smoke thread", "body": "hello"})
+pid = dig(js, "data", "id")
+check("parent starts thread", s == 201 and pid, f"{s} {js}")
+s, js = call("POST", f"/classes/{cid}/forum/{pid}/replies", g1["token"], {"body": "reply from teacher"})
+rid = dig(js, "data", "id")
+check("teacher replies", s == 201 and rid, f"{s} {js}")
+s, js = call("GET", f"/classes/{cid}/forum", w2["token"])
+check("other parent lists threads", s == 200 and dig(js, "data", "total") == 1, f"{s} {js}")
+s, js = call("GET", f"/classes/{cid}/forum/{pid}/replies", w2["token"])
+check("list replies", s == 200 and dig(js, "data", "total") == 1, f"{s} {js}")
+s, js = call("PATCH", f"/classes/{cid}/forum/{pid}", w1["token"], {"title": "Smoke thread edited"})
+check("author edits thread", s == 200 and dig(js, "data", "editedAt"), f"{s} {js}")
+expect("other parent cannot edit thread", call("PATCH", f"/classes/{cid}/forum/{pid}", w2["token"], {"title": "hijack"}), 403, "AUTH_FORBIDDEN")
+expect("author edits reply", call("PATCH", f"/classes/{cid}/forum/{pid}/replies/{rid}", g1["token"], {"body": "edited"}), 200)
+expect("outsider cannot read forum", call("GET", f"/classes/{cid}/forum", g2["token"]), 403, "AUTH_FORBIDDEN")
+expect("delete reply", call("DELETE", f"/classes/{cid}/forum/{pid}/replies/{rid}", g1["token"]), 200)
+expect("teacher deletes thread", call("DELETE", f"/classes/{cid}/forum/{pid}", g1["token"]), 200)
+expect("deleted thread gone", call("GET", f"/classes/{cid}/forum/{pid}/replies", g1["token"]), 404, "FORUM_POST_NOT_FOUND")
+
+# ---------- 0.9.0 teachers, owner, leaving ----------
+tb = f"/guru/classes/{cid}/teachers"
+s, js = call("GET", tb, g1["token"])
+check("creator is the owner", s == 200 and dig(js, "data", "teachers", 0, "isOwner") is True and len(dig(js, "data", "teachers")) == 1, f"{s} {js}")
+g1_id = dig(js, "data", "teachers", 0, "id")
+s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
+g2_id = dig(js, "data", "id")
+check("add teacher", s == 201 and g2_id and dig(js, "data", "isOwner") is False, f"{s} {js}")
+expect("add teacher twice", call("POST", tb, g1["token"], {"email": g2["email"]}), 409, "TEACHER_ALREADY_IN_CLASS")
+expect("add unknown teacher", call("POST", tb, g1["token"], {"email": f"nobody-{RUN}@example.com"}), 404, "TEACHER_NOT_FOUND")
+expect("add a parent as teacher", call("POST", tb, g1["token"], {"email": w1["email"]}), 404, "TEACHER_NOT_FOUND")
+expect("non owner cannot remove others", call("DELETE", f"{tb}/{g1_id}", g2["token"]), 403, "CLASS_OWNER_REQUIRED")
+expect("non owner cannot hand over", call("PUT", f"/guru/classes/{cid}/owner", g2["token"], {"teacherId": g2_id}), 403, "CLASS_OWNER_REQUIRED")
+expect("remove unknown teacher", call("DELETE", f"{tb}/{uuid.uuid4()}", g1["token"]), 404, "TEACHER_NOT_IN_CLASS")
+expect("remove bad id", call("DELETE", f"{tb}/nope", g1["token"]), 400, "VALIDATION_ERROR")
+expect("hand over to stranger", call("PUT", f"/guru/classes/{cid}/owner", g1["token"], {"teacherId": uuid.uuid4().__str__()}), 404, "TEACHER_NOT_IN_CLASS")
+expect("hand over validation", call("PUT", f"/guru/classes/{cid}/owner", g1["token"], {}), 400, "VALIDATION_ERROR")
+s, js = call("PUT", f"/guru/classes/{cid}/owner", g1["token"], {"teacherId": g2_id})
+check("hand over class", s == 200 and dig(js, "data", "id") == g2_id and dig(js, "data", "isOwner") is True, f"{s} {js}")
+expect("old owner cannot hand over again", call("PUT", f"/guru/classes/{cid}/owner", g1["token"], {"teacherId": g1_id}), 403, "CLASS_OWNER_REQUIRED")
+expect("naming the owner again is fine", call("PUT", f"/guru/classes/{cid}/owner", g2["token"], {"teacherId": g2_id}), 200)
+expect("new owner hands back", call("PUT", f"/guru/classes/{cid}/owner", g2["token"], {"teacherId": g1_id}), 200)
+expect("a teacher leaves", call("DELETE", f"{tb}/{g2_id}", g2["token"]), 200)
+expect("left teacher no longer sees class", call("GET", tb, g2["token"]), 404, "CLASS_NOT_FOUND")
+check("teacher count after leaving", dig(call("GET", tb, g1["token"])[1], "data", "teachers") is not None and len(dig(call("GET", tb, g1["token"])[1], "data", "teachers")) == 1)
+expect("only teacher cannot leave", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 409, "LAST_TEACHER")
+s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
+g2_id = dig(js, "data", "id")
+expect("owner removes a teacher", call("DELETE", f"{tb}/{g2_id}", g1["token"]), 200)
+s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
+g2_id = dig(js, "data", "id")
+expect("owner leaves", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 200)
+s, js = call("GET", tb, g2["token"])
+check("ownership moved to the remaining teacher", s == 200 and len(dig(js, "data", "teachers")) == 1 and dig(js, "data", "teachers", 0, "isOwner") is True, f"{s} {js}")
+expect("former owner is out", call("GET", tb, g1["token"]), 404, "CLASS_NOT_FOUND")
+s, js = call("POST", tb, g2["token"], {"email": g1["email"]})
+check("new owner re-adds the former one", s == 201, f"{s} {js}")
+
+# ---------- 0.9.0 deleting accounts ----------
+expect("parent wrong password", call("DELETE", "/users/me", w2["token"], {"password": "wrong-password"}), 403, "AUTH_PASSWORD_INCORRECT")
+expect("parent delete validation", call("DELETE", "/users/me", w2["token"], {}), 400, "VALIDATION_ERROR")
+expect("parent deletes account", delete_me(w2), 200)
+expect("deleted parent locked out", call("GET", "/wali/dashboard", w2["token"]), 404, "PROFILE_NOT_FOUND")
+expect("deleted parent cannot login", call("POST", "/auth/login", body={"email": w2["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
+
+# g3 is the only teacher of its class
+expect("sole teacher needs a successor", delete_me(g3), 409, "SUCCESSOR_REQUIRED")
+expect("empty successor is the same", delete_me(g3, successorEmail=""), 409, "SUCCESSOR_REQUIRED")
+expect("unknown successor", delete_me(g3, successorEmail=f"nobody-{RUN}@example.com"), 404, "TEACHER_NOT_FOUND")
+expect("parent as successor", delete_me(g3, successorEmail=w1["email"]), 404, "TEACHER_NOT_FOUND")
+expect("self as successor", delete_me(g3, successorEmail=g3["email"]), 400, "VALIDATION_ERROR")
+expect("bad successor email", delete_me(g3, successorEmail="not-an-email"), 400, "VALIDATION_ERROR")
+check("refused deletions changed nothing", call("GET", "/guru/dashboard", g3["token"])[0] == 200)
+s, js = call("GET", f"/guru/classes/{g3['class']}/teachers", g3["token"])
+check("g3 still owns its class", s == 200 and dig(js, "data", "teachers", 0, "isOwner") is True)
+expect("successor takes the class (case ignored)", delete_me(g3, successorEmail=g4["email"].upper()), 200)
+expect("deleted teacher locked out", call("GET", "/guru/dashboard", g3["token"]), 404, "PROFILE_NOT_FOUND")
+s, js = call("GET", f"/guru/classes/{g3['class']}/teachers", g4["token"])
+check("successor owns the class", s == 200 and len(dig(js, "data", "teachers")) == 1 and dig(js, "data", "teachers", 0, "isOwner") is True, f"{s} {js}")
+check("class keeps taking children", register_wali("w3", g3["code"], "Smoke Child Late")["student"] is not None)
+
+# g1 and g2 share the first class, g1 also owns a second class that nobody else teaches
+expect("shared class alone is not enough", delete_me(g1, successorEmail=""), 409, "SUCCESSOR_REQUIRED")
+s, js = call("GET", tb, g2["token"])
+owner_before = [t["id"] for t in dig(js, "data", "teachers") if t.get("isOwner")]
+check("refusal rolled back the shared class", len(dig(js, "data", "teachers")) == 2 and owner_before == [g2_id], f"{owner_before} {g2_id}")
+expect("g1 deletes with successor", delete_me(g1, successorEmail=g4["email"]), 200)
+s, js = call("GET", tb, g2["token"])
+check("shared class stays with g2", s == 200 and len(dig(js, "data", "teachers")) == 1 and dig(js, "data", "teachers", 0, "isOwner") is True, f"{s} {js}")
+s, js = call("GET", f"/guru/classes/{g1_second}/teachers", g4["token"])
+check("g1's second class went to the successor", s == 200 and len(dig(js, "data", "teachers")) == 1 and dig(js, "data", "teachers", 0, "isOwner") is True, f"{s} {js}")
+
+# parents of a deleted teacher's class still work
+expect("parent still reads the class", call("GET", "/wali/dashboard", w1["token"]), 200)
+expect("parent deletes account", delete_me(w1), 200)
+
+# g2 now has the shared class, its own class and nothing else
+expect("g2 deletes with successor", delete_me(g2, successorEmail=g4["email"]), 200)
+s, js = call("GET", "/guru/classes", g4["token"])
+classes = dig(js, "data", "classes") or []
+check("successor teaches every handed class", s == 200 and dig(js, "data", "total") == keeper_before + 4, f"{s} total={dig(js, 'data', 'total')} before={keeper_before}")
+okowner = True
+for c in classes:
+    s2, j2 = call("GET", f"/guru/classes/{c['id']}/teachers", g4["token"])
+    ts = dig(j2, "data", "teachers") or []
+    okowner = okowner and len(ts) == 1 and ts[0].get("isOwner") is True
+check("successor owns each of them", okowner)
+expect("the last teacher cannot delete without another", delete_me(g4), 409, "SUCCESSOR_REQUIRED")
+
+
+def cleanup():
+    """Best effort after the checks, an account that a failed check left behind is removed with the keeper as successor."""
+    for acc in created:
+        if not acc.get("token"):
+            continue
+        extra = {"successorEmail": g4["email"]} if acc["role"] == "GURU" else {}
+        delete_me(acc, **extra)
+
+
+cleanup()
+
+lines = [f"Smoke test of {BASE} run {RUN}, passed {passed}, failed {len(failed)}", f"Keeper {g4['email']} {'reused' if g4.get('reused') else 'registered now'}"]
+lines += [f"FAIL {f}" for f in failed]
+print("\n".join(lines))
+summary = os.environ.get("GITHUB_STEP_SUMMARY")
+if summary:
+    with open(summary, "a") as fh:
+        fh.write("### Smoke test\n\n" + "\n".join(f"- {l}" for l in lines) + "\n")
+sys.exit(1 if failed else 0)
