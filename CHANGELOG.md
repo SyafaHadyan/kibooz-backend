@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.11.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.10.0...v0.11.0) (2026-10-18)
+
+
+### Features
+
+* **classes:** archive a class without children when its last teacher leaves ([f91d0f7](https://github.com/SyafaHadyan/kibooz-backend/commit/f91d0f771274695eaa994d8991bcf6778b88fd4f))
+* **classes:** archive a class without children when its last teacher leaves ([#176](https://github.com/SyafaHadyan/kibooz-backend/issues/176)) ([8330a19](https://github.com/SyafaHadyan/kibooz-backend/commit/8330a199b550b8dcbcacccef05efffe421644862))
+* **guru:** add a batch mood log for a camera scan of many children ([5e20f4a](https://github.com/SyafaHadyan/kibooz-backend/commit/5e20f4a528c89831b918a5c7eadfd45eaa71d377))
+* **guru:** add a batch mood log for a camera scan of many children ([#169](https://github.com/SyafaHadyan/kibooz-backend/issues/169)) ([43feec2](https://github.com/SyafaHadyan/kibooz-backend/commit/43feec21c0b4374068be0e6094c877dcd4d78d5d))
+* **idempotency:** remember the answer of a request that carries an Idempotency-Key ([a326eab](https://github.com/SyafaHadyan/kibooz-backend/commit/a326eab129621c620dec1ac407da19d07c1a3e67))
+* **idempotency:** remember the answer of a request that carries an Idempotency-Key ([#173](https://github.com/SyafaHadyan/kibooz-backend/issues/173)) ([963f950](https://github.com/SyafaHadyan/kibooz-backend/commit/963f950cd8a4ba0332cc627e167011ffc6986c54))
+* **mood:** accept the time a mood was seen so a late replay keeps its place ([c1f67b4](https://github.com/SyafaHadyan/kibooz-backend/commit/c1f67b4f74e7137b13f115a1d79beb696575f99b))
+* **mood:** accept the time a mood was seen so a late replay keeps its place ([#175](https://github.com/SyafaHadyan/kibooz-backend/issues/175)) ([1864261](https://github.com/SyafaHadyan/kibooz-backend/commit/1864261fc7aae268a831bfddb55f627810e1ea4b))
+* **users:** change the password with the current one and end every session ([ca04919](https://github.com/SyafaHadyan/kibooz-backend/commit/ca04919e749160f5fd8a7188e930d9cd917fd5c9))
+* **users:** change the password with the current one and end every session ([#174](https://github.com/SyafaHadyan/kibooz-backend/issues/174)) ([ea9605d](https://github.com/SyafaHadyan/kibooz-backend/commit/ea9605d8eeb202cd5a87a6982095a3ece8e8bc37))
+
+
+### Bug Fixes
+
+* **classes:** lock the class and refuse an archived one when a teacher is added ([3886343](https://github.com/SyafaHadyan/kibooz-backend/commit/38863432a2a0b101f7163aac1c94491429d5ac61))
+* **idempotency:** fence each claim so a late try cannot touch its replacement ([89003e1](https://github.com/SyafaHadyan/kibooz-backend/commit/89003e1f420ea1028399d49bb2d6a8aba2fbd73b))
+* **smoke:** bound the cleanup calls and report accounts that stay behind ([1c30317](https://github.com/SyafaHadyan/kibooz-backend/commit/1c303176fa5c3094efc52edf74821ec7e09754ce))
+* **smoke:** clean up and report on every exit, including a crash ([4dc2780](https://github.com/SyafaHadyan/kibooz-backend/commit/4dc27800b3c360c0decca10ba4ccd03dd13d2224))
+* **users:** end the sessions before the password update, like an account deletion ([1e3d5ec](https://github.com/SyafaHadyan/kibooz-backend/commit/1e3d5ecbebb5d32b9d8fdd4d60eaaa2a13437692))
+
 ## [0.10.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.9.1...v0.10.0) (2026-10-18)
 
 
