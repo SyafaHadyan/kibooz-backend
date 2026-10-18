@@ -51,7 +51,7 @@ func TestAClassWithoutChildrenIsArchivedWhenItsLastTeacherLeaves(t *testing.T) {
 		keeper, _ := registerWali(t, otherCode, "Keeps Going")
 
 		res := call(t, http.MethodPost, "/api/v1/wali/children", keeper.Token, map[string]any{
-			"classCode": emptyCode, "nisn": nisn(), "fullName": "Second Child",
+			"classCode": emptyCode, "student": map[string]any{"nisn": nisn(), "fullName": "Second Child"},
 		})
 		res.requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
 	})
@@ -87,12 +87,13 @@ func TestASharedClassIsNotArchivedWhenOneTeacherLeaves(t *testing.T) {
 	leaving := registerGuru(t, "Pergi")
 	classID, _ := classOf(t, staying)
 
+	// taken before the shared class is added, because the dashboard shows the oldest class of the teacher
+	ownID, _ := classOf(t, leaving)
+
 	added := call(t, http.MethodPost, fmt.Sprintf("/api/v1/guru/classes/%s/teachers", classID), staying.Token, map[string]any{"email": leaving.Email})
 	require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
 
 	// the class of the one who leaves has nobody else, so only that one is archived
-	ownID, _ := classOf(t, leaving)
-
 	require.Equal(t, http.StatusOK, deleteAccount(t, leaving.Token, leaving.Password).Status)
 
 	require.Nil(t, archivedAt(t, classID))
