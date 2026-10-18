@@ -48,6 +48,7 @@ jobs:
             # a child can claim five times a day, and the scan would use them up on the first requests and never reach the photo check
             echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
+            echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"
           } > .env
 
       - name: Start the stack

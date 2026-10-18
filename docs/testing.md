@@ -30,6 +30,8 @@ The `k6/` folder holds the load scripts. `smoke.js` is a short check that runs o
 
 ```sh
 # set USER_LIMITER_MAX, AUTH_LIMITER_MAX, CLASS_CODE_LIMITER_MAX and TRASH_DAILY_LIMIT to large values in .env first
+# compose.ci.yml takes the Go image of the Dockerfile from the Google mirror, so it needs the name of that image
+export GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)
 docker compose -f compose.yml -f compose.ci.yml up -d --build --wait
 k6 run k6/smoke.js
 ```
