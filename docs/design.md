@@ -48,16 +48,16 @@ A request that finds every slot taken waits up to `PASSWORD_HASH_WAIT_MILLISECON
 
 ### A flood limit in the proxy
 
-The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address 5 requests a second with a burst of 30. Several teachers who sign in at the same moment on one school network stay inside the burst, and a single script is held to a few requests a second.
+The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address 16 requests a second with a burst of 128. Many parents who sign up at the same moment on one school network stay inside the burst, and a single script is held to 16 requests a second, which a small server can still hash without every slot of the cap above staying taken.
 
 ```nginx
 # http block
-limit_req_zone $binary_remote_addr zone=kibooz_hash:10m rate=5r/s;
+limit_req_zone $binary_remote_addr zone=kibooz_hash:10m rate=16r/s;
 limit_req_status 429;
 
 # server block
 location ~* ^/api/v1/auth/(register|login)/?$ {
-    limit_req zone=kibooz_hash burst=30 nodelay;
+    limit_req zone=kibooz_hash burst=128 nodelay;
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
