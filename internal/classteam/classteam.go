@@ -195,26 +195,23 @@ func archiveEmpty(tx *gorm.DB, classID uuid.UUID) error {
 	return tx.Exec("UPDATE classes SET archived_at = now() WHERE id = ? AND archived_at IS NULL", classID).Error
 }
 
-// Archived tells whether the class was archived. The caller holds Lock for it, because a teacher who is leaving archives
-// the class under the same lock.
-func Archived(tx *gorm.DB, classID uuid.UUID) (bool, error) {
-	var archived bool
+// LockLive takes Lock for a class and tells whether it was archived, which a teacher who is leaving does under the same lock,
+// so the answer holds until the transaction ends.
+func LockLive(tx *gorm.DB, classID uuid.UUID) (archived bool, err error) {
+	err = Lock(tx, classID)
+	if err != nil {
+		return false, err
+	}
 
-	err := tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+	err = tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
 
 	return archived, err
 }
 
-// LockOpen takes Lock for a class that a join code led to and then checks again that the class was not archived while the
-// request waited, because a teacher who is leaving archives it under the same lock. An archived class answers like a
-// code that does not exist.
+// LockOpen takes the lock for a class that a join code led to and then checks again that the class was not archived while
+// the request waited. An archived class answers like a code that does not exist.
 func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
-	err := Lock(tx, classID)
-	if err != nil {
-		return err
-	}
-
-	archived, err := Archived(tx, classID)
+	archived, err := LockLive(tx, classID)
 	if err != nil {
 		return err
 	}
