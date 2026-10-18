@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -309,6 +310,12 @@ func TestARefreshThatBeginsWhileASessionIsBeingEndedLeavesNoTokenBehind(t *testi
 
 	second, err := tryInFlightRefreshOfHash(t, newest, 3*time.Second)
 	if err != nil {
+		var pgErr *pgconn.PgError
+
+		// any other error is a failure of the test and not a reason to stop it
+		require.ErrorAs(t, err, &pgErr)
+		require.Equal(t, "55P03", pgErr.Code, "only a lock timeout means that the DELETE holds the token: %v", err)
+
 		// The DELETE visits the rows in the order they are stored, and it normally reaches the held token before the new
 		// one. When it reached the new one first it holds it, and there is no moment left in which the lock does not cover
 		// it, so this run has nothing to prove.
