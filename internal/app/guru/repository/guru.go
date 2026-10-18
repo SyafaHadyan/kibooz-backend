@@ -346,10 +346,13 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 
 		var guruIDs []uuid.UUID
 
+		// the row of the new teacher is locked first and the class after it, which is the order of classteam.Leave, so a
+		// teacher who deletes the account at the same moment cannot wait for this request while this one waits for the class
 		err := tx.Table("users AS u").
 			Select("g.id").
 			Joins("JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL").
 			Where("u.email = ? AND u.role = ? AND u.deleted_at IS NULL", email, constants.RoleGuru).
+			Clauses(clause.Locking{Strength: clause.LockingStrengthShare, Table: clause.Table{Name: "g"}}).
 			Limit(1).
 			Scan(&guruIDs).Error
 		if err != nil {
@@ -358,6 +361,17 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 
 		if len(guruIDs) == 0 {
 			return nil
+		}
+
+		// a teacher who leaves archives a class that nobody else teaches under this lock, and a teacher must not be added to
+		// a class that was archived while this request waited
+		archived, err := classteam.LockLive(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		if archived {
+			return apperror.ErrClassNotFound
 		}
 
 		link := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&entity.ClassTeacher{ClassID: classID, GuruID: guruIDs[0]})

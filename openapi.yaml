@@ -1567,10 +1567,12 @@ paths:
         sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
         children and the photos of their trash scans are deleted too.
 
-        A teacher who is the only teacher of a class has to send `successorEmail`. The successor is added to every class
-        that nobody else teaches and becomes its owner, so a class never loses its last teacher. The classes that other
-        teachers also teach stay with them, and when the account owned such a class the teacher who joined next becomes the
-        owner. The deletion changes nothing when it is refused.
+        A teacher who is the only teacher of a class that still has children has to send `successorEmail`. The successor
+        is added to every class that nobody else teaches and becomes its owner, so a class with children never loses its
+        last teacher. Without a `successorEmail`, a class that nobody else teaches and that has no active child is
+        archived instead. Its join code then answers `CLASS_CODE_NOT_FOUND` and nobody can restore the class through the
+        API. The classes that other teachers also teach stay with them, and when the account owned such a class the
+        teacher who joined next becomes the owner. The deletion changes nothing when it is refused.
       requestBody:
         required: true
         content:
@@ -1603,7 +1605,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: The account is the only teacher of a class and no `successorEmail` was sent (`SUCCESSOR_REQUIRED`)
+          description: >-
+            The account is the only teacher of a class that still has children and no `successorEmail` was sent
+            (`SUCCESSOR_REQUIRED`)
           content:
             application/json:
               schema:
@@ -2656,7 +2660,7 @@ components:
           maxLength: 255
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
-            the account is the only teacher of a class, and ignored for a parent. It cannot be the email of the account itself.
+            the account is the only teacher of a class that has children, and ignored for a parent. It cannot be the email of the account itself.
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]

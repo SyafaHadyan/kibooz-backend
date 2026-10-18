@@ -157,7 +157,7 @@ func leaveClass(tx *gorm.DB, classID uuid.UUID, guruID uuid.UUID, successorEmail
 	}
 
 	if successorEmail == "" {
-		return apperror.ErrSuccessorRequired
+		return archiveEmpty(tx, classID)
 	}
 
 	if successor == nil {
@@ -175,4 +175,50 @@ func leaveClass(tx *gorm.DB, classID uuid.UUID, guruID uuid.UUID, successorEmail
 	}
 
 	return tx.Create(&entity.ClassTeacher{ClassID: classID, GuruID: *successor, IsOwner: true}).Error
+}
+
+// archiveEmpty archives a class that nobody else teaches when it has no active child, because no successor is needed for
+// a class without children. A class with children still needs a successor. The caller holds Lock for the class, which
+// child registration takes too, so a child cannot join between the count and the archive.
+func archiveEmpty(tx *gorm.DB, classID uuid.UUID) error {
+	var children int64
+
+	err := tx.Raw("SELECT COUNT(*) FROM students WHERE class_id = ? AND deleted_at IS NULL", classID).Scan(&children).Error
+	if err != nil {
+		return err
+	}
+
+	if children > 0 {
+		return apperror.ErrSuccessorRequired
+	}
+
+	return tx.Exec("UPDATE classes SET archived_at = now() WHERE id = ? AND archived_at IS NULL", classID).Error
+}
+
+// LockLive takes Lock for a class and tells whether it was archived, which a teacher who is leaving does under the same lock,
+// so the answer holds until the transaction ends.
+func LockLive(tx *gorm.DB, classID uuid.UUID) (archived bool, err error) {
+	err = Lock(tx, classID)
+	if err != nil {
+		return false, err
+	}
+
+	err = tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+
+	return archived, err
+}
+
+// LockOpen takes the lock for a class that a join code led to and then checks again that the class was not archived while
+// the request waited. An archived class answers like a code that does not exist.
+func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
+	archived, err := LockLive(tx, classID)
+	if err != nil {
+		return err
+	}
+
+	if archived {
+		return apperror.ErrClassCodeNotFound
+	}
+
+	return nil
 }
