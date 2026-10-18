@@ -33,8 +33,3 @@ These are open and have no date.
 - Push notifications. The product requirements ask for a notification when a teacher records a mood or posts a class task. The API has no way to register a device or send a message yet.
 - Email. Verification before sign-in, notification mail and a way to reset a forgotten password all need an email service, which the API does not have. The design has to keep registration working in every test and scan, and nothing is decided yet.
 - More documentation, namely an operations runbook, a release guide, a table of error codes and a description of the data model.
-
-## Not planned
-
-- A web interface. The API serves the mobile app and the interactive documentation.
-- Social features that link children across classes, because of the privacy of the children.
