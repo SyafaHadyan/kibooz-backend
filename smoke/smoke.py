@@ -10,6 +10,7 @@ Settings come from the environment
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
 """
 import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
+from datetime import datetime
 from urllib.parse import quote
 
 BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
@@ -505,12 +506,19 @@ s5, j5, _ = call_key("POST", "/classes/" + g1["class"] + "/forum", g1["token"], 
 s6, j6, r6 = call_key("POST", "/classes/" + g1["class"] + "/forum", g1["token"], f"smoke-{RUN}-thread", {"title": "Keyed", "body": "Keyed thread"})
 check("a keyed forum thread is created once", s5 == 201 and s6 == 201 and r6 and dig(j5, "data", "id") == dig(j6, "data", "id"), f"{s5} {s6} {r6}")
 
+def same_time(got, want):
+    try:
+        return datetime.fromisoformat(got.replace("Z", "+00:00")) == datetime.fromisoformat(want.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return False
+
 def iso(offset):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + offset))
 
 hour, month = 3600, 30 * 86400
-s, js = call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": iso(-hour)})
-check("recordedAt in the past is kept", s == 201 and (dig(js, "data", "recordedAt") or "").startswith(iso(-hour)[:13]), f"{s} {js}")
+sent = iso(-hour)
+s, js = call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": sent})
+check("recordedAt in the past is kept", s == 201 and same_time(dig(js, "data", "recordedAt"), sent), f"{s} {js}")
 expect("recordedAt in the future is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": iso(2 * hour)}), 400, "VALIDATION_ERROR")
 expect("recordedAt older than 7 days is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": iso(-month)}), 400, "VALIDATION_ERROR")
 expect("recordedAt that is no time is refused", call("POST", "/guru/mood/log", g1["token"], {**mood, "recordedAt": "yesterday"}), 400, "VALIDATION_ERROR")
