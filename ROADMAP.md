@@ -24,6 +24,7 @@ Most of the backend work for this phase is done.
 - Offline support. A request can carry an `Idempotency-Key`, so an app that replays a queued request does not create it twice. A queued mood log can carry the time it was seen in `recordedAt`.
 - Accounts. A person can change the password, and can delete the account with the children and files that belong to it.
 - Reliability and safety. Rate limits, a health check that reports a degraded state, signed releases, and security and quality checks on every pull request.
+- Documentation. An operations runbook, a release guide, a table of error codes, a description of the data model, a privacy page, decision records and a glossary.
 - Test coverage above the 80% that the product requirements ask for, with a CI pipeline that also runs load and security scans.
 
 ## Next
@@ -32,4 +33,4 @@ These are open and have no date.
 
 - Push notifications. The product requirements ask for a notification when a teacher records a mood or posts a class task. The API has no way to register a device or send a message yet.
 - Email. Verification before sign-in, notification mail and a way to reset a forgotten password all need an email service, which the API does not have. The design has to keep registration working in every test and scan, and nothing is decided yet.
-- More documentation, namely an operations runbook, a release guide, a table of error codes and a description of the data model.
+- Google sign in. A person could sign in with a Google account instead of a password. The API cannot create an account from a Google sign in alone, because registration needs a role and a class code or a NIP. A Google only account also needs another way to confirm its identity when it changes the password or deletes the account, and a rule for an email that already has a password account. Nothing is decided yet, and it relates to the email item above, because Google returns a verified email.
