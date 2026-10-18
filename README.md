@@ -102,6 +102,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Client guide](docs/client-guide.md) covers what an app has to do with the tokens, the device token and the rate limits.
 - [Differences from the PRD](docs/prd-differences.md) lists where this implementation fills gaps in the PRD.
+- [Questions and glossary](docs/faq.md) explains the Indonesian words in the API and answers the questions that come up most.
 
 ## Project layout
 
