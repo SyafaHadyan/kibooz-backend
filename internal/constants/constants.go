@@ -1,6 +1,8 @@
 // Package constants stores values shared across modules
 package constants
 
+import "time"
+
 type Role string
 
 const (
@@ -77,6 +79,13 @@ const (
 	TrashPhotoMaxBytes = 4 * 1024 * 1024
 
 	MoodBatchMax = 30
+
+	// MoodRecordedAtMaxAge is how far back a client may date a mood log that it queued while it was offline. It matches the
+	// time an Idempotency-Key is kept, so a replay that is old enough to be refused here could not be repeated safely anyway.
+	MoodRecordedAtMaxAge = 7 * 24 * time.Hour
+	// MoodRecordedAtSkew is how far ahead of the server clock a client clock may run. A later time is refused, and a time
+	// inside the skew is taken as now, so a fast clock cannot put a log ahead of the ones that come after it.
+	MoodRecordedAtSkew = 5 * time.Minute
 )
 
 // MoodLabels are the parent facing captions shown on the wali dashboard

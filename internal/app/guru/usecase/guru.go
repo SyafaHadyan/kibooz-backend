@@ -118,6 +118,11 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		return dto.LogMoodResponse{}, apperror.ErrProfileNotFound
 	}
 
+	recordedAt, err := u.recordedAtOf(req.RecordedAt)
+	if err != nil {
+		return dto.LogMoodResponse{}, err
+	}
+
 	source := req.Source
 	if source == "" {
 		source = constants.SourceManualInput
@@ -157,7 +162,7 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		MoodType:         req.MoodType,
 		ConfidenceScore:  confidence,
 		Source:           source,
-		RecordedAt:       u.now().UTC().Truncate(time.Microsecond),
+		RecordedAt:       recordedAt,
 	}
 
 	if notes := strings.TrimSpace(req.Notes); notes != "" {
@@ -172,6 +177,29 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
 }
 
+// recordedAtOf picks the time of a mood log. A log that the app queued offline names the moment the mood was seen, so a
+// late replay does not take the place of a newer mood that was logged in the meantime. The time may not be in the future
+// beyond the clock skew and not older than MoodRecordedAtMaxAge, and one that is inside the skew counts as now.
+func (u *GuruUseCase) recordedAtOf(sent *time.Time) (time.Time, error) {
+	now := u.now().UTC().Truncate(time.Microsecond)
+	if sent == nil {
+		return now, nil
+	}
+
+	at := sent.UTC().Truncate(time.Microsecond)
+
+	switch {
+	case at.After(now.Add(constants.MoodRecordedAtSkew)):
+		return time.Time{}, apperror.Validation(map[string]string{"recordedAt": "must not be in the future"})
+	case at.Before(now.Add(-constants.MoodRecordedAtMaxAge)):
+		return time.Time{}, apperror.Validation(map[string]string{"recordedAt": "must not be older than 7 days"})
+	case at.After(now):
+		return now, nil
+	default:
+		return at, nil
+	}
+}
+
 func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dto.LogMoodBatchRequest) (dto.LogMoodBatchResponse, error) {
 	if len(req.Entries) < 1 || len(req.Entries) > constants.MoodBatchMax {
 		return dto.LogMoodBatchResponse{}, apperror.Validation(map[string]string{
@@ -184,7 +212,11 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 		return dto.LogMoodBatchResponse{}, err
 	}
 
-	recordedAt := u.now().UTC().Truncate(time.Microsecond)
+	recordedAt, err := u.recordedAtOf(req.RecordedAt)
+	if err != nil {
+		return dto.LogMoodBatchResponse{}, err
+	}
+
 	details := map[string]string{}
 	seen := make(map[uuid.UUID]bool, len(req.Entries))
 	moodLogs := make([]entity.MoodLog, 0, len(req.Entries))
