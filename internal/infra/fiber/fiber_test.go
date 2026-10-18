@@ -1,6 +1,7 @@
 package fiber_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
 )
@@ -157,4 +159,21 @@ func TestARequestWithAnEncodedBodyIsRefused(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, res.StatusCode, "encoding %q", encoding)
 	}
+}
+
+// A request that is refused because the server is busy hashing passwords has the code of a rate limit, so an app waits, and a
+// Retry-After that says for how long
+func TestABusyServerAnswersWithARateLimitAndARetryAfter(t *testing.T) {
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: 10, BodyLimitMB: 1}, nil)
+	server.Router.Get("/busy", func(gofiber.Ctx) error { return apperror.ErrBusy })
+
+	res := get(t, server.Fiber, "/api/v1/busy", nil)
+
+	require.Equal(t, http.StatusTooManyRequests, res.StatusCode)
+	require.Equal(t, "1", res.Header.Get("Retry-After"))
+
+	var body map[string]any
+
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "RATE_LIMITED", body["errorCode"])
 }

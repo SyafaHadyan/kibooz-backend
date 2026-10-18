@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/imageutil"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
@@ -43,10 +43,12 @@ type UserUseCase struct {
 	repo    repository.UserDBItf
 	storage s3.StorageItf
 	cache   redis.CacheItf
+	// hasher is shared with the other use cases, because its slots are the budget of the whole process
+	hasher *passwords.Hasher
 }
 
-func NewUserUseCase(repo repository.UserDBItf, storage s3.StorageItf, cache redis.CacheItf) UserUseCaseItf {
-	return &UserUseCase{repo: repo, storage: storage, cache: cache}
+func NewUserUseCase(repo repository.UserDBItf, storage s3.StorageItf, cache redis.CacheItf, hasher *passwords.Hasher) UserUseCaseItf {
+	return &UserUseCase{repo: repo, storage: storage, cache: cache, hasher: hasher}
 }
 
 func (u *UserUseCase) UploadAvatar(
@@ -181,8 +183,13 @@ func (u *UserUseCase) DeleteAccount(
 		return apperror.ErrPasswordIncorrect
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
+	matches, err := u.hasher.Matches(ctx, user.PasswordHash, req.Password)
 	if err != nil {
+		// the server is busy hashing, or the request ended
+		return apperror.As(err)
+	}
+
+	if !matches {
 		return apperror.ErrPasswordIncorrect
 	}
 
@@ -228,8 +235,12 @@ func (u *UserUseCase) ChangePassword(
 		return apperror.ErrPasswordIncorrect
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword))
+	matches, err := u.hasher.Matches(ctx, user.PasswordHash, req.CurrentPassword)
 	if err != nil {
+		return apperror.As(err)
+	}
+
+	if !matches {
 		return apperror.ErrPasswordIncorrect
 	}
 
@@ -243,12 +254,12 @@ func (u *UserUseCase) ChangePassword(
 		return apperror.Validation(map[string]string{"newPassword": "must differ from the current password"})
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hash, err := u.hasher.Hash(ctx, req.NewPassword)
 	if err != nil {
-		return apperror.Internal(err)
+		return apperror.As(err)
 	}
 
-	changed, err := u.repo.UpdatePassword(ctx, userID, user.PasswordHash, string(hash))
+	changed, err := u.repo.UpdatePassword(ctx, userID, user.PasswordHash, hash)
 	if err != nil {
 		return apperror.Internal(err)
 	}

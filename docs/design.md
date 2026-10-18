@@ -40,6 +40,12 @@ A class code is the only secret between a stranger and a class, and a wrong code
 
 Two things follow from not using the address. Guessing the password of one account is stopped from any number of addresses, and anyone can still send `AUTH_LIMITER_MAX` failed logins for someone else's email to block new devices for that person for a window. A flood that names a new account in every request, such as thousands of sign ups with random emails, is not stopped by the API at all, so keep a limit in front of it in the reverse proxy or the CDN.
 
+### A cap on password hashing
+
+Signing in and signing up are open to anyone, and each one hashes or checks a password with bcrypt, which takes tens of milliseconds of a whole CPU. A flood of such requests from many addresses stays under any limit per address and could still keep every CPU busy, which would slow down the signed in users too. So the server lets only `PASSWORD_HASH_CONCURRENCY` passwords be hashed or checked at once, with one slot for each CPU except one when it is 0, so one CPU stays free for the requests that hash nothing, and a machine with a single CPU still gets one slot. The slots are shared by sign in, sign up, changing the password and deleting the account.
+
+A request that finds every slot taken waits up to `PASSWORD_HASH_WAIT_MILLISECONDS`, which absorbs a short spike. After that it is refused with `429` and the code `RATE_LIMITED`, with `Retry-After: 1`, so an app waits the same way as for any other limit. An unknown email is refused in the same way as a known one, so the refusal tells nothing about the account. The price is that during a flood some real sign ins are refused as well. The server stays responsive for everyone who is already signed in, because a signed in request hashes no password unless it changes the password or deletes the account, and the limit in the proxy keeps a single address from taking all the slots.
+
 ### A flood limit in the proxy
 
 The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address 5 requests a second with a burst of 30. Several teachers who sign in at the same moment on one school network stay inside the burst, and a single script is held to a few requests a second.
