@@ -24,4 +24,4 @@ Kibooz Backend is an open source project that is maintained by its owners, and t
 
 ## What is not supported
 
-Running and securing your own deployment is your responsibility, and this repository cannot debug it. The [operations page](docs/operations.md) lists what to check, and an issue is welcome when it turns out to be a bug in the code. Only the latest release and `main` are supported, as [SECURITY.md](SECURITY.md) says.
+Running and securing your own deployment is your responsibility, and this repository cannot debug it. The [operations page](docs/operations.md) lists what to check, and an issue is welcome when it turns out to be a bug in the code. Only the latest release and `main` are supported. [SECURITY.md](SECURITY.md) states that only the latest release and `main` receive security fixes.
