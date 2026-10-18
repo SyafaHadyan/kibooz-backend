@@ -33,7 +33,7 @@ Merging the release pull request starts a chain that needs nothing from you.
 
 1. The release commit lands on `main`. It is made by the release GitHub App through the API, so GitHub signs it, which the signed commit rule of `main` needs.
 2. The App creates the tag `v<version>` and the GitHub release. Only this App may create a `v*` tag, and nobody can move, update or delete one, because the two tag rulesets `release-tags-creation` and `release-tags` say so. The release is immutable, so its tag and assets cannot change after it is published.
-3. The tag starts `docker.yaml`, which builds the image for `linux/amd64` and `linux/arm64`, scans it, attaches an SBOM, signs it with cosign and pushes the `0.12.0`, `0.12` and `0` tags. The push to `main` builds the `latest` and `sha-` tags in a separate run.
+3. The tag starts `docker.yaml`, which builds the image for `linux/amd64` and `linux/arm64` and pushes the `0.12.0`, `0.12` and `0` tags. The workflow then scans the image, attaches an SBOM, signs it with cosign and verifies the signatures. The push to `main` builds the `latest` and `sha-` tags in a separate run.
 
 Watch both Docker runs and the Release Please run until they finish. A failure that only comes from a timeout or a registry limit can be re-run once. Anything else is investigated like any failing check.
 
