@@ -176,9 +176,16 @@ func (r *UserDB) SoftDeleteAccount(
 
 		var urls []string
 
-		// refresh tokens have no soft delete, removing them ends every session. This comes first because it waits for a
-		// refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
-		err := sessions.EndUser(tx, userID)
+		// The user row comes first, so a sign in that is under way finishes before the sessions are ended and one that
+		// starts later finds the account gone. A password change takes the locks in the same order.
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		// refresh tokens have no soft delete, removing them ends every session. This comes before the rest because it
+		// waits for a refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
+		err = sessions.EndUser(tx, userID)
 		if err != nil {
 			return err
 		}
@@ -342,9 +349,15 @@ var errPasswordStale = errors.New("password hash changed")
 
 func (r *UserDB) UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash string, newHash string) (bool, error) {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// the sessions come first, like in SoftDeleteAccount, because ending them waits for a refresh that is under way and
-		// nothing it waits for may hold the lock of the user row. Two requests of the same account then lock in one order.
-		err := sessions.EndUser(tx, userID)
+		// The same order of locks as SoftDeleteAccount, the user row, then the sessions. A sign in that checked the old
+		// password and has not stored its session yet either finishes first, and its session is ended here, or waits
+		// until this change is done and is refused.
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		err = sessions.EndUser(tx, userID)
 		if err != nil {
 			return err
 		}

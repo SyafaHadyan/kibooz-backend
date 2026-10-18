@@ -332,6 +332,116 @@ func TestARefreshThatBeginsWhileASessionIsBeingEndedLeavesNoTokenBehind(t *testi
 	require.Zero(t, tokensWhere(t, "family_id", family), "the token of the second refresh must be gone as well")
 }
 
+// standInSignIn is a sign in that has checked the old password, read the user row under a share lock and stored its token,
+// and has not committed yet. The function it returns commits it.
+func standInSignIn(t *testing.T, userID string) (commit func()) {
+	t.Helper()
+
+	tx := testDB.Begin()
+	require.NoError(t, tx.Error)
+
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+
+	require.NoError(t, tx.Exec("SELECT password_hash FROM users WHERE id = ?::uuid FOR SHARE", userID).Error)
+
+	stored := tx.Exec(
+		"INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, family_id, session_started_at) "+
+			"VALUES (gen_random_uuid(), ?::uuid, ?, now() + interval '1 day', gen_random_uuid(), now())",
+		userID, refreshHash(uuid.NewString()),
+	)
+	require.NoError(t, stored.Error)
+	require.EqualValues(t, 1, stored.RowsAffected)
+
+	return func() {
+		t.Helper()
+
+		require.NoError(t, tx.Commit().Error)
+	}
+}
+
+// waitForLockWaiter returns once a statement that matches like is waiting for a lock
+func waitForLockWaiter(t *testing.T, like string, why string) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		var waiting int64
+
+		err := testDB.Raw(
+			"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() AND query LIKE ?", like,
+		).Scan(&waiting).Error
+
+		return err == nil && waiting > 0
+	}, 10*time.Second, 25*time.Millisecond, why)
+}
+
+func userIDOfEmail(t *testing.T, email string) string {
+	t.Helper()
+
+	var userID string
+
+	require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", email).Scan(&userID).Error)
+	require.NotEmpty(t, userID)
+
+	return userID
+}
+
+// A sign in that has stored its session but not committed is still under way when the password is changed. The change
+// takes the user row first, so it waits for the sign in, and when it has the row it deletes the session that was stored.
+// Without that, the change ended the sessions before the sign in committed and the session lived on.
+func TestAPasswordChangeEndsTheSessionOfASignInThatWasUnderWay(t *testing.T) {
+	guru := registerGuru(t, "Sandi Menunggu")
+	userID := userIDOfEmail(t, guru.Email)
+
+	var hash string
+
+	require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?::uuid", userID).Scan(&hash).Error)
+
+	commit := standInSignIn(t, userID)
+
+	var changed bool
+
+	repo := userrepository.NewUserDB(testDB)
+	done := make(chan error, 1)
+
+	go func() {
+		var err error
+
+		changed, err = repo.UpdatePassword(context.Background(), uuid.MustParse(userID), hash, "changed-hash")
+		done <- err
+	}()
+
+	waitForLockWaiter(t, "%FROM users WHERE id%FOR NO KEY UPDATE%", "the change has to wait for the sign in, or the test proves nothing")
+
+	commit()
+	requireDone(t, done)
+
+	require.True(t, changed)
+	require.Zero(t, tokensWhere(t, "user_id", userID), "the session of the sign in must be gone as well")
+}
+
+// The same for an account deletion, which takes its locks in the same order
+func TestDeletingAnAccountEndsTheSessionOfASignInThatWasUnderWay(t *testing.T) {
+	guru := registerGuru(t, "Hapus Menunggu")
+	userID := userIDOfEmail(t, guru.Email)
+
+	commit := standInSignIn(t, userID)
+
+	repo := userrepository.NewUserDB(testDB)
+	done := make(chan error, 1)
+
+	go func() {
+		_, err := repo.SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
+		done <- err
+	}()
+
+	waitForLockWaiter(t, "%FROM users WHERE id%FOR NO KEY UPDATE%", "the deletion has to wait for the sign in, or the test proves nothing")
+
+	commit()
+	requireDone(t, done)
+
+	require.Zero(t, tokensWhere(t, "user_id", userID), "the session of the sign in must be gone as well")
+}
+
 // impatient returns a handle on one connection that gives up on a lock after 300 ms, which is how a deletion fails when
 // another transaction holds the tokens it has to lock
 func impatient(t *testing.T) *gorm.DB {
@@ -389,6 +499,52 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 		require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE id = ?::uuid AND deleted_at IS NULL", userID).Scan(&active).Error)
 		require.EqualValues(t, 1, active, "the account is still there because the whole deletion was rolled back")
 		require.EqualValues(t, 1, tokensWhere(t, "user_id", userID))
+	})
+}
+
+// requireLockTimeout fails the test unless err is the error of PostgreSQL for a lock that was not granted in time
+func requireLockTimeout(t *testing.T, err error) {
+	t.Helper()
+
+	var pgErr *pgconn.PgError
+
+	require.ErrorAs(t, err, &pgErr)
+	require.Equal(t, "55P03", pgErr.Code, "the change has to fail on the lock of the user row: %v", err)
+}
+
+// A change that cannot take the user row fails as a whole and changes nothing, like one that cannot take the tokens
+func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T) {
+	guru := registerGuru(t, "User Lock Timeout")
+	userID := userIDOfEmail(t, guru.Email)
+
+	var hash string
+
+	require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?::uuid", userID).Scan(&hash).Error)
+
+	// a sign in under way holds the row, and the stand-in is never committed
+	standInSignIn(t, userID)
+
+	db := impatient(t)
+
+	t.Run("changing the password", func(t *testing.T) {
+		_, err := userrepository.NewUserDB(db).UpdatePassword(context.Background(), uuid.MustParse(userID), hash, "changed-hash")
+		requireLockTimeout(t, err)
+
+		var current string
+
+		require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?::uuid", userID).Scan(&current).Error)
+		require.Equal(t, hash, current)
+		require.EqualValues(t, 1, tokensWhere(t, "user_id", userID), "only the token of the registration is there")
+	})
+
+	t.Run("deleting the account", func(t *testing.T) {
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
+		requireLockTimeout(t, err)
+
+		var active int64
+
+		require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE id = ?::uuid AND deleted_at IS NULL", userID).Scan(&active).Error)
+		require.EqualValues(t, 1, active)
 	})
 }
 
