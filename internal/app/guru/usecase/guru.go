@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,8 @@ var phonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
 type GuruUseCaseItf interface {
 	Dashboard(ctx context.Context, userID uuid.UUID, classID *uuid.UUID) (dto.GuruDashboardResponse, error)
 	LogMood(ctx context.Context, userID uuid.UUID, req dto.LogMoodRequest) (dto.LogMoodResponse, error)
+	// LogMoodBatch stores one mood log per entry for students of a class the teacher teaches, all or none
+	LogMoodBatch(ctx context.Context, userID uuid.UUID, req dto.LogMoodBatchRequest) (dto.LogMoodBatchResponse, error)
 	MoodAnalytics(ctx context.Context, userID uuid.UUID, classID *uuid.UUID, rangeName string) (dto.MoodAnalyticsResponse, error)
 	ListClasses(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ClassList, error)
 	Class(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassDetail, error)
@@ -167,6 +170,96 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 	}
 
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
+}
+
+func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dto.LogMoodBatchRequest) (dto.LogMoodBatchResponse, error) {
+	if len(req.Entries) < 1 || len(req.Entries) > constants.MoodBatchMax {
+		return dto.LogMoodBatchResponse{}, apperror.Validation(map[string]string{
+			"entries": "must hold between 1 and " + strconv.Itoa(constants.MoodBatchMax) + " items",
+		})
+	}
+
+	guru, class, err := u.resolveClass(ctx, userID, &req.ClassID)
+	if err != nil {
+		return dto.LogMoodBatchResponse{}, err
+	}
+
+	recordedAt := u.now().UTC().Truncate(time.Microsecond)
+	details := map[string]string{}
+	seen := make(map[uuid.UUID]bool, len(req.Entries))
+	moodLogs := make([]entity.MoodLog, 0, len(req.Entries))
+
+	for i, entry := range req.Entries {
+		path := "entries[" + strconv.Itoa(i) + "]."
+
+		if seen[entry.StudentID] {
+			details[path+"studentId"] = "appears more than once"
+
+			continue
+		}
+
+		seen[entry.StudentID] = true
+
+		student, err := u.repo.FindStudent(ctx, entry.StudentID)
+		if err != nil {
+			return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+		}
+
+		// an unknown student and one from another class share a message, so the endpoint does not reveal who exists
+		if student == nil || student.ClassID != class.ID {
+			details[path+"studentId"] = "is not in this class"
+
+			continue
+		}
+
+		source := entry.Source
+		if source == "" {
+			source = constants.SourceAICamera
+		}
+
+		confidence := float32(1)
+
+		switch {
+		case entry.ConfidenceScore != nil:
+			confidence = *entry.ConfidenceScore
+		case source == constants.SourceAICamera:
+			details[path+"confidenceScore"] = "is required"
+
+			continue
+		}
+
+		moodLog := entity.MoodLog{
+			ID:               uuid.New(),
+			StudentID:        student.ID,
+			RecordedByGuruID: guru.ID,
+			MoodType:         entry.MoodType,
+			ConfidenceScore:  confidence,
+			Source:           source,
+			RecordedAt:       recordedAt,
+		}
+
+		if notes := strings.TrimSpace(entry.Notes); notes != "" {
+			moodLog.Notes = &notes
+		}
+
+		moodLogs = append(moodLogs, moodLog)
+	}
+
+	if len(details) > 0 {
+		return dto.LogMoodBatchResponse{}, apperror.Validation(details)
+	}
+
+	err = u.repo.CreateMoodLogs(ctx, moodLogs)
+	if err != nil {
+		return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+	}
+
+	logs := make([]dto.LogMoodBatchItem, len(moodLogs))
+	for i, moodLog := range moodLogs {
+		logs[i] = dto.LogMoodBatchItem{LogID: moodLog.ID, StudentID: moodLog.StudentID, RecordedAt: moodLog.RecordedAt}
+	}
+
+	return dto.LogMoodBatchResponse{Logs: logs}, nil
 }
 
 func (u *GuruUseCase) MoodAnalytics(
