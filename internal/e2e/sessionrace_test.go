@@ -3,10 +3,12 @@ package e2e
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,13 +24,36 @@ import (
 func inFlightRefresh(t *testing.T, token string) (finish func()) {
 	t.Helper()
 
+	return inFlightRefreshOfHash(t, refreshHash(token))
+}
+
+// inFlightRefreshOfHash is inFlightRefresh for a token that is known by its hash
+func inFlightRefreshOfHash(t *testing.T, hash string) (finish func()) {
+	t.Helper()
+
+	finish, err := tryInFlightRefreshOfHash(t, hash, 10*time.Second)
+	require.NoError(t, err)
+
+	return finish
+}
+
+// tryInFlightRefreshOfHash gives up with the error of the database when the token is locked for longer than wait, so a
+// refresh that has to wait for a row fails the test or lets it stop, and never hangs it
+func tryInFlightRefreshOfHash(t *testing.T, hash string, wait time.Duration) (finish func(), err error) {
+	t.Helper()
+
 	tx := testDB.Begin()
 	require.NoError(t, tx.Error)
 
 	t.Cleanup(func() { _ = tx.Rollback().Error })
 
-	used := tx.Exec("UPDATE refresh_tokens SET used_at = now() WHERE token_hash = ? AND used_at IS NULL", refreshHash(token))
-	require.NoError(t, used.Error)
+	require.NoError(t, tx.Exec("SET LOCAL lock_timeout = '"+strconv.FormatInt(wait.Milliseconds(), 10)+"ms'").Error)
+
+	used := tx.Exec("UPDATE refresh_tokens SET used_at = now() WHERE token_hash = ? AND used_at IS NULL", hash)
+	if used.Error != nil {
+		return nil, used.Error
+	}
+
 	require.EqualValues(t, 1, used.RowsAffected, "the token has to be one that was not used")
 
 	return func() {
@@ -37,12 +62,12 @@ func inFlightRefresh(t *testing.T, token string) (finish func()) {
 		next := tx.Exec(
 			"INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, family_id, session_started_at) "+
 				"SELECT gen_random_uuid(), user_id, ?, expires_at, family_id, session_started_at FROM refresh_tokens WHERE token_hash = ?",
-			refreshHash(uuid.NewString()), refreshHash(token),
+			refreshHash(uuid.NewString()), hash,
 		)
 		require.NoError(t, next.Error)
 		require.EqualValues(t, 1, next.RowsAffected)
 		require.NoError(t, tx.Commit().Error)
-	}
+	}, nil
 }
 
 // startWhileRefreshing runs end in the background and returns once it waits for the lock of the refresh that is under way
@@ -232,6 +257,79 @@ func TestARefreshDoesNotWaitForAnExpiredTokenThatSomeoneElseHolds(t *testing.T) 
 
 	require.NoError(t, testDB.Raw("SELECT count(*) FROM refresh_tokens WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Scan(&left).Error)
 	require.EqualValues(t, 1, left, "the locked row was left for the next time")
+}
+
+// The lock of a deletion holds the tokens that were live when it started, and its DELETE reads the rows from the moment it
+// starts. A refresh of the token that an earlier refresh has just stored begins in between and is not held by the lock, so
+// the DELETE removes the token it used and leaves the one it stored. A stand-in holds the oldest token, so the DELETE stops
+// there before it reaches the newer ones, and the second refresh runs while it waits.
+func TestARefreshThatBeginsWhileASessionIsBeingEndedLeavesNoTokenBehind(t *testing.T) {
+	guru := registerGuru(t, "Late Refresh")
+	family := familyOf(t, guru.RefreshToken)
+
+	first := refresh(t, guru.RefreshToken)
+	require.Equal(t, http.StatusOK, first.Status, "body %v", first.Body)
+
+	live := first.data("refreshToken").(string)
+
+	holder := testDB.Begin()
+	require.NoError(t, holder.Error)
+
+	t.Cleanup(func() { _ = holder.Rollback().Error })
+
+	require.NoError(t, holder.Exec("SELECT id FROM refresh_tokens WHERE token_hash = ? FOR UPDATE", refreshHash(guru.RefreshToken)).Error)
+
+	finish := inFlightRefresh(t, live)
+
+	repo := authrepository.NewAuthDB(testDB)
+	done := startWhileRefreshing(t, func(ctx context.Context) error {
+		return repo.DeleteRefreshToken(ctx, refreshHash(live))
+	})
+
+	// the refresh commits, so the lock lets go and the DELETE starts, and it waits for the stand-in at once
+	finish()
+
+	require.Eventually(t, func() bool {
+		var waiting int64
+
+		err := testDB.Raw(
+			"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() " +
+				"AND query LIKE 'DELETE FROM refresh_tokens WHERE family_id%'",
+		).Scan(&waiting).Error
+
+		return err == nil && waiting > 0
+	}, 10*time.Second, 25*time.Millisecond, "the DELETE has to be waiting, or the test proves nothing")
+
+	// the token that the refresh stored is refreshed again, which the lock of the deletion did not cover
+	var newest string
+
+	require.NoError(t, testDB.Raw(
+		"SELECT token_hash FROM refresh_tokens WHERE family_id = ?::uuid AND used_at IS NULL", family,
+	).Scan(&newest).Error)
+	require.NotEmpty(t, newest)
+
+	second, err := tryInFlightRefreshOfHash(t, newest, 3*time.Second)
+	if err != nil {
+		var pgErr *pgconn.PgError
+
+		// any other error is a failure of the test and not a reason to stop it
+		require.ErrorAs(t, err, &pgErr)
+		require.Equal(t, "55P03", pgErr.Code, "only a lock timeout means that the DELETE holds the token: %v", err)
+
+		// The DELETE visits the rows in the order they are stored, and it normally reaches the held token before the new
+		// one. When it reached the new one first it holds it, and there is no moment left in which the lock does not cover
+		// it, so this run has nothing to prove.
+		require.NoError(t, holder.Commit().Error)
+		requireDone(t, done)
+		t.Skipf("the DELETE reached the new token before the held one (%v)", err)
+	}
+
+	second()
+
+	require.NoError(t, holder.Commit().Error)
+	requireDone(t, done)
+
+	require.Zero(t, tokensWhere(t, "family_id", family), "the token of the second refresh must be gone as well")
 }
 
 // impatient returns a handle on one connection that gives up on a lock after 300 ms, which is how a deletion fails when

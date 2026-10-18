@@ -2,6 +2,8 @@
 package sessions
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -24,14 +26,40 @@ func EndUser(tx *gorm.DB, userID uuid.UUID) error {
 	return end(tx, "user_id", userID)
 }
 
-// end locks every token that has not been used, whether it has expired or not, because a refresh has to mark one of those
-// first and it judges the expiry by the clock of the API, which can differ from the clock of PostgreSQL. A token that
-// was used cannot be taken by a refresh again, so it needs no lock.
+// maxPasses is how many times end may lock and delete again, which only a session that is refreshed over and over while it
+// is ended can use up
+const maxPasses = 8
+
+// end deletes the tokens until a delete finds none. The lock only holds the tokens that were live when its statement
+// started. A refresh that begins after that, on a token that an earlier refresh stored a moment ago, marks it as used while
+// the DELETE is running, and the DELETE reads the rows from before it, so it removes the used token and leaves the one that
+// the refresh stored. A delete that finds nothing proves that no token was left to refresh, because every token a refresh
+// could still be holding was either deleted by the pass before or waited for by this one.
 func end(tx *gorm.DB, column string, id uuid.UUID) error {
-	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL ORDER BY id FOR UPDATE", id).Error
-	if err != nil {
-		return err
+	for range maxPasses {
+		deleted, err := endPass(tx, column, id)
+		if err != nil {
+			return err
+		}
+
+		if deleted == 0 {
+			return nil
+		}
 	}
 
-	return tx.Exec("DELETE FROM refresh_tokens WHERE "+column+" = ?", id).Error
+	return errors.New("the tokens of a session were refreshed again and again while it was ended")
+}
+
+// endPass locks every token that has not been used, whether it has expired or not, because a refresh has to mark one of those
+// first and it judges the expiry by the clock of the API, which can differ from the clock of PostgreSQL. A token that
+// was used cannot be taken by a refresh again, so it needs no lock. It returns how many tokens it deleted.
+func endPass(tx *gorm.DB, column string, id uuid.UUID) (int64, error) {
+	err := tx.Exec("SELECT id FROM refresh_tokens WHERE "+column+" = ? AND used_at IS NULL ORDER BY id FOR UPDATE", id).Error
+	if err != nil {
+		return 0, err
+	}
+
+	deleted := tx.Exec("DELETE FROM refresh_tokens WHERE "+column+" = ?", id)
+
+	return deleted.RowsAffected, deleted.Error
 }
