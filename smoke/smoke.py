@@ -31,13 +31,15 @@ passed, failed = 0, []
 def finish():
     """Runs on every exit, a crash included. Removes the accounts of this run and writes the report."""
     for acc in created:
-        if not acc.get("token"):
+        if not acc.get("token") or acc.get("deleted"):
             continue
         extra = {"successorEmail": KEEPER_EMAIL} if acc["role"] == "GURU" else {}
         try:
-            delete_me(acc, **extra)
-        except Exception:
-            pass
+            status, _ = delete_me(acc, timeout=15, **extra)
+            if status != 200:
+                failed.append(f"cleanup of {acc['email']} answered {status}, remove it by hand")
+        except Exception as error:
+            failed.append(f"cleanup of {acc['email']} raised {type(error).__name__}, remove it by hand")
     keeper = globals().get("g4") or {}
     lines = [f"Smoke test of {BASE} run {RUN}, passed {passed}, failed {len(failed)}"]
     if keeper:
@@ -59,8 +61,8 @@ atexit.register(finish)
 sys.excepthook = crashed
 
 
-def curl(method, url, headers, data=None):
-    cmd = ["curl", "-sS", "-X", method, url, "--max-time", "60", "-w", "\n%{http_code}"]
+def curl(method, url, headers, data=None, timeout=60):
+    cmd = ["curl", "-sS", "-X", method, url, "--max-time", str(timeout), "-w", "\n%{http_code}"]
     for k, v in headers.items():
         cmd += ["-H", f"{k}: {v}"]
     if data is not None:
@@ -70,7 +72,7 @@ def curl(method, url, headers, data=None):
     return int(code or 0), text
 
 
-def call(method, path, token=None, body=None, raw=None, ctype=None, base=API):
+def call(method, path, token=None, body=None, raw=None, ctype=None, base=API, timeout=60):
     data = None
     headers = {"Accept": "application/json"}
     if raw is not None:
@@ -81,7 +83,7 @@ def call(method, path, token=None, body=None, raw=None, ctype=None, base=API):
         headers["Content-Type"] = "application/json"
     if token:
         headers["Authorization"] = "Bearer " + token
-    status, text = curl(method, base + path, headers, data)
+    status, text = curl(method, base + path, headers, data, timeout)
     time.sleep(0.12)
     try:
         js = json.loads(text)
@@ -150,10 +152,13 @@ def register_wali(tag, code, child):
     return acc
 
 
-def delete_me(acc, **extra):
+def delete_me(acc, timeout=60, **extra):
     body = {"password": acc.get("pw", PW)}
     body.update(extra)
-    return call("DELETE", "/users/me", acc["token"], body)
+    res = call("DELETE", "/users/me", acc["token"], body, timeout=timeout)
+    if res[0] == 200:
+        acc["deleted"] = True
+    return res
 
 
 # ---------- health and public ----------
