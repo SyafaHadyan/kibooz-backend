@@ -11,7 +11,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Endpoints
 
-- `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` (with an optional `successorEmail` for a teacher who is the only teacher of a class) were added, and `GET /healthz` reports the health of the service.
+- `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` (with an optional `successorEmail` for a teacher who is the only teacher of a class with children, and a class without children is archived instead) were added, and `GET /healthz` reports the health of the service.
 - A refresh token works once, and every successful refresh returns a new one.
 - `POST /auth/login` accepts an optional `deviceToken`, and login and registration both return one. It gives a device its own login budget for an email.
 - `GET /wali/dashboard` takes an optional `studentId` for a parent with several children and defaults to the child who was registered first. The `student` object also returns the `classId` of the child, which a parent needs for the `/classes/{classId}` routes.
