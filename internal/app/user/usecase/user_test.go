@@ -567,7 +567,7 @@ func TestChangePassword(t *testing.T) {
 		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
 
 		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
-			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: strings.Repeat("a", 70) + "é"})
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: strings.Repeat("a", 71) + "é"})
 
 		appErr := apperror.As(err)
 		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
