@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.9.1...v0.10.0) (2026-10-18)
+
+
+### Features
+
+* **classroom:** delete a video file that was uploaded and never added ([#161](https://github.com/SyafaHadyan/kibooz-backend/issues/161)) ([349c5ab](https://github.com/SyafaHadyan/kibooz-backend/commit/349c5ab8c7ec1d9c45865572fc558ac72889fda7))
+
 ## [0.9.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.9.0...v0.9.1) (2026-10-18)
 
 
