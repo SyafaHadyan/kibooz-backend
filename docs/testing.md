@@ -48,7 +48,7 @@ The `dast-active.yaml` workflow runs a ZAP active scan, which does attack the AP
 
 The `Smoke` workflow runs `smoke/smoke.py` against the API that is deployed, and it is started by hand from the Actions tab after a deploy. It is not part of the pull request checks, because it tests the running service and not the code of a branch. The end to end suite above covers the code, and the smoke test covers what only the real deployment has, which is the proxy, TLS, the database, Redis, the bucket and the version that is running.
 
-Give it the version that `/healthz` has to report. The test registers throwaway teachers and parents, replays the main routes and the refusals, uploads a small file through a signed address and discards it, and then deletes its accounts. One keeper teacher stays, because deleting the last teacher of a class needs a successor. The first run registers the keeper when it does not exist yet.
+Give it the version that `/healthz` has to report. The test registers throwaway teachers and parents, replays the main routes and the refusals, uploads a small file through a signed address and discards it, and then deletes its accounts. One keeper teacher stays, because deleting the last teacher of a class that has children needs a successor. The first run registers the keeper when it does not exist yet.
 
 The keeper email is the variable `SMOKE_KEEPER_EMAIL` and its password is the secret `SMOKE_KEEPER_PASSWORD`, both in the `smoke-production` environment. That environment only accepts runs from `main`, so a workflow edited on another branch cannot read the password. Add a check to the script in the same change that adds or changes a route.
 
