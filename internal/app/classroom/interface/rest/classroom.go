@@ -27,20 +27,22 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group := router.Group("/classes/:classId", mw.Authentication)
 
 	members := mw.RequireRole(constants.RoleGuru, constants.RoleWali)
+	// a repeat of a request that already created something gets the first response again
+	idempotent := mw.Idempotent()
 
 	group.Get("/videos", members, handler.ListVideos)
-	group.Post("/videos", mw.RequireRole(constants.RoleGuru), handler.AddVideo)
+	group.Post("/videos", mw.RequireRole(constants.RoleGuru), idempotent, handler.AddVideo)
 	group.Post("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.CreateVideoUpload)
 	// before /videos/:videoId, which would take upload-url for a video id
 	group.Delete("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.DiscardVideoUpload)
 	group.Patch("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.UpdateVideo)
 	group.Delete("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.DeleteVideo)
 	group.Get("/forum", members, handler.ListThreads)
-	group.Post("/forum", members, handler.CreateThread)
+	group.Post("/forum", members, idempotent, handler.CreateThread)
 	group.Patch("/forum/:postId", members, handler.UpdateThread)
 	group.Delete("/forum/:postId", members, handler.DeleteThread)
 	group.Get("/forum/:postId/replies", members, handler.ListReplies)
-	group.Post("/forum/:postId/replies", members, handler.CreateReply)
+	group.Post("/forum/:postId/replies", members, idempotent, handler.CreateReply)
 	group.Patch("/forum/:postId/replies/:replyId", members, handler.UpdateReply)
 	group.Delete("/forum/:postId/replies/:replyId", members, handler.DeleteReply)
 	// the register holds the NISN of every child, so it is for the teachers only

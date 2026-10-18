@@ -24,13 +24,14 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	handler := WaliHandler{useCase: useCase}
 
 	group := router.Group("/wali", mw.Authentication, mw.RequireRole(constants.RoleWali))
+	idempotent := mw.Idempotent()
 
 	group.Get("/dashboard", handler.Dashboard)
-	group.Post("/guidance/apply", handler.ApplyGuidance)
+	group.Post("/guidance/apply", idempotent, handler.ApplyGuidance)
 	group.Get("/child/:studentId", handler.Child)
 	group.Get("/children", handler.Children)
 	// the class code is the secret between a stranger and a class, so naming one is limited for the whole API
-	group.Post("/children", classCodeLimiter, handler.AddChild)
+	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
 }

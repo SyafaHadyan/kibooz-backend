@@ -56,6 +56,7 @@ type Env struct {
 	PointsAnorganik          int    `env:"POINTS_ANORGANIK" envDefault:"15"`
 	PointsB3                 int    `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit          int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	IdempotencyTTLHours      int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
 	// SemesterStartMonths are the months in which a semester begins, the leaderboard starts from zero on the first day of each
 	SemesterStartMonths []int `env:"SEMESTER_START_MONTHS" envSeparator:"," envDefault:"1,7"`
 
@@ -138,6 +139,8 @@ func (e *Env) validate() error {
 		// a device token that is already over when it is issued gives nobody a bucket of their own
 		{"DEVICE_TOKEN_TTL_DAYS", e.DeviceTokenTTLDays, 1},
 		{"TRASH_DAILY_LIMIT", e.TrashDailyLimit, 1},
+		// a key that is forgotten at once cannot catch the retry of an action that was queued offline
+		{"IDEMPOTENCY_TTL_HOURS", e.IdempotencyTTLHours, 1},
 		// 0 turns the keepalive off, which is what the pipelines that run against a throwaway stack do
 		{"KEEPALIVE_SECONDS", e.KeepaliveSeconds, 0},
 		{"REDIS_DATABASE", e.RedisDatabase, 0},

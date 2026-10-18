@@ -22,21 +22,29 @@ const (
 type MiddlewareItf interface {
 	Authentication(c fiber.Ctx) error
 	RequireRole(roles ...constants.Role) fiber.Handler
+	// Idempotent makes a route that creates something safe to repeat, it has to come after Authentication
+	Idempotent() fiber.Handler
 }
 
 type Middleware struct {
-	jwt   jwt.JWTItf
-	limit fiber.Handler
+	jwt        jwt.JWTItf
+	limit      fiber.Handler
+	idempotent fiber.Handler
 }
 
 // NewMiddleware builds the authentication and role checks. The limit handler runs right after a request is
-// authenticated, so it can use UserKey, and a nil limit lets every authenticated request through.
-func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler) MiddlewareItf {
+// authenticated, so it can use UserKey, and a nil limit lets every authenticated request through. The idempotent handler
+// guards the routes that create something, and a nil one makes them run on every request as before.
+func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler, idempotent fiber.Handler) MiddlewareItf {
 	if limit == nil {
 		limit = func(c fiber.Ctx) error { return c.Next() }
 	}
 
-	return &Middleware{jwt: jwt, limit: limit}
+	if idempotent == nil {
+		idempotent = func(c fiber.Ctx) error { return c.Next() }
+	}
+
+	return &Middleware{jwt: jwt, limit: limit, idempotent: idempotent}
 }
 
 func (m *Middleware) Authentication(c fiber.Ctx) error {
@@ -64,6 +72,10 @@ func (m *Middleware) Authentication(c fiber.Ctx) error {
 	fiber.Locals(c, roleKey, claims.Role)
 
 	return m.limit(c)
+}
+
+func (m *Middleware) Idempotent() fiber.Handler {
+	return m.idempotent
 }
 
 func (m *Middleware) RequireRole(roles ...constants.Role) fiber.Handler {
