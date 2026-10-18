@@ -86,6 +86,8 @@ other_id="$(pick "$other" '.data.id')"
 # a 1x1 PNG, so that the image checks run on a real picture and not only on a refusal
 photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
+# The stack under test has no bucket, so upload-url answers 503 and no pending file can exist. The two DELETE requests of
+# /videos/upload-url below therefore only attack how the videoUrl query is read and refused, which is all that can run here.
 extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg c "$class" --arg v "$video_id" \
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" '[
