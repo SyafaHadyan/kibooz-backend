@@ -32,6 +32,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 - `GET /classes/{classId}/students` lists the children of a class with their points, rank and latest mood of today. It is for the teachers of the class only because it shows the NISN.
 - `GET /guru/profile` and `GET /guru/profile/detail` show the teacher, and `PUT /guru/profile` changes the phone number and the address. The address is a new `gurus.address` column and the photo is still changed with `POST /users/avatar`.
 - `GET /wali/child/{studentId}` shows the registered details of a child together with the contact details of the parent, and `GET /trash/stats` shows the scans and points of a child for each trash category together with the scans left today.
+- Every route that creates something accepts an optional `Idempotency-Key` header, which covers the offline queue of NFR-3. The PRD says that offline actions go into a synchronisation queue and does not say how a repeat is kept from doing the work twice. A repeat with the same key gets the first response with `Idempotent-Replayed: true`, a different request with the same key gets `422`, and keys are remembered for 7 days. The routes are the scan claim, both mood logs, applying guidance, adding a child, creating a class, adding a teacher, adding a video, and starting a thread or a reply.
 
 ## Language
 

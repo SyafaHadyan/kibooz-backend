@@ -86,6 +86,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_URL` has to serve the objects publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
+| `IDEMPOTENCY_TTL_HOURS` | `168` | How long an `Idempotency-Key` is remembered, at least 1. A repeat inside this time gets the first response again instead of doing the work twice |
 | `SEMESTER_START_MONTHS` | `1,7` | Months in which a semester begins. On the first day of each, in `APP_TIMEZONE`, the leaderboard of every class starts from zero and the final standings are saved. The points of all semesters stay on the child |
 
 ## Documentation

@@ -74,6 +74,19 @@ Redis never decides that a token is valid. It only remembers consumed tokens for
 
 When Redis is unreachable the API logs it once and keeps serving. Calls to Redis are skipped for 5 seconds after a failure, and then one call tests whether Redis is back while every other call goes on without it. So an outage costs one slow call (up to about two seconds) every five seconds and not one for each request. Only an error that says Redis cannot be reached or cannot serve opens this pause. A caller that gave up on its own request does not, and neither does an answer that refuses one command, such as a wrong key type or a missing permission, which is logged at most once a minute. Rate limiting falls back to per-process counters, the leaderboard is read from PostgreSQL, and `/healthz` reports `degraded`. When Redis returns, it is picked up again automatically.
 
+## Idempotency keys
+
+A client that queues an action while it is offline sends the same `Idempotency-Key` with every try. The middleware in `internal/idempotency` runs after authentication on the ten routes that create something, and a request without the header passes through untouched.
+
+The keys live in the PostgreSQL table `idempotency_keys` and not in Redis, because Redis is optional here and an outage would turn every repeat into a duplicate. A row is claimed with one `INSERT ... ON CONFLICT` before the work starts, so two tries at the same time cannot both run. The row holds a SHA-256 fingerprint of the method, the address and the body, the status code and the response. A repeat with another fingerprint is refused, and a repeat of a finished request gets the stored response.
+
+- Only a `2xx` response is stored. Any other outcome deletes the claim, so the client can send the same key again.
+- A claim without a response that is older than the request timeout plus 30 seconds counts as abandoned and the next try takes it over, so a process that crashed in the middle does not block the key.
+- Every claim has its own id and a request stores its response or frees the key only while its claim is still the one on the row. A try that was taken for dead and finishes late therefore cannot free or fill the claim of the try that took the key over.
+- A row older than `IDEMPOTENCY_TTL_HOURS` (168 by default) is taken over as well and an hourly sweep deletes it.
+- The claim is made before the work and the response is stored after it, in two statements. If the process dies between the commit of the work and the write of the response, a try after the abandon time repeats the work. This is rare and it is the usual trade of the middleware approach. Writing the claim in the transaction of each route would close it and needs changes in every repository.
+- A response over 1 MiB is not stored and its claim is deleted. No route produces one today.
+
 ## Business rules
 
 - A student can claim at most `TRASH_DAILY_LIMIT` times per local day. The check, the point update and the re-ranking run in one transaction guarded by a per class advisory lock, so parallel requests cannot exceed the limit.

@@ -14,6 +14,7 @@ func valid() *Env {
 		AppTimezone:         "UTC",
 		TrashDailyLimit:     1,
 		DeviceTokenTTLDays:  90,
+		IdempotencyTTLHours: 168,
 		SemesterStartMonths: []int{1, 7},
 
 		RequestTimeoutSeconds: 10,
@@ -74,6 +75,24 @@ func TestTheRequestTimeoutDefaultsToTenSeconds(t *testing.T) {
 	cfg, err := New()
 	require.NoError(t, err)
 	require.Equal(t, 10, cfg.RequestTimeoutSeconds)
+}
+
+func TestTheIdempotencyKeysAreKeptForSevenDaysByDefault(t *testing.T) {
+	setRequired(t)
+	require.NoError(t, os.Unsetenv("IDEMPOTENCY_TTL_HOURS"))
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Equal(t, 168, cfg.IdempotencyTTLHours)
+}
+
+func TestAnIdempotencyRetentionThatIsNotPositiveIsRejected(t *testing.T) {
+	for _, hours := range []int{0, -1, -24} {
+		cfg := valid()
+		cfg.IdempotencyTTLHours = hours
+
+		require.ErrorContains(t, cfg.validate(), "IDEMPOTENCY_TTL_HOURS", "hours %d", hours)
+	}
 }
 
 // setRequired gives New the variables it cannot start without, and removes the one under test so that its default applies
@@ -151,6 +170,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"POINTS_ORGANIK":             func(e *Env) { e.PointsOrganik = -1 },
 		"POINTS_ANORGANIK":           func(e *Env) { e.PointsAnorganik = -1 },
 		"POINTS_B3":                  func(e *Env) { e.PointsB3 = -1 },
+		"IDEMPOTENCY_TTL_HOURS":      func(e *Env) { e.IdempotencyTTLHours = 0 },
 	}
 
 	for name, change := range tests {

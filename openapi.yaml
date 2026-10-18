@@ -227,6 +227,8 @@ paths:
       tags: [Parent]
       operationId: applyGuidance
       summary: Record that a guidance was applied at home
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -236,6 +238,9 @@ paths:
       responses:
         "200":
           description: The status was recorded. No screen of the teacher shows it yet.
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -248,6 +253,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /wali/child/{studentId}:
@@ -302,6 +311,8 @@ paths:
         Registers another child of the signed in parent in the class that owns `classCode`, which can be another class than
         the one of the first child. A parent can have up to 10 children. A request that names a class code uses the same
         budget for the whole API as registration, so it can answer `429` while many codes are being tried.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -311,6 +322,9 @@ paths:
       responses:
         "201":
           description: The child was added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -326,11 +340,14 @@ paths:
         "409":
           description: |
             The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
-            or the parent already has 10 children (`CHILD_LIMIT_REACHED`)
+            or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is
+            still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
@@ -368,6 +385,8 @@ paths:
         the device was offline sends `recordedAt` with the time the mood was seen, so replaying it later does not take the
         place of a newer mood. The time cannot be in the future and cannot be older than 7 days. A time less than 5
         minutes ahead of the server clock counts as now.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -377,6 +396,9 @@ paths:
       responses:
         "201":
           description: Student mood log saved
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -389,6 +411,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/mood/log/batch:
@@ -402,6 +428,8 @@ paths:
         child per local day counts in the dashboards and charts, so a later batch supersedes earlier entries. Unlike the single
         log, the `source` defaults to `AI_CAMERA`. A batch that was queued offline sends one top level `recordedAt` with the time
         the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -411,6 +439,9 @@ paths:
       responses:
         "201":
           description: Mood logs saved, in request order
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -423,6 +454,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/mood/analytics:
@@ -490,6 +525,8 @@ paths:
       operationId: createClass
       summary: Create a class
       description: The teacher becomes a teacher of the new class, which gets a join code that parents use to register a child. A missing grade level, academic year or school take the defaults.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -499,6 +536,9 @@ paths:
       responses:
         "201":
           description: Class created
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -511,6 +551,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}:
@@ -604,6 +648,7 @@ paths:
         The new teacher is never the owner. The answer for an email that is not a teacher account is the same for every
         requester after class access succeeds, and the request counts against the limit of the signed in user.
       parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
         required: true
@@ -614,6 +659,9 @@ paths:
       responses:
         "201":
           description: The teacher was added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -633,11 +681,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`)
+          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}/teachers/{teacherId}:
@@ -841,6 +891,7 @@ paths:
         so use it and not the address of the upload. A staged file can be added once, and the permanent address can be added again to
         share the file with another video of the same class, for as long as a video still uses it. The file is deleted with the last video.
       parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
         required: true
@@ -851,6 +902,9 @@ paths:
       responses:
         "201":
           description: Learning video added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -861,6 +915,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
         "502":
@@ -1089,6 +1147,7 @@ paths:
       summary: Start a forum thread
       description: Open to the teachers of the class and the parents of a child in it.
       parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
       requestBody:
         required: true
@@ -1099,6 +1158,9 @@ paths:
       responses:
         "201":
           description: Forum thread created
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -1109,6 +1171,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /classes/{classId}/forum/{postId}/replies:
@@ -1145,6 +1211,7 @@ paths:
       summary: Reply to a forum thread
       description: Open to the teachers of the class and the parents of a child in it. A reply cannot be answered again.
       parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
         - $ref: "#/components/parameters/PostPath"
       requestBody:
@@ -1156,6 +1223,9 @@ paths:
       responses:
         "201":
           description: Forum reply added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -1168,6 +1238,10 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /classes/{classId}/forum/{postId}:
@@ -1299,6 +1373,8 @@ paths:
         Only for the WALI role. A child can claim a limited number of times per local day. The optional photo has to be a
         JPEG, PNG or WebP image of at most 4 MiB, given as base64 or as a data URI. It is stored as evidence when file storage is
         configured, and a deployment without it checks the photo and then drops it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -1308,6 +1384,9 @@ paths:
       responses:
         "200":
           description: Trash sorting points claimed
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -1326,6 +1405,10 @@ paths:
           $ref: "#/components/responses/NotFound"
         "413":
           $ref: "#/components/responses/FileTooLarge"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           description: |
             Rate limited (`RATE_LIMITED`, with a `Retry-After` header), or the daily claim limit of the child is reached
@@ -1642,6 +1725,21 @@ components:
         minimum: 1
         maximum: 50
         default: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: |
+        Makes the request safe to repeat. An app that queues an action while it is offline sends one key for the action with
+        every try, and a try after one that worked gets the first answer again, with the header `Idempotent-Replayed: true`,
+        and does nothing twice. The key belongs to the signed in user, and the server remembers it for `IDEMPOTENCY_TTL_HOURS`
+        (7 days by default). Use a new random key for each new action, a UUID is a good one. Only a `2xx` answer is
+        remembered, so after any other answer the same key can be sent again. The same key with a different request is
+        refused with `IDEMPOTENCY_KEY_REUSED`, and the same key while the first try still runs with `IDEMPOTENCY_IN_PROGRESS`.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,64}$"
+        example: 3f2c9a52-7d61-4c1e-9d61-2c3f9a5f1d02
   responses:
     ValidationError:
       description: The input is invalid (`VALIDATION_ERROR`), with one message per field in `details`
@@ -1710,6 +1808,24 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Failure"
+    IdempotencyInProgress:
+      description: A request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`), try again in a moment
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+    IdempotencyKeyReused:
+      description: The `Idempotency-Key` was used for a different request (`IDEMPOTENCY_KEY_REUSED`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Failure"
+  headers:
+    IdempotentReplayed:
+      description: Set to `true` on an answer that is the stored first answer of an earlier try with the same `Idempotency-Key`
+      schema:
+        type: string
+        enum: ["true"]
   schemas:
     Role:
       type: string
