@@ -16,7 +16,7 @@ export const options = {
       rate: 30,
       timeUnit: '1s',
       duration,
-      preAllocatedVUs: 60,
+      preAllocatedVUs: 100,
       maxVUs: 200,
     },
     teacher: {
@@ -25,7 +25,7 @@ export const options = {
       rate: 2,
       timeUnit: '1s',
       duration,
-      preAllocatedVUs: 10,
+      preAllocatedVUs: 20,
       maxVUs: 50,
     },
     login: {
@@ -34,7 +34,7 @@ export const options = {
       rate: 1,
       timeUnit: '1s',
       duration,
-      preAllocatedVUs: 5,
+      preAllocatedVUs: 10,
       maxVUs: 20,
     },
   },
