@@ -360,6 +360,35 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 			return nil
 		}
 
+		// the row of the new teacher comes first and the class after it, which is the order of classteam.Leave, so a teacher
+		// who deletes the account at the same moment cannot wait for this request while this one waits for the class
+		var live []uuid.UUID
+
+		err = tx.Raw("SELECT id FROM gurus WHERE id = ? AND deleted_at IS NULL FOR SHARE", guruIDs[0]).Scan(&live).Error
+		if err != nil {
+			return err
+		}
+
+		if len(live) == 0 {
+			return nil
+		}
+
+		// a teacher who leaves archives a class that nobody else teaches under this lock, and a teacher must not be added to
+		// a class that was archived while this request waited
+		err = classteam.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		archived, err := classteam.Archived(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		if archived {
+			return apperror.ErrClassNotFound
+		}
+
 		link := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&entity.ClassTeacher{ClassID: classID, GuruID: guruIDs[0]})
 		if link.Error != nil {
 			return link.Error
