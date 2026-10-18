@@ -45,7 +45,7 @@ Accounts and children are never removed. `DELETE /users/me` sets `deleted_at` on
 
 Three things are removed for real. The refresh tokens of the account, so every session ends. The addresses of the avatar of the account, of the avatars of its children and of the photos of their trash scans, which are cleared from the rows and queued in `file_cleanups` for a background job to remove from the bucket. And for a parent, the ranking of every class their children were in is recomputed without them.
 
-A teacher account first hands its classes on. A class that another teacher also teaches stays with them, and the next teacher becomes the owner when the deleted one owned it. A class with children that nobody else teaches goes to the `successorEmail`. A class with no active child and no other teacher is archived, which keeps its row and its join code.
+A teacher account first hands its classes on. A class that another teacher also teaches stays with them, and the next teacher becomes the owner when the deleted one owned it. A class with children that nobody else teaches goes to the `successorEmail`. A class with no active child and no other teacher goes to the `successorEmail` when a valid successor is sent. Otherwise it is archived, which keeps its row and its join code.
 
 ## Concurrency
 
