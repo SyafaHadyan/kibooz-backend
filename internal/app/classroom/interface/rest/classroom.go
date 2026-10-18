@@ -31,6 +31,8 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group.Get("/videos", members, handler.ListVideos)
 	group.Post("/videos", mw.RequireRole(constants.RoleGuru), handler.AddVideo)
 	group.Post("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.CreateVideoUpload)
+	// before /videos/:videoId, which would take upload-url for a video id
+	group.Delete("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.DiscardVideoUpload)
 	group.Patch("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.UpdateVideo)
 	group.Delete("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.DeleteVideo)
 	group.Get("/forum", members, handler.ListThreads)
@@ -140,6 +142,20 @@ func (h *ClassroomHandler) CreateVideoUpload(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Upload URL created", res)
+}
+
+func (h *ClassroomHandler) DiscardVideoUpload(c fiber.Ctx) error {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.DiscardVideoUpload(c.Context(), middleware.UserIDFrom(c), classID, c.Query("videoUrl"))
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Upload deleted", nil)
 }
 
 func (h *ClassroomHandler) ListThreads(c fiber.Ctx) error {
