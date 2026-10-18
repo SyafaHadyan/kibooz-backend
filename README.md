@@ -121,5 +121,5 @@ Modules are `auth`, `wali`, `guru`, `classroom` (learning videos and the class f
 
 ## Contributing and security
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Report security problems privately as described in [SECURITY.md](SECURITY.md). Report a barrier in the documentation or the API as described in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+Ask for help as described in [SUPPORT.md](SUPPORT.md). Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Report security problems privately as described in [SECURITY.md](SECURITY.md). Report a barrier in the documentation or the API as described in [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
