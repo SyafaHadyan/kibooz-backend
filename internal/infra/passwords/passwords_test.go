@@ -76,6 +76,24 @@ func TestAContextThatEndsStopsTheWait(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestAContextThatEndedTakesNoFreeSlot(t *testing.T) {
+	hasher := fast(1, time.Minute)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := hasher.Acquire(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+
+	_, err = hasher.Hash(ctx, "a password")
+	require.ErrorIs(t, err, context.Canceled)
+
+	release, err := hasher.Acquire(t.Context())
+	require.NoError(t, err, "the slot must still be free")
+
+	release()
+}
+
 func TestHashAndMatchesWorkTogether(t *testing.T) {
 	hasher := fast(1, time.Second)
 

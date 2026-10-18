@@ -41,6 +41,10 @@ func New(cfg *env.Env) *Hasher {
 func (h *Hasher) Acquire(ctx context.Context) (release func(), err error) {
 	release = func() { <-h.slots }
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	select {
 	case h.slots <- struct{}{}:
 		return release, nil
