@@ -1,6 +1,6 @@
 # Error codes
 
-Every failed response has the same envelope, so an app can read the `errorCode` and ignore the rest of the text.
+A failed response from the API has the same envelope, so an app can read the `errorCode` and ignore the rest of the text. A proxy in front of the API can answer with another body or none, so an app checks the HTTP status before it parses the body.
 
 ```json
 {
@@ -50,14 +50,14 @@ Email, NIP and NISN can be used again after the account that held them is delete
 
 ## Data that was not found
 
-| Code | Status | Meaning |
-|:---|:---|:---|
-| `STUDENT_NOT_FOUND` | 404 | The child does not exist, or the signed in user may not see it |
-| `PROFILE_NOT_FOUND` | 404 | The profile of the account does not exist, for example after it was deleted |
-| `GUIDANCE_NOT_FOUND` | 404 | The guidance does not exist |
-| `FORUM_POST_NOT_FOUND` | 404 | The thread or reply does not exist, or was deleted |
-| `VIDEO_NOT_FOUND` | 404 | The learning video does not exist, or was removed |
-| `NOT_FOUND` | 404 | The route does not exist |
+| Code | Status | Meaning | What the app does |
+|:---|:---|:---|:---|
+| `STUDENT_NOT_FOUND` | 404 | The child does not exist, or the signed in user may not see it | Refresh the list of children |
+| `PROFILE_NOT_FOUND` | 404 | The profile of the account does not exist, for example after it was deleted | Sign the user out |
+| `GUIDANCE_NOT_FOUND` | 404 | The guidance does not exist | Refresh the guidance list |
+| `FORUM_POST_NOT_FOUND` | 404 | The thread or reply does not exist, or was deleted | Refresh the thread or its replies |
+| `VIDEO_NOT_FOUND` | 404 | The learning video does not exist, or was removed | Refresh the video list |
+| `NOT_FOUND` | 404 | The route does not exist | This is a bug in the app |
 
 ## Limits
 
@@ -83,7 +83,7 @@ A proxy in front of the API can also answer `429` with no body and no `Retry-Aft
 | `IMAGE_DIMENSIONS_TOO_LARGE` | 400 | The image is more than 8192 pixels on a side or 40 megapixels | Shrink the photo before sending it |
 | `FILE_TOO_LARGE` | 413 | The file is larger than the limit | Shrink the photo, the app should do this before the upload anyway |
 | `STORAGE_UNAVAILABLE` | 503 | Object storage is not configured, so uploads are off | Hide uploads, retrying will not help |
-| `STORAGE_ERROR` | 502 | The bucket refused or failed the write | Try again later |
+| `STORAGE_ERROR` | 502 | The bucket refused or failed a storage operation | Try again later |
 
 ## Everything else
 
