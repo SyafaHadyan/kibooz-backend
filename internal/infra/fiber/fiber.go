@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -75,6 +76,8 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		logger.New(logger.Config{
 			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
 		}),
+		// after the headers, the request id and the log, so a refused request has all three
+		plainBody(),
 	)
 
 	return &Fiber{
@@ -87,6 +90,23 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 
 		classCodeMax: cfg.ClassCodeLimiterMax,
 		devices:      devicetoken.New(cfg),
+	}
+}
+
+// plainBody refuses a request that says its body is encoded. Fiber decodes a body by its Content-Encoding when a handler
+// reads it, and the size limit only counts the bytes that were sent, so a few kilobytes of zstd or gzip could grow to the
+// memory of the decoder. No client of this API compresses what it sends, so the encoding is never needed.
+func plainBody() fiber.Handler {
+	return func(c fiber.Ctx) error {
+		// a request can repeat the header, and Fiber joins the lines when it decodes the body
+		for _, line := range c.Request().Header.PeekAll(fiber.HeaderContentEncoding) {
+			encoding := strings.TrimSpace(string(line))
+			if encoding != "" && !strings.EqualFold(encoding, "identity") {
+				return fiber.ErrUnsupportedMediaType
+			}
+		}
+
+		return c.Next()
 	}
 }
 
