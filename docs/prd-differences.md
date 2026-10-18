@@ -37,7 +37,7 @@ Messages and the weekday names in `weeklyTrend` are in English (`Monday` to `Fri
 
 ## Business rules
 
-- The PRD defines points only for organic and inorganic trash, so B3 is recorded with `POINTS_B3` (0 by default).
+- The PRD has a third trash category, `B3`, in its DDL, its AI pipeline notes and the statistics ticket FE-W05. Its requirements (FR-6 and FR-8.3) first named only organic and inorganic trash and now name B3 too. This implementation accepts B3 and records it with `POINTS_B3`, which is 0 by default, so B3 earns zero points unless that setting is raised.
 - BR-04 (confirm AI results below 75% confidence) is a client dialog, so the server stores whatever confidence the confirmed result carries.
 - `averageHappyScore` is the share of that day's students whose latest mood is SENANG.
 - BR-03 resets the rankings and not the points of a child. The leaderboard ranks `season_points`, which start from zero on the first day of each month in `SEMESTER_START_MONTHS` (January and July by default), while `current_points` keeps the points of all semesters. The API saves the final standings of the semester that ended in `leaderboard_history` first, and `GET /leaderboard/history` reads them back, newest semester first, without the children whose account was deleted since.
