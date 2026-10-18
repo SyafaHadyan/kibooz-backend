@@ -157,6 +157,44 @@ func TestApplicationsThatShareARedisKeepTheirOwnKeys(t *testing.T) {
 	})
 }
 
+// A replayed token must not keep its used marker alive. If every replay renewed the deadline, a client that retries a
+// stolen or stale token more often than the deadline would never let the marker go.
+func TestAUsedMarkerKeepsTheDeadlineOfTheFirstUse(t *testing.T) {
+	ctx := context.Background()
+	client := redisClient(t)
+	mine := prefixed(t, "marker-")
+
+	require.NoError(t, mine.cache.Set(ctx, "refresh:one", "user-1", 24*time.Hour))
+
+	used, err := mine.cache.MarkUsed(ctx, "refresh:one", time.Minute)
+	require.NoError(t, err)
+	require.False(t, used)
+
+	first, err := client.PTTL(ctx, mine.prefix+"refresh:one").Result()
+	require.NoError(t, err)
+	require.Positive(t, first)
+	require.LessOrEqual(t, first, time.Minute, "the first use shortens the deadline")
+
+	used, err = mine.cache.MarkUsed(ctx, "refresh:one", time.Hour)
+	require.NoError(t, err)
+	require.True(t, used)
+
+	again, err := client.PTTL(ctx, mine.prefix+"refresh:one").Result()
+	require.NoError(t, err)
+	require.Positive(t, again)
+	require.LessOrEqual(t, again, first, "a replay does not renew the deadline")
+
+	t.Run("a key that does not exist stays missing", func(t *testing.T) {
+		used, err := mine.cache.MarkUsed(ctx, "refresh:none", time.Minute)
+		require.NoError(t, err)
+		require.False(t, used)
+
+		exists, err := client.Exists(ctx, mine.prefix+"refresh:none").Result()
+		require.NoError(t, err)
+		require.Zero(t, exists)
+	})
+}
+
 type prefixedRedis struct {
 	cache  *redis.Redis
 	prefix string
