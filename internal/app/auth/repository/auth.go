@@ -33,7 +33,9 @@ type AuthDBItf interface {
 	CreateWali(
 		ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
 	) (classID uuid.UUID, err error)
-	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken) error
+	// CreateRefreshToken stores the first token of a session after a sign in. verifiedHash is the password hash that the
+	// sign in checked, and a user whose hash is another one by now, or who is gone, gets ErrCredentialsChanged and no session.
+	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string) error
 	// RotateRefreshToken uses a valid token and stores its replacement in the same session atomically. The row of the
 	// used token stays, so a replay can be recognized. A token that is unknown, expired or used a moment ago is only
 	// refused, and one that was used earlier ends its whole session.
@@ -233,9 +235,30 @@ func mapUniqueViolation(err error) error {
 	}
 }
 
-func (r *AuthDB) CreateRefreshToken(ctx context.Context, token *entity.RefreshToken) error {
+// ErrCredentialsChanged means that the password of the user changed, or the account was deleted, after it was checked
+var ErrCredentialsChanged = errors.New("credentials changed")
+
+func (r *AuthDB) CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := tx.Create(token).Error
+		// A password change ends the sessions and then updates the hash, and checking a password takes longer than that,
+		// so a sign in that was checked against the old hash could store its session after the change. Reading the hash
+		// under a share lock waits for a change that has updated the row and still sees its new value, and a change that
+		// has not reached the row waits for this transaction. The window that is left is the time between the two
+		// statements of the change.
+		var current []string
+
+		err := tx.Raw(
+			"SELECT password_hash FROM users WHERE id = ? AND deleted_at IS NULL FOR SHARE", token.UserID,
+		).Scan(&current).Error
+		if err != nil {
+			return err
+		}
+
+		if len(current) == 0 || current[0] != verifiedHash {
+			return ErrCredentialsChanged
+		}
+
+		err = tx.Create(token).Error
 		if err != nil {
 			return err
 		}

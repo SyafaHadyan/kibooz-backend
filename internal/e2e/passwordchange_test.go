@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -112,4 +113,49 @@ func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) 
 		require.Equal(t, http.StatusOK, removed.Status, "round %d, body %v", round, removed.Body)
 		require.NotEqual(t, http.StatusInternalServerError, changed.Status, "round %d, body %v", round, changed.Body)
 	}
+}
+
+// A sign in checks the password and stores its session in a transaction of its own. A password change that has updated the
+// row and not yet committed makes the sign in wait, and it is refused when the change commits, so no session is left with
+// the old password.
+func TestASignInThatWaitsForAPasswordChangeIsRefused(t *testing.T) {
+	guru := registerGuru(t, "Sandi Berubah")
+
+	var userID string
+
+	require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", guru.Email).Scan(&userID).Error)
+
+	change := testDB.Begin()
+	require.NoError(t, change.Error)
+
+	t.Cleanup(func() { _ = change.Rollback().Error })
+
+	require.NoError(t, change.Exec("UPDATE users SET password_hash = 'changed' WHERE id = ?::uuid", userID).Error)
+
+	before := tokensWhere(t, "user_id", userID)
+	done := make(chan result, 1)
+
+	go func() { done <- loginAs(t, guru.Email, guru.Password, "GURU") }()
+
+	require.Eventually(t, func() bool {
+		var waiting int64
+
+		err := testDB.Raw(
+			"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() " +
+				"AND query LIKE '%password_hash FROM users%FOR SHARE%'",
+		).Scan(&waiting).Error
+
+		return err == nil && waiting > 0
+	}, 10*time.Second, 25*time.Millisecond, "the sign in has to wait for the change, or the test proves nothing")
+
+	require.NoError(t, change.Commit().Error)
+
+	select {
+	case res := <-done:
+		res.requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sign in did not finish after the change committed")
+	}
+
+	require.Equal(t, before, tokensWhere(t, "user_id", userID), "the sign in must not leave a session behind")
 }
