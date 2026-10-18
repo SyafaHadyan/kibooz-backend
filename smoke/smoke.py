@@ -13,7 +13,7 @@ Settings come from the environment
 """
 import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
 API = BASE + "/api/v1"
@@ -25,9 +25,14 @@ RUN = time.strftime("%m%d%H%M%S")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
-LOCAL = BASE.startswith("http://127.0.0.1:") or BASE == "http://127.0.0.1"
+# The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
+# http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
+URL = urlsplit(BASE)
+PLAIN_URL = URL.username is None and URL.password is None and not URL.path.strip("/") and not URL.query
+LOCAL = PLAIN_URL and URL.scheme == "http" and URL.hostname == "127.0.0.1"
+SECURE = PLAIN_URL and URL.scheme == "https" and bool(URL.hostname)
 
-if not (BASE.startswith("https://") or LOCAL) or not KEEPER_EMAIL or not KEEPER_PASSWORD:
+if not (SECURE or LOCAL) or not KEEPER_EMAIL or not KEEPER_PASSWORD:
     sys.exit("set BASE_URL (https, or http for 127.0.0.1 only), SMOKE_KEEPER_EMAIL and SMOKE_KEEPER_PASSWORD")
 
 created = []  # every account of this run, so a crash can still clean up
