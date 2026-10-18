@@ -363,7 +363,11 @@ paths:
       tags: [Teacher]
       operationId: logMood
       summary: Record the mood of a child
-      description: Only the latest mood of a child per local day counts in the dashboards and charts.
+      description: |
+        Only the latest mood of a child per local day counts in the dashboards and charts. A log that the app queued while
+        the device was offline sends `recordedAt` with the time the mood was seen, so replaying it later does not take the
+        place of a newer mood. The time cannot be in the future and cannot be older than 7 days. A time less than 5
+        minutes ahead of the server clock counts as now.
       requestBody:
         required: true
         content:
@@ -396,7 +400,8 @@ paths:
         Saves one mood log per entry in a single transaction with one shared `recordedAt`, so any failure saves nothing. The
         teacher has to teach the class, every child has to be in it, and a child can appear only once. Only the latest mood of a
         child per local day counts in the dashboards and charts, so a later batch supersedes earlier entries. Unlike the single
-        log, the `source` defaults to `AI_CAMERA`.
+        log, the `source` defaults to `AI_CAMERA`. A batch that was queued offline sends one top level `recordedAt` with the time
+        the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood.
       requestBody:
         required: true
         content:
@@ -2168,6 +2173,12 @@ components:
         notes:
           type: string
           maxLength: 2000
+        recordedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the mood was seen, for a log that was queued offline. Now by default. It cannot be in the future (a time
+            less than 5 minutes ahead counts as now) and cannot be older than 7 days.
     LogMoodData:
       type: object
       required: [logId, recordedAt]
@@ -2218,6 +2229,11 @@ components:
         classId:
           type: string
           format: uuid
+        recordedAt:
+          type: string
+          format: date-time
+          description: >-
+            When the moods were seen, one time for the whole batch. Now by default, with the same limits as the single log.
         entries:
           type: array
           minItems: 1
