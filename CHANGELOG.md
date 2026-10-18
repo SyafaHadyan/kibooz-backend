@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.9.0...v0.9.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **k6:** preallocate more VUs so a runner stall does not drop iterations ([97eea99](https://github.com/SyafaHadyan/kibooz-backend/commit/97eea99c28d00ab6a449a65d1cd84968ec1051aa))
+* **k6:** preallocate more VUs so a runner stall does not drop iterations ([#157](https://github.com/SyafaHadyan/kibooz-backend/issues/157)) ([3bab0b5](https://github.com/SyafaHadyan/kibooz-backend/commit/3bab0b50bd49f62c3ed1ee8477cfc05cadf76209))
+
 ## [0.9.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.8.0...v0.9.0) (2026-10-15)
 
 
