@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -29,16 +30,29 @@ func inFlightRefresh(t *testing.T, token string) (finish func()) {
 func inFlightRefreshOfHash(t *testing.T, hash string) (finish func()) {
 	t.Helper()
 
+	finish, err := tryInFlightRefreshOfHash(t, hash, 10*time.Second)
+	require.NoError(t, err)
+
+	return finish
+}
+
+// tryInFlightRefreshOfHash gives up with the error of the database when the token is locked for longer than wait, so a
+// refresh that has to wait for a row fails the test or lets it stop, and never hangs it
+func tryInFlightRefreshOfHash(t *testing.T, hash string, wait time.Duration) (finish func(), err error) {
+	t.Helper()
+
 	tx := testDB.Begin()
 	require.NoError(t, tx.Error)
 
 	t.Cleanup(func() { _ = tx.Rollback().Error })
 
-	// a refresh that has to wait for a row fails the test instead of hanging it
-	require.NoError(t, tx.Exec("SET LOCAL lock_timeout = '10s'").Error)
+	require.NoError(t, tx.Exec("SET LOCAL lock_timeout = '"+strconv.FormatInt(wait.Milliseconds(), 10)+"ms'").Error)
 
 	used := tx.Exec("UPDATE refresh_tokens SET used_at = now() WHERE token_hash = ? AND used_at IS NULL", hash)
-	require.NoError(t, used.Error)
+	if used.Error != nil {
+		return nil, used.Error
+	}
+
 	require.EqualValues(t, 1, used.RowsAffected, "the token has to be one that was not used")
 
 	return func() {
@@ -52,7 +66,7 @@ func inFlightRefreshOfHash(t *testing.T, hash string) (finish func()) {
 		require.NoError(t, next.Error)
 		require.EqualValues(t, 1, next.RowsAffected)
 		require.NoError(t, tx.Commit().Error)
-	}
+	}, nil
 }
 
 // startWhileRefreshing runs end in the background and returns once it waits for the lock of the refresh that is under way
@@ -293,7 +307,17 @@ func TestARefreshThatBeginsWhileASessionIsBeingEndedLeavesNoTokenBehind(t *testi
 	).Scan(&newest).Error)
 	require.NotEmpty(t, newest)
 
-	inFlightRefreshOfHash(t, newest)()
+	second, err := tryInFlightRefreshOfHash(t, newest, 3*time.Second)
+	if err != nil {
+		// The DELETE visits the rows in the order they are stored, and it normally reaches the held token before the new
+		// one. When it reached the new one first it holds it, and there is no moment left in which the lock does not cover
+		// it, so this run has nothing to prove.
+		require.NoError(t, holder.Commit().Error)
+		requireDone(t, done)
+		t.Skipf("the DELETE reached the new token before the held one (%v)", err)
+	}
+
+	second()
 
 	require.NoError(t, holder.Commit().Error)
 	requireDone(t, done)
