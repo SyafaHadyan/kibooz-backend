@@ -42,6 +42,8 @@ type LogMoodRequest struct {
 	Source          constants.MoodSource `json:"source" validate:"omitempty,oneof=AI_CAMERA MANUAL_INPUT"`
 	ConfidenceScore *float32             `json:"confidenceScore" validate:"omitempty,gte=0,lte=1"`
 	Notes           string               `json:"notes" validate:"omitempty,max=2000"`
+	// RecordedAt is when the mood was seen, for a log that was queued while the device was offline. It defaults to now.
+	RecordedAt *time.Time `json:"recordedAt"`
 }
 
 type LogMoodResponse struct {
@@ -61,6 +63,8 @@ type LogMoodBatchEntry struct {
 type LogMoodBatchRequest struct {
 	ClassID uuid.UUID           `json:"classId" validate:"required"`
 	Entries []LogMoodBatchEntry `json:"entries" validate:"required,min=1,max=30,dive"`
+	// RecordedAt is when the moods were seen, one time for the whole batch. It defaults to now.
+	RecordedAt *time.Time `json:"recordedAt"`
 }
 
 type LogMoodBatchItem struct {

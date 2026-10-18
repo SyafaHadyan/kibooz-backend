@@ -302,3 +302,89 @@ func TestLogMoodBatchHidesAStorageFailure(t *testing.T) {
 	require.NotContains(t, got.Message, "insert failed")
 	require.Empty(t, res.Logs)
 }
+
+func TestRecordedAtOf(t *testing.T) {
+	now := time.Date(2026, 3, 4, 8, 30, 15, 123456789, time.UTC)
+	useCase := &GuruUseCase{now: func() time.Time { return now }}
+	at := func(offset time.Duration) *time.Time {
+		sent := now.Add(offset)
+
+		return &sent
+	}
+	wall := now.Truncate(time.Microsecond)
+
+	t.Run("no time means now", func(t *testing.T) {
+		got, err := useCase.recordedAtOf(nil)
+
+		require.NoError(t, err)
+		require.Equal(t, wall, got)
+	})
+
+	t.Run("a time in the past is kept in UTC to the microsecond", func(t *testing.T) {
+		sent := now.Add(-3 * time.Hour).In(time.FixedZone("WIB", 7*3600))
+
+		got, err := useCase.recordedAtOf(&sent)
+
+		require.NoError(t, err)
+		require.Equal(t, now.Add(-3*time.Hour).Truncate(time.Microsecond), got)
+		require.Equal(t, time.UTC, got.Location())
+	})
+
+	t.Run("the oldest accepted time is the retention of the idempotency keys", func(t *testing.T) {
+		got, err := useCase.recordedAtOf(at(-constants.MoodRecordedAtMaxAge))
+		require.NoError(t, err)
+		require.Equal(t, now.Add(-constants.MoodRecordedAtMaxAge).Truncate(time.Microsecond), got)
+
+		_, err = useCase.recordedAtOf(at(-constants.MoodRecordedAtMaxAge - time.Second))
+		requireDetails(t, err, map[string]string{"recordedAt": "must not be older than 7 days"})
+	})
+
+	t.Run("a time ahead of the clock inside the skew counts as now", func(t *testing.T) {
+		got, err := useCase.recordedAtOf(at(constants.MoodRecordedAtSkew))
+
+		require.NoError(t, err)
+		require.Equal(t, wall, got)
+	})
+
+	t.Run("a time beyond the skew is refused", func(t *testing.T) {
+		_, err := useCase.recordedAtOf(at(constants.MoodRecordedAtSkew + time.Second))
+
+		requireDetails(t, err, map[string]string{"recordedAt": "must not be in the future"})
+	})
+}
+
+func TestLogMoodBatchUsesTheTimeTheClientSent(t *testing.T) {
+	repo := batching()
+	first, second := repo.enroll(), repo.enroll()
+	now := time.Date(2026, 3, 4, 8, 30, 15, 0, time.UTC)
+	seen := now.Add(-90 * time.Minute)
+
+	res, err := batchUseCase(repo, now).LogMoodBatch(context.Background(), uuid.New(), dto.LogMoodBatchRequest{
+		ClassID:    repo.class.ID,
+		RecordedAt: &seen,
+		Entries:    []dto.LogMoodBatchEntry{aiEntry(first, constants.MoodSenang, 0.9), aiEntry(second, constants.MoodSedih, 0.8)},
+	})
+
+	require.NoError(t, err)
+
+	for i, moodLog := range repo.created {
+		require.Equal(t, seen, moodLog.RecordedAt)
+		require.Equal(t, seen, res.Logs[i].RecordedAt)
+	}
+}
+
+func TestLogMoodBatchRefusesAnImpossibleTimeBeforeTouchingTheStore(t *testing.T) {
+	repo := batching()
+	student := repo.enroll()
+	now := time.Date(2026, 3, 4, 8, 30, 15, 0, time.UTC)
+	later := now.Add(time.Hour)
+
+	_, err := batchUseCase(repo, now).LogMoodBatch(context.Background(), uuid.New(), dto.LogMoodBatchRequest{
+		ClassID:    repo.class.ID,
+		RecordedAt: &later,
+		Entries:    []dto.LogMoodBatchEntry{aiEntry(student, constants.MoodSenang, 0.9)},
+	})
+
+	requireDetails(t, err, map[string]string{"recordedAt": "must not be in the future"})
+	require.Zero(t, repo.createCalls)
+}
