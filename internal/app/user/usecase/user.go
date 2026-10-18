@@ -34,6 +34,9 @@ type UserUseCaseItf interface {
 	UploadAvatar(ctx context.Context, userID uuid.UUID, role constants.Role, studentID *uuid.UUID, data []byte) (dto.AvatarResponse, error)
 	// DeleteAccount soft deletes the caller after checking their password. A parent's children are deleted with them.
 	DeleteAccount(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.DeleteAccountRequest) error
+	// ChangePassword swaps the password of the caller after checking the current one and ends every session, so each
+	// device has to sign in again with the new password.
+	ChangePassword(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.ChangePasswordRequest) error
 }
 
 type UserUseCase struct {
@@ -200,6 +203,60 @@ func (u *UserUseCase) DeleteAccount(
 	}
 
 	u.discardFiles(ctx, deleted.FileKeys)
+
+	return nil
+}
+
+func (u *UserUseCase) ChangePassword(
+	ctx context.Context, userID uuid.UUID, role constants.Role, req dto.ChangePasswordRequest,
+) error {
+	user, err := u.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if user == nil {
+		return apperror.ErrProfileNotFound
+	}
+
+	if user.Role != role {
+		return apperror.ErrForbidden
+	}
+
+	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
+	if len([]byte(req.CurrentPassword)) > bcryptMaxBytes {
+		return apperror.ErrPasswordIncorrect
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword))
+	if err != nil {
+		return apperror.ErrPasswordIncorrect
+	}
+
+	if len([]byte(req.NewPassword)) > bcryptMaxBytes {
+		//nolint:gosec // this is a validation message and not a credential
+		return apperror.Validation(map[string]string{"newPassword": "too long, maximum 72 bytes"})
+	}
+
+	if req.NewPassword == req.CurrentPassword {
+		//nolint:gosec // this is a validation message and not a credential
+		return apperror.Validation(map[string]string{"newPassword": "must differ from the current password"})
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	changed, err := u.repo.UpdatePassword(ctx, userID, user.PasswordHash, string(hash))
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	// the password was changed from another device while this request hashed, so the one that was sent is out of date
+	if !changed {
+		return apperror.ErrPasswordIncorrect
+	}
 
 	return nil
 }

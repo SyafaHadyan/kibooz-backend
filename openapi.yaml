@@ -1610,6 +1610,47 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /users/me/password:
+    put:
+      tags: [Account]
+      operationId: changePassword
+      summary: Change the own password
+      description: |
+        Replaces the password after the current one is confirmed. Every session of the account ends, so the app has to
+        sign in again on every device with the new password. The new password follows the rules of the registration, and
+        it has to differ from the current one. The request is limited per account like the other requests that confirm a
+        password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The role may not do this, or the current password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /healthz:
     get:
       tags: [Operations]
@@ -2616,6 +2657,20 @@ components:
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
             the account is the only teacher of a class, and ignored for a parent. It cannot be the email of the account itself.
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          maxLength: 72
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+          description: At most 72 bytes, because the hash only reads that much, and different from the current password.
     PageInfo:
       type: object
       required: [page, limit, total]

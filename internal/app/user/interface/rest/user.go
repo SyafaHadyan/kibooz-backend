@@ -27,6 +27,23 @@ func NewUserHandler(router fiber.Router, passwordLimiter fiber.Handler, mw middl
 	router.Post("/users/avatar", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.UploadAvatar)
 	// the password is checked here, so the same strict limit as the login route applies per user, and it needs the user to be known
 	router.Delete("/users/me", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.DeleteAccount)
+	router.Put("/users/me/password", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.ChangePassword)
+}
+
+func (h *UserHandler) ChangePassword(c fiber.Ctx) error {
+	var req dto.ChangePasswordRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.ChangePassword(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Password changed", nil)
 }
 
 func (h *UserHandler) DeleteAccount(c fiber.Ctx) error {
