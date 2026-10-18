@@ -78,6 +78,10 @@ func TestARefusedDeletionLeavesTheClassesAsTheyWere(t *testing.T) {
 	give := call(t, http.MethodPut, fmt.Sprintf("/api/v1/guru/classes/%s/owner", sharedID), partner.Token, map[string]any{"teacherId": leavingID})
 	require.Equal(t, http.StatusOK, give.Status, "body %v", give.Body)
 
+	// a class without children would be archived, so a child keeps the first class from being let go
+	_, leavingCode := classOf(t, leaving)
+	registerWali(t, leavingCode, "Child Of Dahlia")
+
 	deleteAccount(t, leaving.Token, leaving.Password).requireError(t, http.StatusConflict, "SUCCESSOR_REQUIRED")
 
 	who, count := ownerOf(t, partner.Token, sharedID)
