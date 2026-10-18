@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 )
 
@@ -312,5 +313,78 @@ func TestIdempotencyKey(t *testing.T) {
 
 		threads := call(t, http.MethodGet, threadPath, guru.Token, nil)
 		require.EqualValues(t, 1, threads.data("total"))
+	})
+}
+
+// A try that was taken for dead can still finish later. It must neither free nor fill the row of the try that took the key
+// over, or a third try would run next to the second one, or the repeat would get the answer of the wrong try.
+func TestATryThatWasTakenOverCannotTouchItsReplacement(t *testing.T) {
+	guru := registerGuru(t, "Orchid")
+	userID := uuid.MustParse(userIDOf(t, guru.Email))
+	store := idempotency.New(testDB, time.Hour, time.Second)
+	fingerprint := []byte("same request")
+	ctx := context.Background()
+
+	row := func(key string) (status *int, response []byte) {
+		var found struct {
+			StatusCode *int
+			Response   []byte
+		}
+
+		require.NoError(t, testDB.Raw("SELECT status_code, response FROM idempotency_keys WHERE user_id = ? AND idempotency_key = ?", userID, key).Scan(&found).Error)
+
+		return found.StatusCode, found.Response
+	}
+
+	// the first try claims the key and then stalls, so the row counts as abandoned
+	takeOver := func(key string) (first uuid.UUID, second uuid.UUID) {
+		replayed, first, err := store.Claim(ctx, userID, key, fingerprint)
+		require.NoError(t, err)
+		require.Nil(t, replayed)
+
+		require.NoError(t, testDB.Exec("UPDATE idempotency_keys SET created_at = now() - interval '1 hour' WHERE user_id = ? AND idempotency_key = ?", userID, key).Error)
+
+		replayed, second, err = store.Claim(ctx, userID, key, fingerprint)
+		require.NoError(t, err)
+		require.Nil(t, replayed)
+		require.NotEqual(t, first, second)
+
+		return first, second
+	}
+
+	t.Run("a late failure leaves the claim of the replacement", func(t *testing.T) {
+		key := uuid.NewString()
+		first, second := takeOver(key)
+
+		store.Release(ctx, userID, key, first)
+		require.EqualValues(t, 1, keyRows(t, userID.String(), key), "the replacement keeps its claim")
+
+		// a third try is still told to wait, because the second one is running
+		_, _, err := store.Claim(ctx, userID, key, fingerprint)
+		require.ErrorIs(t, err, apperror.ErrIdempotencyBusy)
+
+		store.Release(ctx, userID, key, second)
+		require.Zero(t, keyRows(t, userID.String(), key), "the owner can free it")
+	})
+
+	t.Run("a late success does not fill the row of the replacement", func(t *testing.T) {
+		key := uuid.NewString()
+		first, second := takeOver(key)
+
+		store.Complete(ctx, userID, key, first, http.StatusCreated, []byte(`{"from":"first"}`))
+
+		status, _ := row(key)
+		require.Nil(t, status, "the row still waits for the replacement")
+
+		store.Complete(ctx, userID, key, second, http.StatusCreated, []byte(`{"from":"second"}`))
+
+		status, response := row(key)
+		require.NotNil(t, status)
+		require.JSONEq(t, `{"from":"second"}`, string(response))
+
+		replayed, _, err := store.Claim(ctx, userID, key, fingerprint)
+		require.NoError(t, err)
+		require.NotNil(t, replayed)
+		require.JSONEq(t, `{"from":"second"}`, string(replayed.Body))
 	})
 }

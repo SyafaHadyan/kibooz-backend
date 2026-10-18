@@ -82,6 +82,7 @@ The keys live in the PostgreSQL table `idempotency_keys` and not in Redis, becau
 
 - Only a `2xx` response is stored. Any other outcome deletes the claim, so the client can send the same key again.
 - A claim without a response that is older than the request timeout plus 30 seconds counts as abandoned and the next try takes it over, so a process that crashed in the middle does not block the key.
+- Every claim has its own id and a request stores its response or frees the key only while its claim is still the one on the row. A try that was taken for dead and finishes late therefore cannot free or fill the claim of the try that took the key over.
 - A row older than `IDEMPOTENCY_TTL_HOURS` (168 by default) is taken over as well and an hourly sweep deletes it.
 - The claim is made before the work and the response is stored after it, in two statements. If the process dies between the commit of the work and the write of the response, a try after the abandon time repeats the work. This is rare and it is the usual trade of the middleware approach. Writing the claim in the transaction of each route would close it and needs changes in every repository.
 - A response over 1 MiB is not stored and its claim is deleted. No route produces one today.

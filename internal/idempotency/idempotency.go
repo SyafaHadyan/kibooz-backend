@@ -80,16 +80,16 @@ func (s *Store) Handler() fiber.Handler {
 		userID := middleware.UserIDFrom(c)
 		fingerprint := fingerprintOf(c)
 
-		replay, err := s.claim(c.Context(), userID, key, fingerprint)
+		replayed, claimID, err := s.Claim(c.Context(), userID, key, fingerprint)
 		if err != nil {
 			return err
 		}
 
-		if replay != nil {
+		if replayed != nil {
 			c.Set(ReplayedHeader, "true")
 			c.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 
-			return c.Status(replay.status).Send(replay.body)
+			return c.Status(replayed.Status).Send(replayed.Body)
 		}
 
 		// keep is true once the work is done and its response is to be remembered. Until then a failure frees the key, and
@@ -99,7 +99,7 @@ func (s *Store) Handler() fiber.Handler {
 
 		defer func() {
 			if !keep {
-				s.release(c.Context(), userID, key, fingerprint)
+				s.Release(c.Context(), userID, key, claimID)
 			}
 		}()
 
@@ -116,39 +116,44 @@ func (s *Store) Handler() fiber.Handler {
 		}
 
 		keep = true
-		s.store(c.Context(), userID, key, fingerprint, status, body)
+		s.Complete(c.Context(), userID, key, claimID, status, body)
 
 		return nil
 	}
 }
 
-type replay struct {
-	status int
-	body   []byte
+// Replay is the stored answer of a try that worked
+type Replay struct {
+	Status int
+	Body   []byte
 }
 
-// claim takes the key for this request. It returns a replay when an earlier try already worked, and an error when the key
-// belongs to another request or to a try that is still running. Both nil means the work may start.
-func (s *Store) claim(ctx context.Context, userID uuid.UUID, key string, fingerprint []byte) (*replay, error) {
+// Claim takes the key for this request. It returns a replay when an earlier try already worked, and an error when the key
+// belongs to another request or to a try that is still running. No replay and no error means the work may start, and the
+// returned id names this claim, so that Complete and Release can only touch the row while this request still owns it. A
+// request that was taken for dead and finishes after another one took the key over then changes nothing.
+func (s *Store) Claim(ctx context.Context, userID uuid.UUID, key string, fingerprint []byte) (*Replay, uuid.UUID, error) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), commandTimeout)
 	defer cancel()
+
+	claimID := uuid.New()
 
 	for range claimTries {
 		// a row that outlived its retention or that no running request owns any more is taken over
 		res := s.db.WithContext(ctx).Exec(
-			"INSERT INTO idempotency_keys (user_id, idempotency_key, fingerprint) VALUES (?, ?, ?) "+
+			"INSERT INTO idempotency_keys (user_id, idempotency_key, fingerprint, claim_id) VALUES (?, ?, ?, ?) "+
 				"ON CONFLICT (user_id, idempotency_key) DO UPDATE "+
-				"SET fingerprint = EXCLUDED.fingerprint, status_code = NULL, response = NULL, created_at = now() "+
+				"SET fingerprint = EXCLUDED.fingerprint, claim_id = EXCLUDED.claim_id, status_code = NULL, response = NULL, created_at = now() "+
 				"WHERE idempotency_keys.created_at < now() - ? * interval '1 second' "+
 				"OR (idempotency_keys.status_code IS NULL AND idempotency_keys.created_at < now() - ? * interval '1 second')",
-			userID, key, fingerprint, s.ttl.Seconds(), s.abandonAfter.Seconds(),
+			userID, key, fingerprint, claimID, s.ttl.Seconds(), s.abandonAfter.Seconds(),
 		)
 		if res.Error != nil {
-			return nil, apperror.Internal(res.Error)
+			return nil, uuid.Nil, apperror.Internal(res.Error)
 		}
 
 		if res.RowsAffected == 1 {
-			return nil, nil
+			return nil, claimID, nil
 		}
 
 		var row struct {
@@ -161,7 +166,7 @@ func (s *Store) claim(ctx context.Context, userID uuid.UUID, key string, fingerp
 			Raw("SELECT fingerprint, status_code, response FROM idempotency_keys WHERE user_id = ? AND idempotency_key = ?", userID, key).
 			Scan(&row)
 		if res.Error != nil {
-			return nil, apperror.Internal(res.Error)
+			return nil, uuid.Nil, apperror.Internal(res.Error)
 		}
 
 		// the row was freed between the two statements, so claim it again
@@ -170,43 +175,45 @@ func (s *Store) claim(ctx context.Context, userID uuid.UUID, key string, fingerp
 		}
 
 		if string(row.Fingerprint) != string(fingerprint) {
-			return nil, apperror.ErrIdempotencyReused
+			return nil, uuid.Nil, apperror.ErrIdempotencyReused
 		}
 
 		if row.StatusCode == nil {
-			return nil, apperror.ErrIdempotencyBusy
+			return nil, uuid.Nil, apperror.ErrIdempotencyBusy
 		}
 
-		return &replay{status: *row.StatusCode, body: row.Response}, nil
+		return &Replay{Status: *row.StatusCode, Body: row.Response}, uuid.Nil, nil
 	}
 
-	return nil, apperror.ErrIdempotencyBusy
+	return nil, uuid.Nil, apperror.ErrIdempotencyBusy
 }
 
-// store keeps the response of a try that worked. A failure is only logged, because the work is done and the client has to
-// get its answer, and the key stays claimed until it counts as abandoned.
-func (s *Store) store(ctx context.Context, userID uuid.UUID, key string, fingerprint []byte, status int, body []byte) {
+// Complete keeps the response of a try that worked, when the claim is still the one of the request. A failure is only
+// logged, because the work is done and the client has to get its answer, and the key stays claimed until it counts as
+// abandoned.
+func (s *Store) Complete(ctx context.Context, userID uuid.UUID, key string, claimID uuid.UUID, status int, body []byte) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), commandTimeout)
 	defer cancel()
 
 	err := s.db.WithContext(ctx).Exec(
 		"UPDATE idempotency_keys SET status_code = ?, response = ? "+
-			"WHERE user_id = ? AND idempotency_key = ? AND fingerprint = ? AND status_code IS NULL",
-		status, append([]byte(nil), body...), userID, key, fingerprint,
+			"WHERE user_id = ? AND idempotency_key = ? AND claim_id = ? AND status_code IS NULL",
+		status, append([]byte(nil), body...), userID, key, claimID,
 	).Error
 	if err != nil {
 		log.Printf("storing the response of idempotency key %s failed %v", key, err)
 	}
 }
 
-// release frees a key whose request did not work, so the client can send it again
-func (s *Store) release(ctx context.Context, userID uuid.UUID, key string, fingerprint []byte) {
+// Release frees a key whose request did not work, so the client can send it again. It leaves the row alone when another
+// request has taken the key over since.
+func (s *Store) Release(ctx context.Context, userID uuid.UUID, key string, claimID uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), commandTimeout)
 	defer cancel()
 
 	err := s.db.WithContext(ctx).Exec(
-		"DELETE FROM idempotency_keys WHERE user_id = ? AND idempotency_key = ? AND fingerprint = ? AND status_code IS NULL",
-		userID, key, fingerprint,
+		"DELETE FROM idempotency_keys WHERE user_id = ? AND idempotency_key = ? AND claim_id = ? AND status_code IS NULL",
+		userID, key, claimID,
 	).Error
 	if err != nil {
 		log.Printf("freeing idempotency key %s failed %v", key, err)
