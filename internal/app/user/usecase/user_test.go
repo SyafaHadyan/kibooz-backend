@@ -56,6 +56,18 @@ type fakeRepo struct {
 	previous  string
 	userGone  bool
 	updateErr error
+
+	// passwordUpdates counts the password changes that were asked for, and passwordStale makes them find a hash that moved on
+	passwordUpdates int
+	passwordStale   bool
+	newHash         string
+}
+
+func (f *fakeRepo) UpdatePassword(_ context.Context, _ uuid.UUID, _ string, newHash string) (bool, error) {
+	f.passwordUpdates++
+	f.newHash = newHash
+
+	return !f.passwordStale, f.err
 }
 
 func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) (string, bool, error) {
@@ -509,5 +521,102 @@ func TestDeleteAccountDeletesTheFilesOfTheAccount(t *testing.T) {
 		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
 
 		require.NoError(t, useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleGuru, dto.DeleteAccountRequest{Password: "correct-password"}))
+	})
+}
+
+func TestChangePassword(t *testing.T) {
+	ctx := context.Background()
+
+	newUseCase := func(repo *fakeRepo) usecase.UserUseCaseItf {
+		return usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{})
+	}
+
+	t.Run("the new password is stored as a hash", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: "another-password"})
+
+		require.NoError(t, err)
+		require.Equal(t, 1, repo.passwordUpdates)
+		require.NoError(t, bcrypt.CompareHashAndPassword([]byte(repo.newHash), []byte("another-password")))
+	})
+
+	t.Run("a wrong current password changes nothing", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "wrong-password", NewPassword: "another-password"})
+
+		require.Equal(t, "AUTH_PASSWORD_INCORRECT", apperror.As(err).Code)
+		require.Zero(t, repo.passwordUpdates)
+	})
+
+	t.Run("a current password longer than bcrypt reads cannot match a shorter one", func(t *testing.T) {
+		registered := strings.Repeat("a", 70) + "é"
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, registered)}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: registered + "z", NewPassword: "another-password"})
+
+		require.Equal(t, "AUTH_PASSWORD_INCORRECT", apperror.As(err).Code)
+		require.Zero(t, repo.passwordUpdates)
+	})
+
+	t.Run("a new password that bcrypt would cut is refused", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: strings.Repeat("a", 70) + "é"})
+
+		appErr := apperror.As(err)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.Contains(t, appErr.Details, "newPassword")
+		require.Zero(t, repo.passwordUpdates)
+	})
+
+	t.Run("the same password is refused", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: "correct-password"})
+
+		require.Equal(t, "VALIDATION_ERROR", apperror.As(err).Code)
+		require.Zero(t, repo.passwordUpdates)
+	})
+
+	t.Run("a role that does not match the account is refused", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleGuru,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: "another-password"})
+
+		require.Equal(t, "AUTH_FORBIDDEN", apperror.As(err).Code)
+		require.Zero(t, repo.passwordUpdates)
+	})
+
+	t.Run("an account that is already gone is reported", func(t *testing.T) {
+		err := newUseCase(&fakeRepo{}).ChangePassword(ctx, uuid.New(), constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "anything", NewPassword: "another-password"})
+
+		require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+	})
+
+	t.Run("a password that was changed meanwhile makes the old one wrong", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password"), passwordStale: true}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: "another-password"})
+
+		require.Equal(t, "AUTH_PASSWORD_INCORRECT", apperror.As(err).Code)
+	})
+
+	t.Run("a failing store is an internal error", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password"), err: errors.New("down")}
+
+		err := newUseCase(repo).ChangePassword(ctx, repo.user.ID, constants.RoleWali,
+			dto.ChangePasswordRequest{CurrentPassword: "correct-password", NewPassword: "another-password"})
+
+		require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
 	})
 }
