@@ -170,7 +170,7 @@ func TestLockOpenRefusesAnArchivedClass(t *testing.T) {
 
 // A lock that cannot be taken is an error of the caller's transaction and not an answer about the class
 func TestLockOpenReportsAFailingTransaction(t *testing.T) {
-	require.NoError(t, testDB.Exec("SELECT 1").Error)
+	app(t)
 
 	tx := testDB.Begin()
 	require.NoError(t, tx.Error)
