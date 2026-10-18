@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"log"
 	"strconv"
 	"strings"
@@ -302,7 +303,11 @@ func (u *AuthUseCase) issueSession(ctx context.Context, user *entity.User) (dto.
 	raw, row := u.newRefreshToken()
 	row.UserID = user.ID
 
-	err := u.repo.CreateRefreshToken(ctx, row)
+	err := u.repo.CreateRefreshToken(ctx, row, user.PasswordHash)
+	if errors.Is(err, repository.ErrCredentialsChanged) {
+		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
+	}
+
 	if err != nil {
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}

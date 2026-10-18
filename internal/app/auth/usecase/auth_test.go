@@ -41,6 +41,9 @@ type fakeRepo struct {
 	registered     *entity.RefreshToken
 	separateTokens int
 	createErr      error
+	// verifiedHash is the hash a sign in says it checked, and sessionErr is what storing its session answers
+	verifiedHash string
+	sessionErr   error
 
 	// unknownClassCode makes every class code a code that no class uses, and classLookups counts the lookups
 	unknownClassCode bool
@@ -82,10 +85,11 @@ func (f *fakeRepo) CreateWali(
 	return uuid.Nil, nil
 }
 
-func (f *fakeRepo) CreateRefreshToken(context.Context, *entity.RefreshToken) error {
+func (f *fakeRepo) CreateRefreshToken(_ context.Context, _ *entity.RefreshToken, verifiedHash string) error {
 	f.separateTokens++
+	f.verifiedHash = verifiedHash
 
-	return nil
+	return f.sessionErr
 }
 
 func (f *fakeRepo) RotateRefreshToken(
@@ -193,6 +197,25 @@ func TestLoginDoesNotAcceptACharacterBeyondBcryptLimit(t *testing.T) {
 	res, err := useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: registered, Role: constants.RoleWali})
 	require.NoError(t, err)
 	require.Equal(t, "access", res.Token)
+}
+
+// Checking the password takes time, and the account can change in between. The session is only stored for the hash that
+// was checked, and a sign in that finds another one by then gets no session.
+func TestLoginStoresItsSessionOnlyForTheHashItChecked(t *testing.T) {
+	user := accountWith(t, "correct horse")
+	repo := &fakeRepo{}
+	useCase := build(t, user, repo, newFakeCache())
+	request := dto.LoginRequest{Email: "a@example.com", Password: "correct horse", Role: constants.RoleWali}
+
+	_, err := useCase.Login(context.Background(), request)
+	require.NoError(t, err)
+	require.Equal(t, user.PasswordHash, repo.verifiedHash)
+
+	repo.sessionErr = repository.ErrCredentialsChanged
+
+	res, err := useCase.Login(context.Background(), request)
+	require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
+	require.Empty(t, res.RefreshToken)
 }
 
 func TestRefreshCanBeRetriedAfterADatabaseFailure(t *testing.T) {
