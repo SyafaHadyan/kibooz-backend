@@ -99,6 +99,8 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos"), token: $gt, body: {title: "ZAP video two", videoUrl: "https://example.com/zap-two.mp4", durationSeconds: 5}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos"), token: $wt, body: {title: "parent video", videoUrl: "https://example.com/p.mp4"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos/upload-url"), token: $gt, body: {contentType: "video/mp4", sizeBytes: 1024}},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/videos/upload-url?videoUrl=https%3A%2F%2Fexample.com%2Fpending%2Fvideos%2F" + $c + "%2Fzap.mp4"), token: $gt},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/videos/upload-url?videoUrl=https%3A%2F%2Fexample.com%2Fzap.mp4"), token: $wt},
   {method: "PATCH", path: ("/api/v1/classes/" + $c + "/videos/" + $v), token: $gt, body: {title: "ZAP video renamed"}},
   {method: "GET", path: ("/api/v1/classes/" + $c + "/students"), token: $gt},
   {method: "GET", path: ("/api/v1/classes/" + $c + "/students"), token: $wt},
