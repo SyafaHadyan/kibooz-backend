@@ -44,6 +44,21 @@ Use the same options every time and pick the width from a short list, such as 12
 
 This only works for addresses on the media host. A thumbnail that is a link to another site stays as it is. A photo that a person replaces gets a new address, so the copies of the old one never go stale.
 
+## Repeat a request safely
+
+An app that queues an action while the phone is offline can send it again without the risk of doing it twice. Make one random key for the action, a UUID is a good one, and send it in the `Idempotency-Key` header with every try of that action. A new action gets a new key.
+
+The header is accepted by the routes that create something, which are `POST /trash/scan-claim`, `POST /guru/mood/log`, `POST /guru/mood/log/batch`, `POST /wali/guidance/apply`, `POST /wali/children`, `POST /guru/classes`, `POST /guru/classes/{classId}/teachers`, `POST /classes/{classId}/videos`, `POST /classes/{classId}/forum` and `POST /classes/{classId}/forum/{postId}/replies`. The other routes ignore it.
+
+- A try after one that worked gets the first answer again, with the same status and body and the header `Idempotent-Replayed: true`. Nothing is written a second time, so a claim does not use the daily limit again and a mood is not logged twice.
+- Only a `2xx` answer is remembered. After a `400`, a `403`, a `429` or a `5xx` the same key can be sent again, for example after the person fixed the input or the rate limit ended.
+- The same key with a different request is refused with `422` and `IDEMPOTENCY_KEY_REUSED`. A repeat has to be the same method, address and body as the first try.
+- The same key while the first try is still running is refused with `409` and `IDEMPOTENCY_IN_PROGRESS`. Wait a moment and send it again.
+- A key has 8 to 64 letters, digits, dashes or underscores, otherwise the answer is `400`. It belongs to the signed in user, so two users can never meet each other's keys.
+- The server remembers a key for 7 days by default, so a phone that stays offline over a long weekend can still repeat its queue.
+
+A request without the header works as before. The header only protects an action that the app sends more than once, so keep the key with the queued action until the app has seen a `2xx` answer for it.
+
 ## Handle rate limits
 
 A request over a limit gets `429` with the code `RATE_LIMITED` and a `Retry-After` header. Wait that long before the next try and show the person a short message. An earlier try is refused and counted, so it only makes the wait longer. A reverse proxy in front of the API can also answer `429` with no body and no `Retry-After` header, so check the status code first and wait about 30 seconds when the header is missing, doubling the wait on each further `429`. `POST /api/v1/trash/scan-claim` can also answer `429` with `TRASH_DAILY_LIMIT_REACHED` once a child has used the claims of the day. That answer has no `Retry-After` header and the limit resets at midnight of the local day, so tell the person to come back tomorrow and do not retry. Always branch on `errorCode`. Do not retry in a loop, because every retry counts against the same limit. A `429` that has no JSON body comes from a proxy in front of the API and means the same thing.

@@ -39,7 +39,7 @@ func newFixture(t *testing.T, userMax int, passwordMax int, limited bool) fixtur
 		userLimit = server.UserLimiter(middleware.UserKey)
 	}
 
-	mw := middleware.NewMiddleware(tokens, userLimit)
+	mw := middleware.NewMiddleware(tokens, userLimit, nil)
 	ok := func(c gofiber.Ctx) error { return c.JSON(map[string]string{"user": middleware.UserKey(c)}) }
 
 	server.Router.Get("/me", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), ok)
