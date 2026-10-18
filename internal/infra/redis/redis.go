@@ -30,6 +30,20 @@ const (
 	usedMarker = "used"
 )
 
+// markUsed flags an existing key as used and gives it the deadline only on the first call, so a key that is shown again keeps
+// the deadline it already has. The reply is nil for a missing key, 0 for the first use and 1 for a key that was used before.
+var markUsed = redis.NewScript(`
+local previous = redis.call('GET', KEYS[1])
+if not previous then
+	return nil
+end
+if previous == ARGV[1] then
+	return 1
+end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return 0
+`)
+
 // ErrUnavailable is returned without touching the network while Redis is considered down
 var ErrUnavailable = errors.New("redis unavailable")
 
@@ -39,7 +53,7 @@ type CacheItf interface {
 	Get(ctx context.Context, key string) (value string, found bool, err error)
 	Del(ctx context.Context, keys ...string) error
 	// MarkUsed atomically flags an existing key as used for ttl and reports whether it was already flagged.
-	// A missing key is left missing and reports false.
+	// The ttl starts at the first use, and asking again does not renew it. A missing key is left missing and reports false.
 	MarkUsed(ctx context.Context, key string, ttl time.Duration) (alreadyUsed bool, err error)
 	// Available reports whether Redis is currently reachable
 	Available() bool
@@ -247,7 +261,7 @@ func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bo
 		return false, err
 	}
 
-	previous, err := r.Client.SetArgs(ctx, r.key(key), usedMarker, redis.SetArgs{Mode: "XX", Get: true, TTL: ttl}).Result()
+	previous, err := markUsed.Run(ctx, r.Client, []string{r.key(key)}, usedMarker, ttl.Milliseconds()).Int()
 	if errors.Is(err, redis.Nil) {
 		return false, r.record(ctx, nil)
 	}
@@ -256,7 +270,7 @@ func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bo
 		return false, r.record(ctx, err)
 	}
 
-	return previous == usedMarker, r.record(ctx, nil)
+	return previous == 1, r.record(ctx, nil)
 }
 
 func (r *Redis) Ping(ctx context.Context) error {
