@@ -8,6 +8,19 @@ import (
 	"gorm.io/gorm"
 )
 
+// LockUser takes the row of the user for the rest of the transaction, and it has to be the first lock that a password change
+// or an account deletion takes. A sign in reads that row under a share lock before it stores its session, so a sign in that
+// is under way makes the change wait for it, and the change then deletes the session it stored. A sign in that starts later
+// waits for the change and finds the new hash. The lock is FOR NO KEY UPDATE, which is what an UPDATE of the row takes
+// anyway and which a refresh does not wait for, because a new token only takes a key share of the row.
+//
+// The order of locks is the user row first, then the tokens, then everything else. A transaction that takes the tokens
+// before the user row can wait for one that holds the row and waits for those tokens, and PostgreSQL has to abort one of
+// them.
+func LockUser(tx *gorm.DB, userID uuid.UUID) error {
+	return tx.Exec("SELECT id FROM users WHERE id = ? FOR NO KEY UPDATE", userID).Error
+}
+
 // EndFamily deletes every token of one session, and EndUser deletes every token of an account. They have to run in a
 // transaction, and they take the locks before the delete on purpose.
 //

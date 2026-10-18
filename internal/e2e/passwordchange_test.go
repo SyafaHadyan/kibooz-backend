@@ -79,8 +79,9 @@ func TestChangePassword(t *testing.T) {
 	})
 }
 
-// A password change and an account deletion of the same account end its sessions and touch the user row. They have to take
-// their locks in the same order, or PostgreSQL aborts one of them with a deadlock and the caller gets a 500.
+// A password change and an account deletion of the same account end its sessions and touch the user row, and a sign in reads
+// that row. They have to take their locks in the same order, which is the user row first, or PostgreSQL aborts one of them
+// with a deadlock and the caller gets a 500.
 func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) {
 	guru := registerGuru(t, "Sandi Balapan")
 	_, joinCode := classOf(t, guru)
@@ -89,12 +90,20 @@ func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) 
 		wali, _ := registerWali(t, joinCode, fmt.Sprintf("Sandi Anak %d", round))
 
 		var (
-			wg      sync.WaitGroup
-			changed result
-			removed result
+			wg       sync.WaitGroup
+			changed  result
+			removed  result
+			signedIn result
 		)
 
-		wg.Add(2)
+		wg.Add(3)
+
+		// a sign in reads the user row under a share lock, so it joins the race as well
+		go func() {
+			defer wg.Done()
+
+			signedIn = loginAs(t, wali.Email, wali.Password, "WALI")
+		}()
 
 		go func() {
 			defer wg.Done()
@@ -112,6 +121,7 @@ func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) 
 
 		require.Equal(t, http.StatusOK, removed.Status, "round %d, body %v", round, removed.Body)
 		require.NotEqual(t, http.StatusInternalServerError, changed.Status, "round %d, body %v", round, changed.Body)
+		require.NotEqual(t, http.StatusInternalServerError, signedIn.Status, "round %d, body %v", round, signedIn.Body)
 	}
 }
 
