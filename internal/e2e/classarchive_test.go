@@ -167,3 +167,16 @@ func TestLockOpenRefusesAnArchivedClass(t *testing.T) {
 	err := testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id) })
 	require.ErrorIs(t, err, apperror.ErrClassCodeNotFound)
 }
+
+// A lock that cannot be taken is an error of the caller's transaction and not an answer about the class
+func TestLockOpenReportsAFailingTransaction(t *testing.T) {
+	require.NoError(t, testDB.Exec("SELECT 1").Error)
+
+	tx := testDB.Begin()
+	require.NoError(t, tx.Error)
+	require.NoError(t, tx.Rollback().Error)
+
+	err := classteam.LockOpen(tx, uuid.New())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, apperror.ErrClassCodeNotFound)
+}
