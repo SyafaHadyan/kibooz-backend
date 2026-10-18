@@ -2,7 +2,7 @@
 // Every claim in one class takes the same ranking lock, so this also covers many children claiming at once.
 export { setup, parent, teacher, login } from './lib.js';
 
-// The preallocated VUs cover a stall of about two seconds on a shared runner. k6 drops an iteration for every VU it has to start mid-run.
+// The preallocated VUs cover a stall of about two seconds on a shared runner. k6 drops an iteration when no VU is free at its scheduled start.
 export const options = {
   scenarios: {
     parents: {
