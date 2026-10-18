@@ -63,7 +63,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
-| `RATE_LIMITED` | 429 | A rate limit was passed. The `Retry-After` header holds the seconds to wait | Wait that long, and send nothing in between because refused requests are counted too |
+| `RATE_LIMITED` | 429 | A rate limit was passed, or the server was too busy hashing passwords to take a sign in, sign up, password change or account deletion. The `Retry-After` header holds the seconds to wait | Wait that long, and send nothing in between because refused requests are counted too |
 | `TRASH_DAILY_LIMIT_REACHED` | 429 | The child used all the point claims of today. There is no `Retry-After` | Show that the limit starts again on the next local day |
 
 A proxy in front of the API can also answer `429` with no body and no `Retry-After`, so an app checks the status code first. The [client guide](client-guide.md) describes the wait and the back off.
