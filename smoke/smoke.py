@@ -606,7 +606,10 @@ for c in classes:
     ts = dig(j2, "data", "teachers") or []
     okowner = okowner and len(ts) == 1 and ts[0].get("isOwner") is True
 check("successor owns each of them", okowner)
-expect("the last teacher cannot delete without another", delete_me(g4), 409, "SUCCESSOR_REQUIRED")
+# This is the one request that would delete the keeper if the rule were broken, so it only runs while every earlier check
+# has passed. After a failure the state of the keeper's classes is not known, and the run already fails.
+if not failed:
+    expect("the last teacher cannot delete without another", delete_me(g4), 409, "SUCCESSOR_REQUIRED")
 
 # a class without children is archived when its only teacher deletes the account without a successor
 g5 = register_guru("g5", "Smoke D")
