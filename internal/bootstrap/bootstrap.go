@@ -34,6 +34,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	fiberapp "github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
@@ -103,8 +104,11 @@ func Start(version string) (*Bootstrap, error) {
 
 	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, pingStorage, version))
 
+	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
+	hasher := passwords.New(cfg)
+
 	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
-		authrepository.NewAuthDB(database), jwtService, cache, cfg,
+		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
 	))
 	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database), cache, cfg,
@@ -119,7 +123,7 @@ func Start(version string) (*Bootstrap, error) {
 		classroomrepository.NewClassroomDB(database), storage, cfg,
 	))
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), storage, cache,
+		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
 
 	log.Printf("startup time %v", time.Since(startTime))

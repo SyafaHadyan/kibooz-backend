@@ -26,6 +26,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 )
 
 type fakeRepo struct {
@@ -169,12 +170,21 @@ func (brokenJWT) GenerateToken(uuid.UUID, constants.Role) (string, error) {
 	return "", errors.New("no signing key")
 }
 
+// testHasher has room for any number of requests at once, so only the tests about a busy server see a refusal
+var testHasher = passwords.New(&env.Env{PasswordHashConcurrency: 64, PasswordHashWaitMilliseconds: 1000})
+
 func build(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache) usecase.AuthUseCaseItf {
+	t.Helper()
+
+	return buildWith(t, user, repo, cache, testHasher)
+}
+
+func buildWith(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache, hasher *passwords.Hasher) usecase.AuthUseCaseItf {
 	t.Helper()
 
 	repo.user = user
 
-	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90}, hasher)
 }
 
 func accountWith(t *testing.T, password string) *entity.User {
@@ -216,6 +226,50 @@ func TestLoginStoresItsSessionOnlyForTheHashItChecked(t *testing.T) {
 	res, err := useCase.Login(context.Background(), request)
 	require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
 	require.Empty(t, res.RefreshToken)
+}
+
+// A server whose every slot is busy hashing refuses the request with the code of a rate limit and a Retry-After, and it
+// refuses an unknown email the same way as a known one, so the answer tells nothing about the account
+func TestASignInIsRefusedWhileEverySlotIsTaken(t *testing.T) {
+	busy := passwords.New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10})
+
+	release, err := busy.Acquire(context.Background())
+	require.NoError(t, err)
+
+	defer release()
+
+	request := dto.LoginRequest{Email: "a@example.com", Password: "correct horse", Role: constants.RoleWali}
+
+	for name, user := range map[string]*entity.User{"a known email": accountWith(t, "correct horse"), "an unknown email": nil} {
+		t.Run(name, func(t *testing.T) {
+			useCase := buildWith(t, user, &fakeRepo{}, newFakeCache(), busy)
+
+			res, err := useCase.Login(context.Background(), request)
+			require.Equal(t, "RATE_LIMITED", apperror.As(err).Code)
+			require.Equal(t, http.StatusTooManyRequests, apperror.As(err).Status)
+			require.Equal(t, 1, apperror.As(err).RetryAfterSeconds)
+			require.Empty(t, res.RefreshToken)
+		})
+	}
+}
+
+func TestARegistrationIsRefusedWhileEverySlotIsTaken(t *testing.T) {
+	busy := passwords.New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10})
+
+	release, err := busy.Acquire(context.Background())
+	require.NoError(t, err)
+
+	defer release()
+
+	repo := &fakeRepo{}
+	useCase := buildWith(t, nil, repo, newFakeCache(), busy)
+
+	_, err = useCase.Register(context.Background(), dto.RegisterRequest{
+		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru,
+		Class: &dto.RegisterClass{Name: "Bunga"},
+	})
+	require.Equal(t, "RATE_LIMITED", apperror.As(err).Code)
+	require.Nil(t, repo.registered, "nothing was stored")
 }
 
 func TestRefreshCanBeRetriedAfterADatabaseFailure(t *testing.T) {
@@ -353,7 +407,7 @@ func TestRegistrationStoresTheFirstSessionWithTheAccount(t *testing.T) {
 
 func TestRegistrationFailsWhenTheAccessTokenCannotBeSigned(t *testing.T) {
 	repo := &fakeRepo{}
-	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90})
+	useCase := usecase.NewAuthUseCase(repo, brokenJWT{}, newFakeCache(), &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90}, testHasher)
 
 	res, err := useCase.Register(context.Background(), dto.RegisterRequest{
 		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Bunga"},
@@ -422,7 +476,7 @@ func TestASessionStartsWithItsOwnFamilyAndNeverOutlastsItsMaximum(t *testing.T) 
 	useCase := usecase.NewAuthUseCase(repo, fakeJWT{}, newFakeCache(), &env.Env{
 		JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 7, DeviceTokenTTLDays: 90,
 		JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests",
-	})
+	}, testHasher)
 
 	_, err := useCase.Register(context.Background(), dto.RegisterRequest{
 		Email: "new@example.com", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru,

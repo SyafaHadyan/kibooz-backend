@@ -57,6 +57,10 @@ type Env struct {
 	PointsB3                 int    `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit          int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
 	IdempotencyTTLHours      int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
+	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
+	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
+	PasswordHashConcurrency      int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
+	PasswordHashWaitMilliseconds int `env:"PASSWORD_HASH_WAIT_MILLISECONDS" envDefault:"1000"`
 	// SemesterStartMonths are the months in which a semester begins, the leaderboard starts from zero on the first day of each
 	SemesterStartMonths []int `env:"SEMESTER_START_MONTHS" envSeparator:"," envDefault:"1,7"`
 
@@ -142,6 +146,10 @@ func (e *Env) validate() error {
 		// a key that is forgotten at once cannot catch the retry of an action that was queued offline
 		{"IDEMPOTENCY_TTL_HOURS", e.IdempotencyTTLHours, 1},
 		// 0 turns the keepalive off, which is what the pipelines that run against a throwaway stack do
+		// a wait of 0 would refuse a request whenever the slots happen to be taken, even for a spike of a few milliseconds
+		{"PASSWORD_HASH_WAIT_MILLISECONDS", e.PasswordHashWaitMilliseconds, 1},
+		// 0 is one slot for each CPU
+		{"PASSWORD_HASH_CONCURRENCY", e.PasswordHashConcurrency, 0},
 		{"KEEPALIVE_SECONDS", e.KeepaliveSeconds, 0},
 		{"REDIS_DATABASE", e.RedisDatabase, 0},
 		// points are stored under a check constraint that refuses a negative number, so every claim would fail

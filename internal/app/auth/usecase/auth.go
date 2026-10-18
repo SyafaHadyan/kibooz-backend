@@ -23,6 +23,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 )
 
@@ -54,11 +55,14 @@ type AuthUseCase struct {
 	cfg   *env.Env
 	now   func() time.Time
 
+	// hasher is shared with the other use cases, because its slots are the budget of the whole process
+	hasher *passwords.Hasher
+
 	devices *devicetoken.Tokens
 }
 
-func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.CacheItf, cfg *env.Env) AuthUseCaseItf {
-	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg)}
+func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.CacheItf, cfg *env.Env, hasher *passwords.Hasher) AuthUseCaseItf {
+	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg), hasher: hasher}
 }
 
 // checkNames refuses a name that is only spaces or that is too short once the spaces are gone. The validator counts the text as it was
@@ -114,15 +118,16 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		}
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := u.hasher.Hash(ctx, req.Password)
 	if err != nil {
-		return dto.AuthResponse{}, apperror.Internal(err)
+		// the server is busy hashing, or the request ended
+		return dto.AuthResponse{}, apperror.As(err)
 	}
 
 	user := &entity.User{
 		ID:           uuid.New(),
 		Email:        normalizeEmail(req.Email),
-		PasswordHash: string(hash),
+		PasswordHash: hash,
 		Role:         req.Role,
 		FullName:     strings.TrimSpace(req.FullName),
 		PhoneNumber:  optional(req.PhoneNumber),
@@ -214,13 +219,21 @@ func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.Auth
 	}
 
 	if user == nil {
-		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
+		// the same work as for a wrong password, so the answer does not tell whether the email exists
+		_, err = u.hasher.Matches(ctx, string(dummyHash), req.Password)
+		if err != nil {
+			return dto.AuthResponse{}, apperror.As(err)
+		}
 
 		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))
-	if err != nil || user.Role != req.Role {
+	matches, err := u.hasher.Matches(ctx, user.PasswordHash, req.Password)
+	if err != nil {
+		return dto.AuthResponse{}, apperror.As(err)
+	}
+
+	if !matches || user.Role != req.Role {
 		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
 	}
 

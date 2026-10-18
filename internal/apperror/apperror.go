@@ -12,6 +12,8 @@ type Error struct {
 	Message string
 	Details map[string]string
 	Err     error
+	// RetryAfterSeconds is sent as a Retry-After header when it is above 0
+	RetryAfterSeconds int
 }
 
 func (e *Error) Error() string {
@@ -102,5 +104,10 @@ var (
 	ErrIdempotencyReused  = New(http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED", "This Idempotency-Key was used for a different request")
 	ErrIdempotencyBusy    = New(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "A request with this Idempotency-Key is still running, try again in a moment")
 	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")
-	ErrNotFound           = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
+	// ErrBusy answers a request that needed a password hash while every slot of the server was in use. It has the code of a
+	// rate limit, so an app already knows to wait, and it says for how long.
+	ErrBusy = &Error{
+		Status: http.StatusTooManyRequests, Code: "RATE_LIMITED", Message: "The server is busy, please try again in a moment", RetryAfterSeconds: 1,
+	}
+	ErrNotFound = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
 )

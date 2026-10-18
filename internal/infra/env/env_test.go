@@ -10,12 +10,13 @@ import (
 
 func valid() *Env {
 	return &Env{
-		JWTSecretKey:        strings.Repeat("k", 32),
-		AppTimezone:         "UTC",
-		TrashDailyLimit:     1,
-		DeviceTokenTTLDays:  90,
-		IdempotencyTTLHours: 168,
-		SemesterStartMonths: []int{1, 7},
+		JWTSecretKey:                 strings.Repeat("k", 32),
+		AppTimezone:                  "UTC",
+		TrashDailyLimit:              1,
+		DeviceTokenTTLDays:           90,
+		IdempotencyTTLHours:          168,
+		PasswordHashWaitMilliseconds: 1000,
+		SemesterStartMonths:          []int{1, 7},
 
 		RequestTimeoutSeconds: 10,
 
@@ -154,23 +155,25 @@ func TestTheSampleJWTSecretIsRejected(t *testing.T) {
 // A limit of 0 switches a limiter off, a cache time of 0 never ends and a negative number of points breaks every claim
 func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 	tests := map[string]func(*Env){
-		"BODY_LIMIT_MB":              func(e *Env) { e.BodyLimitMB = 0 },
-		"VIDEO_MAX_MB":               func(e *Env) { e.VideoMaxMB = 0 },
-		"VIDEO_UPLOAD_URL_SECONDS":   func(e *Env) { e.VideoUploadURLSeconds = -1 },
-		"USER_LIMITER_MAX":           func(e *Env) { e.UserLimiterMax = 0 },
-		"AUTH_LIMITER_MAX":           func(e *Env) { e.AuthLimiterMax = 0 },
-		"CLASS_CODE_LIMITER_MAX":     func(e *Env) { e.ClassCodeLimiterMax = 0 },
-		"LIMITER_EXPIRATION_SECONDS": func(e *Env) { e.LimiterExpirationSeconds = 0 },
-		"LEADERBOARD_CACHE_SECONDS":  func(e *Env) { e.LeaderboardCacheSeconds = 0 },
-		"JWT_ACCESS_EXPIRED_MINUTES": func(e *Env) { e.JWTAccessExpiredMinutes = 0 },
-		"JWT_REFRESH_EXPIRED_DAYS":   func(e *Env) { e.JWTRefreshExpiredDays = -5 },
-		"JWT_SESSION_MAX_DAYS":       func(e *Env) { e.JWTSessionMaxDays = 0 },
-		"KEEPALIVE_SECONDS":          func(e *Env) { e.KeepaliveSeconds = -1 },
-		"REDIS_DATABASE":             func(e *Env) { e.RedisDatabase = -1 },
-		"POINTS_ORGANIK":             func(e *Env) { e.PointsOrganik = -1 },
-		"POINTS_ANORGANIK":           func(e *Env) { e.PointsAnorganik = -1 },
-		"POINTS_B3":                  func(e *Env) { e.PointsB3 = -1 },
-		"IDEMPOTENCY_TTL_HOURS":      func(e *Env) { e.IdempotencyTTLHours = 0 },
+		"BODY_LIMIT_MB":                   func(e *Env) { e.BodyLimitMB = 0 },
+		"VIDEO_MAX_MB":                    func(e *Env) { e.VideoMaxMB = 0 },
+		"VIDEO_UPLOAD_URL_SECONDS":        func(e *Env) { e.VideoUploadURLSeconds = -1 },
+		"USER_LIMITER_MAX":                func(e *Env) { e.UserLimiterMax = 0 },
+		"AUTH_LIMITER_MAX":                func(e *Env) { e.AuthLimiterMax = 0 },
+		"CLASS_CODE_LIMITER_MAX":          func(e *Env) { e.ClassCodeLimiterMax = 0 },
+		"LIMITER_EXPIRATION_SECONDS":      func(e *Env) { e.LimiterExpirationSeconds = 0 },
+		"LEADERBOARD_CACHE_SECONDS":       func(e *Env) { e.LeaderboardCacheSeconds = 0 },
+		"JWT_ACCESS_EXPIRED_MINUTES":      func(e *Env) { e.JWTAccessExpiredMinutes = 0 },
+		"JWT_REFRESH_EXPIRED_DAYS":        func(e *Env) { e.JWTRefreshExpiredDays = -5 },
+		"JWT_SESSION_MAX_DAYS":            func(e *Env) { e.JWTSessionMaxDays = 0 },
+		"KEEPALIVE_SECONDS":               func(e *Env) { e.KeepaliveSeconds = -1 },
+		"REDIS_DATABASE":                  func(e *Env) { e.RedisDatabase = -1 },
+		"POINTS_ORGANIK":                  func(e *Env) { e.PointsOrganik = -1 },
+		"POINTS_ANORGANIK":                func(e *Env) { e.PointsAnorganik = -1 },
+		"POINTS_B3":                       func(e *Env) { e.PointsB3 = -1 },
+		"IDEMPOTENCY_TTL_HOURS":           func(e *Env) { e.IdempotencyTTLHours = 0 },
+		"PASSWORD_HASH_WAIT_MILLISECONDS": func(e *Env) { e.PasswordHashWaitMilliseconds = 0 },
+		"PASSWORD_HASH_CONCURRENCY":       func(e *Env) { e.PasswordHashConcurrency = -1 },
 	}
 
 	for name, change := range tests {

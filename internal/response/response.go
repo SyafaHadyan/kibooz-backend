@@ -2,6 +2,8 @@
 package response
 
 import (
+	"strconv"
+
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
@@ -29,6 +31,10 @@ func JSON(c fiber.Ctx, status int, message string, data any) error {
 }
 
 func Error(c fiber.Ctx, appErr *apperror.Error) error {
+	if appErr.RetryAfterSeconds > 0 {
+		c.Set(fiber.HeaderRetryAfter, strconv.Itoa(appErr.RetryAfterSeconds))
+	}
+
 	return c.Status(appErr.Status).JSON(Failure{
 		Success:   false,
 		Message:   appErr.Message,
