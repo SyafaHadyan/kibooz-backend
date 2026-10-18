@@ -8,7 +8,7 @@ The API needs sessions that can be revoked, rate limits that several instances s
 
 ## Decision
 
-PostgreSQL is the only authority for anything that must stay true. Refresh tokens are stored there as hashes and are used by one atomic update, and every sign in has a family so that a replay ends the whole session. Redis never decides that a token is valid. It remembers consumed tokens for a minute to refuse a quick replay without a database call, it holds the shared rate limit counters and it caches the leaderboard. The API starts and works without Redis. When Redis fails, the calls to it are skipped for a few seconds at a time, rate limits fall back to counters per process, the leaderboard is read from PostgreSQL and `/healthz` reports `degraded`.
+PostgreSQL is the only authority for anything that must stay true. Refresh tokens are stored there as hashes and are used by one atomic update, and every sign in has a family. A used token that is shown again more than a minute after its use ends the whole family, and within that minute it is only refused, because a client that lost the answer retries with the same token. Redis never decides that a token is valid. It remembers consumed tokens for a minute to refuse a quick replay without a database call, it holds the shared rate limit counters and it caches the leaderboard. The API starts and works without Redis. When Redis fails, the calls to it are skipped for a few seconds at a time, rate limits fall back to counters per process, the leaderboard is read from PostgreSQL and `/healthz` reports `degraded`.
 
 ## Consequences
 
