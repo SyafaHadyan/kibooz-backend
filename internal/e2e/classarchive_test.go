@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 )
@@ -179,4 +181,71 @@ func TestLockOpenReportsAFailingTransaction(t *testing.T) {
 	err := classteam.LockOpen(tx, uuid.New())
 	require.Error(t, err)
 	require.NotErrorIs(t, err, apperror.ErrClassCodeNotFound)
+}
+
+// A teacher must not be added to a class that was archived while the request waited for the lock
+func TestAddTeacherRefusesAnArchivedClass(t *testing.T) {
+	owner := registerGuru(t, "Diarsipkan")
+	other := registerGuru(t, "Calon Guru")
+	classID, _ := classOf(t, owner)
+
+	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?", classID).Error)
+
+	_, err := repository.NewGuruDB(testDB).AddTeacher(context.Background(), uuid.MustParse(classID), other.Email)
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	var linked int64
+
+	require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM class_teachers WHERE class_id = ? AND guru_id <> (SELECT g.id FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?)", classID, owner.Email).Scan(&linked).Error)
+	require.Zero(t, linked, "nobody was attached to the archived class")
+}
+
+// The last teacher deleting the account while that teacher adds another one either hands the class over or archives it,
+// and an archived class never ends up with a teacher
+func TestAddingATeacherWhileTheLastTeacherLeavesNeverAttachesToAnArchivedClass(t *testing.T) {
+	for round := range 6 {
+		owner := registerGuru(t, fmt.Sprintf("Tambah %d", round))
+		other := registerGuru(t, fmt.Sprintf("Calon %d", round))
+		classID, _ := classOf(t, owner)
+
+		var (
+			wg      sync.WaitGroup
+			added   result
+			removed result
+		)
+
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+
+			added = call(t, http.MethodPost, fmt.Sprintf("/api/v1/guru/classes/%s/teachers", classID), owner.Token, map[string]any{"email": other.Email})
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			removed = deleteAccount(t, owner.Token, owner.Password)
+		}()
+
+		wg.Wait()
+
+		require.Equal(t, http.StatusOK, removed.Status, "round %d, body %v", round, removed.Body)
+		require.NotEqual(t, http.StatusInternalServerError, added.Status, "round %d, body %v", round, added.Body)
+
+		var active int64
+
+		require.NoError(t, testDB.Raw(
+			"SELECT COUNT(*) FROM class_teachers ct JOIN gurus g ON g.id = ct.guru_id AND g.deleted_at IS NULL WHERE ct.class_id = ?", classID,
+		).Scan(&active).Error)
+
+		if archivedAt(t, classID) != nil {
+			require.Zero(t, active, "round %d, an archived class has a teacher", round)
+
+			continue
+		}
+
+		require.EqualValues(t, 1, active, "round %d, the class went to the teacher who was added", round)
+		require.Equal(t, http.StatusCreated, added.Status, "round %d, body %v", round, added.Body)
+	}
 }
