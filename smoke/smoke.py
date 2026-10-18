@@ -9,7 +9,7 @@ Settings come from the environment
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
 """
-import base64, json, os, random, secrets, subprocess, sys, time, uuid
+import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
 from urllib.parse import quote
 
 BASE = os.environ.get("BASE_URL", "https://kibooz-api.syafahadyan.com").rstrip("/")
@@ -26,6 +26,37 @@ if not BASE.startswith("https://") or not KEEPER_EMAIL or not KEEPER_PASSWORD:
 
 created = []  # every account of this run, so a crash can still clean up
 passed, failed = 0, []
+
+
+def finish():
+    """Runs on every exit, a crash included. Removes the accounts of this run and writes the report."""
+    for acc in created:
+        if not acc.get("token"):
+            continue
+        extra = {"successorEmail": KEEPER_EMAIL} if acc["role"] == "GURU" else {}
+        try:
+            delete_me(acc, **extra)
+        except Exception:
+            pass
+    keeper = globals().get("g4") or {}
+    lines = [f"Smoke test of {BASE} run {RUN}, passed {passed}, failed {len(failed)}"]
+    if keeper:
+        lines.append(f"Keeper {keeper['email']} {'reused' if keeper.get('reused') else 'registered now'}")
+    lines += [f"FAIL {f}" for f in failed]
+    print("\n".join(lines))
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as fh:
+            fh.write("### Smoke test\n\n" + "\n".join(f"- {l}" for l in lines) + "\n")
+
+
+def crashed(kind, error, trace):
+    failed.append(f"the script stopped with {kind.__name__} {error}")
+    sys.__excepthook__(kind, error, trace)
+
+
+atexit.register(finish)
+sys.excepthook = crashed
 
 
 def curl(method, url, headers, data=None):
@@ -307,12 +338,14 @@ def discard(token, url):
 
 
 def send_file(up, size):
+    if not dig(up, "data", "uploadUrl"):
+        return 0, ""
     return curl("PUT", dig(up, "data", "uploadUrl"), dig(up, "data", "headers"), b"\0" * size)
 
 
 s, up = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
 check("upload address for a discard", s == 200 and dig(up, "data", "videoUrl"), f"{s} {up}")
-pending_url = dig(up, "data", "videoUrl")
+pending_url = dig(up, "data", "videoUrl") or ""
 check("pending address is under pending/", "/pending/videos/" in (pending_url or ""), str(pending_url))
 ps, _ = send_file(up, 64)
 check("file arrives in the bucket", ps == 200, str(ps))
@@ -323,7 +356,7 @@ expect("discard without videoUrl", call("DELETE", UP, g1["token"]), 400, "VALIDA
 expect("discard a link to another site", discard(g1["token"], "https://example.com/video.mp4"), 400, "VALIDATION_ERROR")
 expect("discard bad class id", call("DELETE", "/classes/nope/videos/upload-url?videoUrl=x", g1["token"]), 400, "VALIDATION_ERROR")
 s, other = call("POST", f"/classes/{g2['class']}/videos/upload-url", g2["token"], {"contentType": "video/mp4", "sizeBytes": 64})
-other_url = dig(other, "data", "videoUrl")
+other_url = dig(other, "data", "videoUrl") or ""
 expect("discard a file of another class", discard(g1["token"], other_url), 400, "VALIDATION_ERROR")
 expect("discard a file that waits", discard(g1["token"], pending_url), 200)
 expect("discard twice is fine", discard(g1["token"], pending_url), 200)
@@ -335,8 +368,8 @@ s, up2 = call("POST", UP, g1["token"], {"contentType": "video/mp4", "sizeBytes":
 send_file(up2, 64)
 s, added = call("POST", f"/classes/{cid}/videos", g1["token"], {"title": "Smoke Upload", "videoUrl": dig(up2, "data", "videoUrl")})
 upload_vid = dig(added, "data", "id")
-permanent = dig(added, "data", "videoUrl")
-check("uploaded file added as a video", s == 201 and upload_vid and "/pending/" not in (permanent or ""), f"{s} {added}")
+permanent = dig(added, "data", "videoUrl") or ""
+check("uploaded file added as a video", s == 201 and upload_vid and "/pending/" not in permanent, f"{s} {added}")
 expect("discard refuses an added video", discard(g1["token"], permanent), 400, "VALIDATION_ERROR")
 expect("delete the uploaded video", call("DELETE", f"/classes/{cid}/videos/{upload_vid}", g1["token"]), 200)
 expect("their own teacher discards the file of the other class", call("DELETE", f"/classes/{g2['class']}/videos/upload-url?videoUrl=" + quote(other_url, safe=""), g2["token"]), 200)
@@ -454,22 +487,4 @@ check("successor owns each of them", okowner)
 expect("the last teacher cannot delete without another", delete_me(g4), 409, "SUCCESSOR_REQUIRED")
 
 
-def cleanup():
-    """Best effort after the checks, an account that a failed check left behind is removed with the keeper as successor."""
-    for acc in created:
-        if not acc.get("token"):
-            continue
-        extra = {"successorEmail": g4["email"]} if acc["role"] == "GURU" else {}
-        delete_me(acc, **extra)
-
-
-cleanup()
-
-lines = [f"Smoke test of {BASE} run {RUN}, passed {passed}, failed {len(failed)}", f"Keeper {g4['email']} {'reused' if g4.get('reused') else 'registered now'}"]
-lines += [f"FAIL {f}" for f in failed]
-print("\n".join(lines))
-summary = os.environ.get("GITHUB_STEP_SUMMARY")
-if summary:
-    with open(summary, "a") as fh:
-        fh.write("### Smoke test\n\n" + "\n".join(f"- {l}" for l in lines) + "\n")
 sys.exit(1 if failed else 0)
