@@ -73,6 +73,10 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 
 OSSF Scorecard is not required because it only runs on `main`, and the Cloudflare docs build is not required because it can be missing on pull requests from forks. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
 
+### Signed commits
+
+The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Dependabot. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
+
 ### Prose style
 
 Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because Dependabot does not read them. To see the hints that do not gate the build, run Vale locally.
@@ -88,6 +92,7 @@ Versions are decided by [release-please](https://github.com/googleapis/release-p
 
 1. Merge pull requests into `main` with a Conventional Commit title.
 2. release-please opens or updates a pull request named like `chore(main): release 0.2.0` with the new version and changelog.
-3. Merge that pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0`, `0.2` and `0` image tags.
+3. When the release has `feat` entries or changed routes, run the `DAST active` workflow on `main` from the Actions tab or with `gh workflow run dast-active.yaml`, and read its report. The release pull request only adds the version and the changelog, so `main` holds the code that ships. The scan only reports and is not a required check, so a new high or medium finding is a reason to hold the release. A release with only fixes, docs or CI changes can rely on the weekly scan when its last run is recent and finished and its report was read with the same rule, because a green run can still hold alerts.
+4. Merge the release pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0`, `0.2` and `0` image tags.
 
-For the release pull request to run CI and for the tag to trigger the Docker workflow, the workflow gets its token from a GitHub App with contents, pull requests and issues write access, installed only on this repository. Set the repository variable `RELEASE_APP_CLIENT_ID` and the secret `RELEASE_APP_PRIVATE_KEY` from that App. GitHub does not start workflows for events created with the default token, and the release commits are made by the App instead of a personal account. The App is also the bypass actor of the `release-tags-creation` ruleset, so only repository admins and this App can create a `v*` tag.
+For the release pull request to run CI and for the tag to trigger the Docker workflow, the workflow gets its token from a GitHub App with contents, pull requests and issues write access, installed only on this repository. Set the repository variable `RELEASE_APP_CLIENT_ID` and the secret `RELEASE_APP_PRIVATE_KEY` from that App. GitHub does not start workflows for events created with the default token, and the release commits are made by the App instead of a personal account. The App is also the bypass actor of the `release-tags-creation` ruleset, so only this App can create a `v*` tag.

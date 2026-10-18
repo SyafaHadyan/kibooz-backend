@@ -86,6 +86,8 @@ other_id="$(pick "$other" '.data.id')"
 # a 1x1 PNG, so that the image checks run on a real picture and not only on a refusal
 photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 
+# The stack under test has no bucket, so upload-url answers 503 and no pending file can exist. The two DELETE requests of
+# /videos/upload-url below therefore only attack how the videoUrl query is read and refused, which is all that can run here.
 extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg c "$class" --arg v "$video_id" \
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" '[
@@ -99,6 +101,8 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos"), token: $gt, body: {title: "ZAP video two", videoUrl: "https://example.com/zap-two.mp4", durationSeconds: 5}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos"), token: $wt, body: {title: "parent video", videoUrl: "https://example.com/p.mp4"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/videos/upload-url"), token: $gt, body: {contentType: "video/mp4", sizeBytes: 1024}},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/videos/upload-url?videoUrl=https%3A%2F%2Fexample.com%2Fpending%2Fvideos%2F" + $c + "%2Fzap.mp4"), token: $gt},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/videos/upload-url?videoUrl=https%3A%2F%2Fexample.com%2Fzap.mp4"), token: $wt},
   {method: "PATCH", path: ("/api/v1/classes/" + $c + "/videos/" + $v), token: $gt, body: {title: "ZAP video renamed"}},
   {method: "GET", path: ("/api/v1/classes/" + $c + "/students"), token: $gt},
   {method: "GET", path: ("/api/v1/classes/" + $c + "/students"), token: $wt},
