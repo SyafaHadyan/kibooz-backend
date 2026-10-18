@@ -48,7 +48,7 @@ A request that finds every slot taken waits up to `PASSWORD_HASH_WAIT_MILLISECON
 
 ### A flood limit in the proxy
 
-The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address 16 requests a second with a burst of 128. Many parents who sign up at the same moment on one school network stay inside the burst, and a single script is held to 16 requests a second, which a small server can still hash without every slot of the cap above staying taken.
+The proxy limit is a ceiling for floods and not a throttle for people. It counts by address, so once an address goes over the limit the proxy rejects everyone who shares it, including the users who behave. Only login and register hash a password, so those two routes get a strict limit and every other route is left to the API. This nginx example allows each address an average of 16 requests a second, and forwards up to 128 extra requests at once without delay. Many parents who sign up at the same moment on one school network stay inside that burst. A script can also send the whole burst at once, and after it is used up the script is held to 16 requests a second, which a small server can still hash without every slot of the cap above staying taken.
 
 ```nginx
 # http block
