@@ -502,6 +502,16 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 	})
 }
 
+// requireLockTimeout fails the test unless err is the error of PostgreSQL for a lock that was not granted in time
+func requireLockTimeout(t *testing.T, err error) {
+	t.Helper()
+
+	var pgErr *pgconn.PgError
+
+	require.ErrorAs(t, err, &pgErr)
+	require.Equal(t, "55P03", pgErr.Code, "the change has to fail on the lock of the user row: %v", err)
+}
+
 // A change that cannot take the user row fails as a whole and changes nothing, like one that cannot take the tokens
 func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T) {
 	guru := registerGuru(t, "User Lock Timeout")
@@ -518,7 +528,7 @@ func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T)
 
 	t.Run("changing the password", func(t *testing.T) {
 		_, err := userrepository.NewUserDB(db).UpdatePassword(context.Background(), uuid.MustParse(userID), hash, "changed-hash")
-		require.Error(t, err)
+		requireLockTimeout(t, err)
 
 		var current string
 
@@ -529,7 +539,7 @@ func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T)
 
 	t.Run("deleting the account", func(t *testing.T) {
 		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
-		require.Error(t, err)
+		requireLockTimeout(t, err)
 
 		var active int64
 
