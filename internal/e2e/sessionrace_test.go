@@ -502,6 +502,42 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 	})
 }
 
+// A change that cannot take the user row fails as a whole and changes nothing, like one that cannot take the tokens
+func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T) {
+	guru := registerGuru(t, "User Lock Timeout")
+	userID := userIDOfEmail(t, guru.Email)
+
+	var hash string
+
+	require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?::uuid", userID).Scan(&hash).Error)
+
+	// a sign in under way holds the row, and the stand-in is never committed
+	standInSignIn(t, userID)
+
+	db := impatient(t)
+
+	t.Run("changing the password", func(t *testing.T) {
+		_, err := userrepository.NewUserDB(db).UpdatePassword(context.Background(), uuid.MustParse(userID), hash, "changed-hash")
+		require.Error(t, err)
+
+		var current string
+
+		require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?::uuid", userID).Scan(&current).Error)
+		require.Equal(t, hash, current)
+		require.EqualValues(t, 1, tokensWhere(t, "user_id", userID), "only the token of the registration is there")
+	})
+
+	t.Run("deleting the account", func(t *testing.T) {
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
+		require.Error(t, err)
+
+		var active int64
+
+		require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE id = ?::uuid AND deleted_at IS NULL", userID).Scan(&active).Error)
+		require.EqualValues(t, 1, active)
+	})
+}
+
 func TestLoggingOutWithATokenNobodyKnowsChangesNothing(t *testing.T) {
 	guru := registerGuru(t, "Unknown Logout")
 	family := familyOf(t, guru.RefreshToken)
