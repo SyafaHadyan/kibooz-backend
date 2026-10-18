@@ -20,7 +20,7 @@ The changelog can list an entry twice, once for the commit and once for the merg
 
 1. **Checks.** Every required check is green, the same as for any pull request.
 2. **Changelog.** Read it for a breaking change, a new setting in the [README](../README.md#configuration) and a migration. A migration means a database dump before the deploy, see [Roll back](operations.md#roll-back).
-3. **Active scan.** When the changelog has `feat` entries or a route changed, run the `DAST active` workflow on `main` and read its report first. The release pull request only adds the version and the changelog, so `main` already holds the code that will ship. A new high or medium finding is a reason to hold the release. A release with only fixes, docs or CI changes can rely on the weekly scan when its last run is recent and finished and its report was read.
+3. **Active scan.** When the changelog has `feat` entries or a route changed, run the `DAST active` workflow on `main` and read its report first. The release pull request only adds the version and the changelog, so `main` already holds the code that will ship. A new high or medium finding is a reason to hold the release. A release with only fixes, docs or CI changes and no route changes can rely on the weekly scan when its last run is recent and finished and its report was read.
 
    ```sh
    gh workflow run dast-active.yaml --ref main
@@ -49,5 +49,5 @@ Watch both Docker runs and the Release Please run until they finish. A failure t
 - **A published release is wrong.** A tag cannot be moved or deleted and the release cannot be edited, so ship a fix as the next patch version. This is the point of the rules.
 - **The tag was not created.** Open the Release Please run. The usual cause is the App token, so check the variable `RELEASE_APP_CLIENT_ID`, the secret `RELEASE_APP_PRIVATE_KEY`, that the App is installed on this repository, and that it is still the bypass actor of the `release-tags-creation` ruleset.
 - **The release pull request does not run CI.** It was not created with the App token. A pull request made with the default token does not start other workflows.
-- **An image has no signature in the classic format.** Run the `Resign` workflow from `main`. It checks that both registries hold the same digest before it signs again, and builds nothing.
+- **An image has no signature in the classic format.** Run the `Resign` workflow from `main`. It reads the digest from GitHub Container Registry, and when Docker Hub is set up it checks that Docker Hub holds the same digest, before it signs again. It builds nothing.
 - **The Docker run on the tag failed.** Re-run it once when the cause was the infrastructure. If it fails again, fix `main` and release the fix, because the tag cannot be rebuilt from other code.
