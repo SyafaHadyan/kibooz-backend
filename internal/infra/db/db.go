@@ -2,6 +2,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"errors"
@@ -84,8 +85,8 @@ func New(cfg *env.Env) (*gorm.DB, error) {
 
 // NewHealth opens a pool of one connection that only the health check uses. The check answers whether the database can be
 // reached, and on the shared pool it would instead wait behind the requests whenever all 25 connections are busy, so a busy
-// API would look like a dead database. The connection opens when it is first used, so a database that is down does not stop
-// the start-up here.
+// API would look like a dead database. It opens the connection once, so a database that refuses it, for example because it
+// has no connection left, stops the start-up and does not show up first as a failed health check.
 func NewHealth(cfg *env.Env) (*sql.DB, error) {
 	pool, err := sql.Open("pgx", buildDSN(cfg))
 	if err != nil {
@@ -96,8 +97,21 @@ func NewHealth(cfg *env.Env) (*sql.DB, error) {
 	pool.SetMaxIdleConns(1)
 	pool.SetConnMaxLifetime(30 * time.Minute)
 
+	ctx, cancel := context.WithTimeout(context.Background(), healthPingTimeout)
+	defer cancel()
+
+	err = pool.PingContext(ctx)
+	if err != nil {
+		_ = pool.Close()
+
+		return nil, fmt.Errorf("ping database on the health connection: %w", err)
+	}
+
 	return pool, nil
 }
+
+// healthPingTimeout bounds the first use of the health connection at start-up
+const healthPingTimeout = 5 * time.Second
 
 // Migrate applies every pending migration and is safe to call on each startup
 func Migrate(sqlDB *sql.DB) error {

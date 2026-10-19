@@ -98,8 +98,8 @@ A request that worked is logged at `INFO`, a `4xx` at `WARN` and a `5xx` at `ERR
 
 ```sh
 docker compose logs --since 1h api
-docker compose logs -f api | jq -c 'select(.level == "ERROR")'
-docker compose logs api | jq -c 'select(.status == 429)'
+docker compose logs --no-log-prefix -f api | jq -c 'select(.level == "ERROR")'
+docker compose logs --no-log-prefix api | jq -c 'select(.status == 429)'
 ```
 
 Startup prints the version and how long it took. A line saying that object storage is not configured means uploads are disabled on purpose. A `storage write probe failed` line means the bucket refused the health check write, which turns `/healthz` to `degraded`.

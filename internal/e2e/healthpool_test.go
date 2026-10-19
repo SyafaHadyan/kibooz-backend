@@ -31,10 +31,17 @@ func TestTheHealthCheckDoesNotQueueBehindAFullPool(t *testing.T) {
 		t.Cleanup(func() { _ = conn.Close() })
 	}
 
-	stats := sqlDB.Stats()
-	require.Equal(t, stats.MaxOpenConnections, stats.InUse, "the pool is full")
+	full := func(when string) {
+		stats := sqlDB.Stats()
+		require.Equal(t, stats.MaxOpenConnections, stats.InUse, "the pool is full %s", when)
+	}
+
+	full("before the request")
 
 	res := call(t, http.MethodGet, "/healthz", "", nil)
 	require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 	require.Equal(t, "ok", dig(res.Body, "checks", "database"))
+
+	// background work that held a connection when the loop ended could have let go of it during the request
+	full("after the request")
 }
