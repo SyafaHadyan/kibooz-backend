@@ -60,7 +60,8 @@ func TestAChildIsNotAddedToAParentWhoseAccountWasDeletedWhileTheRequestWaited(t 
 
 	go func() { done <- addChildTo(t, parent.Token, joinCode, "Anak Kedua") }()
 
-	waitForLockWaiter(t, "%FROM walis WHERE id%FOR UPDATE%", "the request has to wait for the deletion, or the test proves nothing")
+	// GORM puts the table name in quotes, so the pattern only names it
+	waitForLockWaiter(t, "%walis%FOR UPDATE%", "the request has to wait for the deletion, or the test proves nothing")
 
 	require.NoError(t, deleting.Commit().Error)
 
