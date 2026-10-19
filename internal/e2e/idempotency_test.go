@@ -31,6 +31,7 @@ func callKey(t *testing.T, method string, path string, token string, key string,
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(method, path, bytes.NewReader(encoded))
+	keepBody(req, encoded)
 	req.Header.Set("Content-Type", "application/json")
 
 	if token != "" {

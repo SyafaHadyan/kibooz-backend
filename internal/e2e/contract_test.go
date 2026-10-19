@@ -1,9 +1,11 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"regexp"
@@ -408,6 +410,58 @@ func requireContract(t *testing.T, req *http.Request, status int, header http.He
 
 	require.NoError(t, openapi3filter.ValidateResponse(t.Context(), input),
 		"%s %s answered %d and openapi.yaml does not describe it, body %s", req.Method, req.URL.Path, status, body)
+
+	if status >= http.StatusOK && status < http.StatusMultipleChoices {
+		requireRequestAllowed(t, req, route)
+	}
+}
+
+// keepBody lets requireContract read the body of a request again after the app has consumed it
+func keepBody(req *http.Request, body []byte) {
+	req.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
+}
+
+// pathParameters reads the {name} segments of a spec path from the path of a request
+func pathParameters(template string, path string) map[string]string {
+	params := map[string]string{}
+	wanted := strings.Split(template, "/")
+	got := strings.Split(strings.TrimPrefix(path, apiPrefix), "/")
+
+	for i := range min(len(wanted), len(got)) {
+		if name, ok := strings.CutSuffix(strings.TrimPrefix(wanted[i], "{"), "}"); ok && strings.HasPrefix(wanted[i], "{") {
+			params[name] = got[i]
+		}
+	}
+
+	return params
+}
+
+// requireRequestAllowed checks the request of a response that succeeded against the spec, the request side of the contract.
+// The server took the request, so a spec that calls it invalid is too strict or describes a field that the code does not read,
+// and a spec that is too loose is what a client would trust and then be refused for. Requests that were refused are not checked,
+// because the tests send bad ones on purpose. Authentication is the server's job and is left out here.
+func requireRequestAllowed(t *testing.T, req *http.Request, route *routers.Route) {
+	t.Helper()
+
+	sent := req.Clone(t.Context())
+	sent.Body = http.NoBody
+
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		require.NoError(t, err)
+
+		sent.Body = body
+	}
+
+	input := &openapi3filter.RequestValidationInput{
+		Request:    sent,
+		PathParams: pathParameters(route.Path, req.URL.Path),
+		Route:      route,
+		Options:    &openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
+	}
+
+	require.NoError(t, openapi3filter.ValidateRequest(t.Context(), input),
+		"%s %s was accepted by the server and openapi.yaml says the request is invalid", req.Method, req.URL.Path)
 }
 
 // TestSpecMatchesRoutes fails when an endpoint exists in only one of the code and openapi.yaml
