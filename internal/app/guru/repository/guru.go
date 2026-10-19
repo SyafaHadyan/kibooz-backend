@@ -404,14 +404,24 @@ func (r *GuruDB) ListTeachers(ctx context.Context, classID uuid.UUID) ([]Teacher
 	return rows, err
 }
 
-// lockGuru locks the row of an active teacher until the end of the transaction
+// lockGuru locks the row of an active teacher until the end of the transaction. It answers apperror.ErrProfileNotFound
+// when no active teacher has the id, for example when the account was deleted after the caller looked it up.
 func lockGuru(tx *gorm.DB, guruID uuid.UUID) error {
 	var ids []uuid.UUID
 
-	return tx.Model(&entity.Guru{}).
+	err := tx.Model(&entity.Guru{}).
 		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
 		Where("id = ?", guruID).
 		Pluck("id", &ids).Error
+	if err != nil {
+		return err
+	}
+
+	if len(ids) == 0 {
+		return apperror.ErrProfileNotFound
+	}
+
+	return nil
 }
 
 func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error) {
