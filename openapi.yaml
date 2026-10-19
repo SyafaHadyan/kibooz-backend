@@ -2036,7 +2036,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
       content:
         application/json:
           schema:
