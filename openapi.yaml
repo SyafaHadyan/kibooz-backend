@@ -23,6 +23,8 @@ info:
     `zstd`, answers `415` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
+    Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
+
     A day, such as "today" or the Monday to Friday of a week, is the local day of the school. It follows the timezone of the
     deployment, which is `Asia/Jakarta` unless the operator sets another one.
   license:
