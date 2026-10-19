@@ -95,11 +95,10 @@ func Start(version string) (*Bootstrap, error) {
 	}
 
 	jwtService := jwt.New(cfg)
-	app := fiberapp.New(cfg, redis.NewRateStore(cache))
-
-	// inside the access log and before every route, so each request is measured and a refusal is counted by its route
+	// the metrics middleware runs inside the access log and ahead of every check and route, so each request is measured,
+	// the ones that the body checks refuse too, and a refusal is counted by its route
 	stats := metrics.New()
-	app.Fiber.Use(stats.Middleware())
+	app := fiberapp.New(cfg, redis.NewRateStore(cache), stats.Middleware())
 
 	err = stats.Registry().Register(collectors.NewDBStatsCollector(sqlDB, "kibooz"))
 	if err != nil {

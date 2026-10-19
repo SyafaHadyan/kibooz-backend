@@ -66,7 +66,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 
 | Metric | Labels | What it shows |
 |:---|:---|:---|
-| `kibooz_http_requests_total` | `method`, `route`, `status` | Every answered request. `route` is the path a route was registered with, such as `/api/v1/wali/children/:studentId`, and a request that matched no route counts under `unmatched`, so a client cannot create series with the paths it sends |
+| `kibooz_http_requests_total` | `method`, `route`, `status` | Every answered request. `route` is the path a route was registered with, such as `/api/v1/wali/children/:studentId`, and a request that matched no route, or that a check such as the body size limit refused before it reached its route, counts under `unmatched`, so a client cannot create series with the paths it sends |
 | `kibooz_http_request_duration_seconds` | `method`, `route` | A histogram of the time to answer |
 | `kibooz_http_requests_in_flight` | none | Requests that are running now |
 | `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |

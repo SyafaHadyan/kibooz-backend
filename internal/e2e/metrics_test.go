@@ -53,11 +53,16 @@ func TestMetricsAreServedOnAListenerOfTheirOwn(t *testing.T) {
 	callApp(t, api, http.MethodGet, "/api/v1/no/such/route", "", nil).requireError(t, http.StatusNotFound, "NOT_FOUND")
 	callApp(t, api, http.MethodGet, "/api/v1/wali/children", "", nil).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
 
+	// a body that the size check refuses never reaches a route, and it is still counted
+	callApp(t, api, http.MethodPost, "/api/v1/auth/login", "", map[string]any{"email": strings.Repeat("a", 70000)}).
+		requireError(t, http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE")
+
 	text := scrape()
 
 	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="/healthz",status="200"} 1`)
 	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="unmatched",status="404"} 1`)
 	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="/api/v1/wali/children",status="401"} 1`)
+	require.Contains(t, text, `kibooz_http_requests_total{method="POST",route="unmatched",status="413"} 1`, "a refusal before routing has no route")
 	require.NotContains(t, text, "no/such/route", "the path of a request that matched nothing is not a label")
 	require.Contains(t, text, "go_sql_open_connections", "the pool of the database is measured")
 	require.Contains(t, text, "go_goroutines")

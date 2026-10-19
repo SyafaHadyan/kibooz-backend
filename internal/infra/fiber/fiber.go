@@ -41,7 +41,9 @@ type Fiber struct {
 }
 
 // New builds the server. limits counts the requests for the rate limiters, and a nil store counts in the memory of the process.
-func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
+// A handler in measure runs inside the access log and ahead of every check of the request, so it sees the requests that those
+// checks refuse as well. The metrics middleware goes there.
+func New(cfg *env.Env, limits ratelimit.Store, measure ...fiber.Handler) *Fiber {
 	config := fiber.Config{
 		AppName:      "kibooz-backend",
 		BodyLimit:    cfg.BodyLimitMB * 1024 * 1024,
@@ -67,9 +69,9 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 
 	app := fiber.New(config)
 
-	app.Use(
+	handlers := []any{
 		recover.New(),
-		deadline(time.Duration(cfg.RequestTimeoutSeconds)*time.Second),
+		deadline(time.Duration(cfg.RequestTimeoutSeconds) * time.Second),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
 		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
 		helmet.New(helmet.Config{
@@ -80,10 +82,16 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		logger.New(logger.Config{
 			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
 		}),
-		// after the headers, the request id and the log, so a refused request has all three
-		plainBody(),
-		smallBody(constants.JSONBodyMaxBytes),
-	)
+	}
+
+	for _, handler := range measure {
+		handlers = append(handlers, handler)
+	}
+
+	// after the headers, the request id, the log and the measuring, so a refused request has all of them
+	handlers = append(handlers, plainBody(), smallBody(constants.JSONBodyMaxBytes))
+
+	app.Use(handlers...)
 
 	return &Fiber{
 		Fiber:   app,
