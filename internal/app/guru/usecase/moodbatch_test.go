@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 )
 
 // batchRepo knows a few students and keeps the mood logs the use case asked to store
@@ -22,6 +24,7 @@ type batchRepo struct {
 
 	students  map[uuid.UUID]*entity.Student
 	createErr error
+	full      []uuid.UUID
 
 	createCalls int
 	created     []entity.MoodLog
@@ -31,11 +34,13 @@ func (r *batchRepo) FindStudent(_ context.Context, id uuid.UUID) (*entity.Studen
 	return r.students[id], nil
 }
 
-func (r *batchRepo) CreateMoodLogs(_ context.Context, moodLogs []entity.MoodLog) error {
+func (r *batchRepo) CreateMoodLogs(
+	_ context.Context, _ uuid.UUID, moodLogs []entity.MoodLog, _ repository.MoodDay,
+) ([]uuid.UUID, error) {
 	r.createCalls++
 	r.created = moodLogs
 
-	return r.createErr
+	return r.full, r.createErr
 }
 
 func batching() *batchRepo {
@@ -58,7 +63,7 @@ func (r *batchRepo) enrollIn(classID uuid.UUID) uuid.UUID {
 }
 
 func batchUseCase(repo *batchRepo, now time.Time) *GuruUseCase {
-	return &GuruUseCase{repo: repo, now: func() time.Time { return now }}
+	return &GuruUseCase{repo: repo, cfg: &env.Env{AppTimezone: "Asia/Jakarta"}, now: func() time.Time { return now }}
 }
 
 func confidence(value float32) *float32 {
@@ -387,4 +392,29 @@ func TestLogMoodBatchRefusesAnImpossibleTimeBeforeTouchingTheStore(t *testing.T)
 
 	requireDetails(t, err, map[string]string{"recordedAt": "must not be in the future"})
 	require.Zero(t, repo.createCalls)
+}
+
+func TestLogMoodBatchNamesTheChildrenWhoHaveNoRoomLeft(t *testing.T) {
+	repo := batching()
+	first, second, third := repo.enroll(), repo.enroll(), repo.enroll()
+	repo.full = []uuid.UUID{first, third}
+
+	_, err := batchUseCase(repo, time.Now()).LogMoodBatch(context.Background(), uuid.New(), dto.LogMoodBatchRequest{
+		ClassID: repo.class.ID,
+		Entries: []dto.LogMoodBatchEntry{
+			aiEntry(first, constants.MoodSenang, 0.9), aiEntry(second, constants.MoodSedih, 0.9), aiEntry(third, constants.MoodMarah, 0.9),
+		},
+	})
+
+	var got *apperror.Error
+
+	require.ErrorAs(t, err, &got)
+	require.Equal(t, http.StatusConflict, got.Status)
+	require.Equal(t, "MOOD_LOG_LIMIT_REACHED", got.Code)
+	require.Equal(t, map[string]string{
+		"entries[0].studentId": "has the largest number of mood logs for that day",
+		"entries[2].studentId": "has the largest number of mood logs for that day",
+	}, got.Details)
+	require.Equal(t, 1, repo.createCalls, "the repository decides, and it stored nothing")
+	require.Equal(t, apperror.ErrMoodLimitReached.Details, map[string]string(nil), "the shared error must not be changed by naming the entries")
 }

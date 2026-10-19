@@ -31,6 +31,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `NIP_ALREADY_REGISTERED` | 409 | An active teacher has this NIP | Ask the teacher to check the number |
 | `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN | Ask the parent to check the number |
 | `CHILD_LIMIT_REACHED` | 409 | The parent already has 10 children | Tell the parent that no more children can be added |
+| `MOOD_LOG_LIMIT_REACHED` | 409 | The child already has 20 mood logs on that local day. On a batch, `details` names the entries of the children who have no room left and nothing is saved | Tell the teacher which children to skip, and do not retry the same entries until the next day |
 
 Email, NIP and NISN can be used again after the account that held them is deleted.
 
