@@ -20,7 +20,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `AUTH_TOKEN_MISSING` | 401 | The request has no `Authorization` header | Send the access token, or sign in |
 | `AUTH_TOKEN_INVALID` | 401 | The access token is malformed, forged or expired | Refresh the token once and repeat the request |
 | `AUTH_REFRESH_INVALID` | 401 | The refresh token was used before, expired, or its session ended | Send the user to sign in again, a session that ended cannot be revived |
-| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route | Do not show the action to that role |
+| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist. This holds for an id that is a valid UUID, a malformed one answers `400` with `VALIDATION_ERROR` | Do not show the action to that role, and treat it as a class that is gone on the class routes |
 | `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
 
 ## Registration and conflicts
@@ -31,6 +31,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `NIP_ALREADY_REGISTERED` | 409 | An active teacher has this NIP | Ask the teacher to check the number |
 | `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN | Ask the parent to check the number |
 | `CHILD_LIMIT_REACHED` | 409 | The parent already has 10 children | Tell the parent that no more children can be added |
+| `MOOD_LOG_LIMIT_REACHED` | 409 | The child already has 20 mood logs on that local day. On a batch, `details` names the entries of the children who have no room left and nothing is saved | Tell the teacher which children to skip, and do not retry the same entries until the next day |
 
 Email, NIP and NISN can be used again after the account that held them is deleted.
 
@@ -39,7 +40,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
 | `CLASS_CODE_NOT_FOUND` | 404 | No open class has this join code. A class that was archived answers the same way | Ask the parent to check the code with the teacher |
-| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose | Return to the class list |
+| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose. It is the answer of the `/guru/classes/{classId}` routes, and of `/leaderboard` when it names no class and the caller has none. The `/classes/{classId}` routes answer `403` with `AUTH_FORBIDDEN` instead | Return to the class list |
 | `CLASS_NO_ACTIVE_TEACHER` | 409 | The class has no active teacher, so it cannot take new children | Tell the parent to contact the school |
 | `TEACHER_NOT_FOUND` | 404 | No active teacher account has the email that was named, as a new teacher or as the successor | Ask the teacher to check the email |
 | `TEACHER_ALREADY_IN_CLASS` | 409 | The teacher already teaches the class | Nothing to do, the teacher is already there |
@@ -82,6 +83,7 @@ A proxy in front of the API can also answer `429` with no body and no `Retry-Aft
 | `INVALID_IMAGE` | 400 | The file is not a JPEG, PNG or WebP image | Ask for another photo |
 | `IMAGE_DIMENSIONS_TOO_LARGE` | 400 | The image is more than 8192 pixels on a side or 40 megapixels | Shrink the photo before sending it |
 | `FILE_TOO_LARGE` | 413 | The file is larger than the limit | Shrink the photo, the app should do this before the upload anyway |
+| `BODY_TOO_LARGE` | 413 | A JSON body is larger than 64 KB. Only the photo uploads (`/users/avatar`, `/trash/scan-claim`) are allowed more | A real request never gets near this, treat it as a bug in the app |
 | `STORAGE_UNAVAILABLE` | 503 | Object storage is not configured, so uploads are off | Hide uploads, retrying will not help |
 | `STORAGE_ERROR` | 502 | The bucket refused or failed a storage operation | Try again later |
 

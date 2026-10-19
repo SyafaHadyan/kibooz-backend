@@ -20,7 +20,7 @@ info:
     Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
-    `zstd`, answers `415` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
+    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
@@ -417,7 +417,14 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/IdempotencyInProgress"
+          description: |
+            The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
+            `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
+            children who have no room left, and nothing of the batch is saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "422":
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
@@ -461,7 +468,14 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/IdempotencyInProgress"
+          description: |
+            The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
+            `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
+            children who have no room left, and nothing of the batch is saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "422":
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
@@ -2250,7 +2264,7 @@ components:
           format: uuid
         parentNotes:
           type: string
-          maxLength: 2000
+          maxLength: 500
     GuruTeacher:
       type: object
       required: [fullName, nip, avatarUrl]
@@ -2339,7 +2353,7 @@ components:
           description: Required for the AI_CAMERA source, 1 by default otherwise
         notes:
           type: string
-          maxLength: 2000
+          maxLength: 500
         recordedAt:
           type: string
           format: date-time
@@ -2388,7 +2402,7 @@ components:
           description: Required for the AI_CAMERA source, 1 by default for MANUAL_INPUT
         notes:
           type: string
-          maxLength: 2000
+          maxLength: 500
     LogMoodBatchRequest:
       type: object
       required: [classId, entries]
@@ -3313,11 +3327,19 @@ components:
           description: A teacher of the class
     Teacher:
       type: object
-      required: [id, fullName, nip, avatarUrl, isOwner, joinedAt]
+      required: [id, userId, isSelf, fullName, nip, avatarUrl, isOwner, joinedAt]
       properties:
         id:
           type: string
           format: uuid
+          description: The id of the teacher in the class routes, such as the `teacherId` that removes a teacher or hands the class over. It is not the id of the account
+        userId:
+          type: string
+          format: uuid
+          description: The id of the account, the same value as the `id` of `GET /guru/profile` and the `author.id` of a forum post
+        isSelf:
+          type: boolean
+          description: Whether this teacher is the signed in account, so the app can mark "you" and offer "leave class" on that entry
         fullName:
           type: string
         nip:

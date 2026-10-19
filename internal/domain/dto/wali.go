@@ -50,7 +50,7 @@ type WaliDashboardResponse struct {
 type ApplyGuidanceRequest struct {
 	GuidanceID  string    `json:"guidanceId" validate:"required,max=64"`
 	StudentID   uuid.UUID `json:"studentId" validate:"required"`
-	ParentNotes string    `json:"parentNotes" validate:"omitempty,max=2000"`
+	ParentNotes string    `json:"parentNotes" validate:"omitempty,max=500"`
 }
 
 type Guardian struct {

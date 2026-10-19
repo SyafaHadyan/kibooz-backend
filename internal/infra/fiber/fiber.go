@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
@@ -80,6 +82,7 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		}),
 		// after the headers, the request id and the log, so a refused request has all three
 		plainBody(),
+		smallBody(constants.JSONBodyMaxBytes),
 	)
 
 	return &Fiber{
@@ -110,6 +113,28 @@ func plainBody() fiber.Handler {
 		}
 
 		return c.Next()
+	}
+}
+
+// uploadPaths are the two routes that take a photo and have the size limits of a photo
+var uploadPaths = []string{"/api/v1/users/avatar", "/api/v1/trash/scan-claim"}
+
+// isUpload tells whether a request path leads to one of the photo uploads. Fiber routes without regard to case and to a
+// trailing slash, so the path is cleaned the same way before it is compared.
+func isUpload(path string) bool {
+	return slices.Contains(uploadPaths, strings.ToLower(strings.TrimRight(path, "/")))
+}
+
+// smallBody refuses a request whose body is larger than max, except on the paths that take a photo. Fiber has read the body
+// by now, up to BodyLimit, so this does not save the memory of that one request. It keeps a huge body from reaching a JSON
+// decoder, a validator and the database, and gives the client the same answer on every route.
+func smallBody(max int) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if len(c.Body()) <= max || isUpload(c.Path()) {
+			return c.Next()
+		}
+
+		return apperror.ErrBodyTooLarge
 	}
 }
 
@@ -147,7 +172,12 @@ func errorHandler(c fiber.Ctx, err error) error {
 		case http.StatusNotFound:
 			return response.Error(c, apperror.ErrNotFound)
 		case http.StatusRequestEntityTooLarge:
-			return response.Error(c, apperror.ErrFileTooLarge)
+			// Fiber refuses a body over BODY_LIMIT_MB before any handler runs, and only a photo can be that large
+			if isUpload(c.Path()) {
+				return response.Error(c, apperror.ErrFileTooLarge)
+			}
+
+			return response.Error(c, apperror.ErrBodyTooLarge)
 		case http.StatusMethodNotAllowed:
 			return response.Error(c, apperror.New(fiberErr.Code, "METHOD_NOT_ALLOWED", "HTTP method not allowed"))
 		default:

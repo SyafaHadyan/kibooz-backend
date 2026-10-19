@@ -77,7 +77,7 @@ func (u *GuruUseCase) Dashboard(ctx context.Context, userID uuid.UUID, classID *
 	loc := u.cfg.Location()
 	from, to := clock.DayBounds(u.now(), loc)
 
-	records, err := u.repo.ListMoodRecords(ctx, class.ID, from, to)
+	records, err := u.repo.ListMoodRecords(ctx, class.ID, from, to, loc)
 	if err != nil {
 		return dto.GuruDashboardResponse{}, apperror.Internal(err)
 	}
@@ -169,12 +169,44 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		moodLog.Notes = &notes
 	}
 
-	err = u.repo.CreateMoodLog(ctx, moodLog)
+	full, err := u.repo.CreateMoodLogs(ctx, student.ClassID, []entity.MoodLog{*moodLog}, u.moodDay(recordedAt))
 	if err != nil {
 		return dto.LogMoodResponse{}, apperror.Internal(err)
 	}
 
+	if len(full) > 0 {
+		return dto.LogMoodResponse{}, apperror.ErrMoodLimitReached
+	}
+
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
+}
+
+// moodDay is the local day of recordedAt, which is what the limit of mood logs per child counts in
+func (u *GuruUseCase) moodDay(recordedAt time.Time) repository.MoodDay {
+	from, to := clock.DayBounds(recordedAt, u.cfg.Location())
+
+	return repository.MoodDay{From: from, To: to, Limit: constants.MoodLogsPerStudentPerDay}
+}
+
+// moodLimitError names the entries of a batch whose child has no room left, so the app can show which children to skip
+func moodLimitError(entries []dto.LogMoodBatchEntry, full []uuid.UUID) *apperror.Error {
+	reached := make(map[uuid.UUID]bool, len(full))
+	for _, id := range full {
+		reached[id] = true
+	}
+
+	details := map[string]string{}
+
+	for i, entry := range entries {
+		if reached[entry.StudentID] {
+			details["entries["+strconv.Itoa(i)+"].studentId"] = "has the largest number of mood logs for that day"
+		}
+	}
+
+	err := *apperror.ErrMoodLimitReached
+	err.Details = details
+
+	return &err
 }
 
 // recordedAtOf picks the time of a mood log. A log that the app queued offline names the moment the mood was seen, so a
@@ -281,9 +313,13 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 		return dto.LogMoodBatchResponse{}, apperror.Validation(details)
 	}
 
-	err = u.repo.CreateMoodLogs(ctx, moodLogs)
+	full, err := u.repo.CreateMoodLogs(ctx, class.ID, moodLogs, u.moodDay(recordedAt))
 	if err != nil {
 		return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+	}
+
+	if len(full) > 0 {
+		return dto.LogMoodBatchResponse{}, moodLimitError(req.Entries, full)
 	}
 
 	logs := make([]dto.LogMoodBatchItem, len(moodLogs))
@@ -322,7 +358,7 @@ func (u *GuruUseCase) MoodAnalytics(
 	// the query window must also cover the current week so the trend works around month borders
 	queryFrom, queryTo := minTime(from, weekStart), maxTime(to, weekEnd)
 
-	records, err := u.repo.ListMoodRecords(ctx, class.ID, queryFrom, queryTo)
+	records, err := u.repo.ListMoodRecords(ctx, class.ID, queryFrom, queryTo, loc)
 	if err != nil {
 		return dto.MoodAnalyticsResponse{}, apperror.Internal(err)
 	}
@@ -468,7 +504,7 @@ func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uu
 
 	res := dto.TeacherList{Teachers: make([]dto.Teacher, 0, len(rows))}
 	for i := range rows {
-		res.Teachers = append(res.Teachers, teacherResponse(&rows[i]))
+		res.Teachers = append(res.Teachers, teacherResponse(&rows[i], userID))
 	}
 
 	return res, nil
@@ -496,7 +532,7 @@ func (u *GuruUseCase) AddTeacher(
 		return dto.Teacher{}, apperror.ErrTeacherNotFound
 	}
 
-	return teacherResponse(added), nil
+	return teacherResponse(added, userID), nil
 }
 
 func (u *GuruUseCase) RemoveTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, teacherID uuid.UUID) error {
@@ -526,7 +562,7 @@ func (u *GuruUseCase) TransferOwnership(
 		return dto.Teacher{}, apperror.ErrTeacherNotInClass
 	}
 
-	return teacherResponse(owner), nil
+	return teacherResponse(owner, userID), nil
 }
 
 // teamError keeps a refusal of the repository as it is and turns any other failure into an internal error
@@ -543,9 +579,10 @@ func teamError(err error) error {
 	return apperror.Internal(err)
 }
 
-func teacherResponse(row *repository.TeacherRow) dto.Teacher {
+func teacherResponse(row *repository.TeacherRow, viewer uuid.UUID) dto.Teacher {
 	return dto.Teacher{
-		ID: row.ID, FullName: row.FullName, NIP: row.NIP, AvatarURL: row.AvatarURL, IsOwner: row.IsOwner, JoinedAt: row.JoinedAt,
+		ID: row.ID, UserID: row.UserID, IsSelf: row.UserID == viewer, FullName: row.FullName, NIP: row.NIP,
+		AvatarURL: row.AvatarURL, IsOwner: row.IsOwner, JoinedAt: row.JoinedAt,
 	}
 }
 
