@@ -20,7 +20,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `AUTH_TOKEN_MISSING` | 401 | The request has no `Authorization` header | Send the access token, or sign in |
 | `AUTH_TOKEN_INVALID` | 401 | The access token is malformed, forged or expired | Refresh the token once and repeat the request |
 | `AUTH_REFRESH_INVALID` | 401 | The refresh token was used before, expired, or its session ended | Send the user to sign in again, a session that ended cannot be revived |
-| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist | Do not show the action to that role, and treat it as a class that is gone on the class routes |
+| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist. This holds for an id that is a valid UUID, a malformed one answers `400` with `VALIDATION_ERROR` | Do not show the action to that role, and treat it as a class that is gone on the class routes |
 | `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
 
 ## Registration and conflicts
