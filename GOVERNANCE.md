@@ -21,7 +21,7 @@ The ruleset does not require an approving review. Review from another person is 
 
 ## Releases
 
-Releases are automated. Release Please opens a release pull request from the commit messages that reach `main`, and the maintainer merges it when the release is ready. Merging creates the tag and the GitHub release through the release GitHub App, which is the only account allowed to create a `v*` tag. Releases are immutable once published, so a wrong release gets a new version and not an edit.
+Releases are automated. Release Please opens a release pull request from the commit messages that reach `main`, and the maintainer merges it when the release is ready. Merging creates the tag and the GitHub release through the release GitHub App, which is the only account allowed to create a `v*` tag. That rule stops a pushed tag and anyone who is not a repository admin. An admin can still edit the ruleset, so it does not stop a stolen owner login either, and it does not stop a branch workflow from reading the release App key, because the repository secrets are readable by anyone with write access who edits a workflow, so the guarantee holds while nobody with write access does that. Releases are immutable once published, so a wrong release gets a new version and not an edit.
 
 ## Becoming a collaborator
 
