@@ -117,13 +117,17 @@ export function parent(data) {
 export function teacher(data) {
   const kid = pick(data.parents);
 
+  // A child can have 20 mood logs per local day, and a run logs far more than that for its few children. So the log is dated
+  // on one of the last six days, like an app that replays its offline queue, and a child who is full still counts as served.
+  const seen = new Date(Date.now() - (1 + Math.floor(Math.random() * 6)) * 24 * 60 * 60 * 1000).toISOString();
+  const params = { ...tagged(data.guru.token, 'mood_log'), responseCallback: http.expectedStatuses(201, 409) };
+
   check(
-    http.post(
-      `${api}/guru/mood/log`,
-      JSON.stringify({ studentId: kid.studentId, moodType: 'SENANG' }),
-      tagged(data.guru.token, 'mood_log'),
-    ),
-    { 'mood log is 201': (r) => r.status === 201 },
+    http.post(`${api}/guru/mood/log`, JSON.stringify({ studentId: kid.studentId, moodType: 'SENANG', recordedAt: seen }), params),
+    {
+      'mood log is 201 or the day is full': (r) =>
+        r.status === 201 || (r.status === 409 && r.json('errorCode') === 'MOOD_LOG_LIMIT_REACHED'),
+    },
   );
 
   check(http.get(`${api}/guru/dashboard`, tagged(data.guru.token, 'guru_dashboard')), {
