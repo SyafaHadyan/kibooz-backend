@@ -619,4 +619,9 @@ expect("the join code of an archived class is not found", call("POST", "/auth/re
     "classCode": g5["code"], "student": {"nisn": nisn(), "fullName": "Smoke Late Child"}}), 404, "CLASS_CODE_NOT_FOUND")
 
 
+# ---------- 0.13.0 request size ----------
+big = json.dumps({"email": "kibooz-smoke-size@example.com", "password": "x" * 70000}).encode()
+expect("a JSON body over 64 KB is refused", call("POST", "/auth/login", raw=big, ctype="application/json"), 413, "BODY_TOO_LARGE")
+
+
 sys.exit(1 if failed else 0)

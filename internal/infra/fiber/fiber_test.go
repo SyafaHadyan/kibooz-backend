@@ -24,6 +24,8 @@ func newServer(accountMax int) *gofiber.App {
 
 	server.Fiber.Get("/ping", ok)
 	server.Router.Post("/public", server.EmailLimiter(), ok)
+	server.Router.Post("/users/avatar", ok)
+	server.Router.Post("/trash/scan-claim", ok)
 
 	return server.Fiber
 }
@@ -176,4 +178,28 @@ func TestABusyServerAnswersWithARateLimitAndARetryAfter(t *testing.T) {
 
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
 	require.Equal(t, "RATE_LIMITED", body["errorCode"])
+}
+
+func TestAJSONBodyOver64KBIsRefusedExceptOnTheUploads(t *testing.T) {
+	app := newServer(100)
+
+	big := `{"notes":"` + strings.Repeat("a", 64*1024) + `"}`
+	small := `{"notes":"` + strings.Repeat("a", 60*1024) + `"}`
+
+	res := post(t, app, "/api/v1/public", big)
+	require.Equal(t, http.StatusRequestEntityTooLarge, res.StatusCode)
+	requireSecurityHeaders(t, res)
+
+	var failure struct {
+		ErrorCode string `json:"errorCode"`
+	}
+
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&failure))
+	require.Equal(t, apperror.ErrBodyTooLarge.Code, failure.ErrorCode)
+
+	require.Equal(t, http.StatusOK, post(t, app, "/api/v1/public", small).StatusCode, "a body below the limit passes")
+
+	for _, path := range []string{"/api/v1/users/avatar", "/api/v1/trash/scan-claim"} {
+		require.Equal(t, http.StatusOK, post(t, app, path, big).StatusCode, "%s takes a photo and has its own limit", path)
+	}
 }

@@ -80,6 +80,10 @@ const (
 
 	MoodBatchMax = 30
 
+	// JSONBodyMaxBytes is the largest body of any request except the two uploads, whose bodies are photos. The largest real
+	// body is a batch of mood logs with 500 character notes, which stays well below this.
+	JSONBodyMaxBytes = 64 * 1024
+
 	// MoodRecordedAtMaxAge is how far back a client may date a mood log that it queued while it was offline. It matches the
 	// time an Idempotency-Key is kept, so a replay that is old enough to be refused here could not be repeated safely anyway.
 	MoodRecordedAtMaxAge = 7 * 24 * time.Hour

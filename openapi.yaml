@@ -20,7 +20,7 @@ info:
     Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
-    `zstd`, answers `415` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
+    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
