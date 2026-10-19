@@ -31,10 +31,18 @@ const (
 type Sweeper struct {
 	db      *gorm.DB
 	storage s3.StorageItf
+	observe func(error)
 }
 
 func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
 	return &Sweeper{db: db, storage: storage}
+}
+
+// Observe makes the sweeper call report with the error of every run that the shutdown did not cut short, nil for a success
+func (s *Sweeper) Observe(report func(error)) *Sweeper {
+	s.observe = report
+
+	return s
 }
 
 // Sweep tries the queued files that are due, the longest waiting first, up to one batch. A file that is gone leaves the
@@ -115,6 +123,10 @@ func (s *Sweeper) Start(interval time.Duration) (stop func()) {
 				return
 			case <-ticker.C:
 				removed, err := s.Sweep(ctx)
+				if s.observe != nil && ctx.Err() == nil {
+					s.observe(err)
+				}
+
 				if err != nil && ctx.Err() == nil {
 					log.Printf("storage cleanup sweep failed %v", err)
 				} else if removed > 0 {

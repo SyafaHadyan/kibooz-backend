@@ -260,3 +260,25 @@ func TestASemesterMonthThatIsNotAMonthIsRejected(t *testing.T) {
 
 	require.ErrorContains(t, cfg.validate(), "SEMESTER_START_MONTHS")
 }
+
+func TestMetricsAreOffByDefaultAndTakeAnAddress(t *testing.T) {
+	require.Empty(t, valid().MetricsAddress)
+
+	for _, address := range []string{":9100", "127.0.0.1:9100", "0.0.0.0:9100", "[::1]:9100"} {
+		cfg := valid()
+		cfg.MetricsAddress = address
+
+		require.NoError(t, cfg.validate(), address)
+	}
+}
+
+func TestAMetricsAddressThatCannotWorkIsRejected(t *testing.T) {
+	for _, address := range []string{"9100", "localhost", "127.0.0.1:", ":0", ":65536", ":abc", "127.0.0.1:8080", ":8080"} {
+		cfg := valid()
+		cfg.MetricsAddress = address
+
+		err := cfg.validate()
+		require.Error(t, err, address)
+		require.Contains(t, err.Error(), "METRICS_ADDRESS", address)
+	}
+}
