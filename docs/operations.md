@@ -66,7 +66,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 
 | Metric | Labels | What it shows |
 |:---|:---|:---|
-| `kibooz_http_requests_total` | `method`, `route`, `status` | Every answered request. `route` is the path a route was registered with, such as `/api/v1/wali/children/:studentId`, and a request that matched no route, or that a check such as the body size limit refused before it reached its route, counts under `unmatched`, so a client cannot create series with the paths it sends |
+| `kibooz_http_requests_total` | `method`, `route`, `status` | Every request that reaches the middleware, which is every request except two kinds that Fiber answers before any middleware runs, a body over `BODY_LIMIT_MB` (`413`) and a method that Fiber does not know (`501`). `route` is the path a route was registered with, such as `/api/v1/wali/children/:studentId`. A request that the sign-in or role check of a group refuses, such as a `401` on `/api/v1/wali`, shows the path of the group. A request that matched no route, or that a check of the whole app such as the 64 KB JSON body limit refused, counts under `unmatched`, so a client cannot create series with the paths it sends |
 | `kibooz_http_request_duration_seconds` | `method`, `route` | A histogram of the time to answer |
 | `kibooz_http_requests_in_flight` | none | Requests that are running now |
 | `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |
