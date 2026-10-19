@@ -41,7 +41,7 @@ type LogMoodRequest struct {
 	MoodType        constants.Mood       `json:"moodType" validate:"required,oneof=SENANG SEDIH MARAH BINGUNG"`
 	Source          constants.MoodSource `json:"source" validate:"omitempty,oneof=AI_CAMERA MANUAL_INPUT"`
 	ConfidenceScore *float32             `json:"confidenceScore" validate:"omitempty,gte=0,lte=1"`
-	Notes           string               `json:"notes" validate:"omitempty,max=2000"`
+	Notes           string               `json:"notes" validate:"omitempty,max=500"`
 	// RecordedAt is when the mood was seen, for a log that was queued while the device was offline. It defaults to now.
 	RecordedAt *time.Time `json:"recordedAt"`
 }
@@ -56,7 +56,7 @@ type LogMoodBatchEntry struct {
 	MoodType        constants.Mood       `json:"moodType" validate:"required,oneof=SENANG SEDIH MARAH BINGUNG"`
 	Source          constants.MoodSource `json:"source" validate:"omitempty,oneof=AI_CAMERA MANUAL_INPUT"`
 	ConfidenceScore *float32             `json:"confidenceScore" validate:"omitempty,gte=0,lte=1"`
-	Notes           string               `json:"notes" validate:"omitempty,max=2000"`
+	Notes           string               `json:"notes" validate:"omitempty,max=500"`
 }
 
 // LogMoodBatchRequest max must match constants.MoodBatchMax

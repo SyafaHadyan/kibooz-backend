@@ -15,6 +15,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
 // GuruRow is a guru joined with the account columns shown on the dashboard and the profile
@@ -25,6 +26,13 @@ type GuruRow struct {
 	Email       string
 	PhoneNumber *string
 	JoinedAt    time.Time
+}
+
+// MoodDay is the local day that some mood logs fall on, and how many logs one child may have inside it
+type MoodDay struct {
+	From  time.Time
+	To    time.Time
+	Limit int
 }
 
 // TeacherRow is a teacher of a class together with the account columns and the time the teacher joined the class
@@ -74,9 +82,10 @@ type GuruDBItf interface {
 	ListMoodRecords(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, loc *time.Location) ([]MoodRecord, error)
 	FindStudent(ctx context.Context, studentID uuid.UUID) (*entity.Student, error)
 	TeachesClass(ctx context.Context, guruID uuid.UUID, classID uuid.UUID) (bool, error)
-	CreateMoodLog(ctx context.Context, moodLog *entity.MoodLog) error
-	// CreateMoodLogs stores every mood log in one transaction, so a failure writes none of them
-	CreateMoodLogs(ctx context.Context, moodLogs []entity.MoodLog) error
+	// CreateMoodLogs stores every mood log of one class in one transaction, so a failure writes none of them. It takes the
+	// ranking lock of the class first, counts the logs that each child already has inside day and writes nothing when one
+	// of them has reached day.Limit, in which case it returns the ids of those children.
+	CreateMoodLogs(ctx context.Context, classID uuid.UUID, moodLogs []entity.MoodLog, day MoodDay) (full []uuid.UUID, err error)
 	UpdateProfile(ctx context.Context, userID uuid.UUID, guruID uuid.UUID, update ProfileUpdate) error
 	ListTaughtClasses(ctx context.Context, guruID uuid.UUID, limit int, offset int) ([]ClassRow, int, error)
 	// FindClassRow returns nil when the guru does not teach the class
@@ -212,18 +221,54 @@ func (r *GuruDB) TeachesClass(ctx context.Context, guruID uuid.UUID, classID uui
 	return total > 0, err
 }
 
-func (r *GuruDB) CreateMoodLog(ctx context.Context, moodLog *entity.MoodLog) error {
-	return r.db.WithContext(ctx).Create(moodLog).Error
-}
-
-func (r *GuruDB) CreateMoodLogs(ctx context.Context, moodLogs []entity.MoodLog) error {
+func (r *GuruDB) CreateMoodLogs(
+	ctx context.Context, classID uuid.UUID, moodLogs []entity.MoodLog, day MoodDay,
+) ([]uuid.UUID, error) {
 	if len(moodLogs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	studentIDs := make([]uuid.UUID, 0, len(moodLogs))
+	for i := range moodLogs {
+		studentIDs = append(studentIDs, moodLogs[i].StudentID)
+	}
+
+	var full []uuid.UUID
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the lock makes the count and the insert one step, so two requests cannot both pass the limit
+		err := ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		var counts []struct {
+			StudentID uuid.UUID
+			Total     int
+		}
+
+		err = tx.Raw(
+			"SELECT student_id, COUNT(*) AS total FROM mood_logs WHERE student_id IN ? AND recorded_at >= ? AND recorded_at < ? GROUP BY student_id",
+			studentIDs, day.From, day.To,
+		).Scan(&counts).Error
+		if err != nil {
+			return err
+		}
+
+		for _, row := range counts {
+			if row.Total >= day.Limit {
+				full = append(full, row.StudentID)
+			}
+		}
+
+		if len(full) > 0 {
+			return nil
+		}
+
 		return tx.Create(&moodLogs).Error
 	})
+
+	return full, err
 }
 
 func (r *GuruDB) UpdateProfile(ctx context.Context, userID uuid.UUID, guruID uuid.UUID, update ProfileUpdate) error {

@@ -417,7 +417,14 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/IdempotencyInProgress"
+          description: |
+            The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
+            `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
+            children who have no room left, and nothing of the batch is saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "422":
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
@@ -460,7 +467,14 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/IdempotencyInProgress"
+          description: |
+            The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
+            `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
+            children who have no room left, and nothing of the batch is saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "422":
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
@@ -2249,7 +2263,7 @@ components:
           format: uuid
         parentNotes:
           type: string
-          maxLength: 2000
+          maxLength: 500
     GuruTeacher:
       type: object
       required: [fullName, nip, avatarUrl]
@@ -2338,7 +2352,7 @@ components:
           description: Required for the AI_CAMERA source, 1 by default otherwise
         notes:
           type: string
-          maxLength: 2000
+          maxLength: 500
         recordedAt:
           type: string
           format: date-time
@@ -2387,7 +2401,7 @@ components:
           description: Required for the AI_CAMERA source, 1 by default for MANUAL_INPUT
         notes:
           type: string
-          maxLength: 2000
+          maxLength: 500
     LogMoodBatchRequest:
       type: object
       required: [classId, entries]

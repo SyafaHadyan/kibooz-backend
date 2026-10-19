@@ -169,12 +169,44 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		moodLog.Notes = &notes
 	}
 
-	err = u.repo.CreateMoodLog(ctx, moodLog)
+	full, err := u.repo.CreateMoodLogs(ctx, student.ClassID, []entity.MoodLog{*moodLog}, u.moodDay(recordedAt))
 	if err != nil {
 		return dto.LogMoodResponse{}, apperror.Internal(err)
 	}
 
+	if len(full) > 0 {
+		return dto.LogMoodResponse{}, apperror.ErrMoodLimitReached
+	}
+
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
+}
+
+// moodDay is the local day of recordedAt, which is what the limit of mood logs per child counts in
+func (u *GuruUseCase) moodDay(recordedAt time.Time) repository.MoodDay {
+	from, to := clock.DayBounds(recordedAt, u.cfg.Location())
+
+	return repository.MoodDay{From: from, To: to, Limit: constants.MoodLogsPerStudentPerDay}
+}
+
+// moodLimitError names the entries of a batch whose child has no room left, so the app can show which children to skip
+func moodLimitError(entries []dto.LogMoodBatchEntry, full []uuid.UUID) *apperror.Error {
+	reached := make(map[uuid.UUID]bool, len(full))
+	for _, id := range full {
+		reached[id] = true
+	}
+
+	details := map[string]string{}
+
+	for i, entry := range entries {
+		if reached[entry.StudentID] {
+			details["entries["+strconv.Itoa(i)+"].studentId"] = "has the largest number of mood logs for that day"
+		}
+	}
+
+	err := *apperror.ErrMoodLimitReached
+	err.Details = details
+
+	return &err
 }
 
 // recordedAtOf picks the time of a mood log. A log that the app queued offline names the moment the mood was seen, so a
@@ -281,9 +313,13 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 		return dto.LogMoodBatchResponse{}, apperror.Validation(details)
 	}
 
-	err = u.repo.CreateMoodLogs(ctx, moodLogs)
+	full, err := u.repo.CreateMoodLogs(ctx, class.ID, moodLogs, u.moodDay(recordedAt))
 	if err != nil {
 		return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+	}
+
+	if len(full) > 0 {
+		return dto.LogMoodBatchResponse{}, moodLimitError(req.Entries, full)
 	}
 
 	logs := make([]dto.LogMoodBatchItem, len(moodLogs))
