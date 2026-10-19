@@ -533,7 +533,13 @@ check("teacher count after leaving", dig(call("GET", tb, g1["token"])[1], "data"
 expect("only teacher cannot leave", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 409, "LAST_TEACHER")
 s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
 g2_id = dig(js, "data", "id")
+# since 0.13.0 removing or losing a teacher replaces the join code of the class
+s, js = call("GET", f"/guru/classes/{cid}", g1["token"])
+code_before_removal = dig(js, "data", "joinCode")
 expect("owner removes a teacher", call("DELETE", f"{tb}/{g2_id}", g1["token"]), 200)
+s, js = call("GET", f"/guru/classes/{cid}", g1["token"])
+code_after_removal = dig(js, "data", "joinCode")
+check("removing a teacher replaces the join code", code_before_removal and code_after_removal and code_after_removal != code_before_removal and len(code_after_removal) == 8, f"{code_before_removal} {code_after_removal}")
 s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
 g2_id = dig(js, "data", "id")
 expect("owner leaves", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 200)
@@ -542,6 +548,10 @@ check("ownership moved to the remaining teacher", s == 200 and len(dig(js, "data
 expect("former owner is out", call("GET", tb, g1["token"]), 404, "CLASS_NOT_FOUND")
 s, js = call("POST", tb, g2["token"], {"email": g1["email"]})
 check("new owner re-adds the former one", s == 201, f"{s} {js}")
+# the codes above were replaced, so later checks read the current one
+s, js = call("GET", f"/guru/classes/{cid}", g2["token"])
+new_code = dig(js, "data", "joinCode")
+g1["code"] = new_code
 
 # ---------- 0.11.0 idempotency keys, recordedAt and changing the password ----------
 key = f"smoke-{RUN}-keyed"
