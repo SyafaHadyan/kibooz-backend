@@ -180,6 +180,7 @@ func (u *AuthUseCase) registerGuru(ctx context.Context, user *entity.User, req d
 		Name:         strings.TrimSpace(req.Class.Name),
 		GradeLevel:   firstNonEmpty(req.Class.GradeLevel, constants.DefaultGradeLevel),
 		AcademicYear: firstNonEmpty(req.Class.AcademicYear, constants.DefaultAcademicYr),
+		JoinOpen:     true,
 	}
 
 	return wrap(u.repo.CreateGuru(ctx, user, guru, class, session))

@@ -18,6 +18,7 @@ type ClassOverview struct {
 	ClassID         uuid.UUID       `json:"classId"`
 	ClassName       string          `json:"className"`
 	JoinCode        string          `json:"joinCode"`
+	JoinOpen        bool            `json:"joinOpen"`
 	TotalStudents   int             `json:"totalStudents"`
 	PresentStudents int             `json:"presentStudents"`
 	DominantMood    *constants.Mood `json:"dominantMood"`
@@ -111,8 +112,19 @@ type ClassSummary struct {
 	SchoolName    string    `json:"schoolName"`
 	AcademicYear  string    `json:"academicYear"`
 	JoinCode      string    `json:"joinCode"`
+	JoinOpen      bool      `json:"joinOpen"`
 	TotalStudents int       `json:"totalStudents"`
 	CreatedAt     time.Time `json:"createdAt"`
+}
+
+// SetJoiningRequest opens or closes a class for new children
+type SetJoiningRequest struct {
+	JoinOpen *bool `json:"joinOpen" validate:"required"`
+}
+
+// JoiningResponse tells whether a class takes new children
+type JoiningResponse struct {
+	JoinOpen bool `json:"joinOpen"`
 }
 
 // JoinCodeResponse is the new join code of a class

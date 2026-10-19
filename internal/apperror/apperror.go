@@ -86,6 +86,7 @@ var (
 	ErrStudentNotFound    = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Student not found")
 	ErrChildLimitReached  = New(http.StatusConflict, "CHILD_LIMIT_REACHED", "This account already has the largest number of children")
 	ErrClassLimitReached  = New(http.StatusConflict, "CLASS_LIMIT_REACHED", "This teacher already teaches the largest number of classes")
+	ErrClassJoiningClosed = New(http.StatusConflict, "CLASS_JOINING_CLOSED", "This class is not taking new children right now")
 	ErrClassFull          = New(http.StatusConflict, "CLASS_FULL", "This class has the largest number of children")
 	ErrMoodLimitReached   = New(http.StatusConflict, "MOOD_LOG_LIMIT_REACHED", "This child already has the largest number of mood logs for that day")
 	ErrProfileNotFound    = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "User profile not found")

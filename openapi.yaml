@@ -104,8 +104,8 @@ paths:
         "409":
           description: |
             The email, NIP or NISN is already registered (`EMAIL_ALREADY_REGISTERED`, `NIP_ALREADY_REGISTERED`,
-            `NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), or the class already has 60
-            children (`CLASS_FULL`)
+            `NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), its teachers closed joining
+            (`CLASS_JOINING_CLOSED`), or the class already has 60 children (`CLASS_FULL`)
           content:
             application/json:
               schema:
@@ -345,8 +345,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: |
-            The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
-            the class already has 60 children (`CLASS_FULL`) or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a
+            The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`),
+            its teachers closed joining (`CLASS_JOINING_CLOSED`), the class already has 60 children (`CLASS_FULL`) or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a
             request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
             application/json:
@@ -625,6 +625,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JoinCodeEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/joining:
+    put:
+      tags: [Teacher]
+      operationId: setClassJoining
+      summary: Open or close a class for new children
+      description: |
+        Any teacher of the class can close it for new children and open it again. While it is closed, a parent who enters the
+        join code gets `409` with `CLASS_JOINING_CLOSED`, at registration and when adding a child, and the code itself stays the
+        same. Children who are already in the class are not affected. Every class starts open. Send the same value again to
+        change nothing. The value is also in `joinOpen` of the class, so show it next to the join code.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetJoiningRequest"
+      responses:
+        "200":
+          description: The class now takes new children or not
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoiningEnvelope"
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -2285,7 +2320,7 @@ components:
           nullable: true
     ClassOverview:
       type: object
-      required: [classId, className, joinCode, totalStudents, presentStudents, dominantMood]
+      required: [classId, className, joinCode, joinOpen, totalStudents, presentStudents, dominantMood]
       properties:
         classId:
           type: string
@@ -2296,6 +2331,9 @@ components:
         joinCode:
           type: string
           description: Eight characters that a parent uses to register a child into the class
+        joinOpen:
+          type: boolean
+          description: False while the teachers of the class do not want new children
         totalStudents:
           type: integer
         presentStudents:
@@ -3028,7 +3066,7 @@ components:
           $ref: "#/components/schemas/ForumReplyList"
     ClassSummary:
       type: object
-      required: [id, name, gradeLevel, schoolName, academicYear, joinCode, totalStudents, createdAt]
+      required: [id, name, gradeLevel, schoolName, academicYear, joinCode, joinOpen, totalStudents, createdAt]
       properties:
         id:
           type: string
@@ -3044,6 +3082,9 @@ components:
         joinCode:
           type: string
           description: The code a parent enters to register a child in this class
+        joinOpen:
+          type: boolean
+          description: False while the teachers of the class do not want new children, the code then answers `CLASS_JOINING_CLOSED`
         totalStudents:
           type: integer
           minimum: 0
@@ -3121,6 +3162,30 @@ components:
           type: string
           description: The new code of the class
           example: K7M2QX4R
+    SetJoiningRequest:
+      type: object
+      required: [joinOpen]
+      properties:
+        joinOpen:
+          type: boolean
+          description: True to take new children, false to stop taking them
+    Joining:
+      type: object
+      required: [joinOpen]
+      properties:
+        joinOpen:
+          type: boolean
+    JoiningEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Joining"
     JoinCodeEnvelope:
       type: object
       required: [success, data]
