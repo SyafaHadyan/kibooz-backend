@@ -13,8 +13,8 @@
 [![License](https://img.shields.io/github/license/SyafaHadyan/kibooz-backend)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/SyafaHadyan/kibooz-backend)](go.mod)
 
-[![API uptime](https://incidents.betterstack.com/status-badges/v1/monitor/316aa.svg)](https://status.syafahadyan.com/)
-[![Docs uptime](https://incidents.betterstack.com/status-badges/v1/monitor/316aj.svg)](https://status.syafahadyan.com/)
+[![API](https://img.shields.io/badge/API-555555)](https://status.syafahadyan.com/)[![API uptime](https://incidents.betterstack.com/status-badges/v1/monitor/316aa.svg)](https://status.syafahadyan.com/)
+[![Docs](https://img.shields.io/badge/Docs-555555)](https://status.syafahadyan.com/)[![Docs uptime](https://incidents.betterstack.com/status-badges/v1/monitor/316aj.svg)](https://status.syafahadyan.com/)
 
 [![Docker pulls](https://img.shields.io/docker/pulls/syafa/kibooz-backend)](https://hub.docker.com/r/syafa/kibooz-backend)
 [![Docker image size](https://img.shields.io/docker/image-size/syafa/kibooz-backend/latest)](https://hub.docker.com/r/syafa/kibooz-backend)
