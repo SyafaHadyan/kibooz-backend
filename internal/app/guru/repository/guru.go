@@ -15,6 +15,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
@@ -110,14 +111,20 @@ type GuruDBItf interface {
 	// TransferOwnership makes target the owner of the class on behalf of actor, who has to be the current owner. It
 	// returns the new owner, apperror.ErrNotClassOwner or apperror.ErrTeacherNotInClass.
 	TransferOwnership(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) (*TeacherRow, error)
+	// RemoveStudent hides the active child of the class, renumbers the ranking of the class and queues the avatar of the
+	// child and the photos of its trash scans for deletion in the same transaction. It returns false when the class has
+	// no such active child.
+	RemoveStudent(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error)
 }
 
 type GuruDB struct {
 	db *gorm.DB
+	// fileKey picks the files of this storage out of the addresses that a removed child held
+	fileKey filecleanup.KeyFunc
 }
 
-func NewGuruDB(db *gorm.DB) GuruDBItf {
-	return &GuruDB{db: db}
+func NewGuruDB(db *gorm.DB, fileKey filecleanup.KeyFunc) GuruDBItf {
+	return &GuruDB{db: db, fileKey: fileKey}
 }
 
 func (r *GuruDB) FindGuruByUserID(ctx context.Context, userID uuid.UUID) (*GuruRow, error) {
@@ -564,6 +571,56 @@ func (r *GuruDB) RemoveTeacher(ctx context.Context, classID uuid.UUID, actor uui
 
 		return tx.Where("class_id = ? AND guru_id = ?", classID, target).Delete(&entity.ClassTeacher{}).Error
 	})
+}
+
+func (r *GuruDB) RemoveStudent(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error) {
+	removed := false
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		removed = false
+
+		// the class lock comes first, the order that the deletion of a parent and a join take it in, and it makes the
+		// renumbering below the only one that runs for this class
+		err := ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		child := tx.Model(&entity.Student{}).Where("id = ? AND class_id = ?", studentID, classID)
+
+		var found int64
+
+		err = child.Session(&gorm.Session{}).Count(&found).Error
+		if err != nil || found == 0 {
+			return err
+		}
+
+		var urls []string
+
+		err = filecleanup.TakeAddresses(&urls, child, "avatar_url")
+		if err == nil {
+			err = filecleanup.TakeAddresses(&urls, tx.Model(&entity.TrashScan{}).Where("student_id = ?", studentID), "photo_url")
+		}
+
+		if err == nil {
+			err = child.Session(&gorm.Session{}).Delete(&entity.Student{}).Error
+		}
+
+		if err == nil {
+			err = ranking.Recompute(tx, classID)
+		}
+
+		if err == nil {
+			err = filecleanup.Queue(tx, filecleanup.KeysOf(urls, r.fileKey))
+		}
+
+		removed = err == nil
+
+		return err
+	})
+
+	return removed, err
 }
 
 func (r *GuruDB) TransferOwnership(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) (*TeacherRow, error) {

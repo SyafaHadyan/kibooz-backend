@@ -481,6 +481,20 @@ check("closing keeps the code and shows joinOpen", s == 200 and dig(js, "data", 
 s, js = call("PUT", joining, g1["token"], {"joinOpen": True})
 check("open a class again", s == 200 and dig(js, "data", "joinOpen") is True, f"{s} {js}")
 
+# ---------- 0.13.0 removing a child from a class ----------
+w7 = register_wali("w7", g1["code"], "Smoke Child To Remove")
+removal = f"/guru/classes/{g1['class']}/students/{w7['student']}"
+s, js = call("GET", f"/classes/{g1['class']}/students", g1["token"])
+roster_before = dig(js, "data", "total")
+expect("a parent cannot remove a child", call("DELETE", removal, w1["token"]), 403, "AUTH_FORBIDDEN")
+expect("a teacher of another class cannot remove the child", call("DELETE", f"/guru/classes/{g2['class']}/students/{w7['student']}", g2["token"]), 404, "STUDENT_NOT_FOUND")
+expect("remove a child with a bad id", call("DELETE", f"/guru/classes/{g1['class']}/students/nope", g1["token"]), 400, "VALIDATION_ERROR")
+expect("remove a child", call("DELETE", removal, g1["token"]), 200)
+s, js = call("GET", f"/classes/{g1['class']}/students", g1["token"])
+check("the roster lost the child", s == 200 and roster_before is not None and dig(js, "data", "total") == roster_before - 1, f"{s} {js} before={roster_before}")
+expect("removing the child again is not found", call("DELETE", removal, g1["token"]), 404, "STUDENT_NOT_FOUND")
+expect("the removed child is gone for the parent", call("GET", f"/wali/child/{w7['student']}", w7["token"]), 404, "STUDENT_NOT_FOUND")
+
 # ---------- forum ----------
 s, js = call("POST", f"/classes/{cid}/forum", w1["token"], {"title": "Smoke thread", "body": "hello"})
 pid = dig(js, "data", "id")

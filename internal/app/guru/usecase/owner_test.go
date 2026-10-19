@@ -52,7 +52,7 @@ func TestRemoveTeacherSpeaksForTheCallerAndTheClass(t *testing.T) {
 	repo := owning()
 	target := uuid.New()
 
-	err := NewGuruUseCase(repo, nil).RemoveTeacher(context.Background(), uuid.New(), repo.class.ID, target)
+	err := NewGuruUseCase(repo, nil, nil).RemoveTeacher(context.Background(), uuid.New(), repo.class.ID, target)
 
 	require.NoError(t, err)
 	require.Equal(t, repo.class.ID, repo.removedClass)
@@ -74,7 +74,7 @@ func TestRemoveTeacherKeepsTheRefusalsAndHidesOtherFailures(t *testing.T) {
 			repo := owning()
 			repo.removeErr = refusal
 
-			err := NewGuruUseCase(repo, nil).RemoveTeacher(ctx, uuid.New(), repo.class.ID, uuid.New())
+			err := NewGuruUseCase(repo, nil, nil).RemoveTeacher(ctx, uuid.New(), repo.class.ID, uuid.New())
 
 			requireCode(t, err, refusal)
 		})
@@ -84,7 +84,7 @@ func TestRemoveTeacherKeepsTheRefusalsAndHidesOtherFailures(t *testing.T) {
 		repo := owning()
 		repo.removeErr = errors.New("down")
 
-		err := NewGuruUseCase(repo, nil).RemoveTeacher(ctx, uuid.New(), repo.class.ID, uuid.New())
+		err := NewGuruUseCase(repo, nil, nil).RemoveTeacher(ctx, uuid.New(), repo.class.ID, uuid.New())
 
 		requireCode(t, err, apperror.Internal(nil))
 	})
@@ -92,7 +92,7 @@ func TestRemoveTeacherKeepsTheRefusalsAndHidesOtherFailures(t *testing.T) {
 	t.Run("a class the caller does not teach", func(t *testing.T) {
 		repo := &ownerRepo{teacherRepo: &teacherRepo{guru: &repository.GuruRow{}}}
 
-		err := NewGuruUseCase(repo, nil).RemoveTeacher(ctx, uuid.New(), uuid.New(), uuid.New())
+		err := NewGuruUseCase(repo, nil, nil).RemoveTeacher(ctx, uuid.New(), uuid.New(), uuid.New())
 
 		requireCode(t, err, apperror.ErrClassNotFound)
 		require.Equal(t, uuid.Nil, repo.removedTarget, "nothing was removed")
@@ -105,7 +105,7 @@ func TestTransferOwnershipReturnsTheNewOwner(t *testing.T) {
 	row.IsOwner = true
 	repo.newOwner = &row
 
-	res, err := NewGuruUseCase(repo, nil).TransferOwnership(
+	res, err := NewGuruUseCase(repo, nil, nil).TransferOwnership(
 		context.Background(), uuid.New(), repo.class.ID, dto.TransferOwnershipRequest{TeacherID: row.ID},
 	)
 
@@ -124,7 +124,7 @@ func TestTransferOwnershipFailures(t *testing.T) {
 		repo := owning()
 		repo.transferErr = apperror.ErrNotClassOwner
 
-		_, err := NewGuruUseCase(repo, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
 
 		requireCode(t, err, apperror.ErrNotClassOwner)
 	})
@@ -132,7 +132,7 @@ func TestTransferOwnershipFailures(t *testing.T) {
 	t.Run("a teacher that left in between", func(t *testing.T) {
 		repo := owning()
 
-		_, err := NewGuruUseCase(repo, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
 
 		requireCode(t, err, apperror.ErrTeacherNotInClass)
 	})
@@ -141,7 +141,7 @@ func TestTransferOwnershipFailures(t *testing.T) {
 		repo := owning()
 		repo.transferErr = errors.New("down")
 
-		_, err := NewGuruUseCase(repo, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).TransferOwnership(ctx, uuid.New(), repo.class.ID, req)
 
 		requireCode(t, err, apperror.Internal(nil))
 	})
@@ -149,7 +149,7 @@ func TestTransferOwnershipFailures(t *testing.T) {
 	t.Run("a class the caller does not teach", func(t *testing.T) {
 		repo := &ownerRepo{teacherRepo: &teacherRepo{guru: &repository.GuruRow{}}}
 
-		_, err := NewGuruUseCase(repo, nil).TransferOwnership(ctx, uuid.New(), uuid.New(), req)
+		_, err := NewGuruUseCase(repo, nil, nil).TransferOwnership(ctx, uuid.New(), uuid.New(), req)
 
 		requireCode(t, err, apperror.ErrClassNotFound)
 	})
@@ -161,7 +161,7 @@ func TestTeachersShowWhoOwnsTheClass(t *testing.T) {
 	owner.IsOwner = true
 	repo.teachers = []repository.TeacherRow{owner, member}
 
-	res, err := NewGuruUseCase(repo, nil).Teachers(context.Background(), uuid.New(), repo.class.ID)
+	res, err := NewGuruUseCase(repo, nil, nil).Teachers(context.Background(), uuid.New(), repo.class.ID)
 
 	require.NoError(t, err)
 	require.True(t, res.Teachers[0].IsOwner)

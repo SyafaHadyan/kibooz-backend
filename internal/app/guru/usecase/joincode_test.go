@@ -40,7 +40,7 @@ func (r *codeRepo) RotateJoinCode(_ context.Context, classID uuid.UUID) (string,
 }
 
 func rotate(repo *codeRepo) error {
-	_, err := NewGuruUseCase(repo, nil).RotateJoinCode(context.Background(), uuid.New(), uuid.New())
+	_, err := NewGuruUseCase(repo, nil, nil).RotateJoinCode(context.Background(), uuid.New(), uuid.New())
 
 	return err
 }
@@ -49,7 +49,7 @@ func TestRotateJoinCodeReplacesTheCodeOfTheResolvedClass(t *testing.T) {
 	class := &entity.Class{ID: uuid.New()}
 	repo := &codeRepo{guru: &repository.GuruRow{}, class: class}
 
-	got, err := NewGuruUseCase(repo, nil).RotateJoinCode(context.Background(), uuid.New(), class.ID)
+	got, err := NewGuruUseCase(repo, nil, nil).RotateJoinCode(context.Background(), uuid.New(), class.ID)
 
 	require.NoError(t, err)
 	require.Equal(t, "NEWCODE", got.JoinCode)
