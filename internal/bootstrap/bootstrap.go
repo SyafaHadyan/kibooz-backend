@@ -143,6 +143,10 @@ func Start(version string) (*Bootstrap, error) {
 
 	metricsListener, err := stats.Serve(cfg.MetricsAddress)
 	if err != nil {
+		// nothing else was started yet, so the two connections are all that has to be let go
+		_ = sqlDB.Close()
+		_ = cache.Close()
+
 		return nil, err
 	}
 
