@@ -20,7 +20,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `AUTH_TOKEN_MISSING` | 401 | The request has no `Authorization` header | Send the access token, or sign in |
 | `AUTH_TOKEN_INVALID` | 401 | The access token is malformed, forged or expired | Refresh the token once and repeat the request |
 | `AUTH_REFRESH_INVALID` | 401 | The refresh token was used before, expired, or its session ended | Send the user to sign in again, a session that ended cannot be revived |
-| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route | Do not show the action to that role |
+| `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist | Do not show the action to that role, and treat it as a class that is gone on the class routes |
 | `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
 
 ## Registration and conflicts
@@ -39,7 +39,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
 | `CLASS_CODE_NOT_FOUND` | 404 | No open class has this join code. A class that was archived answers the same way | Ask the parent to check the code with the teacher |
-| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose | Return to the class list |
+| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose. It is the answer of the `/guru/classes/{classId}` routes only, the `/classes/{classId}` routes answer `403` with `AUTH_FORBIDDEN` instead | Return to the class list |
 | `CLASS_NO_ACTIVE_TEACHER` | 409 | The class has no active teacher, so it cannot take new children | Tell the parent to contact the school |
 | `TEACHER_NOT_FOUND` | 404 | No active teacher account has the email that was named, as a new teacher or as the successor | Ask the teacher to check the email |
 | `TEACHER_ALREADY_IN_CLASS` | 409 | The teacher already teaches the class | Nothing to do, the teacher is already there |
