@@ -44,9 +44,10 @@ Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares
 To set up the login, create a read-only access token in the Docker Hub account settings and add it as the secret `DOCKERHUB_PULL_TOKEN`. The account name comes from the variable `DOCKERHUB_USERNAME` that the image push already uses.
 
 ```sh
-gh secret set DOCKERHUB_PULL_TOKEN                  # for pull requests of this repository, which include the ones of Renovate
-gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # only for Dependabot pull requests, which cannot read the secret above
+gh secret set DOCKERHUB_PULL_TOKEN
 ```
+
+Pull requests of Renovate read this secret like any other pull request of the repository. Dependabot pull requests could not, so an older setup also kept a copy for them with `--app dependabot`. Dependabot no longer opens version updates, so that copy is gone.
 
 Without the secret everything still works through the mirror alone. Pull requests from forks never get the secret, so they rely on the mirror.
 
@@ -95,7 +96,7 @@ The five DeepSource checks (Docker, Go, SQL, Secrets and JavaScript) are not req
 
 ### Signed commits
 
-The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Dependabot. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
+The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Renovate, which makes its commits through the GitHub API. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
 
 ### Prose style
 
