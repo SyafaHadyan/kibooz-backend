@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.11.0...v0.12.0) (2026-10-19)
+
+
+### Features
+
+* **auth:** cap how many passwords are hashed at once ([#200](https://github.com/SyafaHadyan/kibooz-backend/issues/200)) ([0e87700](https://github.com/SyafaHadyan/kibooz-backend/commit/0e877009673327c4984f65ca999fc8d5b9c27d21))
+
+
+### Bug Fixes
+
+* **auth:** leave one CPU free when sizing the hashing pool ([b7ba85c](https://github.com/SyafaHadyan/kibooz-backend/commit/b7ba85c8f9f17a881ddba12e7d9ba5e37b46b1d2))
+* **auth:** lock the user row first when changing a password or deleting an account ([#198](https://github.com/SyafaHadyan/kibooz-backend/issues/198)) ([3511f3c](https://github.com/SyafaHadyan/kibooz-backend/commit/3511f3c2af2dec9efaa1bd96d905e2b4d2961341))
+* **auth:** refuse a cancelled request before it takes a hashing slot ([3a44518](https://github.com/SyafaHadyan/kibooz-backend/commit/3a4451844122afa22d564c81f7be0494500d3b55))
+* **auth:** store a sign in session only for the password hash it checked ([#195](https://github.com/SyafaHadyan/kibooz-backend/issues/195)) ([2958b39](https://github.com/SyafaHadyan/kibooz-backend/commit/2958b3931e52c95a7f7d0b244f0a2350a95d6390))
+* **limiter:** count a request whose identifier is repeated with null ([#190](https://github.com/SyafaHadyan/kibooz-backend/issues/190)) ([7f08386](https://github.com/SyafaHadyan/kibooz-backend/commit/7f0838612d01d4ec1505a9b2dc6aaa64c52b1763))
+* **redis:** keep the first deadline of a used refresh marker ([#191](https://github.com/SyafaHadyan/kibooz-backend/issues/191)) ([87eceb8](https://github.com/SyafaHadyan/kibooz-backend/commit/87eceb8117a9b0591efd7f5895deb536d04face2))
+* **server:** read every Content-Encoding line and keep the headers on the refusal ([befe4fc](https://github.com/SyafaHadyan/kibooz-backend/commit/befe4fcac4a0eb1b77ccdcf86b2b671a19093455))
+* **server:** refuse a request whose body has a content encoding ([#192](https://github.com/SyafaHadyan/kibooz-backend/issues/192)) ([2ce9723](https://github.com/SyafaHadyan/kibooz-backend/commit/2ce9723121a58684175d8e32fbb953c57997b95f))
+* **sessions:** delete tokens until a pass finds none ([#194](https://github.com/SyafaHadyan/kibooz-backend/issues/194)) ([475cdb7](https://github.com/SyafaHadyan/kibooz-backend/commit/475cdb7f64ff5e90ab3a2c932c83283f2a5a9833))
+* **smoke:** skip the keeper deletion check after a failed check ([#196](https://github.com/SyafaHadyan/kibooz-backend/issues/196)) ([a42809f](https://github.com/SyafaHadyan/kibooz-backend/commit/a42809f0524e50413a31a262ff8747a8f2d4637d))
+
 ## [0.11.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.10.0...v0.11.0) (2026-10-18)
 
 
