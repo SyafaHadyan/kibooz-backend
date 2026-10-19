@@ -53,6 +53,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
+          # renovate: datasource=github-releases depName=golangci/golangci-lint
           version: v2.14.0
 
   test:
@@ -120,7 +121,7 @@ jobs:
             echo "Total statement coverage is $total" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Dependabot pull requests read CODECOV_TOKEN from the Dependabot secrets. A failed upload only fails the build
+      # A failed upload only fails the build
       # on main, because a Codecov outage must not block a pull request.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('coverage.out') != '' }}
