@@ -515,7 +515,13 @@ check("teacher count after leaving", dig(call("GET", tb, g1["token"])[1], "data"
 expect("only teacher cannot leave", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 409, "LAST_TEACHER")
 s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
 g2_id = dig(js, "data", "id")
+# since 0.13.0 removing or losing a teacher replaces the join code of the class
+s, js = call("GET", f"/guru/classes/{cid}", g1["token"])
+code_before_removal = dig(js, "data", "joinCode")
 expect("owner removes a teacher", call("DELETE", f"{tb}/{g2_id}", g1["token"]), 200)
+s, js = call("GET", f"/guru/classes/{cid}", g1["token"])
+code_after_removal = dig(js, "data", "joinCode")
+check("removing a teacher replaces the join code", code_before_removal and code_after_removal and code_after_removal != code_before_removal and len(code_after_removal) == 8, f"{code_before_removal} {code_after_removal}")
 s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
 g2_id = dig(js, "data", "id")
 expect("owner leaves", call("DELETE", f"{tb}/{g1_id}", g1["token"]), 200)

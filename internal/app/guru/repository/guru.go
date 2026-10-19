@@ -554,7 +554,15 @@ func (r *GuruDB) RemoveTeacher(ctx context.Context, classID uuid.UUID, actor uui
 			}
 		}
 
-		return tx.Where("class_id = ? AND guru_id = ?", classID, target).Delete(&entity.ClassTeacher{}).Error
+		err = tx.Where("class_id = ? AND guru_id = ?", classID, target).Delete(&entity.ClassTeacher{}).Error
+		if err != nil {
+			return err
+		}
+
+		// the teacher who is gone knows the join code, so it is replaced under the same lock that joining takes
+		_, err = classcode.Replace(tx, classID)
+
+		return err
 	})
 }
 
