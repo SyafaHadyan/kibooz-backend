@@ -4,4 +4,4 @@ misconfigurations:
   - id: DS-0002
     paths:
       - ".github/tools/Dockerfile"
-    statement: Never built, it only lets Dependabot read the image pins of the workflows.
+    statement: Never built, it only lets the update bot read the image pins of the workflows.

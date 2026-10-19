@@ -13,7 +13,7 @@ import (
 var goImage = regexp.MustCompile(`golang:[0-9][^\s"]*@sha256:[0-9a-f]{64}`)
 
 // The CI compose file swaps the Go image of the Dockerfile for the copy on the Google mirror by the exact name that the
-// Dockerfile uses. It takes that name from GO_IMAGE, so Dependabot only has to move the Dockerfile. A copy of the digest in
+// Dockerfile uses. It takes that name from GO_IMAGE, so the update bot only has to move the Dockerfile. A copy of the digest in
 // the compose file would go stale after the next bump, the swap would match nothing and the build would quietly pull from
 // Docker Hub again, which is what the swap was there to avoid.
 func TestTheCIComposeFileTakesTheGoImageFromGOIMAGE(t *testing.T) {
@@ -64,7 +64,7 @@ func workflowFiles(t *testing.T) []string {
 
 var imageStage = regexp.MustCompile(`\.github/tools/image\.sh ([a-z0-9-]+)`)
 
-// Dependabot does not read a docker run in a workflow, so the images of the lint and scan jobs live in .github/tools/Dockerfile and
+// The update bot does not read a docker run in a workflow, so the images of the lint and scan jobs live in .github/tools/Dockerfile and
 // the workflows ask for them by stage name. A digest written into a workflow would go stale without anyone being told, and a stage
 // that a workflow names but the file lacks would only fail when that job runs.
 func TestTheToolImagesComeFromTheToolsDockerfile(t *testing.T) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the image of a stage in .github/tools/Dockerfile, so the workflows run the version that Dependabot keeps up to date.
+# Prints the image of a stage in .github/tools/Dockerfile, so the workflows run the version that the update bot keeps current.
 set -euo pipefail
 
 stage="$1"

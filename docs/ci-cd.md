@@ -5,7 +5,7 @@
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review, gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job |
-| `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. Merge commits are skipped, and the line lengths of the body and footer are not limited because Dependabot and Release Please write long ones |
+| `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. Merge commits are skipped, and the line lengths of the body and footer are not limited because Renovate and Release Please write long ones |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike or soak test on demand) and fails when a container was killed or restarted |
 | `dast.yaml` | pull requests, weekly on Monday, manual | Builds the compose stack from the pull request, registers a teacher and a parent, replays a dozen API requests through the ZAP baseline scan and fails on any warning. The reports are uploaded as an artifact |
@@ -16,7 +16,7 @@
 | `smoke-stack.yaml` | pull requests, manual | Builds the compose stack from the pull request without a bucket and runs the same `smoke/smoke.py` against it on `127.0.0.1` with `SMOKE_STORAGE=off`, so a branch is exercised end to end before the merge. It is a required check |
 | `release-please.yaml` | push to main | Keeps a release PR with the next version and `CHANGELOG.md`, merging it creates the tag and the GitHub release |
 
-Image tags are `latest` for main, `sha-<commit>` for builds of main and pull requests, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. A release commit is built twice, once for main and once for its tag, so only the main build sets `latest` and the `sha-` tag and the tag build only adds the version tags. The version that `latest` reports is therefore the commit hash, and the version tags report the release number. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and Dependabot only build the image. How the jobs pull their own base images is described in [Pulling images](#pulling-images). All actions are pinned to commit SHAs and kept current by Dependabot, which waits 7 days after a new release before proposing it. Every job has a `timeout-minutes` limit, so a hung job ends after a few minutes and not after the six hours that GitHub allows.
+Image tags are `latest` for main, `sha-<commit>` for builds of main and pull requests, `pr-<number>` for pull requests, and `1.2.3`, `1.2` and `1` for version tags. A release commit is built twice, once for main and once for its tag, so only the main build sets `latest` and the `sha-` tag and the tag build only adds the version tags. The version that `latest` reports is therefore the commit hash, and the version tags report the release number. The image is always published to GitHub Container Registry as `ghcr.io/syafahadyan/kibooz-backend` with the built-in token, so it needs no setup. Docker Hub is optional and needs the repository variable `DOCKERHUB_USERNAME` and the secret `DOCKERHUB_TOKEN`. Pull requests from forks and from Dependabot only build the image. How the jobs pull their own base images is described in [Pulling images](#pulling-images). All actions are pinned to commit SHAs and kept current by Renovate, which waits 7 days after a new release before proposing it, except for a security fix, which it proposes at once. Every job has a `timeout-minutes` limit, so a hung job ends after a few minutes and not after the six hours that GitHub allows.
 Verify an image with cosign by checking the identity of the workflow that signed it. A normal build is signed by `docker.yaml` and an image signed again by hand is signed by `resign.yaml`, so the identity pattern accepts both.
 
 ```sh
@@ -35,7 +35,7 @@ Every tag is one image for `linux/amd64` and `linux/arm64`, and Docker pulls the
 
 Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares its addresses with many other users. Jobs that pulled `postgres`, `redis` or a lint image therefore failed at random, either with `toomanyrequests` or with a timeout on `auth.docker.io`. The jobs avoid Docker Hub where they can.
 
-- The Docker Hub images of the lint and scan jobs are pulled with `.github/actions/pull-images/pull.sh`, which tries `mirror.gcr.io/` plus the image name first and the Docker Hub name when the mirror fails. The digests are the same, so the mirror serves the identical image. The performance test and both ZAP scans do the same for Postgres and Redis in `compose.ci.yml`, and take the Go base image of the Dockerfile from the mirror with a named build context, so `compose.yml` and the Dockerfile stay as they are for production. The name of that image comes from `GO_IMAGE`, which each of those workflows reads from the Dockerfile into its `.env`, so a Dependabot bump of the Go image only changes the Dockerfile. A test in `internal/repocheck` fails when a workflow forgets the line or the compose file carries a digest of its own.
+- The Docker Hub images of the lint and scan jobs are pulled with `.github/actions/pull-images/pull.sh`, which tries `mirror.gcr.io/` plus the image name first and the Docker Hub name when the mirror fails. The digests are the same, so the mirror serves the identical image. The performance test and both ZAP scans do the same for Postgres and Redis in `compose.ci.yml`, and take the Go base image of the Dockerfile from the mirror with a named build context, so `compose.yml` and the Dockerfile stay as they are for production. The name of that image comes from `GO_IMAGE`, which each of those workflows reads from the Dockerfile into its `.env`, so a bump of the Go image only changes the Dockerfile. A test in `internal/repocheck` fails when a workflow forgets the line or the compose file carries a digest of its own.
 - The Postgres and Redis service containers of the test job name the mirror in the image as well, as `mirror.gcr.io/library/postgres:18-alpine`. If the mirror ever stops serving one of these images, change the name back to the Docker Hub one or to `public.ecr.aws/docker/library/` with the same name.
 - Each job that pulls from Docker Hub calls the local action `.github/actions/pull-images` right after the checkout. The action adds the mirror to `registry-mirrors` of the Docker daemon as a second line of defense and logs in to Docker Hub with a read-only token, so an image that falls through to Docker Hub is pulled as a known account. A login that fails does not fail the job.
 - `docker.yaml` is not changed. It already logs in to Docker Hub with the push token whenever it can push, and it builds from the Docker Hub base images of the Dockerfile.
@@ -44,20 +44,27 @@ Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares
 To set up the login, create a read-only access token in the Docker Hub account settings and add it as the secret `DOCKERHUB_PULL_TOKEN`. The account name comes from the variable `DOCKERHUB_USERNAME` that the image push already uses.
 
 ```sh
-gh secret set DOCKERHUB_PULL_TOKEN                  # for pull requests of this repository
-gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # for Dependabot pull requests, which cannot read the secret above
+gh secret set DOCKERHUB_PULL_TOKEN                  # for pull requests of this repository, which include the ones of Renovate
+gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # only for Dependabot pull requests, which cannot read the secret above
 ```
 
 Without the secret everything still works through the mirror alone. Pull requests from forks never get the secret, so they rely on the mirror.
 
+## Dependency updates
+
+Renovate opens the update pull requests, and `renovate.json` holds its rules. It runs on Mondays before 07:00 WIB, proposes a release only after it is 7 days old, and groups minor and patch updates of Go modules (`go-minor-patch`), Actions (`actions`) and the documentation tooling (`docs-tooling`). A major update gets its own pull request. The commit type is `chore` for Go modules, `ci` for Actions and the tools of the workflows, and `build` for npm, Dockerfiles and compose files, so none of them starts a release. The bot keeps an issue called Dependency Dashboard with every update it knows about. Security fixes ignore the schedule and the 7 day wait. Renovate learns about them from the Dependabot alerts of the repository, so those alerts stay on.
+
+The Go release is held on purpose. `go.mod` stays on the oldest Go release the code supports, and `go-version` in the workflows names a patch release by hand, see the comment in `ci.yaml`, so `renovate.json` turns off updates of the Go version itself. The Go image in the Dockerfile is still updated.
+
 ## Pinned tools
 
-Dependabot reads manifests and Dockerfiles but not the run steps of a workflow, so a tool that is named inside a `run` would never get an update PR. Two files hold those pins instead, and Dependabot watches both.
+The bot cannot read a tool that is named inside a `run` step, so the tools of the jobs are listed where it can.
 
-- `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a Dependabot bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
+- `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
+- The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
-These pins are still raised by hand because they are inputs of an action, which Dependabot does not read either. They are the golangci-lint version in `ci.yaml`, the k6 version in `perf.yaml`, the Vale version in `vale.yaml` and `go-version` in the workflows, which is held on purpose, see the comment in `ci.yaml`. Look at them when you review the Dependabot PRs on a Monday.
+The Google style release in `.vale.ini` and the Vale image in the commands of this page are still bumped by hand.
 
 ## Required checks
 
@@ -92,7 +99,7 @@ The ruleset of `main` also requires verified signatures on every commit that rea
 
 ### Prose style
 
-Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because Dependabot does not read them. To see the hints that do not gate the build, run Vale locally.
+Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because no update bot reads them. To see the hints that do not gate the build, run Vale locally.
 
 ```sh
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 sync
