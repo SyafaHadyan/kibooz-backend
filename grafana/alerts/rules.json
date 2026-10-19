@@ -1,0 +1,749 @@
+[
+  {
+    "title": "API is down",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "5m",
+    "condition": "C",
+    "noDataState": "Alerting",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "critical",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "The metrics of the API have not been scraped for 5 minutes. The API, the metrics listener or Alloy is down"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "min(up{service=\"kibooz-api\"})",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "lt",
+                "params": [
+                  1
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "5xx ratio is high",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "10m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "critical",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "More than 5 percent of the requests failed with a 5xx for 10 minutes"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "sum(rate(kibooz_http_requests_total{status=~\"5..\"}[10m])) / clamp_min(sum(rate(kibooz_http_requests_total[10m])), 0.001)",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  0.05
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "p95 latency is high",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "10m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "The 95th percentile of the answer time was above one second for 10 minutes"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[10m])))",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  1
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "A background job has not succeeded",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "5m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "The semester check or a keepalive has not succeeded for 10 minutes, see the logs of the API"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "max(time() - kibooz_job_last_success_timestamp_seconds{job=~\"semester_check|keepalive_database|keepalive_redis\"})",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  600
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "A slow background job has not succeeded",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "5m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "The file cleanup or the idempotency purge has not succeeded for 3 hours"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "max(time() - kibooz_job_last_success_timestamp_seconds{job=~\"file_cleanup|idempotency_purge\"})",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  10800
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "Background jobs are failing",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "0s",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "A background job failed more than 3 times in 30 minutes, see the logs of the API"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "sum(increase(kibooz_job_runs_total{result=\"failure\"}[30m]))",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  3
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "Password hashing is saturated",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "0s",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "Requests were refused because every password hashing slot was taken. The server needs more CPU"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "sum(increase(kibooz_password_hash_busy_total[10m]))",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  5
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "Database pool is nearly full",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "5m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "More than 90 percent of the database connections of the API were in use for 5 minutes"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "max(go_sql_in_use_connections / go_sql_max_open_connections)",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  0.9
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "Many requests are rate limited",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "0s",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "More than 100 requests were refused by a rate limiter in 10 minutes. Look for a client that loops or a guesser"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "sum(increase(kibooz_rate_limited_total[10m]))",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  100
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  }
+]

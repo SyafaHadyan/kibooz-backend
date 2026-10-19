@@ -24,6 +24,8 @@ services:
       REDIS_ADDRESS: redis
       REDIS_PORT: 6379
       GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
+      # the metrics listener is on the private network only, nothing publishes this port, and Alloy scrapes it from there
+      METRICS_ADDRESS: ":9100"
     ports:
       # only the reverse proxy on this host reaches the API, so it is never exposed on a public address by accident
       - "127.0.0.1:${APP_PORT}:${APP_PORT}"
@@ -53,6 +55,18 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # slow statements and long lock waits go to the log, where Alloy ships them. A statement that takes over half a second is
+    # slow for this API, whose queries are small.
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1s
+      - -c
+      - log_temp_files=0
     volumes:
       - kibooz-db:/var/lib/postgresql
     healthcheck:
@@ -106,9 +120,68 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # Metrics and logs go to Grafana Cloud. These two services only start with the `monitoring` profile, which is set with
+  # COMPOSE_PROFILES=monitoring in .env once the GRAFANA_CLOUD_* values are filled in, see docs/monitoring.md.
+  alloy:
+    image: grafana/alloy:v1.21.0
+    container_name: kibooz-alloy
+    restart: always
+    profiles:
+      - monitoring
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    environment:
+      GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL:-}
+      GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER:-}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
+      GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER:-}
+      GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+    deploy:
+      resources:
+        limits:
+          memory: ${ALLOY_MEMORY_LIMIT:-256m}
+    volumes:
+      - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - kibooz-alloy:/var/lib/alloy/data
+    depends_on:
+      - api
+      - socket-proxy
+    networks:
+      - internal
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # The only container that touches the Docker socket. It answers read requests for containers and refuses everything else,
+  # so Alloy cannot start, stop or create a container even if it is compromised.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: kibooz-socket-proxy
+    restart: always
+    profiles:
+      - monitoring
+    environment:
+      CONTAINERS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
 networks:
   internal:
+  # no route out and shared by the socket proxy and Alloy only, so nothing else can reach the Docker API
+  docker-api:
+    internal: true
 
 volumes:
   kibooz-db:
   kibooz-redis:
+  kibooz-alloy:

@@ -1,0 +1,88 @@
+// Alloy reads the metrics endpoint of the API and the logs of the three containers, and sends both to Grafana Cloud.
+// It runs only with the `monitoring` profile of compose.yml, see docs/monitoring.md.
+
+// ---- metrics ----
+
+prometheus.scrape "api" {
+  // the metrics listener of the API is on the private network and is never published on the host
+  targets         = [{ "__address__" = "api:9100", "service" = "kibooz-api" }]
+  metrics_path    = "/metrics"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.cloud.receiver]
+}
+
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = env("GRAFANA_CLOUD_PROMETHEUS_URL")
+
+    basic_auth {
+      username = env("GRAFANA_CLOUD_PROMETHEUS_USER")
+      password = env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// ---- logs ----
+
+// the containers are listed through the socket proxy, which only answers read requests for containers
+discovery.docker "containers" {
+  host = "tcp://socket-proxy:2375"
+}
+
+discovery.relabel "kibooz" {
+  targets = discovery.docker.containers.targets
+
+  // only the three containers of the stack, anything else on the host is left alone
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/kibooz-(api|db|redis)"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(kibooz-.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "kibooz" {
+  host       = "tcp://socket-proxy:2375"
+  targets    = discovery.relabel.kibooz.output
+  labels     = { "service_name" = "kibooz" }
+  forward_to = [loki.process.kibooz.receiver]
+}
+
+loki.process "kibooz" {
+  // the API writes one JSON object per line, and the level is the only field that becomes a label, because a label with
+  // many values (a request id, a path) would give every line a stream of its own. The rest stays in the line, where
+  // `| json` reads it, and the request id is structured metadata that can be searched without being a label.
+  stage.match {
+    selector = "{container=\"kibooz-api\"}"
+
+    stage.json {
+      expressions = { level = "level", request_id = "request_id" }
+    }
+
+    stage.labels {
+      values = { level = "" }
+    }
+
+    stage.structured_metadata {
+      values = { request_id = "" }
+    }
+  }
+
+  forward_to = [loki.write.cloud.receiver]
+}
+
+loki.write "cloud" {
+  endpoint {
+    url = env("GRAFANA_CLOUD_LOKI_URL")
+
+    basic_auth {
+      username = env("GRAFANA_CLOUD_LOKI_USER")
+      password = env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}

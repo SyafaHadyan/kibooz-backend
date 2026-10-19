@@ -112,6 +112,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Releasing](docs/releasing.md) covers how a version is chosen, what to check before the release pull request is merged, what the merge does and what to do afterwards.
 - [Operations](docs/operations.md) covers deploying a version, migrations, background jobs, logs, what to check when something is wrong and how to roll back.
+- [Monitoring](docs/monitoring.md) covers the metrics, the dashboards and the alerts in Grafana Cloud and how to switch them on.
 - [Client guide](docs/client-guide.md) covers what an app has to do with the tokens, the device token and the rate limits.
 - [Error codes](docs/errors.md) lists every `errorCode` with its status, what it means and what an app does about it.
 - [Differences from the PRD](docs/prd-differences.md) lists where this implementation fills gaps in the PRD.
