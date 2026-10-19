@@ -33,7 +33,7 @@ The dashboards pick their data sources with two variables at the top (`Metrics` 
    ```
 
 5. After a few minutes the Explore view of the Prometheus data source answers `up{service="kibooz-api"}` with `1`, and the Loki data source answers `{container="kibooz-api"}` with lines.
-6. Set the scrape interval of the Prometheus data source to `1m` in its settings, which is how often Alloy scrapes. The dashboards also set a minimum step of one minute on every query that takes a rate, so a rate always spans at least two samples. Then import the dashboards from `grafana/dashboards` and choose the two data sources when asked.
+6. Set the scrape interval of the Prometheus data source to `1m` in its settings, which is how often Alloy scrapes. The dashboards also set a minimum step of one minute on the queries that take a rate over the interval of the graph, so those rates span at least two samples. The two tables of the Routes dashboard take their rate over the whole time range of the dashboard, so choose a range of a few minutes or more for them. Then import the dashboards from `grafana/dashboards` and choose the two data sources when asked.
 7. Create a contact point that reaches the owner and a notification policy that uses it, then create the alert rules. Replace `__PROMETHEUS_UID__` in `grafana/alerts/rules.json` with the id of the Prometheus data source and send each rule to the provisioning API. A folder with the id `kibooz` has to exist first.
 
 Alloy keeps a small write-ahead log in the `kibooz-alloy` volume, so a short outage of the network does not lose samples.

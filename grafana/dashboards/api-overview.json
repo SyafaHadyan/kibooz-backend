@@ -191,7 +191,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval])) / sum(rate(kibooz_http_requests_total[$__rate_interval]))",
+          "expr": "(sum(rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(kibooz_http_requests_total[$__rate_interval]))",
           "interval": "1m"
         }
       ],
@@ -351,7 +351,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_rate_limited_total[$__rate_interval])) * 60",
+          "expr": "(sum(rate(kibooz_rate_limited_total[$__rate_interval])) or vector(0)) * 60",
           "interval": "1m"
         }
       ],
