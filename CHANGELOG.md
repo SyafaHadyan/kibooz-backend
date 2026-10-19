@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.12.0...v0.12.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **auth:** take the used flag off a refresh token on a context of its own ([988f5f7](https://github.com/SyafaHadyan/kibooz-backend/commit/988f5f7527b6299213f6eafd7f11b11ecaf7950c))
+* **auth:** take the used flag off a refresh token on a context of its own ([#211](https://github.com/SyafaHadyan/kibooz-backend/issues/211)) ([5b1ea19](https://github.com/SyafaHadyan/kibooz-backend/commit/5b1ea194fa77398d6a134e9e950d5ab0bec50a1e))
+* **ci:** drop a test file that does not belong in this change ([7718c5f](https://github.com/SyafaHadyan/kibooz-backend/commit/7718c5f9af1238982fe8713311218ea9e36c8008))
+* **ci:** keep Trivy from asking for a USER line in the tools Dockerfile ([2678edd](https://github.com/SyafaHadyan/kibooz-backend/commit/2678edd75d8336a7c9f5f10c4e7c340295d15225))
+* **deps:** let Renovate run go mod tidy after a Go update ([9679ad2](https://github.com/SyafaHadyan/kibooz-backend/commit/9679ad21b80ed94e05629bc8833911127bd5d5dc))
+* **deps:** let Renovate run go mod tidy after a Go update ([#218](https://github.com/SyafaHadyan/kibooz-backend/issues/218)) ([ee91733](https://github.com/SyafaHadyan/kibooz-backend/commit/ee9173329df21021b735607ab1cca2f032096fe6))
+* **user:** lock the parent row before the class locks when deleting a parent ([2f3c4ae](https://github.com/SyafaHadyan/kibooz-backend/commit/2f3c4aecf4c8abcc2e71429addd2efb12ef20db6))
+* **wali:** lock the parent row in one order for adding a child and deleting a parent ([#210](https://github.com/SyafaHadyan/kibooz-backend/issues/210)) ([9de4cc2](https://github.com/SyafaHadyan/kibooz-backend/commit/9de4cc2cdbd6aa7f5a45fec814afd211bf6f31cb))
+* **wali:** lock the parent row through the model so the lock reports whether it found one ([af69e55](https://github.com/SyafaHadyan/kibooz-backend/commit/af69e55d85a076fbe878a221a123e1ba042317b4))
+* **wali:** refuse a child for a parent who was deleted while the request waited ([8fdd40a](https://github.com/SyafaHadyan/kibooz-backend/commit/8fdd40a8e6cea8a4c90aaac7d4558d300b441f61))
+
 ## [0.12.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.11.0...v0.12.0) (2026-10-19)
 
 
