@@ -68,12 +68,14 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
 | Vale prose lint | GitHub Actions |
 | Conventional commits | GitHub Actions |
+| Smoke test on a throwaway stack | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
-| DeepSource Docker, Go, SQL, Secrets and JavaScript | DeepSource |
 | codecov/patch | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
 OSSF Scorecard is not required because it only runs on `main`, and the Cloudflare docs build is not required because it can be missing on pull requests from forks. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
+
+The five DeepSource checks (Docker, Go, SQL, Secrets and JavaScript) are not required at the moment, because the free quota of the account ran out on 2026-10-15. They go back into the ruleset, pinned to DeepSource, when the quota returns, about 1 November 2026. Until then the other checks and the review of the diff carry the load.
 
 ### Signed commits
 
