@@ -39,7 +39,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
 | `CLASS_CODE_NOT_FOUND` | 404 | No open class has this join code. A class that was archived answers the same way | Ask the parent to check the code with the teacher |
-| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose. It is the answer of the `/guru/classes/{classId}` routes only, the `/classes/{classId}` routes answer `403` with `AUTH_FORBIDDEN` instead | Return to the class list |
+| `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose. It is the answer of the `/guru/classes/{classId}` routes, and of `/leaderboard` when it names no class and the caller has none. The `/classes/{classId}` routes answer `403` with `AUTH_FORBIDDEN` instead | Return to the class list |
 | `CLASS_NO_ACTIVE_TEACHER` | 409 | The class has no active teacher, so it cannot take new children | Tell the parent to contact the school |
 | `TEACHER_NOT_FOUND` | 404 | No active teacher account has the email that was named, as a new teacher or as the successor | Ask the teacher to check the email |
 | `TEACHER_ALREADY_IN_CLASS` | 409 | The teacher already teaches the class | Nothing to do, the teacher is already there |
