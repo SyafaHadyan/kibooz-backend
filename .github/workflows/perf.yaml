@@ -63,6 +63,7 @@ jobs:
             echo "CLASS_CODE_LIMITER_MAX=1000000"
             echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
+            echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"
           } > .env
 
       # compose.ci.yml builds the image from this pull request and caps the memory of every container
