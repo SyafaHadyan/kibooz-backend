@@ -60,6 +60,24 @@ The server runs four jobs by itself, and none of them needs a scheduler outside 
 | Idempotency purge | 1 hour | Deletes remembered keys older than `IDEMPOTENCY_TTL_HOURS` |
 | Keepalive | `KEEPALIVE_SECONDS` | Sends `SELECT 1` to the database and `PING` to Redis, so hosted instances that pause when idle stay awake |
 
+## Metrics
+
+The API counts what it does and shows it in the Prometheus text format. The page is served by a second listener on `METRICS_ADDRESS` (for example `:9100`), which answers `GET /metrics` and nothing else. The setting is empty by default, which switches the listener off. The public port never serves `/metrics`, and the listener has no authentication, so its port must not be published on the host and the reverse proxy must not point at it. Only a scraper on the private network of the deployment should reach it. An address that is malformed, that is taken or that equals `APP_PORT` stops the start-up.
+
+| Metric | Labels | What it shows |
+|:---|:---|:---|
+| `kibooz_http_requests_total` | `method`, `route`, `status` | Every request that reaches the middleware, which is every request except two kinds that Fiber answers before any middleware runs, a body over `BODY_LIMIT_MB` (`413`) and a method that Fiber does not know (`501`). `route` is the path a route was registered with, such as `/api/v1/wali/children/:studentId`. A request that the sign-in or role check of a group refuses, such as a `401` on `/api/v1/wali`, shows the path of the group. A request that matched no route, or that a check of the whole app such as the 64 KB JSON body limit refused, counts under `unmatched`, so a client cannot create series with the paths it sends |
+| `kibooz_http_request_duration_seconds` | `method`, `route` | A histogram of the time to answer |
+| `kibooz_http_requests_in_flight` | none | Requests that are running now |
+| `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |
+| `kibooz_password_hash_busy_total` | none | Requests that got `429 RATE_LIMITED` because every password hashing slot was taken, which means the server needs more CPU or a higher `PASSWORD_HASH_CONCURRENCY` |
+| `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `keepalive_database` and `keepalive_redis` |
+| `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, so an alert can fire when a job has not succeeded for too long |
+| `go_sql_*` | `db_name` | The connection pool of the database, such as open, idle and waited-for connections |
+| `go_*`, `process_*` | none | The Go runtime and the process, such as memory, goroutines and open files |
+
+A request that answers `429` is counted in `kibooz_http_requests_total` as well. A request that panics is counted as a `500`. The metrics start from zero when the process restarts, so use `rate()` and `increase()` and not the raw counters.
+
 ## Logs
 
 The API writes plain text lines to standard output, so `docker compose logs api` shows them. A failed request is logged with its request id, the method and the error. Anything unexpected is logged as `unexpected error` with the path, and the response to the client is always a generic error code. The access log also has the request id, which a user can quote from a failed response header.
@@ -82,6 +100,7 @@ The free plan only looks at the status code. `/healthz` answers `503` when the d
 | Symptom | Look at |
 |:---|:---|
 | `/healthz` answers `503` | The `kibooz-db` container and its health check. The API cannot serve without the database |
+| Metrics stop arriving or `kibooz_job_last_success_timestamp_seconds` is old | That the API runs and that `METRICS_ADDRESS` is set and reachable from the scraper on the private network. A job that fails logs its own reason, see the lines in the logs section |
 | `/healthz` says `degraded` | `redis` down means rate limits fall back to one process and the leaderboard is read from the database. `storage` down means the credentials or the bucket changed, and uploads will fail |
 | The API container restarts in a loop | `docker compose logs api` shows the reason. A setting out of range, a missing required variable and a dirty migration all stop the start with a message |
 | Many `429` answers | The per user limit is `USER_LIMITER_MAX` per `LIMITER_EXPIRATION_SECONDS`. Login and registration are limited per email or device, see the [design notes](design.md) |

@@ -39,8 +39,10 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
+	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"gorm.io/gorm"
 )
 
@@ -54,6 +56,7 @@ type Bootstrap struct {
 	stopCleanup   func()
 	stopSeason    func()
 	stopKeys      func()
+	metrics       *metrics.Listener
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -92,7 +95,16 @@ func Start(version string) (*Bootstrap, error) {
 	}
 
 	jwtService := jwt.New(cfg)
-	app := fiberapp.New(cfg, redis.NewRateStore(cache))
+	// the metrics middleware runs inside the access log and ahead of every check and route, so each request is measured,
+	// the ones that the body checks refuse too, and a refusal is counted by its route
+	stats := metrics.New()
+	app := fiberapp.New(cfg, redis.NewRateStore(cache), stats.Middleware())
+
+	err = stats.Registry().Register(collectors.NewDBStatsCollector(sqlDB, "kibooz"))
+	if err != nil {
+		return nil, fmt.Errorf("register database pool metrics: %w", err)
+	}
+
 	keys := idempotency.New(
 		database, time.Duration(cfg.IdempotencyTTLHours)*time.Hour, time.Duration(cfg.RequestTimeoutSeconds)*time.Second,
 	)
@@ -127,29 +139,41 @@ func Start(version string) (*Bootstrap, error) {
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
 
+	stats.AllowRoutes(app.Fiber.GetRoutes())
+
+	metricsListener, err := stats.Serve(cfg.MetricsAddress)
+	if err != nil {
+		// nothing else was started yet, so the two connections are all that has to be let go
+		_ = sqlDB.Close()
+		_ = cache.Close()
+
+		return nil, err
+	}
+
 	log.Printf("startup time %v", time.Since(startTime))
 
 	stopKeepalive := keepalive.Start(
 		time.Duration(cfg.KeepaliveSeconds)*time.Second,
-		keepalive.Target{Name: "database", Ping: func(ctx context.Context) error {
+		keepalive.Target{Name: "database", Observe: stats.Job("keepalive_database"), Ping: func(ctx context.Context) error {
 			_, err := sqlDB.ExecContext(ctx, "SELECT 1")
 
 			return err
 		}},
-		keepalive.Target{Name: "redis", Ping: cache.Ping},
+		keepalive.Target{Name: "redis", Observe: stats.Job("keepalive_redis"), Ping: cache.Ping},
 	)
 
-	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).Start(season.Interval)
-	stopKeys := keys.Start(idempotency.Interval)
+	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).
+		Observe(stats.Job("semester_check")).Start(season.Interval)
+	stopKeys := keys.Observe(stats.Job("idempotency_purge")).Start(idempotency.Interval)
 
 	stopCleanup := func() {}
 	if storage.Enabled() {
-		stopCleanup = filecleanup.New(database, storage).Start(filecleanup.Interval)
+		stopCleanup = filecleanup.New(database, storage).Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
 	}
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys,
+		stopSeason: stopSeason, stopKeys: stopKeys, metrics: metricsListener,
 	}, nil
 }
 
@@ -159,6 +183,7 @@ func (b *Bootstrap) Close() {
 	b.stopCleanup()
 	b.stopSeason()
 	b.stopKeys()
+	b.metrics.Close()
 
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()

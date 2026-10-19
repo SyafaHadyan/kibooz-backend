@@ -16,6 +16,8 @@ const timeout = 5 * time.Second
 type Target struct {
 	Name string
 	Ping func(ctx context.Context) error
+	// Observe, when set, gets the error of every ping that the shutdown did not cut short, nil for a success
+	Observe func(error)
 }
 
 // Start pings every target once per interval until the returned stop function is called.
@@ -56,11 +58,15 @@ func run(ctx context.Context, interval time.Duration, targets []Target) {
 }
 
 // ping logs only when a target changes between healthy and failing, so a long outage does not flood the log
-func ping(ctx context.Context, target Target, failing map[string]bool) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+func ping(parent context.Context, target Target, failing map[string]bool) {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	err := target.Ping(ctx)
+
+	if target.Observe != nil && parent.Err() == nil {
+		target.Observe(err)
+	}
 
 	switch {
 	case err != nil && !failing[target.Name]:

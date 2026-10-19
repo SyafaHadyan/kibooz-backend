@@ -55,12 +55,20 @@ type Store struct {
 	db           *gorm.DB
 	ttl          time.Duration
 	abandonAfter time.Duration
+	observe      func(error)
 }
 
 // New builds a store that remembers keys for ttl. A first try that has not finished after requestTimeout and a margin
 // is taken for dead, so a process that crashed mid request does not block the key until it expires.
 func New(db *gorm.DB, ttl time.Duration, requestTimeout time.Duration) *Store {
 	return &Store{db: db, ttl: ttl, abandonAfter: requestTimeout + abandonMargin}
+}
+
+// Observe makes the store call report with the error of every sweep that the shutdown did not cut short, nil for a success
+func (s *Store) Observe(report func(error)) *Store {
+	s.observe = report
+
+	return s
 }
 
 // Handler runs a request once per key. It has to run after Authentication, because the key belongs to the signed in user,
@@ -280,6 +288,10 @@ func (s *Store) Start(interval time.Duration) (stop func()) {
 				return
 			case <-ticker.C:
 				removed, err := s.Sweep(ctx)
+				if s.observe != nil && ctx.Err() == nil {
+					s.observe(err)
+				}
+
 				if err != nil && !errors.Is(err, context.Canceled) {
 					log.Printf("idempotency key sweep failed %v", err)
 				} else if removed > 0 {

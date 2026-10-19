@@ -69,6 +69,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | Variable | Default | Purpose |
 |:---|:---|:---|
 | `APP_PORT` | `8080` | HTTP port |
+| `METRICS_ADDRESS` | empty | Where the Prometheus endpoint listens, such as `:9100`, and empty switches it off. It is a listener of its own that serves only `GET /metrics`, so never publish its port or route it through the proxy, see [operations](docs/operations.md#metrics) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
 | `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the two photo uploads can use. Every other request is limited to 64 KB |
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |

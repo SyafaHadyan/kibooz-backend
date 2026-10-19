@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,40 +26,43 @@ type Env struct {
 	AuthLimiterMax           int    `env:"AUTH_LIMITER_MAX" envDefault:"10"`
 	ClassCodeLimiterMax      int    `env:"CLASS_CODE_LIMITER_MAX" envDefault:"60"`
 	MoodBatchLimiterMax      int    `env:"MOOD_BATCH_LIMITER_MAX" envDefault:"30"`
-	TrustProxy               bool   `env:"TRUST_PROXY" envDefault:"false"`
-	ProxyHeader              string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
-	DBHost                   string `env:"DB_HOST" envDefault:"127.0.0.1"`
-	DBPort                   uint   `env:"DB_PORT" envDefault:"5432"`
-	DBName                   string `env:"DB_NAME,required"`
-	DBUsername               string `env:"DB_USERNAME,required"`
-	DBPassword               string `env:"DB_PASSWORD,required"`
-	DBSSLMode                string `env:"DB_SSL_MODE" envDefault:"disable"`
-	RedisAddress             string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
-	RedisPort                uint   `env:"REDIS_PORT" envDefault:"6379"`
-	RedisTLS                 bool   `env:"REDIS_TLS" envDefault:"false"`
-	RedisUsername            string `env:"REDIS_USERNAME"`
-	RedisPassword            string `env:"REDIS_PASSWORD"`
-	RedisKeyPrefix           string `env:"REDIS_KEY_PREFIX"`
-	RedisDatabase            int    `env:"REDIS_DATABASE" envDefault:"0"`
-	LeaderboardCacheSeconds  int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
-	KeepaliveSeconds         int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
-	JWTSecretKey             string `env:"JWT_SECRET_KEY,required"`
-	JWTAccessExpiredMinutes  int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
-	JWTRefreshExpiredDays    int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
-	JWTSessionMaxDays        int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
-	DeviceTokenTTLDays       int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
-	S3Endpoint               string `env:"S3_ENDPOINT"`
-	S3AccountID              string `env:"S3_ACCOUNT_ID"`
-	S3Region                 string `env:"S3_REGION" envDefault:"auto"`
-	S3BucketName             string `env:"S3_BUCKET_NAME"`
-	S3AccessKeyID            string `env:"S3_ACCESS_KEY_ID"`
-	S3AccessKeySecret        string `env:"S3_ACCESS_KEY_SECRET"`
-	S3PublicURL              string `env:"S3_PUBLIC_URL"`
-	PointsOrganik            int    `env:"POINTS_ORGANIK" envDefault:"10"`
-	PointsAnorganik          int    `env:"POINTS_ANORGANIK" envDefault:"15"`
-	PointsB3                 int    `env:"POINTS_B3" envDefault:"0"`
-	TrashDailyLimit          int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
-	IdempotencyTTLHours      int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
+	// MetricsAddress is where the Prometheus endpoint listens, such as ":9100", and empty switches it off. It is a listener of
+	// its own and must only be reachable from the private network of the scraper.
+	MetricsAddress          string `env:"METRICS_ADDRESS"`
+	TrustProxy              bool   `env:"TRUST_PROXY" envDefault:"false"`
+	ProxyHeader             string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
+	DBHost                  string `env:"DB_HOST" envDefault:"127.0.0.1"`
+	DBPort                  uint   `env:"DB_PORT" envDefault:"5432"`
+	DBName                  string `env:"DB_NAME,required"`
+	DBUsername              string `env:"DB_USERNAME,required"`
+	DBPassword              string `env:"DB_PASSWORD,required"`
+	DBSSLMode               string `env:"DB_SSL_MODE" envDefault:"disable"`
+	RedisAddress            string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
+	RedisPort               uint   `env:"REDIS_PORT" envDefault:"6379"`
+	RedisTLS                bool   `env:"REDIS_TLS" envDefault:"false"`
+	RedisUsername           string `env:"REDIS_USERNAME"`
+	RedisPassword           string `env:"REDIS_PASSWORD"`
+	RedisKeyPrefix          string `env:"REDIS_KEY_PREFIX"`
+	RedisDatabase           int    `env:"REDIS_DATABASE" envDefault:"0"`
+	LeaderboardCacheSeconds int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
+	KeepaliveSeconds        int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
+	JWTSecretKey            string `env:"JWT_SECRET_KEY,required"`
+	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
+	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
+	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
+	DeviceTokenTTLDays      int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
+	S3Endpoint              string `env:"S3_ENDPOINT"`
+	S3AccountID             string `env:"S3_ACCOUNT_ID"`
+	S3Region                string `env:"S3_REGION" envDefault:"auto"`
+	S3BucketName            string `env:"S3_BUCKET_NAME"`
+	S3AccessKeyID           string `env:"S3_ACCESS_KEY_ID"`
+	S3AccessKeySecret       string `env:"S3_ACCESS_KEY_SECRET"`
+	S3PublicURL             string `env:"S3_PUBLIC_URL"`
+	PointsOrganik           int    `env:"POINTS_ORGANIK" envDefault:"10"`
+	PointsAnorganik         int    `env:"POINTS_ANORGANIK" envDefault:"15"`
+	PointsB3                int    `env:"POINTS_B3" envDefault:"0"`
+	TrashDailyLimit         int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	IdempotencyTTLHours     int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
 	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
 	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
 	PasswordHashConcurrency      int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
@@ -109,6 +114,17 @@ func (e *Env) validate() error {
 	}
 
 	e.location = loc
+
+	if e.MetricsAddress != "" {
+		_, port, err := net.SplitHostPort(e.MetricsAddress)
+		if err != nil || port == "" {
+			return fmt.Errorf("METRICS_ADDRESS must look like host:port or :port, got %q", e.MetricsAddress)
+		}
+
+		if number, err := strconv.Atoi(port); err != nil || number < 1 || number > maxPort || number == int(e.AppPort) {
+			return fmt.Errorf("METRICS_ADDRESS needs a port from 1 to %d that is not APP_PORT, got %q", maxPort, e.MetricsAddress)
+		}
+	}
 
 	if len(e.SemesterStartMonths) == 0 {
 		return errors.New("SEMESTER_START_MONTHS needs at least one month")

@@ -56,10 +56,18 @@ type Job struct {
 	loc         *time.Location
 	startMonths []int
 	now         func() time.Time
+	observe     func(error)
 }
 
 func New(db *gorm.DB, cache redis.CacheItf, loc *time.Location, startMonths []int) *Job {
 	return &Job{db: db, cache: cache, loc: loc, startMonths: startMonths, now: time.Now}
+}
+
+// Observe makes the job call report with the error of every check that the shutdown did not cut short, nil for a success
+func (j *Job) Observe(report func(error)) *Job {
+	j.observe = report
+
+	return j
 }
 
 // WithClock makes the job read the date from now, which is how a test moves time forward
@@ -205,6 +213,10 @@ func (j *Job) Start(interval time.Duration) (stop func()) {
 
 func (j *Job) runAndLog(ctx context.Context) {
 	reset, err := j.Run(ctx)
+
+	if j.observe != nil && ctx.Err() == nil {
+		j.observe(err)
+	}
 
 	switch {
 	case err != nil && ctx.Err() == nil:
