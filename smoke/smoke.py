@@ -372,6 +372,17 @@ expect("guru profile", call("GET", "/guru/profile", g1["token"]), 200)
 expect("guru profile update", call("PUT", "/guru/profile", g1["token"], {"phoneNumber": "+62 812 3456 7890"}), 200)
 expect("guru profile bad phone", call("PUT", "/guru/profile", g1["token"], {"phoneNumber": "abc"}), 400, "VALIDATION_ERROR")
 expect("guru profile detail", call("GET", "/guru/profile/detail", g1["token"]), 200)
+# since 0.13.0 a teacher and a parent can change their name, and a parent can change the contact details
+s, js = call("PUT", "/guru/profile", g1["token"], {"fullName": "Smoke Teacher Renamed"})
+check("teacher changes the name", s == 200 and dig(js, "data", "fullName") == "Smoke Teacher Renamed", f"{s} {js}")
+expect("teacher name cannot be empty", call("PUT", "/guru/profile", g1["token"], {"fullName": "  "}), 400, "VALIDATION_ERROR")
+s, js = call("PATCH", "/wali/profile", w1["token"], {"fullName": "Smoke Parent Renamed", "phoneNumber": "+62 812 3456 7890", "whatsappNumber": "0812 3456 7891", "address": "Smoke Street 1"})
+check("parent changes the profile", s == 200 and dig(js, "data", "fullName") == "Smoke Parent Renamed" and dig(js, "data", "address") == "Smoke Street 1", f"{s} {js}")
+s, js = call("PATCH", "/wali/profile", w1["token"], {"whatsappNumber": ""})
+check("an empty text clears a parent field and keeps the others", s == 200 and dig(js, "data", "whatsappNumber") is None and dig(js, "data", "phoneNumber") == "+62 812 3456 7890", f"{s} {js}")
+expect("parent bad phone", call("PATCH", "/wali/profile", w1["token"], {"phoneNumber": "abc"}), 400, "VALIDATION_ERROR")
+expect("parent empty body", call("PATCH", "/wali/profile", w1["token"], {}), 400, "VALIDATION_ERROR")
+expect("a teacher cannot use the parent profile", call("PATCH", "/wali/profile", g1["token"], {"fullName": "x"}), 403, "AUTH_FORBIDDEN")
 
 # ---------- avatar ----------
 boundary = "----smoke" + uuid.uuid4().hex

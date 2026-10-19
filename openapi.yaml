@@ -265,6 +265,40 @@ paths:
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/profile:
+    patch:
+      tags: [Parent]
+      operationId: updateWaliProfile
+      summary: Change the details of the parent
+      description: |
+        Send any of `fullName`, `phoneNumber`, `whatsappNumber` and `address`. A field that is missing stays as it is, and an
+        empty text clears the phone number, the WhatsApp number or the address. The name cannot be empty. The phone and the
+        WhatsApp number use the same pattern as the teacher's profile, digits with an optional leading plus and spaces, dashes
+        and brackets between them, 6 to 30 characters. The email cannot be changed. The photo is changed with
+        `POST /users/avatar`. The answer is the new details of the parent, the same as `guardian` in `GET /wali/child/{studentId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWaliProfileRequest"
+      responses:
+        "200":
+          description: The profile was updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /wali/child/{studentId}:
     get:
       tags: [Parent]
@@ -909,8 +943,8 @@ paths:
     put:
       tags: [Teacher]
       operationId: updateGuruProfile
-      summary: Change the contact details of the teacher
-      description: Send `phoneNumber`, `address` or both. A field that is missing stays as it is and an empty text clears it. The photo is changed with `POST /users/avatar`.
+      summary: Change the name and contact details of the teacher
+      description: Send `fullName`, `phoneNumber`, `address` or any of them. A field that is missing stays as it is, and an empty text clears the phone number or the address. The name cannot be empty. The NIP and the email cannot be changed. The photo is changed with `POST /users/avatar`.
       requestBody:
         required: true
         content:
@@ -3298,6 +3332,10 @@ components:
       type: object
       minProperties: 1
       properties:
+        fullName:
+          type: string
+          maxLength: 150
+          description: The new name, it cannot be empty
         phoneNumber:
           type: string
           maxLength: 30
@@ -3306,6 +3344,37 @@ components:
           type: string
           maxLength: 1000
           description: An empty text clears it
+    UpdateWaliProfileRequest:
+      type: object
+      minProperties: 1
+      properties:
+        fullName:
+          type: string
+          maxLength: 150
+          description: The new name, it cannot be empty
+        phoneNumber:
+          type: string
+          maxLength: 30
+          description: Digits with an optional leading plus, spaces, dashes and brackets. An empty text clears it.
+        whatsappNumber:
+          type: string
+          maxLength: 30
+          description: The same pattern as the phone number. An empty text clears it.
+        address:
+          type: string
+          maxLength: 1000
+          description: An empty text clears it
+    GuardianEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Guardian"
     GuruProfileEnvelope:
       type: object
       required: [success, data]

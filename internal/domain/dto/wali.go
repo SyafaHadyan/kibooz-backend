@@ -53,6 +53,15 @@ type ApplyGuidanceRequest struct {
 	ParentNotes string    `json:"parentNotes" validate:"omitempty,max=500"`
 }
 
+// UpdateWaliProfileRequest changes the details of the parent. A missing field is left alone and an empty text clears the
+// phone number, the WhatsApp number or the address. The name cannot be empty and the email cannot be changed.
+type UpdateWaliProfileRequest struct {
+	FullName       *string `json:"fullName" validate:"omitempty,max=150"`
+	PhoneNumber    *string `json:"phoneNumber" validate:"omitempty,max=30"`
+	WhatsappNumber *string `json:"whatsappNumber" validate:"omitempty,max=30"`
+	Address        *string `json:"address" validate:"omitempty,max=1000"`
+}
+
 type Guardian struct {
 	FullName       string  `json:"fullName"`
 	Email          string  `json:"email"`

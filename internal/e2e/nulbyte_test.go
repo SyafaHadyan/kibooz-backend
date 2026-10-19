@@ -63,6 +63,9 @@ func TestANulCharacterInTextIsRefusedAsAValidationError(t *testing.T) {
 		{"edit a video", http.MethodPatch, classes + "/videos/" + videoID, guru.Token, map[string]any{"title": bad}, "title"},
 		{"create a class", http.MethodPost, "/api/v1/guru/classes", guru.Token, map[string]any{"name": bad}, "name"},
 		{"change the profile", http.MethodPut, "/api/v1/guru/profile", guru.Token, map[string]any{"address": bad}, "address"},
+		{"change the name of a teacher", http.MethodPut, "/api/v1/guru/profile", guru.Token, map[string]any{"fullName": bad}, "fullName"},
+		{"change the name of a parent", http.MethodPatch, "/api/v1/wali/profile", wali.Token, map[string]any{"fullName": bad}, "fullName"},
+		{"change the address of a parent", http.MethodPatch, "/api/v1/wali/profile", wali.Token, map[string]any{"address": bad}, "address"},
 		{"apply a guide", http.MethodPost, "/api/v1/wali/guidance/apply", wali.Token, map[string]any{
 			"guidanceId": "guidance-senang-4step", "studentId": studentID, "parentNotes": bad,
 		}, "parentNotes"},

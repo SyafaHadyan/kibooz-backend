@@ -28,12 +28,29 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 
 	group.Get("/dashboard", handler.Dashboard)
 	group.Post("/guidance/apply", idempotent, handler.ApplyGuidance)
+	group.Patch("/profile", handler.UpdateProfile)
 	group.Get("/child/:studentId", handler.Child)
 	group.Get("/children", handler.Children)
 	// the class code is the secret between a stranger and a class, so naming one is limited for every caller of this route
 	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
+}
+
+func (h *WaliHandler) UpdateProfile(c fiber.Ctx) error {
+	var req dto.UpdateWaliProfileRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateProfile(c.Context(), middleware.UserIDFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Profile updated", res)
 }
 
 func (h *WaliHandler) Dashboard(c fiber.Ctx) error {

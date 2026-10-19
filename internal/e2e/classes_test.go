@@ -181,6 +181,23 @@ func TestTeacherProfile(t *testing.T) {
 		require.Nil(t, both.data("address"))
 	})
 
+	t.Run("change the name and leave the NIP alone", func(t *testing.T) {
+		before := call(t, http.MethodGet, "/api/v1/guru/profile", guru.Token, nil)
+
+		res := call(t, http.MethodPut, "/api/v1/guru/profile", guru.Token, map[string]any{"fullName": "  Siti Rahayu, M.Pd.  "})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, "Siti Rahayu, M.Pd.", res.data("fullName"))
+		require.Equal(t, before.data("nip"), res.data("nip"))
+
+		profile := call(t, http.MethodGet, "/api/v1/guru/profile", guru.Token, nil)
+		require.Equal(t, "Siti Rahayu, M.Pd.", profile.data("fullName"))
+
+		call(t, http.MethodPut, "/api/v1/guru/profile", guru.Token, map[string]any{"fullName": "   "}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPut, "/api/v1/guru/profile", guru.Token, map[string]any{"fullName": strings.Repeat("a", 151)}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
 	t.Run("invalid changes are refused", func(t *testing.T) {
 		for _, body := range []map[string]any{
 			{},

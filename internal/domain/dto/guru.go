@@ -169,6 +169,7 @@ type GuruProfileDetail struct {
 
 // UpdateGuruProfileRequest leaves a field alone when it is missing and clears it when it is an empty text
 type UpdateGuruProfileRequest struct {
+	FullName    *string `json:"fullName" validate:"omitempty,max=150"`
 	PhoneNumber *string `json:"phoneNumber" validate:"omitempty,max=30"`
 	Address     *string `json:"address" validate:"omitempty,max=1000"`
 }
