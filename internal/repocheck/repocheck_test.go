@@ -31,8 +31,13 @@ func TestTheCIComposeFileTakesTheGoImageFromGOIMAGE(t *testing.T) {
 // Every workflow that starts the stack with the CI compose file has to put GO_IMAGE in its .env, read from the Dockerfile.
 // Without it compose refuses to start, so a workflow that forgot it fails at once and not with a stale digest.
 func TestEveryWorkflowThatUsesTheCIComposeFileSetsGOIMAGE(t *testing.T) {
-	files, err := filepath.Glob("../../.github/workflows/*.yaml")
+	yaml, err := filepath.Glob("../../.github/workflows/*.yaml")
 	require.NoError(t, err)
+
+	yml, err := filepath.Glob("../../.github/workflows/*.yml")
+	require.NoError(t, err)
+
+	files := append(yaml, yml...)
 
 	users := 0
 
