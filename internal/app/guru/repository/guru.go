@@ -343,7 +343,19 @@ func (r *GuruDB) CountClassContent(ctx context.Context, classID uuid.UUID) (int,
 
 func (r *GuruDB) CreateClass(ctx context.Context, guruID uuid.UUID, class *entity.Class) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		err := classcode.Create(tx, class)
+		// the row of the teacher is locked before the classes are counted, so two requests of one teacher count one after
+		// the other. A class takes no lock that waits for this row, so the order is the one of AddTeacher.
+		err := lockGuru(tx, guruID)
+		if err != nil {
+			return err
+		}
+
+		err = classteam.CheckClassRoom(tx, guruID, constants.MaxClassesPerTeacher)
+		if err != nil {
+			return err
+		}
+
+		err = classcode.Create(tx, class)
 		if err != nil {
 			return err
 		}
@@ -392,6 +404,26 @@ func (r *GuruDB) ListTeachers(ctx context.Context, classID uuid.UUID) ([]Teacher
 	return rows, err
 }
 
+// lockGuru locks the row of an active teacher until the end of the transaction. It answers apperror.ErrProfileNotFound
+// when no active teacher has the id, for example when the account was deleted after the caller looked it up.
+func lockGuru(tx *gorm.DB, guruID uuid.UUID) error {
+	var ids []uuid.UUID
+
+	err := tx.Model(&entity.Guru{}).
+		Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Where("id = ?", guruID).
+		Pluck("id", &ids).Error
+	if err != nil {
+		return err
+	}
+
+	if len(ids) == 0 {
+		return apperror.ErrProfileNotFound
+	}
+
+	return nil
+}
+
 func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error) {
 	var added *TeacherRow
 
@@ -407,7 +439,7 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 			Select("g.id").
 			Joins("JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL").
 			Where("u.email = ? AND u.role = ? AND u.deleted_at IS NULL", email, constants.RoleGuru).
-			Clauses(clause.Locking{Strength: clause.LockingStrengthShare, Table: clause.Table{Name: "g"}}).
+			Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate, Table: clause.Table{Name: "g"}}).
 			Limit(1).
 			Scan(&guruIDs).Error
 		if err != nil {
@@ -416,6 +448,12 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 
 		if len(guruIDs) == 0 {
 			return nil
+		}
+
+		// the row stays locked until the end, so a teacher who is added to two classes at once is counted one after the other
+		err = classteam.CheckClassRoom(tx, guruIDs[0], constants.MaxClassesPerTeacher)
+		if err != nil {
+			return err
 		}
 
 		// a teacher who leaves archives a class that nobody else teaches under this lock, and a teacher must not be added to

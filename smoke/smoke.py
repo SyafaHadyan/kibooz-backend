@@ -452,6 +452,17 @@ expect("delete video", call("DELETE", f"/classes/{cid}/videos/{vid}", g1["token"
 expect("deleted video gone", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "x"}), 404, "VIDEO_NOT_FOUND")
 expect("other class videos closed", call("GET", f"/classes/{cid}/videos", g2["token"]), 403, "AUTH_FORBIDDEN")
 
+# ---------- 0.13.0 class limit of a teacher ----------
+g6 = register_guru("g6", "Smoke Limit 1")
+limit_class = None
+for i in range(2, 23):
+    s, js = call("POST", "/guru/classes", g6["token"], {"name": f"Smoke Limit {i}"})
+    if s != 201:
+        limit_class = (i, s, js.get("errorCode"))
+        break
+check("a teacher stops creating classes at 20", limit_class == (21, 409, "CLASS_LIMIT_REACHED"), str(limit_class))
+expect("the teacher with 20 classes deletes without a successor", delete_me(g6), 200)
+
 # ---------- forum ----------
 s, js = call("POST", f"/classes/{cid}/forum", w1["token"], {"title": "Smoke thread", "body": "hello"})
 pid = dig(js, "data", "id")

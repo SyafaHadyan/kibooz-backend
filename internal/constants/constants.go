@@ -80,6 +80,12 @@ const (
 
 	MoodBatchMax = 30
 
+	// MaxClassesPerTeacher is the most classes that a teacher can teach at once, archived classes not counted
+	MaxClassesPerTeacher = 20
+
+	// MaxChildrenPerClass is the most active children of one class, counted when a child joins
+	MaxChildrenPerClass = 60
+
 	// JSONBodyMaxBytes is the largest body of any request except the two uploads, whose bodies are photos. The largest real
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024

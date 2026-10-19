@@ -222,3 +222,40 @@ func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
 
 	return nil
 }
+
+// CheckRoom refuses a new child when the class already holds max active children. The caller holds LockOpen, so every child
+// that joins goes through this count one after the other.
+func CheckRoom(tx *gorm.DB, classID uuid.UUID, max int) error {
+	var children int64
+
+	err := tx.Model(&entity.Student{}).Where("class_id = ?", classID).Count(&children).Error
+	if err != nil {
+		return err
+	}
+
+	if int(children) >= max {
+		return apperror.ErrClassFull
+	}
+
+	return nil
+}
+
+// CheckClassRoom refuses another class for a teacher who already teaches max classes that are not archived. The caller holds
+// the lock on the row of the teacher, so two requests of the same teacher count one after the other.
+func CheckClassRoom(tx *gorm.DB, guruID uuid.UUID, max int) error {
+	var classes int64
+
+	err := tx.Table("class_teachers AS ct").
+		Joins("JOIN classes AS c ON c.id = ct.class_id AND c.archived_at IS NULL").
+		Where("ct.guru_id = ?", guruID).
+		Count(&classes).Error
+	if err != nil {
+		return err
+	}
+
+	if int(classes) >= max {
+		return apperror.ErrClassLimitReached
+	}
+
+	return nil
+}
