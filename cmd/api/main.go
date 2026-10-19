@@ -14,6 +14,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
 	"github.com/SyafaHadyan/kibooz-backend/internal/healthcheck"
+	"github.com/SyafaHadyan/kibooz-backend/internal/logging"
 )
 
 // version is set at build time with -ldflags
@@ -23,6 +24,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck.Run(os.Getenv("APP_PORT")))
 	}
+
+	// before the first line, so everything the process prints is JSON
+	logging.Setup()
 
 	log.Printf("starting kibooz-backend %s", version)
 

@@ -80,14 +80,31 @@ A request that answers `429` is counted in `kibooz_http_requests_total` as well.
 
 ## Logs
 
-The API writes plain text lines to standard output, so `docker compose logs api` shows them. A failed request is logged with its request id, the method and the error. Anything unexpected is logged as `unexpected error` with the path, and the response to the client is always a generic error code. The access log also has the request id, which a user can quote from a failed response header.
+The API writes one JSON object per line to standard output, so `docker compose logs api` shows them and a log shipper can read the fields without a pattern. Every line has `time` (with the date and the zone), `level` and `msg`. Lines that the code writes with the `log` package, such as the startup lines and the failure of a job, are objects too, with their text in `msg`.
+
+Every request has one line with `msg` `request`, written after the answer.
+
+| Field | Meaning |
+|:---|:---|
+| `request_id` | The id that the client got in the `X-Request-Id` header of the response, which a user can quote from a failed request |
+| `ip`, `method`, `path` | Who asked and for what. The query string is not logged |
+| `route` | The path that the matching route was registered with, such as `/api/v1/wali/children/:studentId` |
+| `status`, `latency_ms`, `bytes_out` | The answer, how long it took and the size of its body |
+| `error_code`, `error_message` | On a failed request, the code and the message that the client got |
+| `error_fields` | On a refused validation, the names of the fields that were refused. Their values are never logged |
+| `retry_after` | On a `429`, the seconds that the client was told to wait |
+
+A request that worked is logged at `INFO`, a `4xx` at `WARN` and a `5xx` at `ERROR`. A health check that answers `200` is logged at `DEBUG`, which is below the level that the API writes, so a monitor that asks every few seconds does not fill the log. A handler that panics writes a line with `msg` `panic recovered`, with the `panic` value, the `stack` and the same `request_id` as the request line, and the client gets a generic `500`. A failure that the client is not told about, such as the cause of an `INTERNAL_ERROR`, is logged with the request id in a separate line.
 
 ```sh
 docker compose logs --since 1h api
-docker compose logs -f api | grep "unexpected error"
+docker compose logs --no-log-prefix -f api | jq -c 'select(.level == "ERROR")'
+docker compose logs --no-log-prefix api | jq -c 'select(.status == 429)'
 ```
 
 Startup prints the version and how long it took. A line saying that object storage is not configured means uploads are disabled on purpose. A `storage write probe failed` line means the bucket refused the health check write, which turns `/healthz` to `degraded`.
+
+The health check uses a database connection of its own. The requests share a pool of 25 connections, and a check on that pool would wait behind them whenever all of them are busy, so a loaded API would look like a database that is down. A `503` from `/healthz` therefore means the database cannot be reached, and a pool that is full shows in the `go_sql_*` metrics instead.
 
 ## Uptime monitoring
 
