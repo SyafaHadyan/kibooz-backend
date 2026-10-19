@@ -71,6 +71,12 @@ docker compose logs -f api | grep "unexpected error"
 
 Startup prints the version and how long it took. A line saying that object storage is not configured means uploads are disabled on purpose. A `storage write probe failed` line means the bucket refused the health check write, which turns `/healthz` to `degraded`.
 
+## Uptime monitoring
+
+Better Stack checks `https://kibooz-api.syafahadyan.com/healthz` and the documentation site every 3 minutes, from Europe, North America, Asia and Australia. A failure that lasts about 3 minutes opens an incident and sends an email and a push notification to the owner. The public page at <https://status.syafahadyan.com/> shows both monitors, and the badges at the top of the README read from them.
+
+The free plan only looks at the status code. `/healthz` answers `503` when the database is down, so that raises an incident. It answers `200` with `degraded` when only Redis or the bucket is down, so that does not, and the log lines in the table below are the way to notice it. A deploy restarts the API for a few seconds, which is shorter than the confirmation period, so it does not page anyone. Pause the monitor in Better Stack before a longer planned stop.
+
 ## When something is wrong
 
 | Symptom | Look at |

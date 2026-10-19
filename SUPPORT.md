@@ -7,6 +7,7 @@ Kibooz Backend is an open source project that is maintained by its owners, and t
 | You want to know | Read |
 |:---|:---|
 | What a route takes and returns, with every field, limit and status | The [API reference](https://docs.kibooz.syafahadyan.com) |
+| Whether the API or the documentation site is down right now | The [status page](https://status.syafahadyan.com/) |
 | What an `errorCode` means and what an app does about it | [Error codes](docs/errors.md) |
 | How an app handles tokens, the device token and rate limits | The [client guide](docs/client-guide.md) |
 | How to run the stack and what each setting does | The [README](README.md) and [Operations](docs/operations.md) |

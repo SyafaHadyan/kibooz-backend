@@ -44,9 +44,10 @@ Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares
 To set up the login, create a read-only access token in the Docker Hub account settings and add it as the secret `DOCKERHUB_PULL_TOKEN`. The account name comes from the variable `DOCKERHUB_USERNAME` that the image push already uses.
 
 ```sh
-gh secret set DOCKERHUB_PULL_TOKEN                  # for pull requests of this repository, which include the ones of Renovate
-gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # only for Dependabot pull requests, which cannot read the secret above
+gh secret set DOCKERHUB_PULL_TOKEN
 ```
+
+Pull requests of Renovate read this secret like any other pull request of the repository. Dependabot pull requests could not, so an older setup also kept a copy for them with `--app dependabot`. Dependabot no longer opens version updates, so that copy is gone.
 
 Without the secret everything still works through the mirror alone. Pull requests from forks never get the secret, so they rely on the mirror.
 
@@ -64,7 +65,7 @@ The bot cannot read a tool that is named inside a `run` step, so the tools of th
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
 - The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
-The Google style release in `.vale.ini` and the Vale image in the commands of this page are still bumped by hand.
+The Google style release in `.vale.ini` and the Vale image in the commands of this page are read by two more patterns in `renovate.json`, so only `go-version` is still bumped by hand.
 
 ## Required checks
 
@@ -95,11 +96,11 @@ The five DeepSource checks (Docker, Go, SQL, Secrets and JavaScript) are not req
 
 ### Signed commits
 
-The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Dependabot. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
+The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Renovate, which makes its commits through the GitHub API. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
 
 ### Prose style
 
-Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because no update bot reads them. To see the hints that do not gate the build, run Vale locally.
+Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml`, the Google style release in `.vale.ini` and the Vale image in the commands above are pinned, and Renovate raises all three. Keep the `# renovate:` comment in `vale.yaml` and the shape of the other two lines, because the patterns in `renovate.json` read them. To see the hints that do not gate the build, run Vale locally.
 
 ```sh
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 sync

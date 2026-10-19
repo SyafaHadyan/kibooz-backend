@@ -12,6 +12,7 @@
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
   "labels": ["dependencies"],
+  "assignees": ["SyafaHadyan"],
   "dependencyDashboard": true,
   "packageRules": [
     {
@@ -74,6 +75,22 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*(?:version|k6-version): [\"']?(?<currentValue>[^\"'\\s]+)[\"']?"
       ]
+    },
+    {
+      "description": "The release of the Google style that vale sync downloads",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.vale\\.ini$/"],
+      "matchStrings": ["releases/download/(?<currentValue>v[\\d.]+)/Google\\.zip"],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "errata-ai/Google"
+    },
+    {
+      "description": "The Vale image in the commands of the CI page",
+      "customType": "regex",
+      "managerFilePatterns": ["/^docs/ci-cd\\.md$/"],
+      "matchStrings": ["jdkato/vale:(?<currentValue>v[\\d.]+)"],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "jdkato/vale"
     }
   ]
 }
