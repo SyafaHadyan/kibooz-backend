@@ -21,12 +21,8 @@ type GuruHandler struct {
 	useCase usecase.GuruUseCaseItf
 }
 
-// batchLimit limits the batch mood route per user and has to run after authentication, a nil one limits nothing
+// batchLimit limits the batch mood route per user and has to run after authentication
 func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit fiber.Handler, useCase usecase.GuruUseCaseItf) {
-	if batchLimit == nil {
-		batchLimit = func(c fiber.Ctx) error { return c.Next() }
-	}
-
 	handler := GuruHandler{useCase: useCase}
 
 	group := router.Group("/guru", mw.Authentication, mw.RequireRole(constants.RoleGuru))
