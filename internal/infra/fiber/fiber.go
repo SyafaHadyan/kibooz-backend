@@ -12,7 +12,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/helmet"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 
@@ -70,7 +69,7 @@ func New(cfg *env.Env, limits ratelimit.Store, measure ...fiber.Handler) *Fiber 
 	app := fiber.New(config)
 
 	handlers := []any{
-		recover.New(),
+		recover.New(recover.Config{EnableStackTrace: true, StackTraceHandler: logPanic}),
 		deadline(time.Duration(cfg.RequestTimeoutSeconds) * time.Second),
 		// the API only answers with JSON, so nothing may be framed or loaded from the response. HSTS stays off here
 		// because includeSubDomains would reach every subdomain of the host, so the proxy that ends TLS sets it.
@@ -79,9 +78,7 @@ func New(cfg *env.Env, limits ratelimit.Store, measure ...fiber.Handler) *Fiber 
 			ContentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'",
 		}),
 		requestid.New(),
-		logger.New(logger.Config{
-			Format: "${time} ${ip} ${method} ${path} ${status} ${latency} ${locals:requestid}\n",
-		}),
+		accessLog(),
 	}
 
 	for _, handler := range measure {

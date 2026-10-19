@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver that NewHealth opens
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -46,7 +46,8 @@ func New(cfg *env.Env) (*gorm.DB, error) {
 	dsn := buildDSN(cfg)
 
 	gormLogger := logger.New(
-		log.New(os.Stdout, "", log.LstdFlags),
+		// the default logger, so a slow query is a line of the same JSON log as everything else
+		log.Default(),
 		logger.Config{
 			SlowThreshold:             time.Second,
 			LogLevel:                  logger.Warn,
@@ -79,6 +80,23 @@ func New(cfg *env.Env) (*gorm.DB, error) {
 	}
 
 	return database, nil
+}
+
+// NewHealth opens a pool of one connection that only the health check uses. The check answers whether the database can be
+// reached, and on the shared pool it would instead wait behind the requests whenever all 25 connections are busy, so a busy
+// API would look like a dead database. The connection opens when it is first used, so a database that is down does not stop
+// the start-up here.
+func NewHealth(cfg *env.Env) (*sql.DB, error) {
+	pool, err := sql.Open("pgx", buildDSN(cfg))
+	if err != nil {
+		return nil, fmt.Errorf("open health connection: %w", err)
+	}
+
+	pool.SetMaxOpenConns(1)
+	pool.SetMaxIdleConns(1)
+	pool.SetConnMaxLifetime(30 * time.Minute)
+
+	return pool, nil
 }
 
 // Migrate applies every pending migration and is safe to call on each startup

@@ -3,6 +3,7 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -57,6 +58,7 @@ type Bootstrap struct {
 	stopSeason    func()
 	stopKeys      func()
 	metrics       *metrics.Listener
+	healthDB      *sql.DB
 }
 
 // Start loads configuration, connects every dependency, runs migrations and registers all routes
@@ -115,7 +117,13 @@ func Start(version string) (*Bootstrap, error) {
 		pingStorage = newStorageProbe(storage).Ping
 	}
 
-	app.Fiber.Get("/healthz", healthHandler(sqlDB.PingContext, cache.Ping, pingStorage, version))
+	// a connection of its own, so the health check does not queue behind the requests that use the pool
+	healthDB, err := db.NewHealth(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	app.Fiber.Get("/healthz", healthHandler(healthDB.PingContext, cache.Ping, pingStorage, version))
 
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
@@ -169,7 +177,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, metrics: metricsListener,
+		stopSeason: stopSeason, stopKeys: stopKeys, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -180,6 +188,8 @@ func (b *Bootstrap) Close() {
 	b.stopSeason()
 	b.stopKeys()
 	b.metrics.Close()
+
+	_ = b.healthDB.Close()
 
 	if sqlDB, err := b.Database.DB(); err == nil {
 		_ = sqlDB.Close()
