@@ -14,7 +14,7 @@ Every response that suite sees is also checked against `openapi.yaml`, so a fiel
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
 
-CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. `codecov/patch` is a required check, so new code needs coverage. Codecov posts it a few minutes after CI finishes, so a merge has to wait for it. `codecov/project` is not required. Dependabot pull requests upload too, using a `CODECOV_TOKEN` stored in the Dependabot secrets. The thresholds are in `codecov.yml`.
+CI uploads the coverage of the unit and end to end tests to [Codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend), which comments on pull requests that change it. `codecov/patch` is a required check, so new code needs coverage. Codecov posts it a few minutes after CI finishes, so a merge has to wait for it. `codecov/project` is not required. The thresholds are in `codecov.yml`.
 
 A unit test in `internal/infra/db` checks the names of the migration files. Every number must have exactly one up and one down file and the numbers must run from `000001` without a gap, so when two branches add the same next number, the one that is merged second fails its pull request and has to be renumbered. This runs in the existing unit test job, so it needs no required check of its own.
 
