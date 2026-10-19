@@ -53,6 +53,10 @@ func TestEveryOtherCreatingRouteRepeatsSafely(t *testing.T) {
 		requireRepeatIsReplay(t, "/api/v1/wali/guidance/apply", amelia.Token, map[string]any{
 			"guidanceId": "guidance-bingung-4step", "studentId": ameliaID, "parentNotes": "Talked to gently.",
 		})
+
+		reports := call(t, http.MethodGet, "/api/v1/classes/"+classID+"/guidance-reports", guru.Token, nil)
+		require.Equal(t, http.StatusOK, reports.Status, "body %v", reports.Body)
+		require.EqualValues(t, 1, reports.data("total"), "one guidance application")
 	})
 
 	t.Run("a child is added once", func(t *testing.T) {
