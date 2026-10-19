@@ -11,8 +11,12 @@ services:
     restart: always
     # the API stops accepting requests and gives running ones 10 seconds, so Docker has to wait longer than that
     stop_grace_period: 30s
-    # a hard cap above GOMEMLIMIT, so a memory problem of the API kills this container and not the database next to it
-    mem_limit: ${API_MEMORY_LIMIT:-384m}
+    # a hard cap above GOMEMLIMIT, so a memory problem of the API kills this container and not the database next to it.
+    # It is written as deploy.resources, because compose.ci.yml sets its caps there and the two keys cannot be mixed.
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEMORY_LIMIT:-384m}
     env_file: .env
     environment:
       DB_HOST: db
@@ -68,7 +72,10 @@ services:
     container_name: kibooz-redis
     restart: always
     # REDIS_MAXMEMORY covers the data, the rest is the buffers and the rewrite of the append only file
-    mem_limit: ${REDIS_MEMORY_LIMIT:-192m}
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-192m}
     command:
       - sh
       - -c
