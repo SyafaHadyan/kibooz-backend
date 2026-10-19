@@ -14,6 +14,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
+	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 )
 
 // newServer has one public route that is limited per account, with the given number of requests per account
@@ -229,4 +230,58 @@ func TestABodyOverTheServerLimitIsNamedByWhatItWasSentTo(t *testing.T) {
 		require.NoError(t, json.NewDecoder(res.Body).Decode(&failure))
 		require.Equal(t, want, failure.ErrorCode, path)
 	}
+}
+
+// refused counts the requests of the metrics that were answered with status and had no route, which a check that runs before
+// the router refuses
+func refused(t *testing.T, m *metrics.Metrics, status string) float64 {
+	t.Helper()
+
+	families, err := m.Registry().Gather()
+	require.NoError(t, err)
+
+	total := 0.0
+
+	for _, family := range families {
+		if family.GetName() != "kibooz_http_requests_total" {
+			continue
+		}
+
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, pair := range metric.GetLabel() {
+				labels[pair.GetName()] = pair.GetValue()
+			}
+
+			if labels["status"] == status && labels["route"] == metrics.Unknown {
+				total += metric.GetCounter().GetValue()
+			}
+		}
+	}
+
+	return total
+}
+
+func TestTheMetricsCountARequestThatABodyCheckRefuses(t *testing.T) {
+	stats := metrics.New()
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: 10, BodyLimitMB: 1}, nil, stats.Middleware())
+	server.Router.Post("/public", func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) })
+	stats.AllowRoutes(server.Fiber.GetRoutes(true))
+
+	big := `{"notes":"` + strings.Repeat("a", 64*1024) + `"}`
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, post(t, server.Fiber, "/api/v1/public", big).StatusCode)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/public", strings.NewReader(`{}`))
+	req.Header.Set("Content-Encoding", "gzip")
+
+	res, err := server.Fiber.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+	require.NoError(t, err)
+
+	require.NoError(t, res.Body.Close())
+	require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode)
+
+	require.EqualValues(t, 1, refused(t, stats, "413"), "the refused body is counted, though it never reached its route")
+	require.EqualValues(t, 1, refused(t, stats, "415"))
+	require.Zero(t, refused(t, stats, "200"))
 }
