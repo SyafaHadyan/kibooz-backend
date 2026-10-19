@@ -23,6 +23,7 @@ type Env struct {
 	LimiterExpirationSeconds int    `env:"LIMITER_EXPIRATION_SECONDS" envDefault:"60"`
 	AuthLimiterMax           int    `env:"AUTH_LIMITER_MAX" envDefault:"10"`
 	ClassCodeLimiterMax      int    `env:"CLASS_CODE_LIMITER_MAX" envDefault:"60"`
+	MoodBatchLimiterMax      int    `env:"MOOD_BATCH_LIMITER_MAX" envDefault:"30"`
 	TrustProxy               bool   `env:"TRUST_PROXY" envDefault:"false"`
 	ProxyHeader              string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
 	DBHost                   string `env:"DB_HOST" envDefault:"127.0.0.1"`
@@ -132,6 +133,7 @@ func (e *Env) validate() error {
 		{"USER_LIMITER_MAX", e.UserLimiterMax, 1},
 		{"AUTH_LIMITER_MAX", e.AuthLimiterMax, 1},
 		{"CLASS_CODE_LIMITER_MAX", e.ClassCodeLimiterMax, 1},
+		{"MOOD_BATCH_LIMITER_MAX", e.MoodBatchLimiterMax, 1},
 		{"LIMITER_EXPIRATION_SECONDS", e.LimiterExpirationSeconds, 1},
 		{"LEADERBOARD_CACHE_SECONDS", e.LeaderboardCacheSeconds, 1},
 		{"JWT_ACCESS_EXPIRED_MINUTES", e.JWTAccessExpiredMinutes, 1},

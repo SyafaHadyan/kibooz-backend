@@ -247,6 +247,33 @@ func TestUserAndPasswordLimitersKeyOnlyTheUser(t *testing.T) {
 	require.ElementsMatch(t, []string{"user:user-1", "confirm:user-1"}, store.keys())
 }
 
+func TestMoodBatchLimiterHasABudgetOfItsOwnPerUser(t *testing.T) {
+	store := newRecordingStore()
+	server := fiber.New(&env.Env{UserLimiterMax: 100, MoodBatchLimiterMax: 2, LimiterExpirationSeconds: 60, BodyLimitMB: 1}, store)
+
+	who := func(c gofiber.Ctx) string { return c.Get("X-User") }
+	ok := func(c gofiber.Ctx) error { return c.JSON(map[string]string{"ok": "yes"}) }
+
+	server.Router.Post("/batch", server.MoodBatchLimiter(who), ok)
+
+	send := func(user string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/batch", nil)
+		req.Header.Set("X-User", user)
+
+		res, err := server.Fiber.Test(req, gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		require.NoError(t, res.Body.Close())
+
+		return res.StatusCode
+	}
+
+	require.Equal(t, http.StatusOK, send("a"))
+	require.Equal(t, http.StatusOK, send("a"))
+	require.Equal(t, http.StatusTooManyRequests, send("a"))
+	require.Equal(t, http.StatusOK, send("b"), "another user has a budget of their own")
+	require.ElementsMatch(t, []string{"moodbatch:a", "moodbatch:b"}, store.keys())
+}
+
 func TestLimitersAreSharedThroughTheStore(t *testing.T) {
 	store := newRecordingStore()
 

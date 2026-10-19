@@ -113,7 +113,7 @@ func Start(version string) (*Bootstrap, error) {
 	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database), cache, cfg,
 	))
-	guruhandler.NewGuruHandler(app.Router, mw, guruusecase.NewGuruUseCase(
+	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database), cfg,
 	))
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(

@@ -21,7 +21,8 @@ type GuruHandler struct {
 	useCase usecase.GuruUseCaseItf
 }
 
-func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.GuruUseCaseItf) {
+// batchLimit limits the batch mood route per user and has to run after authentication
+func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit fiber.Handler, useCase usecase.GuruUseCaseItf) {
 	handler := GuruHandler{useCase: useCase}
 
 	group := router.Group("/guru", mw.Authentication, mw.RequireRole(constants.RoleGuru))
@@ -29,7 +30,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 
 	group.Get("/dashboard", handler.Dashboard)
 	group.Post("/mood/log", idempotent, handler.LogMood)
-	group.Post("/mood/log/batch", idempotent, handler.LogMoodBatch)
+	group.Post("/mood/log/batch", batchLimit, idempotent, handler.LogMoodBatch)
 	group.Get("/mood/analytics", handler.MoodAnalytics)
 	group.Get("/classes", handler.ListClasses)
 	group.Post("/classes", idempotent, handler.CreateClass)

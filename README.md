@@ -75,6 +75,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
+| `MOOD_BATCH_LIMITER_MAX` | `30` | Requests per user and window for `POST /guru/mood/log/batch`, on top of `USER_LIMITER_MAX`, at least 1 |
 | `CLASS_CODE_LIMITER_MAX` | `60` | Requests per window that name a class code, counted for each route (register and adding a child) and shared by every caller of that route, at least 1. It limits guessing a join code, so raise it only when many parents sign up at the same time |
 | `PASSWORD_HASH_CONCURRENCY`, `PASSWORD_HASH_WAIT_MILLISECONDS` | `0`, `1000` | How many passwords the server hashes or checks at the same time, and `0` means one for each CPU except one, with at least one. A request that finds every slot taken waits this many milliseconds, at least 1, and is then refused with `429` and a `Retry-After` |
 | `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header, it is only used in the access log because no rate limit looks at the IP |

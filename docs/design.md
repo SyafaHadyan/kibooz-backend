@@ -21,6 +21,7 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 | Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
 | Login and register | email, or the device when the login carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
+| The batch mood route | user id | `MOOD_BATCH_LIMITER_MAX`, 30 by default, on top of the limit of every signed-in route |
 | Register with a class code, and adding a child with a class code | every caller of the route | `CLASS_CODE_LIMITER_MAX`, 60 by default, separately for each route and on top of the limit per email |
 | `/healthz` | nothing | not limited |
 
