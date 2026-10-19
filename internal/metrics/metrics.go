@@ -88,9 +88,15 @@ func New() *Metrics {
 // Registry is where more collectors are added, such as the statistics of the database pool
 func (m *Metrics) Registry() *prometheus.Registry { return m.registry }
 
-// AllowRoutes names the routes that may appear as a label. It is called once, after every route is registered.
+// AllowRoutes names the paths that may appear as a label, the routes and the groups whose middleware can refuse a request
+// before it reaches a route, such as the sign-in check of /api/v1/wali. The middleware of the whole app has the path "/",
+// which says nothing about a request, so it is left out. It is called once, after every route is registered.
 func (m *Metrics) AllowRoutes(routes []fiber.Route) {
 	for _, route := range routes {
+		if route.Path == "" || route.Path == "/" {
+			continue
+		}
+
 		m.routes[route.Path] = struct{}{}
 	}
 }

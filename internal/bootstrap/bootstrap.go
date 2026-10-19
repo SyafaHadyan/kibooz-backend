@@ -147,10 +147,15 @@ func Start(version string) (*Bootstrap, error) {
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
 
-	stats.AllowRoutes(app.Fiber.GetRoutes(true))
+	stats.AllowRoutes(app.Fiber.GetRoutes())
 
 	metricsListener, err := stats.Serve(cfg.MetricsAddress)
 	if err != nil {
+		// nothing else was started yet, so the connections are all that has to be let go
+		_ = healthDB.Close()
+		_ = sqlDB.Close()
+		_ = cache.Close()
+
 		return nil, err
 	}
 

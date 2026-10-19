@@ -259,3 +259,37 @@ func TestListenerServesOnlyTheMetricsPage(t *testing.T) {
 	_, err = m.Serve(listener.Addr())
 	require.Error(t, err, "an address that is taken stops the start-up")
 }
+
+func TestAGroupThatRefusesARequestIsTheRouteOfIt(t *testing.T) {
+	m := metrics.New()
+
+	app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return c.Status(appErr.Status).SendString(appErr.Code)
+		}
+
+		return c.Status(http.StatusInternalServerError).SendString("boom")
+	}})
+
+	app.Use(m.Middleware())
+
+	// a group with a check, like the sign-in check of /wali, answers before any route of the group is chosen
+	group := app.Group("/api/v1/wali", func(c fiber.Ctx) error { return apperror.ErrRateLimited })
+	group.Get("/children", func(c fiber.Ctx) error { return c.SendString("ok") })
+
+	m.AllowRoutes(app.GetRoutes())
+
+	require.Equal(t, http.StatusTooManyRequests, get(t, app, http.MethodGet, "/api/v1/wali/children"))
+
+	value, ok := sample(t, m, "kibooz_http_requests_total", map[string]string{"method": "GET", "route": "/api/v1/wali", "status": "429"})
+	require.True(t, ok, "the refusal is counted under the path of the group")
+	require.EqualValues(t, 1, value)
+
+	limited, ok := sample(t, m, "kibooz_rate_limited_total", map[string]string{"route": "/api/v1/wali"})
+	require.True(t, ok)
+	require.EqualValues(t, 1, limited)
+
+	_, ok = sample(t, m, "kibooz_http_requests_total", map[string]string{"method": "GET", "route": metrics.Unknown, "status": "429"})
+	require.False(t, ok, "the global middleware path is not a label")
+}
