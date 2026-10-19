@@ -393,6 +393,16 @@ s, js = call("GET", f"/wali/child/{w2['student']}", w2["token"])
 expect("a NISN of another child is refused", call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {"nisn": dig(js, "data", "nisn")}), 409, "NISN_ALREADY_REGISTERED")
 expect("a child edit needs a field", call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {}), 400, "VALIDATION_ERROR")
 expect("another parent cannot change the child", call("PATCH", f"/wali/children/{w1['student']}", w2["token"], {"fullName": "Nope Child"}), 404, "STUDENT_NOT_FOUND")
+# since 0.13.0 a parent can delete a child, also the last one. w8 is a parent that only exists for this check.
+w8 = register_wali("w8", g1["code"], "Smoke Child To Delete")
+expect("another parent cannot delete the child", call("DELETE", f"/wali/children/{w8['student']}", w2["token"]), 404, "STUDENT_NOT_FOUND")
+expect("delete with a bad id", call("DELETE", "/wali/children/nope", w8["token"]), 400, "VALIDATION_ERROR")
+expect("a teacher cannot delete a child as a parent", call("DELETE", f"/wali/children/{w8['student']}", g1["token"]), 403, "AUTH_FORBIDDEN")
+expect("a parent deletes the last child", call("DELETE", f"/wali/children/{w8['student']}", w8["token"]), 200)
+expect("deleting it again is not found", call("DELETE", f"/wali/children/{w8['student']}", w8["token"]), 404, "STUDENT_NOT_FOUND")
+expect("a parent without a child has a clear dashboard answer", call("GET", "/wali/dashboard", w8["token"]), 404, "NO_CHILD_REGISTERED")
+s, js = call("GET", "/wali/children", w8["token"])
+check("a parent without a child lists none", s == 200 and dig(js, "data", "children") == [], f"{s} {js}")
 
 # ---------- avatar ----------
 boundary = "----smoke" + uuid.uuid4().hex
