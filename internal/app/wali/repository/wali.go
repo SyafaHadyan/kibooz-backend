@@ -50,6 +50,14 @@ type ProfileUpdate struct {
 	Address     *string
 }
 
+// StudentUpdate holds the fields of a child to change, a Set flag tells a missing field from one that is given
+type StudentUpdate struct {
+	SetName  bool
+	FullName string
+	SetNISN  bool
+	NISN     string
+}
+
 // TrashTotals is what a child collected in one trash category
 type TrashTotals struct {
 	Scans  int
@@ -70,6 +78,10 @@ type WaliDBItf interface {
 	// UpdateProfile stores the changed fields of the account and of the parent profile in one transaction
 	UpdateProfile(ctx context.Context, userID uuid.UUID, waliID uuid.UUID, update ProfileUpdate) error
 	CreateGuidanceApplication(ctx context.Context, application *entity.GuidanceApplication) error
+	// UpdateStudent changes the name or the NISN of a child of the wali. A new name is also written into the standings of
+	// the semesters that ended, and the ranking of the class is renumbered. It returns the class of the child, and false
+	// when the wali has no such active child, and apperror.ErrNISNTaken when another active child has the NISN.
+	UpdateStudent(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, update StudentUpdate) (classID uuid.UUID, found bool, err error)
 	// ListChildren returns the children of the wali, the oldest first
 	ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error)
 	// AddChild stores student as one more child of the wali inside the class that owns joinCode. It refuses a code that
@@ -265,6 +277,66 @@ func (r *WaliDB) UpdateProfile(ctx context.Context, userID uuid.UUID, waliID uui
 
 		return tx.Model(&entity.Wali{}).Where("id = ?", waliID).Updates(profile).Error
 	})
+}
+
+func (r *WaliDB) UpdateStudent(
+	ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, update StudentUpdate,
+) (uuid.UUID, bool, error) {
+	var (
+		classID uuid.UUID
+		found   bool
+	)
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		classID, found = uuid.Nil, false
+
+		var classes []uuid.UUID
+
+		err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &classes).Error
+		if err != nil || len(classes) == 0 {
+			return err
+		}
+
+		// the class lock comes before the change, because a new name moves the child in the ranking and the semester
+		// rollover copies the names under the same lock
+		err = ranking.Lock(tx, classes[0])
+		if err != nil {
+			return err
+		}
+
+		fields := map[string]any{}
+		if update.SetName {
+			fields["full_name"] = update.FullName
+		}
+
+		if update.SetNISN {
+			fields["nisn"] = update.NISN
+		}
+
+		changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
+		if changed.Error != nil || changed.RowsAffected == 0 {
+			return changed.Error
+		}
+
+		if update.SetName {
+			err = tx.Exec("UPDATE leaderboard_history SET student_name = ? WHERE student_id = ?", update.FullName, studentID).Error
+			if err != nil {
+				return err
+			}
+
+			err = ranking.Recompute(tx, classes[0])
+			if err != nil {
+				return err
+			}
+		}
+
+		classID, found = classes[0], true
+
+		return nil
+	})
+
+	return classID, found, mapNISNTaken(err)
 }
 
 func (r *WaliDB) ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error) {

@@ -390,6 +390,52 @@ paths:
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/children/{studentId}:
+    patch:
+      tags: [Parent]
+      operationId: updateChild
+      summary: Change the name or the NISN of a child
+      description: |
+        Send `fullName`, `nisn` or both. A field that is missing stays as it is. The name has 2 to 150 characters and the NISN
+        is a number of 5 to 30 digits, as at registration. The child stays in its class and keeps its points. A new name moves
+        the child in the ranking, because children with the same points are ordered by name, and it is also written into the
+        standings of the semesters that ended, so an old leaderboard shows the new name. A NISN that another active child
+        already has is refused with `NISN_ALREADY_REGISTERED`. The answer is the child as `GET /wali/children` lists it.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateChildRequest"
+      responses:
+        "200":
+          description: The child was updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChildEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: Another active child has the NISN (`NISN_ALREADY_REGISTERED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
     get:
       tags: [Teacher]
@@ -3344,6 +3390,18 @@ components:
           type: string
           maxLength: 1000
           description: An empty text clears it
+    UpdateChildRequest:
+      type: object
+      minProperties: 1
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        nisn:
+          type: string
+          pattern: "^[0-9]{5,30}$"
+          description: A number of 5 to 30 digits
     UpdateWaliProfileRequest:
       type: object
       minProperties: 1

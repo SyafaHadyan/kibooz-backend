@@ -31,6 +31,7 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	group.Patch("/profile", handler.UpdateProfile)
 	group.Get("/child/:studentId", handler.Child)
 	group.Get("/children", handler.Children)
+	group.Patch("/children/:studentId", handler.UpdateChild)
 	// the class code is the secret between a stranger and a class, so naming one is limited for every caller of this route
 	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
 
@@ -120,6 +121,27 @@ func (h *WaliHandler) Child(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *WaliHandler) UpdateChild(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	var req dto.UpdateChildRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateChild(c.Context(), middleware.UserIDFrom(c), studentID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Child updated", res)
 }
 
 func (h *WaliHandler) TrashStats(c fiber.Ctx) error {

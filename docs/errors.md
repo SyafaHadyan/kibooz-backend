@@ -29,7 +29,7 @@ The `message` is English text for people and can be reworded, so an app branches
 |:---|:---|:---|:---|
 | `EMAIL_ALREADY_REGISTERED` | 409 | An active account has this email | Offer to sign in |
 | `NIP_ALREADY_REGISTERED` | 409 | An active teacher has this NIP | Ask the teacher to check the number |
-| `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN | Ask the parent to check the number |
+| `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN, at registration, when a parent adds a child or when a parent changes the NISN of a child | Ask the parent to check the number |
 | `CHILD_LIMIT_REACHED` | 409 | The parent already has 10 children | Tell the parent that no more children can be added |
 | `CLASS_JOINING_CLOSED` | 409 | The teachers of the class closed it for new children, so the join code does not work at registration or when a parent adds a child | Tell the parent to ask the teacher to open the class again |
 | `CLASS_FULL` | 409 | The class already has 60 active children, so it cannot take another one at registration or when a parent adds a child | Tell the parent to contact the teacher |
