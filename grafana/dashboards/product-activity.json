@@ -380,6 +380,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/mood/log(/batch)?\"}[$__rate_interval])) * 3600",
+          "interval": "1m",
           "legendFormat": "per hour"
         }
       ],
@@ -431,7 +432,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
+          "interval": "1m",
           "legendFormat": "claims per hour"
         },
         {
@@ -441,6 +443,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=\"429\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
+          "interval": "1m",
           "legendFormat": "refused by the daily limit per hour"
         }
       ],
@@ -493,6 +496,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/(login|register)\"}[$__rate_interval])) by (route) * 3600",
+          "interval": "1m",
           "legendFormat": "{{route}} per hour"
         }
       ],
@@ -545,6 +549,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum by (status) (rate(kibooz_http_requests_total{method=\"POST\", route=\"/api/v1/auth/login\", status=~\"4..\"}[$__rate_interval])) * 3600",
+          "interval": "1m",
           "legendFormat": "{{status}} per hour"
         }
       ],

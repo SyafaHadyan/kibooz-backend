@@ -150,6 +150,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "rate(go_sql_wait_count_total[$__rate_interval])",
+          "interval": "1m",
           "legendFormat": "waits per second"
         },
         {
@@ -159,6 +160,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "rate(go_sql_wait_duration_seconds_total[$__rate_interval])",
+          "interval": "1m",
           "legendFormat": "seconds waited per second"
         }
       ],
@@ -263,6 +265,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum by (job) (increase(kibooz_job_runs_total{result=\"failure\"}[$__rate_interval]))",
+          "interval": "1m",
           "legendFormat": "{{job}}"
         }
       ],
@@ -437,6 +440,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "rate(process_cpu_seconds_total[$__rate_interval])",
+          "interval": "1m",
           "legendFormat": "cores used"
         }
       ],
@@ -489,6 +493,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "rate(go_gc_duration_seconds_sum[$__rate_interval])",
+          "interval": "1m",
           "legendFormat": "seconds per second"
         }
       ],

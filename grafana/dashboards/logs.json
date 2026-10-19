@@ -260,7 +260,7 @@
     {
       "type": "logs",
       "title": "Slow statements",
-      "description": "Statements over 500 ms, and lock waits over one second",
+      "description": "Statements over 500 ms, lock waits over one second and deadlocks",
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
@@ -278,7 +278,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-db\"} |= \"duration:\"",
+          "expr": "{container=\"kibooz-db\"} |~ \"duration:|still waiting for|deadlock\"",
           "queryType": "range"
         }
       ],

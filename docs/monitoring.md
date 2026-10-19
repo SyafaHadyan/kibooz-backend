@@ -6,9 +6,9 @@ This page explains how the metrics and the logs of the API reach Grafana Cloud, 
 
 The API serves its metrics on a second listener, `METRICS_ADDRESS`, which `compose.yml` sets to `:9100` and never publishes on the host. Alloy runs next to the API on the private network of the compose file, scrapes `api:9100/metrics` every minute and reads the logs of the `kibooz-api`, `kibooz-db` and `kibooz-redis` containers. It sends both to Grafana Cloud. The metrics are described in [Operations](operations.md#metrics) and the log lines in [Operations](operations.md#logs).
 
-Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and refuses everything else, and it sits on a network with no route out that only Alloy shares. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on.
+Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and refuses everything else, and it sits on a network with no route out that only Alloy shares. A compromised Alloy therefore cannot start, stop or create a container. It can still read what a container shows when it is inspected, which includes the environment of the container with its secrets, because Alloy has to inspect a container to read its log through the Docker API. Alloy only talks to the Docker proxy, the API and Grafana Cloud, and it is trusted at the level of the other containers of the stack. Reading the log files of the containers from a read-only mount would avoid the inspection, at the cost of the container names that the dashboards use as labels. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on.
 
-The Postgres container writes statements that take longer than 500 ms and lock waits longer than one second to its log, and Alloy ships that log as well.
+The Postgres container writes statements that take longer than 500 ms and lock waits longer than one second to its log, and Alloy ships that log as well. The log holds the text of the statement and never the values that were bound to it, because `log_parameter_max_length` is 0.
 
 ## What the repository holds
 
@@ -33,7 +33,7 @@ The dashboards pick their data sources with two variables at the top (`Metrics` 
    ```
 
 5. After a few minutes the Explore view of the Prometheus data source answers `up{service="kibooz-api"}` with `1`, and the Loki data source answers `{container="kibooz-api"}` with lines.
-6. Import the dashboards from `grafana/dashboards`, and choose the two data sources when asked.
+6. Set the scrape interval of the Prometheus data source to `1m` in its settings, which is how often Alloy scrapes. The dashboards also set a minimum step of one minute on every query that takes a rate, so a rate always spans at least two samples. Then import the dashboards from `grafana/dashboards` and choose the two data sources when asked.
 7. Create a contact point that reaches the owner and a notification policy that uses it, then create the alert rules. Replace `__PROMETHEUS_UID__` in `grafana/alerts/rules.json` with the id of the Prometheus data source and send each rule to the provisioning API. A folder with the id `kibooz` has to exist first.
 
 Alloy keeps a small write-ahead log in the `kibooz-alloy` volume, so a short outage of the network does not lose samples.
@@ -56,6 +56,6 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 | Database pool is nearly full | More than 90 percent of the 25 connections were in use for 5 minutes |
 | Many requests are rate limited | More than 100 requests were refused by a limiter in 10 minutes |
 
-The job alerts stay quiet for a job that has never succeeded, such as the file cleanup when the bucket is not configured, because there is no sample to age. The failure alert covers a job that runs and fails.
+A job that runs but has not succeeded yet counts from the moment the API started, so one that never succeeds fires after the time in the table. A job that is switched off, such as the file cleanup when the bucket is not configured, has no series and no alert.
 
 The Better Stack monitors in [Operations](operations.md#uptime-monitoring) stay as they are. They look at the public address from outside, which these alerts cannot do from inside the host.

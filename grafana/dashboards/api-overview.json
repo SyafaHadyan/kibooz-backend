@@ -132,7 +132,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total[$__rate_interval]))"
+          "expr": "sum(rate(kibooz_http_requests_total[$__rate_interval]))",
+          "interval": "1m"
         }
       ],
       "id": 2,
@@ -190,7 +191,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval])) / sum(rate(kibooz_http_requests_total[$__rate_interval]))"
+          "expr": "sum(rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval])) / sum(rate(kibooz_http_requests_total[$__rate_interval]))",
+          "interval": "1m"
         }
       ],
       "id": 3,
@@ -248,7 +250,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "interval": "1m"
         }
       ],
       "id": 4,
@@ -348,7 +351,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_rate_limited_total[$__rate_interval])) * 60"
+          "expr": "sum(rate(kibooz_rate_limited_total[$__rate_interval])) * 60",
+          "interval": "1m"
         }
       ],
       "id": 6,
@@ -403,6 +407,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum by (class) (label_replace(rate(kibooz_http_requests_total[$__rate_interval]), \"class\", \"${1}xx\", \"status\", \"(.)..\"))",
+          "interval": "1m",
           "legendFormat": "{{class}}"
         }
       ],
@@ -455,6 +460,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "histogram_quantile(0.5, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "interval": "1m",
           "legendFormat": "p50"
         },
         {
@@ -464,6 +470,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "interval": "1m",
           "legendFormat": "p95"
         },
         {
@@ -473,6 +480,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "interval": "1m",
           "legendFormat": "p99"
         }
       ],
@@ -525,6 +533,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum by (status) (rate(kibooz_http_requests_total{status=~\"4..\"}[$__rate_interval]))",
+          "interval": "1m",
           "legendFormat": "{{status}}"
         }
       ],
@@ -577,6 +586,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum(rate(kibooz_rate_limited_total[$__rate_interval]))",
+          "interval": "1m",
           "legendFormat": "rate limiter"
         },
         {
@@ -586,6 +596,7 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum(rate(kibooz_password_hash_busy_total[$__rate_interval]))",
+          "interval": "1m",
           "legendFormat": "password hashing busy"
         }
       ],

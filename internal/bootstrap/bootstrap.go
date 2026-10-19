@@ -161,14 +161,20 @@ func Start(version string) (*Bootstrap, error) {
 
 	log.Printf("startup time %v", time.Since(startTime))
 
+	// a keepalive that is switched off has no job to age, so only a running one is registered
+	var observeDatabase, observeRedis func(error)
+	if cfg.KeepaliveSeconds > 0 {
+		observeDatabase, observeRedis = stats.Job("keepalive_database"), stats.Job("keepalive_redis")
+	}
+
 	stopKeepalive := keepalive.Start(
 		time.Duration(cfg.KeepaliveSeconds)*time.Second,
-		keepalive.Target{Name: "database", Observe: stats.Job("keepalive_database"), Ping: func(ctx context.Context) error {
+		keepalive.Target{Name: "database", Observe: observeDatabase, Ping: func(ctx context.Context) error {
 			_, err := sqlDB.ExecContext(ctx, "SELECT 1")
 
 			return err
 		}},
-		keepalive.Target{Name: "redis", Observe: stats.Job("keepalive_redis"), Ping: cache.Ping},
+		keepalive.Target{Name: "redis", Observe: observeRedis, Ping: cache.Ping},
 	)
 
 	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).

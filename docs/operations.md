@@ -74,7 +74,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |
 | `kibooz_password_hash_busy_total` | none | Requests that got `429 RATE_LIMITED` because every password hashing slot was taken, which means the server needs more CPU or a higher `PASSWORD_HASH_CONCURRENCY` |
 | `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `keepalive_database` and `keepalive_redis` |
-| `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, so an alert can fire when a job has not succeeded for too long |
+| `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, or of the moment the job started when it has not succeeded yet, so an alert can fire when a job has not succeeded for too long. A job that is switched off, such as the file cleanup without a bucket or the keepalive with `KEEPALIVE_SECONDS=0`, has no series |
 | `go_sql_*` | `db_name` | The connection pool of the database, such as open, idle and waited-for connections |
 | `go_*`, `process_*` | none | The Go runtime and the process, such as memory, goroutines and open files |
 

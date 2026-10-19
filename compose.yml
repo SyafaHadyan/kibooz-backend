@@ -67,6 +67,11 @@ services:
       - deadlock_timeout=1s
       - -c
       - log_temp_files=0
+      # a slow statement is logged without the values that were bound to it, which can hold names, emails and tokens
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
     volumes:
       - kibooz-db:/var/lib/postgresql
     healthcheck:
