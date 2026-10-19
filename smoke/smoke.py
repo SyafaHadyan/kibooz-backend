@@ -530,6 +530,10 @@ check("ownership moved to the remaining teacher", s == 200 and len(dig(js, "data
 expect("former owner is out", call("GET", tb, g1["token"]), 404, "CLASS_NOT_FOUND")
 s, js = call("POST", tb, g2["token"], {"email": g1["email"]})
 check("new owner re-adds the former one", s == 201, f"{s} {js}")
+# the codes above were replaced, so later checks read the current one
+s, js = call("GET", f"/guru/classes/{cid}", g2["token"])
+new_code = dig(js, "data", "joinCode")
+g1["code"] = new_code
 
 # ---------- 0.11.0 idempotency keys, recordedAt and changing the password ----------
 key = f"smoke-{RUN}-keyed"
