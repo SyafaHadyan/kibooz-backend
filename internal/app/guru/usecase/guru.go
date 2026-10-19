@@ -77,7 +77,7 @@ func (u *GuruUseCase) Dashboard(ctx context.Context, userID uuid.UUID, classID *
 	loc := u.cfg.Location()
 	from, to := clock.DayBounds(u.now(), loc)
 
-	records, err := u.repo.ListMoodRecords(ctx, class.ID, from, to)
+	records, err := u.repo.ListMoodRecords(ctx, class.ID, from, to, loc)
 	if err != nil {
 		return dto.GuruDashboardResponse{}, apperror.Internal(err)
 	}
@@ -322,7 +322,7 @@ func (u *GuruUseCase) MoodAnalytics(
 	// the query window must also cover the current week so the trend works around month borders
 	queryFrom, queryTo := minTime(from, weekStart), maxTime(to, weekEnd)
 
-	records, err := u.repo.ListMoodRecords(ctx, class.ID, queryFrom, queryTo)
+	records, err := u.repo.ListMoodRecords(ctx, class.ID, queryFrom, queryTo, loc)
 	if err != nil {
 		return dto.MoodAnalyticsResponse{}, apperror.Internal(err)
 	}
