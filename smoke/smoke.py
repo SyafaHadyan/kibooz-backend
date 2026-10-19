@@ -554,6 +554,19 @@ expect("old password no longer signs in", call("POST", "/auth/login", body={"ema
 expect("new password signs in", call("POST", "/auth/login", body={"email": w5["email"], "password": new_pw, "role": "WALI"}), 200)
 expect("refresh token ended with the change", call("POST", "/auth/refresh-token", body={"refreshToken": w5["refresh"]}), 401, "AUTH_REFRESH_INVALID")
 
+# ---------- 0.13.0 daily limit of mood logs ----------
+limit_hit = None
+for attempt in range(1, 26):
+    s, js = call("POST", "/guru/mood/log", g1["token"], {"studentId": w2["student"], "moodType": "SENANG"})
+    if s != 201:
+        limit_hit = (attempt, s, js.get("errorCode"))
+        break
+check("a child stops taking mood logs after 20 in a day", limit_hit is not None and limit_hit[0] <= 21 and limit_hit[1:] == (409, "MOOD_LOG_LIMIT_REACHED"), str(limit_hit))
+s, js = call("POST", "/guru/mood/log/batch", g1["token"], {"classId": g1["class"], "entries": [
+    {"studentId": w2["student"], "moodType": "SENANG", "source": "MANUAL_INPUT"}]})
+check("a batch with a full child is refused and names the entry", s == 409 and js.get("errorCode") == "MOOD_LOG_LIMIT_REACHED" and "entries[0].studentId" in (js.get("details") or {}), f"{s} {js}")
+expect("mood notes over 500 characters are refused", call("POST", "/guru/mood/log", g1["token"], {"studentId": w1["student"], "moodType": "SENANG", "notes": "a" * 501}), 400, "VALIDATION_ERROR")
+
 # ---------- 0.9.0 deleting accounts ----------
 expect("parent wrong password", call("DELETE", "/users/me", w2["token"], {"password": "wrong-password"}), 403, "AUTH_PASSWORD_INCORRECT")
 expect("parent delete validation", call("DELETE", "/users/me", w2["token"], {}), 400, "VALIDATION_ERROR")
