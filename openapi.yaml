@@ -725,7 +725,10 @@ paths:
         Whoever is removed no longer sees the class, its children, moods or forum, while what they wrote stays. When the
         owner leaves, the teacher who joined next becomes the owner. The only teacher of a class cannot be removed, so a
         class always has a teacher and an owner. Use `PUT /guru/classes/{classId}/owner` first to hand the class to someone
-        on purpose. The `teacherId` is the `id` of an entry of `GET /guru/classes/{classId}/teachers`.
+        on purpose. The `teacherId` is the `id` of an entry of `GET /guru/classes/{classId}/teachers`. The join code of the
+        class is replaced every time, because the teacher who is gone knows it. Parents who already joined are not affected,
+        and the teachers who stay read the new code from `GET /guru/classes/{classId}`. Deleting the account of a teacher
+        does not replace the code.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
         - $ref: "#/components/parameters/TeacherPath"
