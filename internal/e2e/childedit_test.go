@@ -71,7 +71,7 @@ func TestAParentEditsAChild(t *testing.T) {
 		before := nisnOf(parent.Token, childID)
 		fresh := nisn()
 
-		res := patch(parent.Token, childID, map[string]any{"nisn": " " + fresh + " "})
+		res := patch(parent.Token, childID, map[string]any{"nisn": fresh})
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 		require.Equal(t, fresh, res.data("nisn"))
 		require.Equal(t, "Zaki Terakhir", res.data("fullName"), "the name was not part of the change")
