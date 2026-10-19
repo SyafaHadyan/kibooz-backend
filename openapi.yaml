@@ -3312,11 +3312,19 @@ components:
           description: A teacher of the class
     Teacher:
       type: object
-      required: [id, fullName, nip, avatarUrl, isOwner, joinedAt]
+      required: [id, userId, isSelf, fullName, nip, avatarUrl, isOwner, joinedAt]
       properties:
         id:
           type: string
           format: uuid
+          description: The id of the teacher in the class routes, such as the `teacherId` that removes a teacher or hands the class over. It is not the id of the account
+        userId:
+          type: string
+          format: uuid
+          description: The id of the account, the same value as the `id` of `GET /guru/profile` and the `author.id` of a forum post
+        isSelf:
+          type: boolean
+          description: Whether this teacher is the signed in account, so the app can mark "you" and offer "leave class" on that entry
         fullName:
           type: string
         nip:

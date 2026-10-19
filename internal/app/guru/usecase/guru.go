@@ -468,7 +468,7 @@ func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uu
 
 	res := dto.TeacherList{Teachers: make([]dto.Teacher, 0, len(rows))}
 	for i := range rows {
-		res.Teachers = append(res.Teachers, teacherResponse(&rows[i]))
+		res.Teachers = append(res.Teachers, teacherResponse(&rows[i], userID))
 	}
 
 	return res, nil
@@ -496,7 +496,7 @@ func (u *GuruUseCase) AddTeacher(
 		return dto.Teacher{}, apperror.ErrTeacherNotFound
 	}
 
-	return teacherResponse(added), nil
+	return teacherResponse(added, userID), nil
 }
 
 func (u *GuruUseCase) RemoveTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, teacherID uuid.UUID) error {
@@ -526,7 +526,7 @@ func (u *GuruUseCase) TransferOwnership(
 		return dto.Teacher{}, apperror.ErrTeacherNotInClass
 	}
 
-	return teacherResponse(owner), nil
+	return teacherResponse(owner, userID), nil
 }
 
 // teamError keeps a refusal of the repository as it is and turns any other failure into an internal error
@@ -543,9 +543,10 @@ func teamError(err error) error {
 	return apperror.Internal(err)
 }
 
-func teacherResponse(row *repository.TeacherRow) dto.Teacher {
+func teacherResponse(row *repository.TeacherRow, viewer uuid.UUID) dto.Teacher {
 	return dto.Teacher{
-		ID: row.ID, FullName: row.FullName, NIP: row.NIP, AvatarURL: row.AvatarURL, IsOwner: row.IsOwner, JoinedAt: row.JoinedAt,
+		ID: row.ID, UserID: row.UserID, IsSelf: row.UserID == viewer, FullName: row.FullName, NIP: row.NIP,
+		AvatarURL: row.AvatarURL, IsOwner: row.IsOwner, JoinedAt: row.JoinedAt,
 	}
 }
 
