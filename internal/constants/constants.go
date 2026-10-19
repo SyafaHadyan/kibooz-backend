@@ -80,6 +80,10 @@ const (
 
 	MoodBatchMax = 30
 
+	// JSONBodyMaxBytes is the largest body of any request except the two uploads, whose bodies are photos. The largest real
+	// body is a batch of mood logs with 500 character notes, which stays well below this.
+	JSONBodyMaxBytes = 64 * 1024
+
 	// MoodLogsPerStudentPerDay is the most mood logs one child can have on one local day, whoever records them
 	MoodLogsPerStudentPerDay = 20
 
