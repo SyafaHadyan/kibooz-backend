@@ -208,18 +208,17 @@ func call(t *testing.T, method string, path string, token string, body any) resu
 func callApp(t *testing.T, target *fiber.App, method string, path string, token string, body any) result {
 	t.Helper()
 
-	var reader *bytes.Reader
+	var encoded []byte
 
-	if body == nil {
-		reader = bytes.NewReader(nil)
-	} else {
-		encoded, err := json.Marshal(body)
+	if body != nil {
+		var err error
+
+		encoded, err = json.Marshal(body)
 		require.NoError(t, err)
-
-		reader = bytes.NewReader(encoded)
 	}
 
-	req := httptest.NewRequest(method, path, reader)
+	req := httptest.NewRequest(method, path, bytes.NewReader(encoded))
+	keepBody(req, encoded)
 	req.Header.Set("Content-Type", "application/json")
 
 	if token != "" {
@@ -812,7 +811,10 @@ func upload(t *testing.T, token string, fields map[string]string, filename strin
 
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/avatar", &body)
+	payload := bytes.Clone(body.Bytes())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/avatar", bytes.NewReader(payload))
+	keepBody(req, payload)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+token)
 
