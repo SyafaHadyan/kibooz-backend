@@ -6,8 +6,9 @@ services:
     build:
       context: .
       # the Go base image of the Dockerfile is taken from the Google mirror, because Docker Hub rejects or times out many pulls from the shared runners
+      # GO_IMAGE is the image the Dockerfile names, with its digest, so a new digest only has to be changed in the Dockerfile
       additional_contexts:
-        "golang:1.27-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d": "docker-image://mirror.gcr.io/library/golang:1.27-alpine@sha256:f92b6ef800e499660581efdabdf25d9d817a9d124eaf900924f0504e7e27e12d"
+        - "${GO_IMAGE:?set GO_IMAGE to the Go image of the Dockerfile, see docs/testing.md}=docker-image://mirror.gcr.io/library/${GO_IMAGE}"
     pull_policy: never
     deploy:
       resources:
