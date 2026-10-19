@@ -104,7 +104,8 @@ paths:
         "409":
           description: |
             The email, NIP or NISN is already registered (`EMAIL_ALREADY_REGISTERED`, `NIP_ALREADY_REGISTERED`,
-            `NISN_ALREADY_REGISTERED`), or the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
+            `NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), or the class already has 60
+            children (`CLASS_FULL`)
           content:
             application/json:
               schema:
@@ -345,8 +346,8 @@ paths:
         "409":
           description: |
             The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`)
-            or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is
-            still running (`IDEMPOTENCY_IN_PROGRESS`)
+            the class already has 60 children (`CLASS_FULL`) or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a
+            request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
             application/json:
               schema:
@@ -571,7 +572,11 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/IdempotencyInProgress"
+          description: The teacher already teaches 20 classes that are not archived (`CLASS_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "422":
           $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
@@ -700,7 +705,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
+          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`), the teacher already teaches 20 classes (`CLASS_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
             application/json:
               schema:

@@ -607,6 +607,11 @@ func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto
 
 	err = u.repo.CreateClass(ctx, guru.ID, class)
 	if err != nil {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return dto.ClassSummary{}, err
+		}
+
 		return dto.ClassSummary{}, apperror.Internal(err)
 	}
 

@@ -274,6 +274,11 @@ func (r *WaliDB) AddChild(
 			return apperror.ErrClassNoTeacher
 		}
 
+		err = classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+		if err != nil {
+			return err
+		}
+
 		// The lock on the parent makes two requests of the same parent count the children one after the other. A parent that
 		// was deleted while this request waited matches nothing, and the child must not be added to a parent that is gone.
 		var parent entity.Wali
