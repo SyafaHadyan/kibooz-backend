@@ -96,10 +96,11 @@ func (f *Fiber) TokenLimiter() fiber.Handler {
 	})
 }
 
-// ClassCodeLimiter gives the whole API CLASS_CODE_LIMITER_MAX requests per window that name a class code. A code is the
+// ClassCodeLimiter gives each route CLASS_CODE_LIMITER_MAX requests per window that name a class code. A code is the
 // only secret between a stranger and a class, and a wrong code is answered at once, so guessing is limited by the number
-// of guesses and not by who sends them. The budget is shared by every caller, because a guesser can use any number of
-// emails, devices and addresses. A request that names no class code looks nothing up and is not limited.
+// of guesses and not by who sends them. The budget of a route is shared by every caller, because a guesser can use any
+// number of emails, devices and addresses, and the key holds the path, so each route has a budget of its own. A request
+// that names no class code looks nothing up and is not limited.
 func (f *Fiber) ClassCodeLimiter() fiber.Handler {
 	return f.accountLimiter(f.classCodeMax, func(body accountRequest) (string, string) {
 		if body.ClassCode == "" {

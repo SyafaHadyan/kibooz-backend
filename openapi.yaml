@@ -309,8 +309,8 @@ paths:
       summary: Add one more child
       description: |
         Registers another child of the signed in parent in the class that owns `classCode`, which can be another class than
-        the one of the first child. A parent can have up to 10 children. A request that names a class code uses the same
-        budget for the whole API as registration, so it can answer `429` while many codes are being tried.
+        the one of the first child. A parent can have up to 10 children. A request that names a class code has a budget of its own,
+        counted for this route and shared by every caller, so it can answer `429` while many codes are being tried.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -2049,7 +2049,7 @@ components:
           pattern: "^[A-Za-z0-9]+$"
           minLength: 4
           maxLength: 12
-          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter. Registrations that name a code share one budget for the whole API, and when it is used up they are answered with `429` whether the code is right or not.
+          description: Required for a WALI. The join code of a class, which the teacher finds on the dashboard and in the list of classes. The case does not matter. Registrations that name a code have a budget for this route that every caller shares, and when it is used up they are answered with `429` whether the code is right or not.
         student:
           allOf:
             - $ref: "#/components/schemas/RegisterStudent"

@@ -10,13 +10,13 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
 )
 
-// TestGuessingClassCodesIsLimitedForTheWholeAPI shows that the budget of class codes belongs to the API and not to an
+// TestGuessingClassCodesIsLimitedForEveryCaller shows that the budget of class codes belongs to the route and not to an
 // email, because a guesser can send every guess from another account.
-func TestGuessingClassCodesIsLimitedForTheWholeAPI(t *testing.T) {
+func TestGuessingClassCodesIsLimitedForEveryCaller(t *testing.T) {
 	app(t) // makes sure the shared environment defaults are set
 
 	t.Setenv("CLASS_CODE_LIMITER_MAX", "3")
-	// the budget is one key for everybody, so this test counts under a prefix of its own
+	// the budget is one key for every caller of the route, so this test counts under a prefix of its own
 	t.Setenv("REDIS_KEY_PREFIX", "e2e-classcode-"+suffix()+":")
 
 	started, err := bootstrap.Start("e2e-classcode")

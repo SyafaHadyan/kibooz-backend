@@ -31,7 +31,7 @@ type Fiber struct {
 	window  time.Duration
 	userMax int
 	authMax int
-	// classCodeMax is the allowance of the whole API for requests that name a class code, see ClassCodeLimiter
+	// classCodeMax is the allowance of each route for requests that name a class code, see ClassCodeLimiter
 	classCodeMax int
 	devices      *devicetoken.Tokens
 }
