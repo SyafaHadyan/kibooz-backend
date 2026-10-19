@@ -199,7 +199,31 @@ func TestAJSONBodyOver64KBIsRefusedExceptOnTheUploads(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, post(t, app, "/api/v1/public", small).StatusCode, "a body below the limit passes")
 
-	for _, path := range []string{"/api/v1/users/avatar", "/api/v1/trash/scan-claim"} {
+	for _, path := range []string{
+		"/api/v1/users/avatar", "/api/v1/trash/scan-claim", "/api/v1/users/avatar/", "/API/V1/USERS/AVATAR", "/api/v1/Trash/Scan-Claim/",
+	} {
 		require.Equal(t, http.StatusOK, post(t, app, path, big).StatusCode, "%s takes a photo and has its own limit", path)
+	}
+}
+
+func TestABodyOverTheServerLimitIsNamedByWhatItWasSentTo(t *testing.T) {
+	app := newServer(100)
+
+	// the test server limits the whole body to 1 MB
+	huge := strings.Repeat("a", 2*1024*1024)
+
+	for path, want := range map[string]string{
+		"/api/v1/public":       apperror.ErrBodyTooLarge.Code,
+		"/api/v1/users/avatar": apperror.ErrFileTooLarge.Code,
+	} {
+		res := post(t, app, path, huge)
+		require.Equal(t, http.StatusRequestEntityTooLarge, res.StatusCode, path)
+
+		var failure struct {
+			ErrorCode string `json:"errorCode"`
+		}
+
+		require.NoError(t, json.NewDecoder(res.Body).Decode(&failure))
+		require.Equal(t, want, failure.ErrorCode, path)
 	}
 }
