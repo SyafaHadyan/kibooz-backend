@@ -13,11 +13,14 @@ info:
     Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`
     and a `Retry-After` header. They count requests per signed-in user, and login, registration and token routes per account,
     never per IP address. The daily limit of trash claims is a different `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After`
-    header, because it ends at midnight of the local day.
+    header, because it ends at midnight of the local day. Login, registration, changing the password and deleting the account
+    also answer `429` with `RATE_LIMITED` and `Retry-After: 1` when the server is busy checking passwords, and a client can send
+    the same request once more after that second.
 
     Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
-    processed answers `400` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
+    processed answers `400` with `BAD_REQUEST`, a request with a `Content-Encoding` other than `identity`, such as `gzip` or
+    `zstd`, answers `415` with `BAD_REQUEST`, and a body over the size limit of the server answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     A day, such as "today" or the Monday to Friday of a week, is the local day of the school. It follows the timezone of the

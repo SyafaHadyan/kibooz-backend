@@ -91,5 +91,5 @@ A proxy in front of the API can also answer `429` with no body and no `Retry-Aft
 |:---|:---|:---|:---|
 | `VALIDATION_ERROR` | 400 | A field is missing or wrong, see `details`. A missing body or broken JSON is reported under the field `body`, and text with a NUL character is refused too | Show each message next to its field |
 | `METHOD_NOT_ALLOWED` | 405 | The route does not answer this HTTP method | This is a bug in the app |
-| `BAD_REQUEST` | 4xx | The HTTP layer refused a request that no other code describes | This is a bug in the app |
+| `BAD_REQUEST` | 4xx | The HTTP layer refused a request that no other code describes. A request with a `Content-Encoding` other than `identity`, such as `gzip` or `zstd`, gets `415` with this code | This is a bug in the app. Send JSON bodies as they are, with no compression |
 | `INTERNAL_ERROR` | 500 | Something unexpected failed. The details are logged with a request id and never sent | Try again later, and report the `X-Request-Id` response header if it keeps happening |
