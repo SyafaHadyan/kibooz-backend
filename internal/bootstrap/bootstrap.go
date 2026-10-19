@@ -139,7 +139,7 @@ func Start(version string) (*Bootstrap, error) {
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
 
-	stats.AllowRoutes(app.Fiber.GetRoutes(true))
+	stats.AllowRoutes(app.Fiber.GetRoutes())
 
 	metricsListener, err := stats.Serve(cfg.MetricsAddress)
 	if err != nil {

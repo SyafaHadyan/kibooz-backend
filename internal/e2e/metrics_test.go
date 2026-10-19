@@ -57,7 +57,7 @@ func TestMetricsAreServedOnAListenerOfTheirOwn(t *testing.T) {
 
 	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="/healthz",status="200"} 1`)
 	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="unmatched",status="404"} 1`)
-	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="/api/v1/wali/children",status="401"} 1`)
+	require.Contains(t, text, `kibooz_http_requests_total{method="GET",route="/api/v1/wali",status="401"} 1`, "the sign-in check of a group answers before a route")
 	require.NotContains(t, text, "no/such/route", "the path of a request that matched nothing is not a label")
 	require.Contains(t, text, "go_sql_open_connections", "the pool of the database is measured")
 	require.Contains(t, text, "go_goroutines")
