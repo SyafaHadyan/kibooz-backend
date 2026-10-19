@@ -17,7 +17,7 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler registers the public auth routes. Register and login are limited per email, refresh and logout per refresh token,
-// and register is also limited for the whole API when it names a class code.
+// and register is also limited for every caller of the route when it names a class code.
 func NewAuthHandler(
 	router fiber.Router, emailLimiter fiber.Handler, classCodeLimiter fiber.Handler, tokenLimiter fiber.Handler, useCase usecase.AuthUseCaseItf,
 ) {

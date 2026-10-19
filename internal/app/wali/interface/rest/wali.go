@@ -30,7 +30,7 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	group.Post("/guidance/apply", idempotent, handler.ApplyGuidance)
 	group.Get("/child/:studentId", handler.Child)
 	group.Get("/children", handler.Children)
-	// the class code is the secret between a stranger and a class, so naming one is limited for the whole API
+	// the class code is the secret between a stranger and a class, so naming one is limited for every caller of this route
 	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
