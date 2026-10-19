@@ -436,6 +436,40 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Parent]
+      operationId: deleteChild
+      summary: Delete a child
+      description: |
+        Hides the child the way a deleted account does. The child leaves the roster, the dashboards and the leaderboard of
+        the class, the ranking of the class is renumbered, and the teachers no longer see it. The moods, scans and guidance
+        records stay in the database, and so do the standings of the semesters that ended. The avatar of the child and the
+        photos of its scans are removed from the storage within about 10 minutes. The NISN is free again. A parent may delete
+        the last child, and the account then has no child until `POST /wali/children` adds one. A deleted child cannot be
+        restored.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+      responses:
+        "200":
+          description: The child was deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
     get:
       tags: [Teacher]
@@ -2002,7 +2036,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
       content:
         application/json:
           schema:

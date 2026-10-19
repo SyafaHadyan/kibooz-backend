@@ -41,6 +41,12 @@ type fakeRepo struct {
 	studentClass   uuid.UUID
 	studentFound   bool
 	studentErr     error
+
+	removeClass   uuid.UUID
+	removeFound   bool
+	removeErr     error
+	removedChild  uuid.UUID
+	removedParent uuid.UUID
 }
 
 func (f *fakeRepo) FindWaliByUserID(context.Context, uuid.UUID) (*entity.Wali, error) {
@@ -79,6 +85,12 @@ func (f *fakeRepo) UpdateStudent(
 	f.studentUpdated = &update
 
 	return f.studentClass, f.studentFound, f.studentErr
+}
+
+func (f *fakeRepo) RemoveStudent(_ context.Context, waliID uuid.UUID, studentID uuid.UUID) (uuid.UUID, bool, error) {
+	f.removedParent, f.removedChild = waliID, studentID
+
+	return f.removeClass, f.removeFound, f.removeErr
 }
 
 func (f *fakeRepo) UpdateProfile(_ context.Context, _ uuid.UUID, _ uuid.UUID, update repository.ProfileUpdate) error {

@@ -36,6 +36,8 @@ type WaliUseCaseItf interface {
 	AddChild(ctx context.Context, userID uuid.UUID, req dto.AddChildRequest) (dto.ChildSummary, error)
 	// UpdateProfile changes the name, phone number, WhatsApp number or address of the caller and returns the new details
 	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateWaliProfileRequest) (dto.Guardian, error)
+	// DeleteChild hides a child of the caller the way a deleted account does, the caller may delete the last child
+	DeleteChild(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) error
 	// UpdateChild changes the name or the NISN of a child of the caller
 	UpdateChild(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.UpdateChildRequest) (dto.ChildSummary, error)
 	// Child shows the registered details of one child of the caller
@@ -394,6 +396,31 @@ func (u *WaliUseCase) AddChild(ctx context.Context, userID uuid.UUID, req dto.Ad
 	return childSummary(created), nil
 }
 
+func (u *WaliUseCase) DeleteChild(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) error {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return apperror.ErrProfileNotFound
+	}
+
+	classID, removed, err := u.repo.RemoveStudent(ctx, wali.ID, studentID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !removed {
+		return apperror.ErrStudentNotFound
+	}
+
+	// the child leaves the leaderboard, so the cached one is stale
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+
+	return nil
+}
+
 func (u *WaliUseCase) UpdateChild(
 	ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.UpdateChildRequest,
 ) (dto.ChildSummary, error) {
@@ -502,6 +529,11 @@ func (u *WaliUseCase) resolveStudent(ctx context.Context, userID uuid.UUID, stud
 	student, err := u.repo.FindStudent(ctx, wali.ID, studentID)
 	if err != nil {
 		return nil, apperror.Internal(err)
+	}
+
+	if student == nil && studentID == nil {
+		// a parent can delete every child, and the dashboard then has nothing to show
+		return nil, apperror.ErrNoChild
 	}
 
 	if student == nil {

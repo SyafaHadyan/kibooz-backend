@@ -12,9 +12,11 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/childremoval"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
@@ -82,6 +84,10 @@ type WaliDBItf interface {
 	// the semesters that ended, and the ranking of the class is renumbered. It returns the class of the child, and false
 	// when the wali has no such active child, and apperror.ErrNISNTaken when another active child has the NISN.
 	UpdateStudent(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, update StudentUpdate) (classID uuid.UUID, found bool, err error)
+	// RemoveStudent hides the active child of the wali, renumbers the ranking of the class and queues the avatar of the
+	// child and the photos of its scans for deletion in the same transaction. It returns the class of the child, and
+	// false when the wali has no such active child.
+	RemoveStudent(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (classID uuid.UUID, removed bool, err error)
 	// ListChildren returns the children of the wali, the oldest first
 	ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error)
 	// AddChild stores student as one more child of the wali inside the class that owns joinCode. It refuses a code that
@@ -91,10 +97,12 @@ type WaliDBItf interface {
 
 type WaliDB struct {
 	db *gorm.DB
+	// fileKey picks the files of this storage out of the addresses that a removed child held
+	fileKey filecleanup.KeyFunc
 }
 
-func NewWaliDB(db *gorm.DB) WaliDBItf {
-	return &WaliDB{db: db}
+func NewWaliDB(db *gorm.DB, fileKey filecleanup.KeyFunc) WaliDBItf {
+	return &WaliDB{db: db, fileKey: fileKey}
 }
 
 func (r *WaliDB) FindWaliByUserID(ctx context.Context, userID uuid.UUID) (*entity.Wali, error) {
@@ -337,6 +345,28 @@ func (r *WaliDB) UpdateStudent(
 	})
 
 	return classID, found, mapNISNTaken(err)
+}
+
+func (r *WaliDB) RemoveStudent(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (uuid.UUID, bool, error) {
+	var (
+		classID uuid.UUID
+		removed bool
+	)
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		classID, removed = uuid.Nil, false
+
+		var err error
+
+		classID, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
+			return rows.Where("wali_id = ?", waliID)
+		}, r.fileKey)
+
+		return err
+	})
+
+	return classID, removed, err
 }
 
 func (r *WaliDB) ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error) {

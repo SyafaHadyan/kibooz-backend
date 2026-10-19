@@ -112,7 +112,7 @@ func Start(version string) (*Bootstrap, error) {
 		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
 	))
 	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
-		walirepository.NewWaliDB(database), cache, cfg,
+		walirepository.NewWaliDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
 	))
 	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,

@@ -56,6 +56,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
+| `NO_CHILD_REGISTERED` | 404 | The parent has no child, because every child was deleted, so there is no default child for the dashboard or the trash statistics | Show the screen that adds a child with a class code |
 | `STUDENT_NOT_FOUND` | 404 | The child does not exist, or the signed in user may not see it | Refresh the list of children |
 | `PROFILE_NOT_FOUND` | 404 | The profile of the account does not exist, for example after it was deleted | Sign the user out |
 | `GUIDANCE_NOT_FOUND` | 404 | The guidance does not exist | Refresh the guidance list |

@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/childremoval"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -595,42 +596,11 @@ func (r *GuruDB) RemoveStudent(ctx context.Context, classID uuid.UUID, studentID
 		// a retried transaction starts from nothing
 		removed = false
 
-		// the class lock comes first, the order that the deletion of a parent and a join take it in, and it makes the
-		// renumbering below the only one that runs for this class
-		err := ranking.Lock(tx, classID)
-		if err != nil {
-			return err
-		}
+		var err error
 
-		child := tx.Model(&entity.Student{}).Where("id = ? AND class_id = ?", studentID, classID)
-
-		var found int64
-
-		err = child.Session(&gorm.Session{}).Count(&found).Error
-		if err != nil || found == 0 {
-			return err
-		}
-
-		var urls []string
-
-		err = filecleanup.TakeAddresses(&urls, child, "avatar_url")
-		if err == nil {
-			err = filecleanup.TakeAddresses(&urls, tx.Model(&entity.TrashScan{}).Where("student_id = ?", studentID), "photo_url")
-		}
-
-		if err == nil {
-			err = child.Session(&gorm.Session{}).Delete(&entity.Student{}).Error
-		}
-
-		if err == nil {
-			err = ranking.Recompute(tx, classID)
-		}
-
-		if err == nil {
-			err = filecleanup.Queue(tx, filecleanup.KeysOf(urls, r.fileKey))
-		}
-
-		removed = err == nil
+		_, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
+			return rows.Where("class_id = ?", classID)
+		}, r.fileKey)
 
 		return err
 	})
