@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
@@ -273,10 +274,18 @@ func (r *WaliDB) AddChild(
 			return apperror.ErrClassNoTeacher
 		}
 
-		// the lock on the parent makes two requests of the same parent count the children one after the other
-		err = tx.Exec("SELECT id FROM walis WHERE id = ? AND deleted_at IS NULL FOR UPDATE", waliID).Error
-		if err != nil {
-			return err
+		// The lock on the parent makes two requests of the same parent count the children one after the other. A parent that
+		// was deleted while this request waited matches nothing, and the child must not be added to a parent that is gone.
+		var parent entity.Wali
+
+		locked := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+			Select("id").Where("id = ?", waliID).Limit(1).Find(&parent)
+		if locked.Error != nil {
+			return locked.Error
+		}
+
+		if locked.RowsAffected == 0 {
+			return apperror.ErrProfileNotFound
 		}
 
 		var children int64
