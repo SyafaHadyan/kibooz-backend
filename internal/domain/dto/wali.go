@@ -92,6 +92,12 @@ type AddChildRequest struct {
 	Student   RegisterStudent `json:"student" validate:"required"`
 }
 
+// UpdateChildRequest changes the name or the NISN of a child, a missing field is left alone
+type UpdateChildRequest struct {
+	FullName *string `json:"fullName" validate:"omitempty,max=150"`
+	NISN     *string `json:"nisn" validate:"omitempty,max=30"`
+}
+
 // ChildSummary is a child of the parent with the class the child is in
 type ChildSummary struct {
 	ID        uuid.UUID `json:"id"`

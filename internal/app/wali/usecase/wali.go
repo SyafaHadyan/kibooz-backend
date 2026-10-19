@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -34,6 +36,8 @@ type WaliUseCaseItf interface {
 	AddChild(ctx context.Context, userID uuid.UUID, req dto.AddChildRequest) (dto.ChildSummary, error)
 	// UpdateProfile changes the name, phone number, WhatsApp number or address of the caller and returns the new details
 	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateWaliProfileRequest) (dto.Guardian, error)
+	// UpdateChild changes the name or the NISN of a child of the caller
+	UpdateChild(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.UpdateChildRequest) (dto.ChildSummary, error)
 	// Child shows the registered details of one child of the caller
 	Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error)
 	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
@@ -389,6 +393,90 @@ func (u *WaliUseCase) AddChild(ctx context.Context, userID uuid.UUID, req dto.Ad
 
 	return childSummary(created), nil
 }
+
+func (u *WaliUseCase) UpdateChild(
+	ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.UpdateChildRequest,
+) (dto.ChildSummary, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.ChildSummary{}, apperror.ErrProfileNotFound
+	}
+
+	update, err := childUpdate(req)
+	if err != nil {
+		return dto.ChildSummary{}, err
+	}
+
+	classID, found, err := u.repo.UpdateStudent(ctx, wali.ID, studentID, update)
+	if err != nil {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return dto.ChildSummary{}, err
+		}
+
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	if !found {
+		return dto.ChildSummary{}, apperror.ErrStudentNotFound
+	}
+
+	// a new name changes the leaderboard and its order, so the cached one is stale
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+
+	child, err := u.repo.FindStudent(ctx, wali.ID, &studentID)
+	if err != nil {
+		return dto.ChildSummary{}, apperror.Internal(err)
+	}
+
+	if child == nil {
+		return dto.ChildSummary{}, apperror.ErrStudentNotFound
+	}
+
+	return childSummary(child), nil
+}
+
+// childUpdate checks the changed fields with the same rules as the registration of a child
+func childUpdate(req dto.UpdateChildRequest) (repository.StudentUpdate, error) {
+	var update repository.StudentUpdate
+
+	if req.FullName == nil && req.NISN == nil {
+		return update, apperror.Validation(map[string]string{"body": "provide fullName or nisn"})
+	}
+
+	invalid := map[string]string{}
+
+	if req.FullName != nil {
+		name := strings.TrimSpace(*req.FullName)
+		if utf8.RuneCountInString(name) < 2 {
+			invalid["fullName"] = "must have at least 2 characters"
+		}
+
+		update.SetName, update.FullName = true, name
+	}
+
+	if req.NISN != nil {
+		nisn := strings.TrimSpace(*req.NISN)
+		if !nisnPattern.MatchString(nisn) {
+			invalid["nisn"] = "must be a number of 5 to 30 digits"
+		}
+
+		update.SetNISN, update.NISN = true, nisn
+	}
+
+	if len(invalid) > 0 {
+		return update, apperror.Validation(invalid)
+	}
+
+	return update, nil
+}
+
+// nisnPattern is what registration accepts for a NISN, a number of 5 to 30 digits
+var nisnPattern = regexp.MustCompile(`^[0-9]{5,30}$`)
 
 func childSummary(row *repository.StudentRow) dto.ChildSummary {
 	return dto.ChildSummary{

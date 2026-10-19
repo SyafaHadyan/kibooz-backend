@@ -383,6 +383,16 @@ check("an empty text clears a parent field and keeps the others", s == 200 and d
 expect("parent bad phone", call("PATCH", "/wali/profile", w1["token"], {"phoneNumber": "abc"}), 400, "VALIDATION_ERROR")
 expect("parent empty body", call("PATCH", "/wali/profile", w1["token"], {}), 400, "VALIDATION_ERROR")
 expect("a teacher cannot use the parent profile", call("PATCH", "/wali/profile", g1["token"], {"fullName": "x"}), 403, "AUTH_FORBIDDEN")
+# since 0.13.0 a parent can change the name and the NISN of a child
+s, js = call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {"fullName": "Smoke Child One Renamed"})
+check("parent renames a child", s == 200 and dig(js, "data", "fullName") == "Smoke Child One Renamed", f"{s} {js}")
+new_nisn = nisn()
+s, js = call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {"nisn": new_nisn})
+check("parent changes the NISN of a child", s == 200 and dig(js, "data", "nisn") == new_nisn, f"{s} {js}")
+s, js = call("GET", f"/wali/child/{w2['student']}", w2["token"])
+expect("a NISN of another child is refused", call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {"nisn": dig(js, "data", "nisn")}), 409, "NISN_ALREADY_REGISTERED")
+expect("a child edit needs a field", call("PATCH", f"/wali/children/{w1['student']}", w1["token"], {}), 400, "VALIDATION_ERROR")
+expect("another parent cannot change the child", call("PATCH", f"/wali/children/{w1['student']}", w2["token"], {"fullName": "Nope Child"}), 404, "STUDENT_NOT_FOUND")
 
 # ---------- avatar ----------
 boundary = "----smoke" + uuid.uuid4().hex

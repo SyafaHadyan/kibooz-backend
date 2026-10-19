@@ -36,6 +36,11 @@ type fakeRepo struct {
 	addedClass    uuid.UUID
 	findRequested *uuid.UUID
 	updated       *repository.ProfileUpdate
+
+	studentUpdated *repository.StudentUpdate
+	studentClass   uuid.UUID
+	studentFound   bool
+	studentErr     error
 }
 
 func (f *fakeRepo) FindWaliByUserID(context.Context, uuid.UUID) (*entity.Wali, error) {
@@ -66,6 +71,14 @@ func (f *fakeRepo) CountScans(context.Context, uuid.UUID, time.Time, time.Time) 
 
 func (f *fakeRepo) FindGuardian(context.Context, uuid.UUID) (*repository.GuardianRow, error) {
 	return f.guardian, nil
+}
+
+func (f *fakeRepo) UpdateStudent(
+	_ context.Context, _ uuid.UUID, _ uuid.UUID, update repository.StudentUpdate,
+) (uuid.UUID, bool, error) {
+	f.studentUpdated = &update
+
+	return f.studentClass, f.studentFound, f.studentErr
 }
 
 func (f *fakeRepo) UpdateProfile(_ context.Context, _ uuid.UUID, _ uuid.UUID, update repository.ProfileUpdate) error {
