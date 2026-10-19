@@ -166,9 +166,12 @@ type AddTeacherRequest struct {
 	Email string `json:"email" validate:"required,email,max=255"`
 }
 
-// Teacher is a teacher of a class
+// Teacher is a teacher of a class. ID is the id of the teacher in the class routes, UserID is the id of the account, the
+// one that GuruProfile and a forum author carry, and IsSelf says whether the account is the signed in one
 type Teacher struct {
 	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"userId"`
+	IsSelf    bool      `json:"isSelf"`
 	FullName  string    `json:"fullName"`
 	NIP       *string   `json:"nip"`
 	AvatarURL *string   `json:"avatarUrl"`
