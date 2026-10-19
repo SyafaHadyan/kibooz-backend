@@ -12,6 +12,7 @@
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
   "labels": ["dependencies"],
+  "assignees": ["SyafaHadyan"],
   "dependencyDashboard": true,
   "packageRules": [
     {
