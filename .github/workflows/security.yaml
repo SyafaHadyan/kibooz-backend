@@ -152,6 +152,7 @@ jobs:
           severity: CRITICAL,HIGH
           limit-severities-for-sarif: true
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           exit-code: "1"
 
       # Dependabot uploads too, because the code scanning check named Trivy is required and no other run posts it on a Dependabot
