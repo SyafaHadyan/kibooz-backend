@@ -36,6 +36,9 @@ const (
 	// usedTTL is how long Redis remembers a consumed token to reject quick replays. A token that is shown again within
 	// that time is only refused, and after it the database decides whether the session was stolen.
 	usedTTL = time.Minute
+
+	// cleanupTimeout is how long taking the used flag off a token may last, on a context of its own
+	cleanupTimeout = 2 * time.Second
 )
 
 // dummyHash lets login spend the same time for unknown emails as for known ones
@@ -281,7 +284,7 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 	})
 	if err != nil {
 		// the database did not use the token, so it must not stay flagged and block the client's retry
-		_ = u.cache.Del(ctx, refreshKey(hash))
+		u.forgetUse(ctx, hash)
 
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
@@ -297,6 +300,16 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 	u.remember(ctx, next)
 
 	return u.buildResponse(rotation.User, raw)
+}
+
+// forgetUse takes the used flag off a token that the database did not use. The request is often the reason that the swap
+// failed, because a client that lost its connection cancels it, and a delete on that context would fail too and leave the
+// flag for a whole usedTTL, so the delete runs on a context of its own that only keeps the values of the request.
+func (u *AuthUseCase) forgetUse(ctx context.Context, hash string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+
+	_ = u.cache.Del(ctx, refreshKey(hash))
 }
 
 func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string) error {

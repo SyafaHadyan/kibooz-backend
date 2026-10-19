@@ -245,7 +245,10 @@ func takeAddresses(files *[]string, rows *gorm.DB, column string) error {
 func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID, error) {
 	var wali entity.Wali
 
-	err := tx.Select("id").Where("user_id = ?", userID).Take(&wali).Error
+	// The parent row is locked before the class locks below, in the order that adding a child takes them. A child that is
+	// being added then either finishes first and is deleted with the others, or waits and finds the parent gone.
+	err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate}).
+		Select("id").Where("user_id = ?", userID).Take(&wali).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
