@@ -71,6 +71,13 @@ func (f *Fiber) PasswordLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
 	return f.newLimiter(f.authMax, func(c fiber.Ctx) string { return "confirm:" + userKey(c) }, nil)
 }
 
+// MoodBatchLimiter gives every signed-in user MOOD_BATCH_LIMITER_MAX requests per window on the batch mood route, on top of
+// the limit of every signed-in route. One batch writes up to 30 rows under a lock of the class, so it costs more than an
+// ordinary request. It runs after authentication, like UserLimiter.
+func (f *Fiber) MoodBatchLimiter(userKey func(fiber.Ctx) string) fiber.Handler {
+	return f.newLimiter(f.moodBatchMax, func(c fiber.Ctx) string { return "moodbatch:" + userKey(c) }, nil)
+}
+
 // EmailLimiter gives every email AUTH_LIMITER_MAX requests per window on each route it guards, which are the routes
 // that take an email, so guessing the password of one account is stopped from any number of addresses.
 // A device that sends a valid device token for the email has a budget of its own, so someone without that token,

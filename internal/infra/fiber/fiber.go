@@ -33,6 +33,8 @@ type Fiber struct {
 	authMax int
 	// classCodeMax is the allowance of each route for requests that name a class code, see ClassCodeLimiter
 	classCodeMax int
+	// moodBatchMax is the allowance of each user for the batch mood route, see MoodBatchLimiter
+	moodBatchMax int
 	devices      *devicetoken.Tokens
 }
 
@@ -89,6 +91,7 @@ func New(cfg *env.Env, limits ratelimit.Store) *Fiber {
 		authMax: cfg.AuthLimiterMax,
 
 		classCodeMax: cfg.ClassCodeLimiterMax,
+		moodBatchMax: cfg.MoodBatchLimiterMax,
 		devices:      devicetoken.New(cfg),
 	}
 }
