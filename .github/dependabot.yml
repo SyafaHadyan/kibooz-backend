@@ -2,7 +2,10 @@ version: 2
 
 updates:
   - package-ecosystem: gomod
-    directory: /
+    # tools/ is its own module for the Go tools that CI runs, such as govulncheck, so that go.mod only holds what the service needs
+    directories:
+      - /
+      - /tools
     schedule:
       interval: weekly
       day: monday
@@ -53,7 +56,10 @@ updates:
         update-types: [minor, patch]
 
   - package-ecosystem: docker
-    directory: /
+    # .github/tools/Dockerfile names the images that the lint and scan jobs run with docker run, which Dependabot cannot read in a workflow
+    directories:
+      - /
+      - /.github/tools
     schedule:
       interval: weekly
       day: monday

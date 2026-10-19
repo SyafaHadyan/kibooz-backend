@@ -35,7 +35,7 @@ Every tag is one image for `linux/amd64` and `linux/arm64`, and Docker pulls the
 
 Docker Hub limits anonymous pulls per IP address, and every GitHub runner shares its addresses with many other users. Jobs that pulled `postgres`, `redis` or a lint image therefore failed at random, either with `toomanyrequests` or with a timeout on `auth.docker.io`. The jobs avoid Docker Hub where they can.
 
-- The Docker Hub images of the lint and scan jobs are pulled with `.github/actions/pull-images/pull.sh`, which tries `mirror.gcr.io/hadolint/hadolint:v2.15.1@sha256:...` first and the Docker Hub name when the mirror fails. The digests are the same, so the mirror serves the identical image. The performance test and both ZAP scans do the same for Postgres and Redis in `compose.ci.yml`, and take the Go base image of the Dockerfile from the mirror with a named build context, so `compose.yml` and the Dockerfile stay as they are for production. The name of that image comes from `GO_IMAGE`, which each of those workflows reads from the Dockerfile into its `.env`, so a Dependabot bump of the Go image only changes the Dockerfile. A test in `internal/repocheck` fails when a workflow forgets the line or the compose file carries a digest of its own.
+- The Docker Hub images of the lint and scan jobs are pulled with `.github/actions/pull-images/pull.sh`, which tries `mirror.gcr.io/` plus the image name first and the Docker Hub name when the mirror fails. The digests are the same, so the mirror serves the identical image. The performance test and both ZAP scans do the same for Postgres and Redis in `compose.ci.yml`, and take the Go base image of the Dockerfile from the mirror with a named build context, so `compose.yml` and the Dockerfile stay as they are for production. The name of that image comes from `GO_IMAGE`, which each of those workflows reads from the Dockerfile into its `.env`, so a Dependabot bump of the Go image only changes the Dockerfile. A test in `internal/repocheck` fails when a workflow forgets the line or the compose file carries a digest of its own.
 - The Postgres and Redis service containers of the test job name the mirror in the image as well, as `mirror.gcr.io/library/postgres:18-alpine`. If the mirror ever stops serving one of these images, change the name back to the Docker Hub one or to `public.ecr.aws/docker/library/` with the same name.
 - Each job that pulls from Docker Hub calls the local action `.github/actions/pull-images` right after the checkout. The action adds the mirror to `registry-mirrors` of the Docker daemon as a second line of defense and logs in to Docker Hub with a read-only token, so an image that falls through to Docker Hub is pulled as a known account. A login that fails does not fail the job.
 - `docker.yaml` is not changed. It already logs in to Docker Hub with the push token whenever it can push, and it builds from the Docker Hub base images of the Dockerfile.
@@ -49,6 +49,15 @@ gh secret set DOCKERHUB_PULL_TOKEN --app dependabot # for Dependabot pull reques
 ```
 
 Without the secret everything still works through the mirror alone. Pull requests from forks never get the secret, so they rely on the mirror.
+
+## Pinned tools
+
+Dependabot reads manifests and Dockerfiles but not the run steps of a workflow, so a tool that is named inside a `run` would never get an update PR. Two files hold those pins instead, and Dependabot watches both.
+
+- `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a Dependabot bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
+- `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
+
+These pins are still raised by hand because they are inputs of an action, which Dependabot does not read either. They are the golangci-lint version in `ci.yaml`, the k6 version in `perf.yaml`, the Vale version in `vale.yaml` and `go-version` in the workflows, which is held on purpose, see the comment in `ci.yaml`. Look at them when you review the Dependabot PRs on a Monday.
 
 ## Required checks
 

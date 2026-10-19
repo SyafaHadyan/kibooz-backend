@@ -68,10 +68,12 @@ jobs:
           # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
           go-version: "1.27.2"
 
-      # The tool is pinned, so a bad release of it cannot break every pull request. The vulnerability database it reads is always the current one.
-      # Raise the version by hand when a newer govulncheck is out.
+      # The tool is pinned in tools/go.mod, so a bad release of it cannot break every pull request, and Dependabot raises it there.
+      # The vulnerability database it reads is always the current one.
       - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go -C tools install tool
+          "$RUNNER_TEMP/bin/govulncheck" ./...
 
   dependency-review:
     name: Dependency review
@@ -115,7 +117,7 @@ jobs:
 
       - name: Gitleaks
         run: |
-          docker run --rm -v "$PWD:/repo" "$(bash ./.github/actions/pull-images/pull.sh zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f)" \
+          docker run --rm -v "$PWD:/repo" "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh gitleaks)")" \
             detect --source /repo --no-banner --report-format sarif --report-path /repo/gitleaks-results.sarif -v
 
       - name: Upload gitleaks results to code scanning

@@ -74,7 +74,7 @@ jobs:
       - name: Run the active scan
         run: |
           docker run --rm --network host -v "$PWD/zap-out:/zap/wrk:rw" \
-            ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef \
+            "$(bash ./.github/tools/image.sh zaproxy)" \
             zap.sh -cmd -port 8090 -autorun /zap/wrk/plan.yaml
 
       # The scan only reports for now, so the run stays green and the findings show as annotations and in the summary
