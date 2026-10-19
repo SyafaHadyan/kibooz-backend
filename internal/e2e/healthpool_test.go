@@ -1,8 +1,10 @@
 package e2e
 
 import (
+	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -14,16 +16,23 @@ func TestTheHealthCheckDoesNotQueueBehindAFullPool(t *testing.T) {
 	sqlDB, err := testDB.DB()
 	require.NoError(t, err)
 
-	// every connection of the pool that the requests use is held by a transaction
-	for range 25 {
-		tx := testDB.Begin()
-		require.NoError(t, tx.Error)
-		require.NoError(t, tx.Exec("SELECT 1").Error)
+	// Every connection of the pool that the requests use is taken. A background job may hold one for a moment, so the loop
+	// takes what becomes free and stops at the first wait that runs out of time, which is when the pool is full.
+	for sqlDB.Stats().InUse < sqlDB.Stats().MaxOpenConnections {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		conn, err := sqlDB.Conn(ctx)
 
-		t.Cleanup(func() { _ = tx.Rollback().Error })
+		cancel()
+
+		if err != nil {
+			break
+		}
+
+		t.Cleanup(func() { _ = conn.Close() })
 	}
 
-	require.EqualValues(t, 25, sqlDB.Stats().InUse, "the pool is full")
+	stats := sqlDB.Stats()
+	require.Equal(t, stats.MaxOpenConnections, stats.InUse, "the pool is full")
 
 	res := call(t, http.MethodGet, "/healthz", "", nil)
 	require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
