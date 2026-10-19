@@ -9,6 +9,10 @@ services:
     image: syafa/kibooz-backend:${IMAGE_TAG:-latest}
     container_name: kibooz-api
     restart: always
+    # the API stops accepting requests and gives running ones 10 seconds, so Docker has to wait longer than that
+    stop_grace_period: 30s
+    # a hard cap above GOMEMLIMIT, so a memory problem of the API kills this container and not the database next to it
+    mem_limit: ${API_MEMORY_LIMIT:-384m}
     env_file: .env
     environment:
       DB_HOST: db
@@ -38,6 +42,9 @@ services:
     image: postgres:18-alpine
     container_name: kibooz-db
     restart: always
+    # a fast shutdown of PostgreSQL ends with a checkpoint, which the default 10 seconds can cut short. The database has
+    # no memory limit on purpose, because it is the container that must be the last one to go when the host runs low
+    stop_grace_period: 30s
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USERNAME}
@@ -60,6 +67,8 @@ services:
     image: redis:8-alpine
     container_name: kibooz-redis
     restart: always
+    # REDIS_MAXMEMORY covers the data, the rest is the buffers and the rewrite of the append only file
+    mem_limit: ${REDIS_MEMORY_LIMIT:-192m}
     command:
       - sh
       - -c
