@@ -13,6 +13,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 )
@@ -42,7 +43,7 @@ type UserDBItf interface {
 }
 
 // FileKeyFunc turns the public address of a file into its object key
-type FileKeyFunc func(url string) (key string, ok bool)
+type FileKeyFunc = filecleanup.KeyFunc
 
 // DeletedAccount is what a deleted account leaves behind for the caller to clean up
 type DeletedAccount struct {
@@ -205,7 +206,7 @@ func (r *UserDB) SoftDeleteAccount(
 			return err
 		}
 
-		err = takeAddresses(&urls, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
+		err = filecleanup.TakeAddresses(&urls, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
 		if err == nil {
 			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
 		}
@@ -214,30 +215,15 @@ func (r *UserDB) SoftDeleteAccount(
 			return err
 		}
 
-		deleted.FileKeys = keysOf(urls, fileKey)
+		deleted.FileKeys = filecleanup.KeysOf(urls, fileKey)
 
-		return queueKeys(tx, deleted.FileKeys)
+		return filecleanup.Queue(tx, deleted.FileKeys)
 	})
 	if err != nil {
 		return DeletedAccount{}, err
 	}
 
 	return deleted, nil
-}
-
-// takeAddresses adds the file addresses that rows hold in column to files and clears them, so no row points at a file
-// that is about to be deleted
-func takeAddresses(files *[]string, rows *gorm.DB, column string) error {
-	var urls []string
-
-	err := rows.Session(&gorm.Session{}).Where(column+" IS NOT NULL AND "+column+" <> ''").Pluck(column, &urls).Error
-	if err != nil || len(urls) == 0 {
-		return err
-	}
-
-	*files = append(*files, urls...)
-
-	return rows.Session(&gorm.Session{}).Update(column, nil).Error
 }
 
 // softDeleteWali hides the parent and their children, then renumbers the ranking of the affected classes. It also
@@ -276,9 +262,9 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID
 
 	children := tx.Unscoped().Model(&entity.Student{}).Select("id").Where("wali_id = ?", wali.ID)
 
-	err = takeAddresses(files, tx.Unscoped().Model(&entity.Student{}).Where("wali_id = ?", wali.ID), "avatar_url")
+	err = filecleanup.TakeAddresses(files, tx.Unscoped().Model(&entity.Student{}).Where("wali_id = ?", wali.ID), "avatar_url")
 	if err == nil {
-		err = takeAddresses(files, tx.Model(&entity.TrashScan{}).Where("student_id IN (?)", children), "photo_url")
+		err = filecleanup.TakeAddresses(files, tx.Model(&entity.TrashScan{}).Where("student_id IN (?)", children), "photo_url")
 	}
 
 	if err == nil {
@@ -302,34 +288,6 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID
 	}
 
 	return classIDs, nil
-}
-
-// keysOf maps the addresses to object keys and leaves out the ones that are not files of this storage
-func keysOf(urls []string, fileKey FileKeyFunc) []string {
-	keys := make([]string, 0, len(urls))
-
-	for _, url := range urls {
-		if key, ok := fileKey(url); ok {
-			keys = append(keys, key)
-		}
-	}
-
-	return keys
-}
-
-// queueKeys adds the keys to the cleanup queue and keeps the ones that are already there as they are
-func queueKeys(tx *gorm.DB, keys []string) error {
-	if len(keys) == 0 {
-		return nil
-	}
-
-	rows := make([]fileCleanup, 0, len(keys))
-	for _, key := range keys {
-		rows = append(rows, fileCleanup{ObjectKey: key})
-	}
-
-	// attempts and queued_at are left to the defaults of the table
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
 func (r *UserDB) UnqueueFileCleanups(ctx context.Context, keys []string) error {

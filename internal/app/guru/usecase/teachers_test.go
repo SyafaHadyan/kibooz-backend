@@ -76,7 +76,7 @@ func TestTeachersListsTheTeachersOfTheClass(t *testing.T) {
 	repo := teachingRepo()
 	repo.teachers = []repository.TeacherRow{teacherRow("Siti"), teacherRow("Budi")}
 
-	res, err := NewGuruUseCase(repo, nil).Teachers(context.Background(), uuid.New(), repo.class.ID)
+	res, err := NewGuruUseCase(repo, nil, nil).Teachers(context.Background(), uuid.New(), repo.class.ID)
 	require.NoError(t, err)
 	require.Len(t, res.Teachers, 2)
 	require.Equal(t, "Siti", res.Teachers[0].FullName)
@@ -90,7 +90,7 @@ func TestTeachersFailures(t *testing.T) {
 	t.Run("a class the caller does not teach", func(t *testing.T) {
 		repo := &teacherRepo{guru: &repository.GuruRow{}}
 
-		_, err := NewGuruUseCase(repo, nil).Teachers(ctx, uuid.New(), uuid.New())
+		_, err := NewGuruUseCase(repo, nil, nil).Teachers(ctx, uuid.New(), uuid.New())
 		requireCode(t, err, apperror.ErrClassNotFound)
 	})
 
@@ -98,7 +98,7 @@ func TestTeachersFailures(t *testing.T) {
 		repo := teachingRepo()
 		repo.listErr = errors.New("down")
 
-		_, err := NewGuruUseCase(repo, nil).Teachers(ctx, uuid.New(), repo.class.ID)
+		_, err := NewGuruUseCase(repo, nil, nil).Teachers(ctx, uuid.New(), repo.class.ID)
 		requireCode(t, err, apperror.Internal(nil))
 	})
 }
@@ -108,7 +108,7 @@ func TestAddTeacherNormalizesTheEmailAndReturnsTheTeacher(t *testing.T) {
 	row := teacherRow("Budi")
 	repo.added = &row
 
-	res, err := NewGuruUseCase(repo, nil).AddTeacher(
+	res, err := NewGuruUseCase(repo, nil, nil).AddTeacher(
 		context.Background(), uuid.New(), repo.class.ID, dto.AddTeacherRequest{Email: "  Budi@Example.COM "},
 	)
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestAddTeacherFailures(t *testing.T) {
 	t.Run("a class the caller does not teach", func(t *testing.T) {
 		repo := &teacherRepo{guru: &repository.GuruRow{}}
 
-		_, err := NewGuruUseCase(repo, nil).AddTeacher(ctx, uuid.New(), uuid.New(), req)
+		_, err := NewGuruUseCase(repo, nil, nil).AddTeacher(ctx, uuid.New(), uuid.New(), req)
 		requireCode(t, err, apperror.ErrClassNotFound)
 		require.Empty(t, repo.addedEmail, "nothing was added")
 	})
@@ -133,7 +133,7 @@ func TestAddTeacherFailures(t *testing.T) {
 	t.Run("an email that is no teacher account", func(t *testing.T) {
 		repo := teachingRepo()
 
-		_, err := NewGuruUseCase(repo, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
 		requireCode(t, err, apperror.ErrTeacherNotFound)
 	})
 
@@ -141,7 +141,7 @@ func TestAddTeacherFailures(t *testing.T) {
 		repo := teachingRepo()
 		repo.addErr = apperror.ErrTeacherInClass
 
-		_, err := NewGuruUseCase(repo, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
 		requireCode(t, err, apperror.ErrTeacherInClass)
 	})
 
@@ -149,7 +149,7 @@ func TestAddTeacherFailures(t *testing.T) {
 		repo := teachingRepo()
 		repo.addErr = errors.New("down")
 
-		_, err := NewGuruUseCase(repo, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
+		_, err := NewGuruUseCase(repo, nil, nil).AddTeacher(ctx, uuid.New(), repo.class.ID, req)
 		requireCode(t, err, apperror.Internal(nil))
 	})
 }

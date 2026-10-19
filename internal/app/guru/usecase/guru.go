@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -42,6 +43,8 @@ type GuruUseCaseItf interface {
 	RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error)
 	// SetJoining lets a teacher of the class open or close it for new children, the join code stays the same
 	SetJoining(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest) (dto.JoiningResponse, error)
+	// RemoveStudent lets a teacher of the class take a child out of it, which hides the child like a deleted account does
+	RemoveStudent(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) error
 	// Teachers lists the teachers of a class the caller teaches
 	Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error)
 	// AddTeacher lets a teacher of the class add another registered teacher by email, who then sees the whole class
@@ -56,13 +59,14 @@ type GuruUseCaseItf interface {
 }
 
 type GuruUseCase struct {
-	repo repository.GuruDBItf
-	cfg  *env.Env
-	now  func() time.Time
+	repo  repository.GuruDBItf
+	cache redis.CacheItf
+	cfg   *env.Env
+	now   func() time.Time
 }
 
-func NewGuruUseCase(repo repository.GuruDBItf, cfg *env.Env) GuruUseCaseItf {
-	return &GuruUseCase{repo: repo, cfg: cfg, now: time.Now}
+func NewGuruUseCase(repo repository.GuruDBItf, cache redis.CacheItf, cfg *env.Env) GuruUseCaseItf {
+	return &GuruUseCase{repo: repo, cache: cache, cfg: cfg, now: time.Now}
 }
 
 func (u *GuruUseCase) Dashboard(ctx context.Context, userID uuid.UUID, classID *uuid.UUID) (dto.GuruDashboardResponse, error) {
@@ -512,6 +516,27 @@ func (u *GuruUseCase) SetJoining(
 	}
 
 	return dto.JoiningResponse{JoinOpen: *req.JoinOpen}, nil
+}
+
+func (u *GuruUseCase) RemoveStudent(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) error {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return err
+	}
+
+	removed, err := u.repo.RemoveStudent(ctx, class.ID, studentID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !removed {
+		return apperror.ErrStudentNotFound
+	}
+
+	// the cache is optional, entries also expire by themselves
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
+
+	return nil
 }
 
 func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error) {

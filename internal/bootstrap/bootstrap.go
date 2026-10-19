@@ -28,6 +28,7 @@ import (
 	walihandler "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/interface/rest"
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
@@ -114,7 +115,7 @@ func Start(version string) (*Bootstrap, error) {
 		walirepository.NewWaliDB(database), cache, cfg,
 	))
 	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
-		gurure.NewGuruDB(database), cfg,
+		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
 	))
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, storage, cfg,

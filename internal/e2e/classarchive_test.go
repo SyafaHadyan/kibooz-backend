@@ -191,7 +191,7 @@ func TestAddTeacherRefusesAnArchivedClass(t *testing.T) {
 
 	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?", classID).Error)
 
-	_, err := repository.NewGuruDB(testDB).AddTeacher(context.Background(), uuid.MustParse(classID), other.Email)
+	_, err := repository.NewGuruDB(testDB, nil).AddTeacher(context.Background(), uuid.MustParse(classID), other.Email)
 	require.ErrorIs(t, err, apperror.ErrClassNotFound)
 
 	var linked int64

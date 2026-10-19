@@ -220,7 +220,7 @@ func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 		MoodType: constants.MoodSedih, ConfidenceScore: 0.9, Source: constants.SourceAICamera, RecordedAt: now,
 	}
 
-	repo := repository.NewGuruDB(testDB)
+	repo := repository.NewGuruDB(testDB, nil)
 
 	classID := uuid.MustParse(classIDText)
 	day := repository.MoodDay{From: now.Add(-24 * time.Hour), To: now.Add(24 * time.Hour), Limit: constants.MoodLogsPerStudentPerDay}

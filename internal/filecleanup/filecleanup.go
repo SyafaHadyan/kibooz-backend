@@ -5,11 +5,14 @@ package filecleanup
 import (
 	"context"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
 
@@ -125,4 +128,77 @@ func (s *Sweeper) Start(interval time.Duration) (stop func()) {
 		cancel()
 		wg.Wait()
 	}
+}
+
+// KeyFunc turns the public address of a file into its object key, and says false for an address that is not ours
+type KeyFunc func(url string) (key string, ok bool)
+
+// OwnFiles picks the files of this storage that lie under one of the directories out of the addresses rows hold, so an
+// address that was set some other way is never deleted
+func OwnFiles(storage s3.StorageItf, directories ...constants.StorageDirectory) KeyFunc {
+	return func(url string) (string, bool) {
+		key, ok := storage.KeyFromURL(url)
+		if !ok {
+			return "", false
+		}
+
+		for _, directory := range directories {
+			if strings.HasPrefix(key, string(directory)+"/") {
+				return key, true
+			}
+		}
+
+		return "", false
+	}
+}
+
+// TakeAddresses adds the file addresses that rows hold in column to files and clears them, so no row points at a file
+// that is about to be deleted
+func TakeAddresses(files *[]string, rows *gorm.DB, column string) error {
+	var urls []string
+
+	err := rows.Session(&gorm.Session{}).Where(column+" IS NOT NULL AND "+column+" <> ''").Pluck(column, &urls).Error
+	if err != nil || len(urls) == 0 {
+		return err
+	}
+
+	*files = append(*files, urls...)
+
+	return rows.Session(&gorm.Session{}).Update(column, nil).Error
+}
+
+// KeysOf maps the addresses to object keys and leaves out the ones that are not files of this storage
+func KeysOf(urls []string, fileKey KeyFunc) []string {
+	keys := make([]string, 0, len(urls))
+
+	for _, url := range urls {
+		if key, ok := fileKey(url); ok {
+			keys = append(keys, key)
+		}
+	}
+
+	return keys
+}
+
+// queued is a row of the queue of files that still have to be removed from the bucket
+type queued struct {
+	ObjectKey string `gorm:"primaryKey"`
+}
+
+func (queued) TableName() string { return "file_cleanups" }
+
+// Queue adds the keys to the cleanup queue in the transaction of the change that dropped their addresses, and keeps the
+// ones that are already there as they are. The sweep removes them from the bucket.
+func Queue(tx *gorm.DB, keys []string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+
+	rows := make([]queued, 0, len(keys))
+	for _, key := range keys {
+		rows = append(rows, queued{ObjectKey: key})
+	}
+
+	// attempts and queued_at are left to the defaults of the table
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
