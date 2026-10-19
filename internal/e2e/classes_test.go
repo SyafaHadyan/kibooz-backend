@@ -504,6 +504,41 @@ func TestMoreTeachersForOneClass(t *testing.T) {
 		require.Len(t, list, 2)
 	})
 
+	t.Run("every entry says whether it is the signed in teacher and carries the id of the account", func(t *testing.T) {
+		accountID := func(token string) string {
+			res := call(t, http.MethodGet, "/api/v1/guru/profile", token, nil)
+			require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+			id, _ := res.data("id").(string)
+			require.NotEmpty(t, id)
+
+			return id
+		}
+
+		for _, viewer := range []account{first, second} {
+			own := accountID(viewer.Token)
+			selves := 0
+
+			for _, item := range listOf(t, call(t, http.MethodGet, teachers, viewer.Token, nil), "teachers") {
+				isSelf, _ := dig(item, "isSelf").(bool)
+				userID, _ := dig(item, "userId").(string)
+
+				require.NotEmpty(t, userID)
+				require.Equal(t, isSelf, userID == own, "isSelf is true for the entry of the signed in account only")
+
+				if isSelf {
+					selves++
+				}
+			}
+
+			require.Equal(t, 1, selves, "exactly one entry is the signed in teacher")
+		}
+
+		other := listOf(t, call(t, http.MethodGet, teachers, second.Token, nil), "teachers")[0]
+		require.Equal(t, accountID(first.Token), dig(other, "userId"), "the first teacher shows the account id of the first account")
+		require.Equal(t, false, dig(other, "isSelf"))
+	})
+
 	t.Run("the added teacher sees the class like the first one", func(t *testing.T) {
 		res := call(t, http.MethodGet, "/api/v1/classes/"+classID+"/students", second.Token, nil)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)

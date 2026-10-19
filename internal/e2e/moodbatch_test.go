@@ -198,7 +198,7 @@ func TestMoodBatch(t *testing.T) {
 // only way to reach the transaction with a bad row is to call the repository, here with a child that does not exist.
 func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 	guru := registerGuru(t, "Dahlia")
-	_, joinCode := classOf(t, guru)
+	classIDText, joinCode := classOf(t, guru)
 	_, studentID := registerWali(t, joinCode, "Rollback Child")
 
 	var guruRow string
@@ -222,10 +222,14 @@ func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 
 	repo := repository.NewGuruDB(testDB)
 
-	err = repo.CreateMoodLogs(context.Background(), []entity.MoodLog{valid, orphan})
+	classID := uuid.MustParse(classIDText)
+	day := repository.MoodDay{From: now.Add(-24 * time.Hour), To: now.Add(24 * time.Hour), Limit: constants.MoodLogsPerStudentPerDay}
+
+	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid, orphan}, day)
 	require.Error(t, err, "the second row breaks the student foreign key")
 	require.Zero(t, moodLogCount(t, studentID), fmt.Sprintf("the valid row %s must not stay behind", valid.ID))
 
-	require.NoError(t, repo.CreateMoodLogs(context.Background(), []entity.MoodLog{valid}))
+	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid}, day)
+	require.NoError(t, err)
 	require.EqualValues(t, 1, moodLogCount(t, studentID))
 }
