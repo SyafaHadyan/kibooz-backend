@@ -69,9 +69,7 @@ type GuruDBItf interface {
 	// FindTaughtClass returns the requested class when the guru teaches it, or the oldest taught class when classID is nil
 	FindTaughtClass(ctx context.Context, guruID uuid.UUID, classID *uuid.UUID) (*entity.Class, error)
 	CountStudents(ctx context.Context, classID uuid.UUID) (int, error)
-	// ListMoodRecords returns the newest log of each child for each day in loc, between from and to. A log is newer by its
-	// time and then by its id, which is the order the parent dashboard uses as well.
-	ListMoodRecords(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, loc *time.Location) ([]MoodRecord, error)
+	ListMoodRecords(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time) ([]MoodRecord, error)
 	FindStudent(ctx context.Context, studentID uuid.UUID) (*entity.Student, error)
 	TeachesClass(ctx context.Context, guruID uuid.UUID, classID uuid.UUID) (bool, error)
 	CreateMoodLog(ctx context.Context, moodLog *entity.MoodLog) error
@@ -164,22 +162,16 @@ func (r *GuruDB) CountStudents(ctx context.Context, classID uuid.UUID) (int, err
 	return int(total), err
 }
 
-func (r *GuruDB) ListMoodRecords(
-	ctx context.Context, classID uuid.UUID, from time.Time, to time.Time, loc *time.Location,
-) ([]MoodRecord, error) {
+func (r *GuruDB) ListMoodRecords(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time) ([]MoodRecord, error) {
 	var records []MoodRecord
 
-	// Only the newest log of a child for a day is read, so a child with many logs in a day costs one row. A uuid compares
-	// byte by byte in Postgres, like bytes.Compare in the use case.
-	err := r.db.WithContext(ctx).Raw(`
-SELECT DISTINCT ON (m.student_id, (m.recorded_at AT TIME ZONE ?)::date)
-       m.id AS id, m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at
-FROM mood_logs AS m
-JOIN students AS s ON s.id = m.student_id
-WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?
-ORDER BY m.student_id, (m.recorded_at AT TIME ZONE ?)::date, m.recorded_at DESC, m.id DESC`,
-		loc.String(), classID, from, to, loc.String(),
-	).Scan(&records).Error
+	err := r.db.WithContext(ctx).
+		Table("mood_logs AS m").
+		Select("m.id AS id, m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at").
+		Joins("JOIN students AS s ON s.id = m.student_id").
+		Where("s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?", classID, from, to).
+		Order("m.recorded_at ASC, m.id ASC").
+		Scan(&records).Error
 
 	return records, err
 }
