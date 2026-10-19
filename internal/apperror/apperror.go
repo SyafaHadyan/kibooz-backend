@@ -85,6 +85,8 @@ var (
 	ErrClassCodeNotFound  = New(http.StatusNotFound, "CLASS_CODE_NOT_FOUND", "Class code not found")
 	ErrStudentNotFound    = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Student not found")
 	ErrChildLimitReached  = New(http.StatusConflict, "CHILD_LIMIT_REACHED", "This account already has the largest number of children")
+	ErrClassLimitReached  = New(http.StatusConflict, "CLASS_LIMIT_REACHED", "This teacher already teaches the largest number of classes")
+	ErrClassFull          = New(http.StatusConflict, "CLASS_FULL", "This class has the largest number of children")
 	ErrProfileNotFound    = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "User profile not found")
 	ErrGuidanceNotFound   = New(http.StatusNotFound, "GUIDANCE_NOT_FOUND", "Guidance not found")
 	ErrTeacherNotFound    = New(http.StatusNotFound, "TEACHER_NOT_FOUND", "No teacher account has this email")

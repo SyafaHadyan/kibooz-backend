@@ -80,6 +80,12 @@ const (
 
 	MoodBatchMax = 30
 
+	// MaxClassesPerTeacher is the most classes that a teacher can teach at once, archived classes not counted
+	MaxClassesPerTeacher = 20
+
+	// MaxChildrenPerClass is the most active children of one class, counted when a child joins
+	MaxChildrenPerClass = 60
+
 	// MoodRecordedAtMaxAge is how far back a client may date a mood log that it queued while it was offline. It matches the
 	// time an Idempotency-Key is kept, so a replay that is old enough to be refused here could not be repeated safely anyway.
 	MoodRecordedAtMaxAge = 7 * 24 * time.Hour

@@ -31,6 +31,8 @@ The `message` is English text for people and can be reworded, so an app branches
 | `NIP_ALREADY_REGISTERED` | 409 | An active teacher has this NIP | Ask the teacher to check the number |
 | `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN | Ask the parent to check the number |
 | `CHILD_LIMIT_REACHED` | 409 | The parent already has 10 children | Tell the parent that no more children can be added |
+| `CLASS_FULL` | 409 | The class already has 60 active children, so it cannot take another one at registration or when a parent adds a child | Tell the parent to contact the teacher |
+| `CLASS_LIMIT_REACHED` | 409 | The teacher already teaches 20 classes that are not archived. The same answer comes when the teacher who is being added to a class is at 20 | Tell the teacher that no more classes can be created or joined |
 
 Email, NIP and NISN can be used again after the account that held them is deleted.
 

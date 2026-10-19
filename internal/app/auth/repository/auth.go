@@ -13,6 +13,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -191,6 +192,11 @@ func (r *AuthDB) CreateWali(
 
 		if teachers == 0 {
 			return apperror.ErrClassNoTeacher
+		}
+
+		err = classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+		if err != nil {
+			return err
 		}
 
 		err = tx.Create(user).Error
