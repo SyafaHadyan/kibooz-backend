@@ -477,9 +477,13 @@ tb = f"/guru/classes/{cid}/teachers"
 s, js = call("GET", tb, g1["token"])
 check("creator is the owner", s == 200 and dig(js, "data", "teachers", 0, "isOwner") is True and len(dig(js, "data", "teachers")) == 1, f"{s} {js}")
 g1_id = dig(js, "data", "teachers", 0, "id")
+s, prof = call("GET", "/guru/profile", g1["token"])
+teacher_user_id = dig(js, "data", "teachers", 0, "userId")
+profile_user_id = dig(prof, "data", "id")
+check("teacher list marks the signed in teacher", s == 200 and dig(js, "data", "teachers", 0, "isSelf") is True and teacher_user_id is not None and teacher_user_id == profile_user_id, f"{s} {js} {prof}")
 s, js = call("POST", tb, g1["token"], {"email": g2["email"]})
 g2_id = dig(js, "data", "id")
-check("add teacher", s == 201 and g2_id and dig(js, "data", "isOwner") is False, f"{s} {js}")
+check("add teacher", s == 201 and g2_id and dig(js, "data", "isOwner") is False and dig(js, "data", "isSelf") is False, f"{s} {js}")
 expect("add teacher twice", call("POST", tb, g1["token"], {"email": g2["email"]}), 409, "TEACHER_ALREADY_IN_CLASS")
 expect("add unknown teacher", call("POST", tb, g1["token"], {"email": f"nobody-{RUN}@example.com"}), 404, "TEACHER_NOT_FOUND")
 expect("add a parent as teacher", call("POST", tb, g1["token"], {"email": w1["email"]}), 404, "TEACHER_NOT_FOUND")
@@ -553,6 +557,19 @@ w5["pw"] = new_pw
 expect("old password no longer signs in", call("POST", "/auth/login", body={"email": w5["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
 expect("new password signs in", call("POST", "/auth/login", body={"email": w5["email"], "password": new_pw, "role": "WALI"}), 200)
 expect("refresh token ended with the change", call("POST", "/auth/refresh-token", body={"refreshToken": w5["refresh"]}), 401, "AUTH_REFRESH_INVALID")
+
+# ---------- 0.13.0 daily limit of mood logs ----------
+limit_hit = None
+for attempt in range(1, 26):
+    s, js = call("POST", "/guru/mood/log", g1["token"], {"studentId": w2["student"], "moodType": "SENANG"})
+    if s != 201:
+        limit_hit = (attempt, s, js.get("errorCode"))
+        break
+check("a child stops taking mood logs after 20 in a day", limit_hit is not None and limit_hit[0] <= 21 and limit_hit[1:] == (409, "MOOD_LOG_LIMIT_REACHED"), str(limit_hit))
+s, js = call("POST", "/guru/mood/log/batch", g1["token"], {"classId": g1["class"], "entries": [
+    {"studentId": w2["student"], "moodType": "SENANG", "source": "MANUAL_INPUT"}]})
+check("a batch with a full child is refused and names the entry", s == 409 and js.get("errorCode") == "MOOD_LOG_LIMIT_REACHED" and "entries[0].studentId" in (js.get("details") or {}), f"{s} {js}")
+expect("mood notes over 500 characters are refused", call("POST", "/guru/mood/log", g1["token"], {"studentId": w1["student"], "moodType": "SENANG", "notes": "a" * 501}), 400, "VALIDATION_ERROR")
 
 # ---------- 0.9.0 deleting accounts ----------
 expect("parent wrong password", call("DELETE", "/users/me", w2["token"], {"password": "wrong-password"}), 403, "AUTH_PASSWORD_INCORRECT")

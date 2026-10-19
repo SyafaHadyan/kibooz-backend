@@ -84,6 +84,9 @@ const (
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024
 
+	// MoodLogsPerStudentPerDay is the most mood logs one child can have on one local day, whoever records them
+	MoodLogsPerStudentPerDay = 20
+
 	// MoodRecordedAtMaxAge is how far back a client may date a mood log that it queued while it was offline. It matches the
 	// time an Idempotency-Key is kept, so a replay that is old enough to be refused here could not be repeated safely anyway.
 	MoodRecordedAtMaxAge = 7 * 24 * time.Hour
