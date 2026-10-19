@@ -9,7 +9,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number and an avatar address |
 | `gurus` | The teacher part of a `GURU` account, with a NIP, a school name and an address |
 | `walis` | The parent part of a `WALI` account, with an address and a WhatsApp number |
-| `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set when nobody teaches it and it has no active child |
+| `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set when nobody teaches it and it has no active child. `join_open` is false while its teachers do not want new children |
 | `class_teachers` | A teacher of a class. A class can have several teachers, and `is_owner` marks the one who owns it |
 | `students` | A child, with a parent, a class, a NISN, the points of all semesters (`current_points`), the points of the running semester (`season_points`) and the rank |
 | `mood_logs` | One mood that a teacher recorded for a child, with the mood, a confidence score, the source, notes and the time it was seen |

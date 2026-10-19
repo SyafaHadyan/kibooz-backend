@@ -463,6 +463,24 @@ for i in range(2, 23):
 check("a teacher stops creating classes at 20", limit_class == (21, 409, "CLASS_LIMIT_REACHED"), str(limit_class))
 expect("the teacher with 20 classes deletes without a successor", delete_me(g6), 200)
 
+# ---------- 0.13.0 closing a class for new children ----------
+joining = f"/guru/classes/{g1['class']}/joining"
+s, js = call("GET", f"/guru/classes/{g1['class']}", g1["token"])
+check("a class starts open", s == 200 and dig(js, "data", "joinOpen") is True, f"{s} {js}")
+expect("joining needs a boolean", call("PUT", joining, g1["token"], {}), 400, "VALIDATION_ERROR")
+expect("a parent cannot close a class", call("PUT", joining, w1["token"], {"joinOpen": False}), 403, "AUTH_FORBIDDEN")
+s, js = call("PUT", joining, g1["token"], {"joinOpen": False})
+check("close a class", s == 200 and dig(js, "data", "joinOpen") is False, f"{s} {js}")
+expect("a closed class refuses a new parent", call("POST", "/auth/register", body={
+    "email": f"kibooz-smoke-{RUN}-cl@example.com", "password": PW, "fullName": "Closed Parent", "role": "WALI", "classCode": g1["code"],
+    "student": {"nisn": nisn(), "fullName": "Closed Child"}}), 409, "CLASS_JOINING_CLOSED")
+expect("a closed class refuses another child", call("POST", "/wali/children", w1["token"], {
+    "classCode": g1["code"], "student": {"nisn": nisn(), "fullName": "Closed Second Child"}}), 409, "CLASS_JOINING_CLOSED")
+s, js = call("GET", f"/guru/classes/{g1['class']}", g1["token"])
+check("closing keeps the code and shows joinOpen", s == 200 and dig(js, "data", "joinOpen") is False and dig(js, "data", "joinCode") == g1["code"], f"{s} {js}")
+s, js = call("PUT", joining, g1["token"], {"joinOpen": True})
+check("open a class again", s == 200 and dig(js, "data", "joinOpen") is True, f"{s} {js}")
+
 # ---------- forum ----------
 s, js = call("POST", f"/classes/{cid}/forum", w1["token"], {"title": "Smoke thread", "body": "hello"})
 pid = dig(js, "data", "id")

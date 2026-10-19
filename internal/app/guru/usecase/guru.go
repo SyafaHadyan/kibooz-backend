@@ -40,6 +40,8 @@ type GuruUseCaseItf interface {
 	CreateClass(ctx context.Context, userID uuid.UUID, req dto.CreateClassRequest) (dto.ClassSummary, error)
 	// RotateJoinCode replaces the join code of a class the teacher teaches, and parents can no longer join with the old one
 	RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error)
+	// SetJoining lets a teacher of the class open or close it for new children, the join code stays the same
+	SetJoining(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest) (dto.JoiningResponse, error)
 	// Teachers lists the teachers of a class the caller teaches
 	Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error)
 	// AddTeacher lets a teacher of the class add another registered teacher by email, who then sees the whole class
@@ -95,6 +97,7 @@ func (u *GuruUseCase) Dashboard(ctx context.Context, userID uuid.UUID, classID *
 			ClassID:         class.ID,
 			ClassName:       class.GradeLevel + " (" + class.Name + ")",
 			JoinCode:        class.JoinCode,
+			JoinOpen:        class.JoinOpen,
 			TotalStudents:   total,
 			PresentStudents: len(today),
 			DominantMood:    dominantMood(counts),
@@ -491,6 +494,26 @@ func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, clas
 	return dto.JoinCodeResponse{JoinCode: code}, nil
 }
 
+func (u *GuruUseCase) SetJoining(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest,
+) (dto.JoiningResponse, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.JoiningResponse{}, err
+	}
+
+	if req.JoinOpen == nil {
+		return dto.JoiningResponse{}, apperror.Validation(map[string]string{"joinOpen": "is required"})
+	}
+
+	err = u.repo.SetJoining(ctx, class.ID, *req.JoinOpen)
+	if err != nil {
+		return dto.JoiningResponse{}, apperror.Internal(err)
+	}
+
+	return dto.JoiningResponse{JoinOpen: *req.JoinOpen}, nil
+}
+
 func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error) {
 	_, class, err := u.resolveClass(ctx, userID, &classID)
 	if err != nil {
@@ -603,6 +626,7 @@ func (u *GuruUseCase) CreateClass(ctx context.Context, userID uuid.UUID, req dto
 		Name:         name,
 		GradeLevel:   firstNonEmpty(req.GradeLevel, constants.DefaultGradeLevel),
 		AcademicYear: firstNonEmpty(req.AcademicYear, constants.DefaultAcademicYr),
+		JoinOpen:     true,
 	}
 
 	err = u.repo.CreateClass(ctx, guru.ID, class)
@@ -700,6 +724,7 @@ func classSummary(row *repository.ClassRow) dto.ClassSummary {
 		SchoolName:    row.SchoolName,
 		AcademicYear:  row.AcademicYear,
 		JoinCode:      row.JoinCode,
+		JoinOpen:      row.JoinOpen,
 		TotalStudents: row.TotalStudents,
 		CreatedAt:     row.CreatedAt.UTC(),
 	}

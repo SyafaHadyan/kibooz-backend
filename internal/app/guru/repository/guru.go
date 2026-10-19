@@ -96,6 +96,8 @@ type GuruDBItf interface {
 	CreateClass(ctx context.Context, guruID uuid.UUID, class *entity.Class) error
 	// RotateJoinCode gives the class a new join code and returns it, the old code stops working at once
 	RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error)
+	// SetJoining opens or closes the class for new children, and waits for a child who is joining right now
+	SetJoining(ctx context.Context, classID uuid.UUID, open bool) error
 	// ListTeachers returns the active teachers of the class, the one who joined first at the top
 	ListTeachers(ctx context.Context, classID uuid.UUID) ([]TeacherRow, error)
 	// AddTeacher makes the active teacher account with the email a teacher of the class. It returns nil when no such
@@ -377,6 +379,12 @@ func (r *GuruDB) RotateJoinCode(ctx context.Context, classID uuid.UUID) (string,
 	})
 
 	return code, err
+}
+
+func (r *GuruDB) SetJoining(ctx context.Context, classID uuid.UUID, open bool) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return classteam.SetJoining(tx, classID, open)
+	})
 }
 
 func (r *GuruDB) classQuery(ctx context.Context) *gorm.DB {

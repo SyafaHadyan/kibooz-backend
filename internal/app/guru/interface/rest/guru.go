@@ -36,6 +36,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Post("/classes", idempotent, handler.CreateClass)
 	group.Get("/classes/:classId", handler.Class)
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
+	group.Put("/classes/:classId/joining", handler.SetJoining)
 	group.Get("/classes/:classId/teachers", handler.Teachers)
 	group.Post("/classes/:classId/teachers", idempotent, handler.AddTeacher)
 	group.Delete("/classes/:classId/teachers/:teacherId", handler.RemoveTeacher)
@@ -145,6 +146,27 @@ func (h *GuruHandler) RotateJoinCode(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Join code replaced", res)
+}
+
+func (h *GuruHandler) SetJoining(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	var req dto.SetJoiningRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.SetJoining(c.Context(), middleware.UserIDFrom(c), classID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Joining updated", res)
 }
 
 func (h *GuruHandler) Teachers(c fiber.Ctx) error {

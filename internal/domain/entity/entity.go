@@ -51,6 +51,8 @@ type Class struct {
 	CreatedAt    time.Time `gorm:"autoCreateTime"`
 	// ArchivedAt is set when the last teacher left a class without children, the join code then no longer works
 	ArchivedAt *time.Time
+	// JoinOpen is false while the teachers of the class do not want new children, the join code then answers CLASS_JOINING_CLOSED
+	JoinOpen bool `gorm:"not null;default:true"`
 }
 
 type ClassTeacher struct {

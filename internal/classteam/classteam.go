@@ -209,7 +209,8 @@ func LockLive(tx *gorm.DB, classID uuid.UUID) (archived bool, err error) {
 }
 
 // LockOpen takes the lock for a class that a join code led to and then checks again that the class was not archived while
-// the request waited. An archived class answers like a code that does not exist.
+// the request waited. An archived class answers like a code that does not exist, and a class whose teachers closed joining
+// answers ErrClassJoiningClosed.
 func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
 	archived, err := LockLive(tx, classID)
 	if err != nil {
@@ -220,7 +221,29 @@ func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
 		return apperror.ErrClassCodeNotFound
 	}
 
+	var open bool
+
+	err = tx.Raw("SELECT join_open FROM classes WHERE id = ?", classID).Scan(&open).Error
+	if err != nil {
+		return err
+	}
+
+	if !open {
+		return apperror.ErrClassJoiningClosed
+	}
+
 	return nil
+}
+
+// SetJoining opens or closes a class for new children. It takes Lock like a join does, so a child who is joining finishes
+// first, and once the call returns no child joins a class that was closed.
+func SetJoining(tx *gorm.DB, classID uuid.UUID, open bool) error {
+	err := Lock(tx, classID)
+	if err != nil {
+		return err
+	}
+
+	return tx.Model(&entity.Class{}).Where("id = ?", classID).Update("join_open", open).Error
 }
 
 // CheckRoom refuses a new child when the class already holds max active children. The caller holds LockOpen, so every child
