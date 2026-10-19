@@ -172,13 +172,15 @@ func (r *GuruDB) ListMoodRecords(
 	// Only the newest log of a child for a day is read, so a child with many logs in a day costs one row. A uuid compares
 	// byte by byte in Postgres, like bytes.Compare in the use case.
 	err := r.db.WithContext(ctx).Raw(`
-SELECT DISTINCT ON (m.student_id, (m.recorded_at AT TIME ZONE ?)::date)
-       m.id AS id, m.student_id AS student_id, m.mood_type AS mood_type, m.recorded_at AS recorded_at
-FROM mood_logs AS m
-JOIN students AS s ON s.id = m.student_id
-WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?
-ORDER BY m.student_id, (m.recorded_at AT TIME ZONE ?)::date, m.recorded_at DESC, m.id DESC`,
-		loc.String(), classID, from, to, loc.String(),
+SELECT DISTINCT ON (t.student_id, t.local_day) t.id, t.student_id, t.mood_type, t.recorded_at
+FROM (
+  SELECT m.id, m.student_id, m.mood_type, m.recorded_at, (m.recorded_at AT TIME ZONE ?)::date AS local_day
+  FROM mood_logs AS m
+  JOIN students AS s ON s.id = m.student_id
+  WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?
+) AS t
+ORDER BY t.student_id, t.local_day, t.recorded_at DESC, t.id DESC`,
+		loc.String(), classID, from, to,
 	).Scan(&records).Error
 
 	return records, err
