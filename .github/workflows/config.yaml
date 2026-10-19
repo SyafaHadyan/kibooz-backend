@@ -48,7 +48,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Audit workflows and Dependabot config
+      - name: Audit workflows
         # the token lets the audits that ask GitHub about the actions in use run, such as the ones for known vulnerable
         # versions and for commits that are not on the branch they claim, which are skipped without it
         env:

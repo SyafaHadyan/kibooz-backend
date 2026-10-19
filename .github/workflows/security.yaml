@@ -68,7 +68,7 @@ jobs:
           # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
           go-version: "1.27.2"
 
-      # The tool is pinned in tools/go.mod, so a bad release of it cannot break every pull request, and Dependabot raises it there.
+      # The tool is pinned in tools/go.mod, so a bad release of it cannot break every pull request, and the update bot raises it there.
       # The vulnerability database it reads is always the current one.
       - name: Run govulncheck
         run: |
