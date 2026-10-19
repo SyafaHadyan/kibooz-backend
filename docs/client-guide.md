@@ -61,7 +61,7 @@ A request without the header works as before. The header only protects an action
 
 ## Send plain request bodies
 
-Send JSON bodies as they are, with no compression. A request with a `Content-Encoding` header other than `identity`, such as `gzip` or `zstd`, is refused with `415` and the code `BAD_REQUEST`. Most HTTP clients add that header only when told to, so the usual fix is to turn request compression off.
+Send JSON bodies as they are, with no compression. A request with a non-empty `Content-Encoding` header other than `identity`, such as `gzip` or `zstd`, is refused with `415` and the code `BAD_REQUEST`. Most HTTP clients add that header only when told to, so the usual fix is to turn request compression off.
 
 ## Handle rate limits
 
