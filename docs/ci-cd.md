@@ -64,7 +64,7 @@ The bot cannot read a tool that is named inside a `run` step, so the tools of th
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
 - The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
-The Google style release in `.vale.ini` and the Vale image in the commands of this page are still bumped by hand.
+The Google style release in `.vale.ini` and the Vale image in the commands of this page are read by two more patterns in `renovate.json`, so only `go-version` is still bumped by hand.
 
 ## Required checks
 
@@ -99,7 +99,7 @@ The ruleset of `main` also requires verified signatures on every commit that rea
 
 ### Prose style
 
-Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml` and the Google style release in `.vale.ini` are pinned and have to be bumped by hand, because no update bot reads them. To see the hints that do not gate the build, run Vale locally.
+Vale reads `.vale.ini`, which combines the Vale and Google styles with the two rules in `.github/vale/styles/Kibooz/`. An em dash or a semicolon in prose fails the build, so split the sentence or use a comma instead. Code blocks and inline code are skipped. `CODE_OF_CONDUCT.md` is exempt in `.vale.ini` and is not in the file list of `vale.yaml`, because it is the Contributor Covenant text as published and is not rewritten. The Vale version in `vale.yaml`, the Google style release in `.vale.ini` and the Vale image in the commands above are pinned, and Renovate raises all three. Keep the `# renovate:` comment in `vale.yaml` and the shape of the other two lines, because the patterns in `renovate.json` read them. To see the hints that do not gate the build, run Vale locally.
 
 ```sh
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 sync
