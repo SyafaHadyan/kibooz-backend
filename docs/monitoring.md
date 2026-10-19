@@ -48,7 +48,7 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 |:---|:---|
 | API is down | The metrics were not scraped for 5 minutes. It also fires when Alloy itself is down, which is why missing data counts as firing |
 | 5xx ratio is high | More than 5 percent of the requests failed with a 5xx for 10 minutes |
-| p95 latency is high | The 95th percentile was above one second for 10 minutes |
+| p95 latency is high | The p95 latency, which 95 percent of the requests stay under, was above one second for 10 minutes |
 | A background job has not succeeded | The semester check or a keepalive has not succeeded for 10 minutes |
 | A slow background job has not succeeded | The file cleanup or the idempotency purge has not succeeded for 3 hours |
 | Background jobs are failing | A job failed more than 3 times in 30 minutes |

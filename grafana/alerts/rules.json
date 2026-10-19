@@ -180,7 +180,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "The 95th percentile of the answer time was above one second for 10 minutes"
+      "summary": "The p95 answer time was above one second for 10 minutes"
     },
     "data": [
       {
