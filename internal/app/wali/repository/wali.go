@@ -38,6 +38,18 @@ type GuardianRow struct {
 	Address        *string
 }
 
+// ProfileUpdate holds the profile fields to change, a Set flag tells a missing field from one that is cleared
+type ProfileUpdate struct {
+	SetName     bool
+	FullName    string
+	SetPhone    bool
+	Phone       *string
+	SetWhatsapp bool
+	Whatsapp    *string
+	SetAddress  bool
+	Address     *string
+}
+
 // TrashTotals is what a child collected in one trash category
 type TrashTotals struct {
 	Scans  int
@@ -55,6 +67,8 @@ type WaliDBItf interface {
 	CountScans(ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time) (int, error)
 	// FindGuardian returns nil when the account or the parent profile does not exist
 	FindGuardian(ctx context.Context, userID uuid.UUID) (*GuardianRow, error)
+	// UpdateProfile stores the changed fields of the account and of the parent profile in one transaction
+	UpdateProfile(ctx context.Context, userID uuid.UUID, waliID uuid.UUID, update ProfileUpdate) error
 	CreateGuidanceApplication(ctx context.Context, application *entity.GuidanceApplication) error
 	// ListChildren returns the children of the wali, the oldest first
 	ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error)
@@ -216,6 +230,41 @@ func (r *WaliDB) FindGuardian(ctx context.Context, userID uuid.UUID) (*GuardianR
 	}
 
 	return &rows[0], nil
+}
+
+func (r *WaliDB) UpdateProfile(ctx context.Context, userID uuid.UUID, waliID uuid.UUID, update ProfileUpdate) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		account := map[string]any{}
+		if update.SetName {
+			account["full_name"] = update.FullName
+		}
+
+		if update.SetPhone {
+			account["phone_number"] = update.Phone
+		}
+
+		if len(account) > 0 {
+			err := tx.Model(&entity.User{}).Where("id = ?", userID).Updates(account).Error
+			if err != nil {
+				return err
+			}
+		}
+
+		profile := map[string]any{}
+		if update.SetWhatsapp {
+			profile["whatsapp_number"] = update.Whatsapp
+		}
+
+		if update.SetAddress {
+			profile["address"] = update.Address
+		}
+
+		if len(profile) == 0 {
+			return nil
+		}
+
+		return tx.Model(&entity.Wali{}).Where("id = ?", waliID).Updates(profile).Error
+	})
 }
 
 func (r *WaliDB) ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentRow, error) {

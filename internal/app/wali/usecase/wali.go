@@ -19,6 +19,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
 )
 
 // trashTypes fixes the order of the categories in the statistics
@@ -31,6 +32,8 @@ type WaliUseCaseItf interface {
 	Children(ctx context.Context, userID uuid.UUID) (dto.ChildList, error)
 	// AddChild registers one more child of the caller in the class that owns the class code
 	AddChild(ctx context.Context, userID uuid.UUID, req dto.AddChildRequest) (dto.ChildSummary, error)
+	// UpdateProfile changes the name, phone number, WhatsApp number or address of the caller and returns the new details
+	UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateWaliProfileRequest) (dto.Guardian, error)
 	// Child shows the registered details of one child of the caller
 	Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error)
 	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
@@ -170,14 +173,117 @@ func (u *WaliUseCase) Child(ctx context.Context, userID uuid.UUID, studentID uui
 		CurrentPoints: student.CurrentPoints,
 		SeasonPoints:  student.SeasonPoints,
 		ClassRank:     student.RankPosition,
-		Guardian: dto.Guardian{
-			FullName:       guardian.FullName,
-			Email:          guardian.Email,
-			PhoneNumber:    guardian.PhoneNumber,
-			WhatsappNumber: guardian.WhatsappNumber,
-			Address:        guardian.Address,
-		},
+		Guardian:      guardianOf(guardian),
 	}, nil
+}
+
+func guardianOf(row *repository.GuardianRow) dto.Guardian {
+	return dto.Guardian{
+		FullName:       row.FullName,
+		Email:          row.Email,
+		PhoneNumber:    row.PhoneNumber,
+		WhatsappNumber: row.WhatsappNumber,
+		Address:        row.Address,
+	}
+}
+
+func (u *WaliUseCase) UpdateProfile(ctx context.Context, userID uuid.UUID, req dto.UpdateWaliProfileRequest) (dto.Guardian, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.Guardian{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.Guardian{}, apperror.ErrProfileNotFound
+	}
+
+	update, err := profileUpdate(req)
+	if err != nil {
+		return dto.Guardian{}, err
+	}
+
+	err = u.repo.UpdateProfile(ctx, userID, wali.ID, update)
+	if err != nil {
+		return dto.Guardian{}, apperror.Internal(err)
+	}
+
+	guardian, err := u.repo.FindGuardian(ctx, userID)
+	if err != nil {
+		return dto.Guardian{}, apperror.Internal(err)
+	}
+
+	if guardian == nil {
+		return dto.Guardian{}, apperror.ErrProfileNotFound
+	}
+
+	return guardianOf(guardian), nil
+}
+
+// profileUpdate checks the changed fields. An empty text clears a phone number, a WhatsApp number or the address, and a
+// missing field is left alone.
+func profileUpdate(req dto.UpdateWaliProfileRequest) (repository.ProfileUpdate, error) {
+	var update repository.ProfileUpdate
+
+	if req.FullName == nil && req.PhoneNumber == nil && req.WhatsappNumber == nil && req.Address == nil {
+		return update, apperror.Validation(map[string]string{"body": "provide fullName, phoneNumber, whatsappNumber or address"})
+	}
+
+	invalid := map[string]string{}
+
+	if req.FullName != nil {
+		name := strings.TrimSpace(*req.FullName)
+		if name == "" {
+			invalid["fullName"] = "is required"
+		}
+
+		update.SetName, update.FullName = true, name
+	}
+
+	var ok bool
+
+	update.SetPhone, update.Phone, ok = phoneOf(req.PhoneNumber)
+	if !ok {
+		invalid["phoneNumber"] = "must be a valid phone number"
+	}
+
+	update.SetWhatsapp, update.Whatsapp, ok = phoneOf(req.WhatsappNumber)
+	if !ok {
+		invalid["whatsappNumber"] = "must be a valid phone number"
+	}
+
+	if req.Address != nil {
+		update.SetAddress, update.Address = true, optionalText(*req.Address)
+	}
+
+	if len(invalid) > 0 {
+		return update, apperror.Validation(invalid)
+	}
+
+	return update, nil
+}
+
+// phoneOf reads a phone number that may be missing, which is not set, or empty, which clears it. The last result is false
+// for a text that is not a phone number.
+func phoneOf(raw *string) (set bool, value *string, valid bool) {
+	if raw == nil {
+		return false, nil, true
+	}
+
+	phone := strings.TrimSpace(*raw)
+	if phone != "" && !validation.PhonePattern.MatchString(phone) {
+		return true, nil, false
+	}
+
+	return true, optionalText(phone), true
+}
+
+func optionalText(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+
+	return &value
 }
 
 func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error) {

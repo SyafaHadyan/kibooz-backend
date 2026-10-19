@@ -59,6 +59,8 @@ type ClassRow struct {
 
 // ProfileUpdate holds the profile fields to change, a Set flag tells a missing field from one that is cleared
 type ProfileUpdate struct {
+	SetName    bool
+	FullName   string
 	SetPhone   bool
 	Phone      *string
 	SetAddress bool
@@ -282,6 +284,13 @@ func (r *GuruDB) CreateMoodLogs(
 
 func (r *GuruDB) UpdateProfile(ctx context.Context, userID uuid.UUID, guruID uuid.UUID, update ProfileUpdate) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if update.SetName {
+			err := tx.Model(&entity.User{}).Where("id = ?", userID).Update("full_name", update.FullName).Error
+			if err != nil {
+				return err
+			}
+		}
+
 		if update.SetPhone {
 			err := tx.Model(&entity.User{}).Where("id = ?", userID).Update("phone_number", update.Phone).Error
 			if err != nil {

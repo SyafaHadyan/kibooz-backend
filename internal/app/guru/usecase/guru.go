@@ -4,7 +4,6 @@ package usecase
 import (
 	"context"
 	"errors"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -27,8 +27,8 @@ const (
 	RangeMonthly = "monthly"
 )
 
-// phonePattern accepts 6 to 30 characters of digits with an optional leading plus, and spaces, dashes and brackets between them
-var phonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
+// phonePattern is the pattern that every phone number of a profile has to match
+var phonePattern = validation.PhonePattern
 
 type GuruUseCaseItf interface {
 	Dashboard(ctx context.Context, userID uuid.UUID, classID *uuid.UUID) (dto.GuruDashboardResponse, error)
@@ -721,8 +721,17 @@ func (u *GuruUseCase) findGuru(ctx context.Context, userID uuid.UUID) (*reposito
 func profileUpdate(req dto.UpdateGuruProfileRequest) (repository.ProfileUpdate, error) {
 	var update repository.ProfileUpdate
 
-	if req.PhoneNumber == nil && req.Address == nil {
-		return update, apperror.Validation(map[string]string{"body": "provide phoneNumber or address"})
+	if req.FullName == nil && req.PhoneNumber == nil && req.Address == nil {
+		return update, apperror.Validation(map[string]string{"body": "provide fullName, phoneNumber or address"})
+	}
+
+	if req.FullName != nil {
+		name := strings.TrimSpace(*req.FullName)
+		if name == "" {
+			return update, apperror.Validation(map[string]string{"fullName": "is required"})
+		}
+
+		update.SetName, update.FullName = true, name
 	}
 
 	if req.PhoneNumber != nil {

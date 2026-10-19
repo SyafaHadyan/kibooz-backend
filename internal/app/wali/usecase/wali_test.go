@@ -27,12 +27,15 @@ type fakeRepo struct {
 	addErr     error
 	findResult *repository.StudentRow
 	findErr    error
+	guardian   *repository.GuardianRow
+	updateErr  error
 
 	addedCode     string
 	addedStudent  *entity.Student
 	addedMax      int
 	addedClass    uuid.UUID
 	findRequested *uuid.UUID
+	updated       *repository.ProfileUpdate
 }
 
 func (f *fakeRepo) FindWaliByUserID(context.Context, uuid.UUID) (*entity.Wali, error) {
@@ -62,7 +65,13 @@ func (f *fakeRepo) CountScans(context.Context, uuid.UUID, time.Time, time.Time) 
 }
 
 func (f *fakeRepo) FindGuardian(context.Context, uuid.UUID) (*repository.GuardianRow, error) {
-	return nil, nil
+	return f.guardian, nil
+}
+
+func (f *fakeRepo) UpdateProfile(_ context.Context, _ uuid.UUID, _ uuid.UUID, update repository.ProfileUpdate) error {
+	f.updated = &update
+
+	return f.updateErr
 }
 
 func (f *fakeRepo) CreateGuidanceApplication(context.Context, *entity.GuidanceApplication) error {

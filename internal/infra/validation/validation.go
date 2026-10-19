@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 )
+
+// PhonePattern accepts 6 to 30 characters of digits with an optional leading plus, and spaces, dashes and brackets between them
+var PhonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
 
 var (
 	once     sync.Once
