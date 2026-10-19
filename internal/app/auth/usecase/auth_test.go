@@ -34,6 +34,9 @@ type fakeRepo struct {
 	rotateErrs  []error
 	rotateCalls int
 
+	// cancelOnRotate is called when a swap starts, which is how a test loses the connection of a client in the middle of it
+	cancelOnRotate context.CancelFunc
+
 	// rotation replaces the default outcome of a swap, which is a session for user, and policy keeps the limits it was given
 	rotation *repository.Rotation
 	policy   repository.RotationPolicy
@@ -99,6 +102,10 @@ func (f *fakeRepo) RotateRefreshToken(
 	f.rotateCalls++
 	f.policy = policy
 
+	if f.cancelOnRotate != nil {
+		f.cancelOnRotate()
+	}
+
 	if len(f.rotateErrs) > 0 {
 		err := f.rotateErrs[0]
 		f.rotateErrs = f.rotateErrs[1:]
@@ -134,7 +141,12 @@ func (f *fakeCache) Get(_ context.Context, key string) (string, bool, error) {
 	return value, ok, nil
 }
 
-func (f *fakeCache) Del(_ context.Context, keys ...string) error {
+func (f *fakeCache) Del(ctx context.Context, keys ...string) error {
+	// the real cache needs a live context for its command, so a canceled one deletes nothing
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	for _, key := range keys {
 		delete(f.keys, key)
 	}
@@ -284,6 +296,27 @@ func TestRefreshCanBeRetriedAfterADatabaseFailure(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
 
 	// the database never consumed the token, so the client may try again at once
+	res, err := useCase.Refresh(context.Background(), "old-token")
+	require.NoError(t, err)
+	require.NotEmpty(t, res.RefreshToken)
+}
+
+func TestRefreshCanBeRetriedWhenTheClientLostItsConnectionDuringTheSwap(t *testing.T) {
+	cache := newFakeCache()
+	ctx, cancel := context.WithCancel(context.Background())
+	repo := &fakeRepo{rotateErrs: []error{context.Canceled, nil}, cancelOnRotate: cancel}
+	useCase := build(t, accountWith(t, "password-1234"), repo, cache)
+
+	cache.keys[constants.RefreshKeyPrefix+hash("old-token")] = "user"
+
+	_, err := useCase.Refresh(ctx, "old-token")
+	require.Error(t, err)
+
+	// the flag was taken off on a context of its own, so the client that comes back is not refused for a minute
+	require.NotEqual(t, "used", cache.keys[constants.RefreshKeyPrefix+hash("old-token")])
+
+	repo.cancelOnRotate = nil
+
 	res, err := useCase.Refresh(context.Background(), "old-token")
 	require.NoError(t, err)
 	require.NotEmpty(t, res.RefreshToken)
