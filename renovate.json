@@ -7,6 +7,7 @@
   "internalChecksFilter": "strict",
   "rebaseWhen": "conflicted",
   "platformCommit": "enabled",
+  "postUpdateOptions": ["gomodTidy"],
   "semanticCommits": "enabled",
   "semanticCommitType": "chore",
   "semanticCommitScope": "deps",
