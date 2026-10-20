@@ -1834,13 +1834,19 @@ paths:
     post:
       tags: [Chat]
       operationId: startChatConversation
-      summary: Start a conversation with a person
+      summary: Start a conversation with a person, or open the room of a class
       description: |
-        Returns the conversation with that person, and makes it when it does not exist yet. A conversation is one for each pair of
-        accounts, so a parent has one with each teacher however many children they have, and asking again returns the same one with
-        `200` while the first call answers `201`. A new conversation needs a teacher and a parent who share an active class.
-        Two people who no longer share one can still open the old conversation. An id that belongs to nobody, to a deleted account
-        or to a person of the same role gets the same `403` as a person without a shared class (`CHAT_CONTACT_NOT_ALLOWED`).
+        Send either `userId` or `classId`. With `userId` it returns the conversation with that person, and makes it when it does not
+        exist yet. A conversation is one for each pair of accounts, so a parent has one with each teacher however many children they
+        have, and asking again returns the same one with `200` while the first call answers `201`. A new conversation needs a teacher
+        and a parent who share an active class. Two people who no longer share one can still open the old conversation. An id that
+        belongs to nobody, to a deleted account or to a person of the same role gets the same `403` as a person without a shared
+        class (`CHAT_CONTACT_NOT_ALLOWED`).
+
+        With `classId` it returns the room of that class, which is one for each class and is made on the first call. A teacher of the
+        class and a parent with an active child in it are its members, and a class that does not exist or that the account does not
+        belong to gets the same `403`. The room of an archived class stays readable and closed for sending, and one that nobody
+        opened before the class was archived cannot be made.
       requestBody:
         required: true
         content:
@@ -1878,7 +1884,8 @@ paths:
         the ones older than that message and `after` returns the ones that follow it, which is how an app catches up after it was
         offline. Send one of the two, not both. `hasMore` tells whether more exist in the direction that was asked for. The `id`
         only grows inside a conversation, so keep the highest one you have as the cursor. A deleted message stays with an empty
-        body and `deleted` set. Only the two people of the conversation can read it, and anyone else gets `404`.
+        body and `deleted` set. Only the two people of a direct conversation, or the members of the class of a room, can read it, and
+        anyone else gets `404`. A member of a room sees only the messages sent after they joined the class.
       parameters:
         - $ref: "#/components/parameters/ConversationPath"
         - name: after
@@ -3411,15 +3418,19 @@ components:
           $ref: "#/components/schemas/ChatContactList"
     StartChatRequest:
       type: object
-      required: [userId]
+      description: Exactly one of `userId` and `classId`. Sending both or neither is a validation error.
       properties:
         userId:
           type: string
           format: uuid
-          description: The `id` of a contact
+          description: The `id` of a contact, for a direct conversation
+        classId:
+          type: string
+          format: uuid
+          description: The id of a class the account belongs to, for the room of that class
     ChatMessage:
       type: object
-      required: [id, conversationId, senderId, body, deleted, createdAt]
+      required: [id, conversationId, senderId, sender, body, deleted, createdAt]
       properties:
         id:
           type: integer
@@ -3432,6 +3443,8 @@ components:
           type: string
           format: uuid
           description: The id of the account that wrote it, compare it with the id of the signed in user
+        sender:
+          $ref: "#/components/schemas/ChatPerson"
         body:
           type: string
           description: Empty for a deleted message
@@ -3453,18 +3466,30 @@ components:
           $ref: "#/components/schemas/ChatMessage"
     ChatConversation:
       type: object
-      required: [id, peer, lastMessage, unreadCount, peerLastReadMessageId, canSend, createdAt]
+      required: [id, kind, peer, class, lastMessage, unreadCount, peerLastReadMessageId, canSend, createdAt]
       properties:
         id:
           type: string
           format: uuid
+        kind:
+          type: string
+          enum: [direct, class]
+          description: A direct conversation between a teacher and a parent, or the room of a class
         peer:
-          $ref: "#/components/schemas/ChatPerson"
+          allOf:
+            - $ref: "#/components/schemas/ChatPerson"
+          nullable: true
+          description: The other person of a direct conversation, null for a class room
+        class:
+          allOf:
+            - $ref: "#/components/schemas/ChatContactClass"
+          nullable: true
+          description: The class of a room, null for a direct conversation
         lastMessage:
           type: object
           nullable: true
           description: The newest message, in the same shape as a ChatMessage. Null for a conversation that was opened and has no message yet.
-          required: [id, conversationId, senderId, body, deleted, createdAt]
+          required: [id, conversationId, senderId, sender, body, deleted, createdAt]
           properties:
             id:
               type: integer
@@ -3475,6 +3500,8 @@ components:
             senderId:
               type: string
               format: uuid
+            sender:
+              $ref: "#/components/schemas/ChatPerson"
             body:
               type: string
               description: Empty for a deleted message
@@ -3486,15 +3513,15 @@ components:
         unreadCount:
           type: integer
           minimum: 0
-          description: The messages of the other person after your read mark
+          description: The messages of other people after your read mark, and in a class room only the ones sent after you joined
         peerLastReadMessageId:
           type: integer
           format: int64
           minimum: 0
-          description: The message the other person has read up to, 0 when none
+          description: The message the other person has read up to, 0 when none and always 0 for a class room
         canSend:
           type: boolean
-          description: False when the two no longer share a class or the other account was deleted
+          description: False when the two of a direct conversation no longer share a class, the other account was deleted, or the class of a room is archived
         createdAt:
           type: string
           format: date-time
