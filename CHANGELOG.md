@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.13.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.12.1...v0.13.0) (2026-10-19)
+
+
+### Features
+
+* **api:** refuse a JSON body over 64 KB except on the photo uploads ([d3430b7](https://github.com/SyafaHadyan/kibooz-backend/commit/d3430b7daf744877c9fb4b49d2d57db7ff94170f))
+* **api:** refuse a JSON body over 64 KB except on the photo uploads ([#232](https://github.com/SyafaHadyan/kibooz-backend/issues/232)) ([90a0190](https://github.com/SyafaHadyan/kibooz-backend/commit/90a0190a8905664cb39f025ad6afca2201fe0748))
+* **classes:** let a teacher close a class for new children without replacing the join code ([0bf5bd1](https://github.com/SyafaHadyan/kibooz-backend/commit/0bf5bd1ef22d53ca5f1b48527d9845c7aa748acc))
+* **classes:** let a teacher close a class for new children without replacing the join code ([#238](https://github.com/SyafaHadyan/kibooz-backend/issues/238)) ([19196cc](https://github.com/SyafaHadyan/kibooz-backend/commit/19196cc37e296ec387ad6a5fb328dfad6e116b78))
+* **classes:** limit a class to 60 children and a teacher to 20 classes ([6c03977](https://github.com/SyafaHadyan/kibooz-backend/commit/6c03977f26c847d3c3579128b9e100616b051467))
+* **classes:** limit a class to 60 children and a teacher to 20 classes ([#233](https://github.com/SyafaHadyan/kibooz-backend/issues/233)) ([4e29986](https://github.com/SyafaHadyan/kibooz-backend/commit/4e29986bd90531d9411bda8c58ec4c7239f5e8af))
+* **guru:** let a teacher remove a child from a class ([1390dd7](https://github.com/SyafaHadyan/kibooz-backend/commit/1390dd710a5f65590d9887bde89583e997a9316a))
+* **guru:** let a teacher remove a child from a class ([#239](https://github.com/SyafaHadyan/kibooz-backend/issues/239)) ([8088f50](https://github.com/SyafaHadyan/kibooz-backend/commit/8088f50f214d8adb0ec773b43ced58be6c54edc0))
+* **guru:** limit mood logs to 20 per child per day and notes to 500 characters ([de8b766](https://github.com/SyafaHadyan/kibooz-backend/commit/de8b76688c0ebd8777665338ba8a425c90da70d4))
+* **guru:** limit mood logs to 20 per child per day and notes to 500 characters ([#230](https://github.com/SyafaHadyan/kibooz-backend/issues/230)) ([eaa44f7](https://github.com/SyafaHadyan/kibooz-backend/commit/eaa44f7cd4c68cdfd18a8af92bd28bc2e8f432be))
+* **guru:** limit the batch mood route to 30 requests per minute per user ([a07cc83](https://github.com/SyafaHadyan/kibooz-backend/commit/a07cc83952c82282ecbb87733d5d5aa0d8554f4d))
+* **guru:** limit the batch mood route to 30 requests per minute per user ([#235](https://github.com/SyafaHadyan/kibooz-backend/issues/235)) ([2459e71](https://github.com/SyafaHadyan/kibooz-backend/commit/2459e71afe5f063b3af92f84fa9b80cc065c77a7))
+* **guru:** replace the join code when a teacher is removed or leaves a class ([3a459a8](https://github.com/SyafaHadyan/kibooz-backend/commit/3a459a8894938ed7cbe32c179cb5f9c3b4cc48e0))
+* **guru:** replace the join code when a teacher is removed or leaves a class ([#237](https://github.com/SyafaHadyan/kibooz-backend/issues/237)) ([0568d93](https://github.com/SyafaHadyan/kibooz-backend/commit/0568d93fe224bfc4875560ea6545d74ce19c0c1f))
+* **guru:** show which teacher is the signed in one and the account id in the teacher list ([03f61fd](https://github.com/SyafaHadyan/kibooz-backend/commit/03f61fd8150732b4f0b1055b68b28ab980572d28))
+* **guru:** show which teacher is the signed in one and the account id in the teacher list ([#229](https://github.com/SyafaHadyan/kibooz-backend/issues/229)) ([5a31b91](https://github.com/SyafaHadyan/kibooz-backend/commit/5a31b911e6b8702ed95a1b53d19ea165860f5c82))
+* **logging:** write JSON logs with the reason of each failure and the stack of each panic ([cc22eb9](https://github.com/SyafaHadyan/kibooz-backend/commit/cc22eb91b996a1d28f68a734c4b99fd46d5b639d))
+* **logging:** write JSON logs with the reason of each failure and the stack of each panic ([#245](https://github.com/SyafaHadyan/kibooz-backend/issues/245)) ([2f74859](https://github.com/SyafaHadyan/kibooz-backend/commit/2f74859d74af52e6cca1cc427640a43128e01253))
+* **metrics:** serve Prometheus metrics on a private listener ([a1c71cb](https://github.com/SyafaHadyan/kibooz-backend/commit/a1c71cb257f0ce2968468510404d52fca111ada2))
+* **metrics:** serve Prometheus metrics on a private listener ([#244](https://github.com/SyafaHadyan/kibooz-backend/issues/244)) ([8b69e37](https://github.com/SyafaHadyan/kibooz-backend/commit/8b69e37b8271ed391de1c4ba170816fd32772cd2))
+* **profile:** let a teacher change their name and a parent change their profile ([89145ca](https://github.com/SyafaHadyan/kibooz-backend/commit/89145cac0dce0ed72de51fd4a78a6fc9d0515a88))
+* **profile:** let a teacher change their name and a parent change their profile ([#240](https://github.com/SyafaHadyan/kibooz-backend/issues/240)) ([4fee375](https://github.com/SyafaHadyan/kibooz-backend/commit/4fee375062ad91aa89ed26b5f3f264ddfac3d480))
+* **wali:** let a parent change the name or the NISN of a child ([4d52be3](https://github.com/SyafaHadyan/kibooz-backend/commit/4d52be39a0f7fa77b8f8d7b04d42cc3f01f83752))
+* **wali:** let a parent change the name or the NISN of a child ([#241](https://github.com/SyafaHadyan/kibooz-backend/issues/241)) ([9617a75](https://github.com/SyafaHadyan/kibooz-backend/commit/9617a75699961136fe99297b1680c59266db9917))
+* **wali:** let a parent delete a child ([63027d3](https://github.com/SyafaHadyan/kibooz-backend/commit/63027d3b817a91682fbf59ee64d433e87c464fde))
+* **wali:** let a parent delete a child ([#242](https://github.com/SyafaHadyan/kibooz-backend/issues/242)) ([e316381](https://github.com/SyafaHadyan/kibooz-backend/commit/e316381d608e25807f4807647a8ff44b39b62245))
+
+
+### Bug Fixes
+
+* **api:** match the upload paths like the router and name a huge body by its route ([34eba4c](https://github.com/SyafaHadyan/kibooz-backend/commit/34eba4c65b126d272d77a8fb6ec45f8de34df363))
+* **classes:** answer the class limit instead of a server error when creating a class ([07e963e](https://github.com/SyafaHadyan/kibooz-backend/commit/07e963eec801a04827f11f89fe68f9565a42200e))
+* **compose:** cap the memory of the API and Redis and give the API and database time to stop ([1b87daa](https://github.com/SyafaHadyan/kibooz-backend/commit/1b87daa955da424707ddb032d4af7280bafd1a36))
+* **compose:** cap the memory of the API and Redis and give the API and database time to stop ([#231](https://github.com/SyafaHadyan/kibooz-backend/issues/231)) ([042cded](https://github.com/SyafaHadyan/kibooz-backend/commit/042cded79554e61c4b563a0379c1cb3bd0b0afba))
+* **compose:** set the memory caps under deploy.resources like the CI compose file ([4b6da30](https://github.com/SyafaHadyan/kibooz-backend/commit/4b6da30e624b93522fcd94667c034cac6193756d))
+* **guru:** compute the local day once in the mood record query ([5869a2d](https://github.com/SyafaHadyan/kibooz-backend/commit/5869a2de26a4f49aac4913e3d9cf3ae71c84dfc4))
+* **guru:** refuse a class when the teacher row is gone by the time it is locked ([159217c](https://github.com/SyafaHadyan/kibooz-backend/commit/159217c69c5d498b36ee4b0b065b48ab8350843d))
+* **logging:** close the health connection when the metrics listener cannot start ([959540c](https://github.com/SyafaHadyan/kibooz-backend/commit/959540cc5a46bcef91109d345176eb1c5138e53a))
+* **logging:** ping the health connection at start-up and use --no-log-prefix with jq ([3abb133](https://github.com/SyafaHadyan/kibooz-backend/commit/3abb133cef01fc54c2a8a00cf0ea88461930bbbc))
+* **metrics:** close the connections when the listener cannot start and name the requests the metric misses ([780ca44](https://github.com/SyafaHadyan/kibooz-backend/commit/780ca442bdc822925b255261b144ebfa96b68e90))
+* **metrics:** count the requests that the body checks refuse ([322568f](https://github.com/SyafaHadyan/kibooz-backend/commit/322568f2016bedb9e2e3440e89102a0ca18cbad0))
+* **metrics:** label a refusal by a group check with the path of the group ([366b69c](https://github.com/SyafaHadyan/kibooz-backend/commit/366b69c3bf21eb648f3fd724b32df2de3d4cc509))
+* **wali:** list NO_CHILD_REGISTERED in the NotFound response and clean up the queue in the e2e test ([7e16d98](https://github.com/SyafaHadyan/kibooz-backend/commit/7e16d9825c47646a55e606ac207d7842e94a561e))
+
+
+### Performance Improvements
+
+* **guru:** read only the newest mood log of each child per day ([ca94cab](https://github.com/SyafaHadyan/kibooz-backend/commit/ca94cab039d3531e399195b0220c172f969c4912))
+* **guru:** read only the newest mood log of each child per day ([#234](https://github.com/SyafaHadyan/kibooz-backend/issues/234)) ([fd1521c](https://github.com/SyafaHadyan/kibooz-backend/commit/fd1521cf2cf2e820b16c5bd4aa8c14115732d8db))
+
 ## [0.12.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.12.0...v0.12.1) (2026-10-19)
 
 
