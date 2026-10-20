@@ -1,0 +1,3 @@
+# A fake token that a test of the error report scrub used as a fixture in the first commit of the Sentry pull request. It is built
+# at run time now, but the history keeps the first version, and the secret scan reads the whole history.
+b820768e6e40b824879cd225d987a5223ba1a460:internal/errorreport/errorreport_test.go:jwt:122
