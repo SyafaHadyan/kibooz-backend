@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/response"
 )
 
@@ -98,4 +99,7 @@ func logPanic(c fiber.Ctx, recovered any) {
 		slog.String("panic", fmt.Sprint(recovered)),
 		slog.String("stack", string(debug.Stack())),
 	)
+
+	errorreport.Panic(recovered, infoOf(c, http.StatusInternalServerError))
+	c.Locals(reportedKey{}, true)
 }

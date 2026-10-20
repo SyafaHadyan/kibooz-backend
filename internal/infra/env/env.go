@@ -63,6 +63,11 @@ type Env struct {
 	PointsB3                int    `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit         int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
 	IdempotencyTTLHours     int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
+	// SentryDSN is where the error reports go, and empty switches them off. SentryEventsPerMinute is the cap on how many leave in a minute.
+	SentryDSN             string `env:"SENTRY_DSN"`
+	SentryEnvironment     string `env:"SENTRY_ENVIRONMENT" envDefault:"production"`
+	SentryServerName      string `env:"SENTRY_SERVER_NAME"`
+	SentryEventsPerMinute int    `env:"SENTRY_EVENTS_PER_MINUTE" envDefault:"30"`
 	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
 	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
 	PasswordHashConcurrency      int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
@@ -163,6 +168,8 @@ func (e *Env) validate() error {
 		{"TRASH_DAILY_LIMIT", e.TrashDailyLimit, 1},
 		// a key that is forgotten at once cannot catch the retry of an action that was queued offline
 		{"IDEMPOTENCY_TTL_HOURS", e.IdempotencyTTLHours, 1},
+		// a cap of 0 would drop every report, which is what leaving the DSN empty is for
+		{"SENTRY_EVENTS_PER_MINUTE", e.SentryEventsPerMinute, 1},
 		// 0 turns the keepalive off, which is what the pipelines that run against a throwaway stack do
 		// a wait of 0 would refuse a request whenever the slots happen to be taken, even for a spike of a few milliseconds
 		{"PASSWORD_HASH_WAIT_MILLISECONDS", e.PasswordHashWaitMilliseconds, 1},

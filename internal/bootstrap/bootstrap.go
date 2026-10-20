@@ -33,6 +33,7 @@ import (
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
@@ -60,6 +61,7 @@ type Bootstrap struct {
 	stopCleanup   func()
 	stopSeason    func()
 	stopKeys      func()
+	stopReports   func()
 	metrics       *metrics.Listener
 	healthDB      *sql.DB
 }
@@ -190,9 +192,16 @@ func Start(version string) (*Bootstrap, error) {
 		stopCleanup = filecleanup.New(database, storage).Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
 	}
 
+	// the reports start last, so that a failure while the API starts is only logged, and they stop last, so that the errors of the
+	// shutdown still leave
+	stopReports := errorreport.Start(errorreport.Config{
+		DSN: cfg.SentryDSN, Environment: cfg.SentryEnvironment, ServerName: cfg.SentryServerName, Release: version,
+		EventsPerMinute: cfg.SentryEventsPerMinute,
+	})
+
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -211,6 +220,8 @@ func (b *Bootstrap) Close() {
 	}
 
 	_ = b.Redis.Close()
+
+	b.stopReports()
 }
 
 type pinger func(ctx context.Context) error

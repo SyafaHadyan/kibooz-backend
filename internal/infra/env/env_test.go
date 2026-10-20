@@ -17,6 +17,7 @@ func valid() *Env {
 		IdempotencyTTLHours:          168,
 		PasswordHashWaitMilliseconds: 1000,
 		SemesterStartMonths:          []int{1, 7},
+		SentryEventsPerMinute:        30,
 
 		RequestTimeoutSeconds: 10,
 
@@ -173,6 +174,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"POINTS_ANORGANIK":                func(e *Env) { e.PointsAnorganik = -1 },
 		"POINTS_B3":                       func(e *Env) { e.PointsB3 = -1 },
 		"IDEMPOTENCY_TTL_HOURS":           func(e *Env) { e.IdempotencyTTLHours = 0 },
+		"SENTRY_EVENTS_PER_MINUTE":        func(e *Env) { e.SentryEventsPerMinute = 0 },
 		"PASSWORD_HASH_WAIT_MILLISECONDS": func(e *Env) { e.PasswordHashWaitMilliseconds = 0 },
 		"PASSWORD_HASH_CONCURRENCY":       func(e *Env) { e.PasswordHashConcurrency = -1 },
 	}
@@ -281,4 +283,19 @@ func TestAMetricsAddressThatCannotWorkIsRejected(t *testing.T) {
 		require.Error(t, err, address)
 		require.Contains(t, err.Error(), "METRICS_ADDRESS", address)
 	}
+}
+
+func TestTheErrorReportsAreOffByDefaultAndCapped(t *testing.T) {
+	setRequired(t)
+	require.NoError(t, os.Unsetenv("SENTRY_DSN"))
+	require.NoError(t, os.Unsetenv("SENTRY_ENVIRONMENT"))
+	require.NoError(t, os.Unsetenv("SENTRY_SERVER_NAME"))
+	require.NoError(t, os.Unsetenv("SENTRY_EVENTS_PER_MINUTE"))
+
+	cfg, err := New()
+	require.NoError(t, err)
+	require.Empty(t, cfg.SentryDSN, "an empty DSN switches the reports off")
+	require.Equal(t, "production", cfg.SentryEnvironment)
+	require.Empty(t, cfg.SentryServerName)
+	require.Equal(t, 30, cfg.SentryEventsPerMinute)
 }
