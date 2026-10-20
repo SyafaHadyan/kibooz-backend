@@ -38,12 +38,21 @@ discovery.relabel "api_metrics" {
     action        = "keep"
   }
 
-  // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
-  // of the container on the network that Alloy shares with it, plus the port that the label `kibooz.metrics_port` names
+  // the label `kibooz.metrics_port` names the port of the metrics listener, as 9100 or in the form of METRICS_ADDRESS, such as
+  // :9100, and only the digits after the last colon are kept
   rule {
-    source_labels = ["__meta_docker_network_ip", "__meta_docker_container_label_kibooz_metrics_port"]
+    source_labels = ["__meta_docker_container_label_kibooz_metrics_port"]
+    regex         = "(?:.*:)?([0-9]+)"
+    target_label  = "__tmp_metrics_port"
+    replacement   = "$1"
+  }
+
+  // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
+  // of the container on the network that Alloy shares with it, plus that port
+  rule {
+    source_labels = ["__meta_docker_network_ip", "__tmp_metrics_port"]
     separator     = ":"
-    regex         = "(.+):(.+)"
+    regex         = "(.+):([0-9]+)"
     target_label  = "__address__"
     replacement   = "$1:$2"
   }
