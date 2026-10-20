@@ -167,4 +167,9 @@ type ChatMessage struct {
 	Body           string    `gorm:"not null"`
 	CreatedAt      time.Time `gorm:"autoCreateTime:false;not null"`
 	DeletedAt      *time.Time
+	// the media columns are all set for a message with a photo or a video, and all nil for one without
+	MediaKey  *string
+	MediaKind *string
+	MediaType *string
+	MediaSize *int64
 }

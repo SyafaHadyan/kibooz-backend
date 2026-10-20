@@ -1,8 +1,11 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +18,8 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -145,6 +150,7 @@ func (f *fakeRepo) FindMessage(_ context.Context, conversationID uuid.UUID, id i
 			return &repository.MessageRow{
 				ID: created.ID, ConversationID: conversationID, SenderID: created.SenderID, Body: created.Body,
 				CreatedAt: created.CreatedAt, SenderName: "Bu Ani", SenderRole: constants.RoleGuru,
+				MediaKey: created.MediaKey, MediaKind: created.MediaKind, MediaType: created.MediaType, MediaSize: created.MediaSize,
 			}, nil
 		}
 	}
@@ -168,12 +174,83 @@ func (f *fakeRepo) ContactLinks(context.Context, uuid.UUID, []uuid.UUID) ([]repo
 	return f.contactLinks, nil
 }
 
-func newUseCase(repo *fakeRepo) *ChatUseCase {
+// fakeStorage is the private bucket in memory. It records what the use case stored, copied and removed.
+type fakeStorage struct {
+	s3.Disabled
+
+	off      bool
+	objects  map[string]*s3.Object
+	uploaded []string
+	copied   [][2]string
+	deleted  []string
+	signed   []string
+	signErr  error
+}
+
+func newFakeStorage() *fakeStorage {
+	return &fakeStorage{objects: map[string]*s3.Object{}}
+}
+
+func (f *fakeStorage) Enabled() bool { return !f.off }
+
+func (f *fakeStorage) Upload(_ context.Context, key string, contentType string, data []byte) (string, error) {
+	f.objects[key] = &s3.Object{Size: int64(len(data)), ContentType: contentType}
+	f.uploaded = append(f.uploaded, key)
+
+	return "", nil
+}
+
+func (f *fakeStorage) PresignUpload(_ context.Context, key string, _ string, _ int64, ttl time.Duration) (string, error) {
+	return "https://upload.example.test/" + key + "?ttl=" + ttl.String(), nil
+}
+
+func (f *fakeStorage) Stat(_ context.Context, key string) (*s3.Object, error) {
+	return f.objects[key], nil
+}
+
+func (f *fakeStorage) Copy(_ context.Context, source string, key string, contentType string) error {
+	f.objects[key] = &s3.Object{Size: f.objects[source].Size, ContentType: contentType}
+	f.copied = append(f.copied, [2]string{source, key})
+
+	return nil
+}
+
+func (f *fakeStorage) Delete(_ context.Context, key string) error {
+	delete(f.objects, key)
+
+	f.deleted = append(f.deleted, key)
+
+	return nil
+}
+
+func (f *fakeStorage) PresignRead(_ context.Context, key string, ttl time.Duration) (string, error) {
+	if f.signErr != nil {
+		return "", f.signErr
+	}
+
+	f.signed = append(f.signed, key)
+
+	return "https://read.example.test/" + key + "?ttl=" + ttl.String(), nil
+}
+
+func testConfig() *env.Env {
+	return &env.Env{ChatPhotoMaxMB: 4, ChatVideoMaxMB: 25, ChatMediaURLSeconds: 3600, VideoUploadURLSeconds: 900}
+}
+
+func newUseCase(repo *fakeRepo, storage ...*fakeStorage) *ChatUseCase {
 	if repo.conversations == nil {
 		repo.conversations = map[uuid.UUID]*entity.ChatConversation{}
 	}
 
-	return &ChatUseCase{repo: repo, now: func() time.Time { return time.Date(2026, 10, 20, 9, 0, 0, 123456789, time.UTC) }}
+	bucket := newFakeStorage()
+	if len(storage) > 0 {
+		bucket = storage[0]
+	}
+
+	return &ChatUseCase{
+		repo: repo, storage: bucket, cfg: testConfig(),
+		now: func() time.Time { return time.Date(2026, 10, 20, 9, 0, 0, 123456789, time.UTC) },
+	}
 }
 
 func requireAppError(t *testing.T, err error, want *apperror.Error) {
@@ -481,7 +558,7 @@ func TestConversationResponseHidesADeletedPersonAndAMissingLastMessage(t *testin
 		UnreadCount: 2, PeerLastReadMessageID: 7, CanSend: true,
 	}
 
-	active := conversationResponse(row)
+	active := newUseCase(&fakeRepo{}).conversationResponse(context.Background(), row)
 	require.Equal(t, "Siti", active.Peer.FullName)
 	require.Equal(t, &avatar, active.Peer.AvatarURL)
 	require.False(t, active.Peer.Deleted)
@@ -494,7 +571,7 @@ func TestConversationResponseHidesADeletedPersonAndAMissingLastMessage(t *testin
 	row.LastSenderName, row.LastSenderRole, row.LastSenderDeleted = ptr("Bu Ani"), ptr(constants.RoleGuru), ptr(true)
 	row.PeerDeleted = ptr(true)
 
-	gone := conversationResponse(row)
+	gone := newUseCase(&fakeRepo{}).conversationResponse(context.Background(), row)
 	require.Equal(t, DeletedAccountName, gone.Peer.FullName)
 	require.Nil(t, gone.Peer.AvatarURL)
 	require.True(t, gone.Peer.Deleted)
@@ -509,7 +586,7 @@ func TestConversationResponseOfARoomHasTheClassAndNoPeer(t *testing.T) {
 	classID := uuid.New()
 	row := &repository.ConversationRow{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID, ClassName: ptr("Kelas A"), CanSend: true}
 
-	res := conversationResponse(row)
+	res := newUseCase(&fakeRepo{}).conversationResponse(context.Background(), row)
 
 	require.Equal(t, constants.ChatKindClass, res.Kind)
 	require.Nil(t, res.Peer)
@@ -613,4 +690,226 @@ func TestARoomIsNotFoundForAnAccountThatLeftTheClass(t *testing.T) {
 
 	_, err = useCase.MarkRead(ctx, uuid.New(), room.ID, dto.MarkChatReadRequest{MessageID: 1})
 	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+}
+
+// pngOf is a small valid image, which is all the inspection of a photo needs
+func pngOf(t *testing.T) []byte {
+	t.Helper()
+
+	var out bytes.Buffer
+
+	require.NoError(t, png.Encode(&out, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+
+	return out.Bytes()
+}
+
+func openConversation(me uuid.UUID) (*fakeRepo, uuid.UUID) {
+	conversation, id := conversationOf(me, uuid.New())
+
+	return &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}}, id
+}
+
+func TestAPhotoWaitsUnderPendingForTheSenderAndTheConversation(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	bucket := newFakeStorage()
+
+	res, err := newUseCase(repo, bucket).UploadPhoto(context.Background(), me, id, pngOf(t))
+
+	require.NoError(t, err)
+	require.Equal(t, "photo", res.Kind)
+	require.Equal(t, "image/png", res.ContentType)
+	require.True(t, strings.HasPrefix(res.MediaKey, "pending/chat/"+id.String()+"/"+me.String()+"/"), res.MediaKey)
+	require.True(t, strings.HasSuffix(res.MediaKey, ".png"))
+	require.Equal(t, []string{res.MediaKey}, bucket.uploaded)
+}
+
+func TestAPhotoIsRefusedWhenItIsNotAnImageOrTooLargeOrNobodyCanUseIt(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	ctx := context.Background()
+
+	_, err := newUseCase(repo).UploadPhoto(ctx, me, id, []byte("not an image at all"))
+	requireAppError(t, err, apperror.ErrInvalidImage)
+
+	big := newUseCase(repo)
+	big.cfg.ChatPhotoMaxMB = 1
+
+	_, err = big.UploadPhoto(ctx, me, id, append(pngOf(t), make([]byte, 2*bytesPerMB)...))
+	requireAppError(t, err, apperror.ErrFileTooLarge)
+
+	off := newFakeStorage()
+	off.off = true
+
+	_, err = newUseCase(repo, off).UploadPhoto(ctx, me, id, pngOf(t))
+	requireAppError(t, err, apperror.ErrStorageDisabled)
+
+	_, err = newUseCase(repo).UploadPhoto(ctx, uuid.New(), id, pngOf(t))
+	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+
+	closed := &fakeRepo{
+		conversations: repo.conversations,
+		views:         map[uuid.UUID]*repository.ConversationRow{id: {ID: id, Kind: constants.ChatKindDirect, CanSend: false}},
+	}
+
+	_, err = newUseCase(closed).UploadPhoto(ctx, me, id, pngOf(t))
+	requireAppError(t, err, apperror.ErrChatSendingClosed)
+}
+
+func TestAVideoUploadAddressIsCappedAndKeyedForTheSender(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	useCase := newUseCase(repo)
+	ctx := context.Background()
+
+	res, err := useCase.CreateVideoUpload(ctx, me, id, dto.ChatVideoUploadRequest{ContentType: "video/mp4", SizeBytes: 5 * bytesPerMB})
+
+	require.NoError(t, err)
+	require.Equal(t, "PUT", res.Method)
+	require.Equal(t, map[string]string{"Content-Type": "video/mp4"}, res.Headers)
+	require.True(t, strings.HasPrefix(res.MediaKey, "pending/chat/"+id.String()+"/"+me.String()+"/"))
+	require.True(t, strings.HasSuffix(res.MediaKey, ".mp4"))
+	require.Contains(t, res.UploadURL, res.MediaKey)
+	require.Equal(t, time.Date(2026, 10, 20, 9, 15, 0, 123456789, time.UTC), res.ExpiresAt)
+
+	_, err = useCase.CreateVideoUpload(ctx, me, id, dto.ChatVideoUploadRequest{ContentType: "video/mp4", SizeBytes: 25*bytesPerMB + 1})
+	requireAppError(t, err, apperror.Validation(nil))
+}
+
+func stagedUpload(me uuid.UUID, id uuid.UUID, name string, object *s3.Object) (string, *fakeStorage) {
+	bucket := newFakeStorage()
+	key := pendingKeyPrefix(id, me) + name
+
+	if object != nil {
+		bucket.objects[key] = object
+	}
+
+	return key, bucket
+}
+
+func TestAMessageCarriesAPhotoThatWasUploadedForIt(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	key, bucket := stagedUpload(me, id, "a.png", &s3.Object{Size: 1234, ContentType: "image/png"})
+
+	res, err := newUseCase(repo, bucket).SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{MediaKey: key})
+
+	require.NoError(t, err)
+	require.Empty(t, res.Body, "a photo can go without text")
+	require.NotNil(t, res.Media)
+	require.Equal(t, "photo", res.Media.Kind)
+	require.Equal(t, "image/png", res.Media.ContentType)
+	require.EqualValues(t, 1234, res.Media.SizeBytes)
+	require.Equal(t, time.Date(2026, 10, 20, 10, 0, 0, 123456789, time.UTC), res.Media.ExpiresAt)
+
+	require.Len(t, bucket.copied, 1)
+	require.Equal(t, key, bucket.copied[0][0])
+	require.True(t, strings.HasPrefix(bucket.copied[0][1], "chat/"+id.String()+"/"), bucket.copied[0][1])
+	require.Equal(t, []string{key}, bucket.deleted, "the staged file goes once the message is stored")
+	require.Contains(t, res.Media.URL, bucket.copied[0][1], "the address reads the permanent file")
+	require.Len(t, repo.created, 1)
+	require.Equal(t, bucket.copied[0][1], *repo.created[0].MediaKey)
+}
+
+func TestAVideoIsCheckedAgainstItsOwnLimit(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+
+	key, bucket := stagedUpload(me, id, "a.mp4", &s3.Object{Size: 20 * bytesPerMB, ContentType: "video/mp4"})
+
+	res, err := newUseCase(repo, bucket).SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "look", MediaKey: key})
+	require.NoError(t, err)
+	require.Equal(t, "video", res.Media.Kind)
+	require.Equal(t, "look", res.Body)
+
+	// the same size is too much for a photo
+	tooBig, bucket := stagedUpload(me, id, "b.png", &s3.Object{Size: 20 * bytesPerMB, ContentType: "image/png"})
+
+	_, err = newUseCase(repo, bucket).SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{MediaKey: tooBig})
+	requireAppError(t, err, apperror.Validation(nil))
+	require.Empty(t, bucket.copied)
+}
+
+func TestAMessageRefusesAKeyThatIsNotAFinishedUploadOfTheSenderForThisConversation(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	ctx := context.Background()
+
+	_, bucket := stagedUpload(me, id, "a.png", nil)
+	useCase := newUseCase(repo, bucket)
+
+	// an upload that never finished
+	_, err := useCase.SendMessage(ctx, me, id, dto.SendChatMessageRequest{MediaKey: pendingKeyPrefix(id, me) + "a.png"})
+	requireAppError(t, err, apperror.Validation(nil))
+
+	// the key of another account, of another conversation, and a key that points anywhere else
+	for _, key := range []string{
+		pendingKeyPrefix(id, uuid.New()) + "a.png",
+		pendingKeyPrefix(uuid.New(), me) + "a.png",
+		"chat/" + id.String() + "/a.png",
+		"avatars/" + me.String() + "/a.png",
+		"../" + pendingKeyPrefix(id, me) + "a.png",
+		pendingKeyPrefix(id, me) + "../" + id.String() + "/a.png",
+		pendingKeyPrefix(id, me),
+	} {
+		bucket.objects[key] = &s3.Object{Size: 10, ContentType: "image/png"}
+
+		_, err = useCase.SendMessage(ctx, me, id, dto.SendChatMessageRequest{MediaKey: key})
+		requireAppError(t, err, apperror.Validation(nil))
+	}
+
+	// a file of a type that the chat does not carry
+	odd, bucket := stagedUpload(me, id, "a.pdf", &s3.Object{Size: 10, ContentType: "application/pdf"})
+
+	_, err = newUseCase(repo, bucket).SendMessage(ctx, me, id, dto.SendChatMessageRequest{MediaKey: odd})
+	requireAppError(t, err, apperror.Validation(nil))
+
+	require.Empty(t, repo.created)
+	require.Empty(t, bucket.copied)
+}
+
+func TestAMessageNeedsTextOrMediaAndCleansUpWhenItCannotBeStored(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	ctx := context.Background()
+
+	_, err := newUseCase(repo).SendMessage(ctx, me, id, dto.SendChatMessageRequest{})
+	requireAppError(t, err, apperror.Validation(nil))
+
+	key, bucket := stagedUpload(me, id, "a.png", &s3.Object{Size: 10, ContentType: "image/png"})
+	repo.createErr = errors.New("connection reset")
+
+	_, err = newUseCase(repo, bucket).SendMessage(ctx, me, id, dto.SendChatMessageRequest{MediaKey: key})
+	requireAppError(t, err, apperror.Internal(nil))
+	require.Len(t, bucket.deleted, 1, "the permanent copy is removed again")
+	require.Equal(t, bucket.copied[0][1], bucket.deleted[0])
+	require.Contains(t, bucket.objects, key, "the staged file stays so the app can try again")
+}
+
+func TestAMessageWithMediaNeedsTheBucketToBeOn(t *testing.T) {
+	me := uuid.New()
+	repo, id := openConversation(me)
+	off := newFakeStorage()
+	off.off = true
+
+	_, err := newUseCase(repo, off).SendMessage(
+		context.Background(), me, id, dto.SendChatMessageRequest{MediaKey: pendingKeyPrefix(id, me) + "a.png"},
+	)
+
+	requireAppError(t, err, apperror.ErrStorageDisabled)
+}
+
+func TestAReadAddressThatCannotBeSignedLeavesTheMessageInTheList(t *testing.T) {
+	bucket := newFakeStorage()
+	bucket.signErr = errors.New("no credentials")
+	useCase := newUseCase(&fakeRepo{}, bucket)
+	key, kind, contentType, size := "chat/a/b.png", "photo", "image/png", int64(10)
+
+	media := useCase.mediaOf(context.Background(), &key, &kind, &contentType, &size)
+
+	require.NotNil(t, media)
+	require.Empty(t, media.URL)
+	require.Equal(t, "photo", media.Kind)
+
+	require.Nil(t, useCase.mediaOf(context.Background(), nil, nil, nil, nil), "a message without media has none")
 }

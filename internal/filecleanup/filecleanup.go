@@ -31,11 +31,33 @@ const (
 type Sweeper struct {
 	db      *gorm.DB
 	storage s3.StorageItf
+	// private holds the chat media, whose keys all start with PrivatePrefix, and is nil until WithPrivate sets it
+	private s3.StorageItf
 	observe func(error)
 }
 
+// PrivatePrefix starts every key of the private bucket, which is how the sweeper tells which bucket a queued key is in
+const PrivatePrefix = "chat/"
+
 func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
 	return &Sweeper{db: db, storage: storage}
+}
+
+// WithPrivate sets the storage of the private bucket, for the keys that start with PrivatePrefix. Without it those keys are
+// tried against the public bucket, which does not have them, so a deleted message would leave its file behind unseen.
+func (s *Sweeper) WithPrivate(private s3.StorageItf) *Sweeper {
+	s.private = private
+
+	return s
+}
+
+// storageOf returns the bucket that holds the key
+func (s *Sweeper) storageOf(key string) s3.StorageItf {
+	if strings.HasPrefix(key, PrivatePrefix) && s.private != nil {
+		return s.private
+	}
+
+	return s.storage
 }
 
 // Observe makes the sweeper call report with the error of every run that the shutdown did not cut short, nil for a success
@@ -78,7 +100,7 @@ func (s *Sweeper) attempt(ctx context.Context, key string) bool {
 	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
 	defer cancel()
 
-	err := s.storage.Delete(attemptCtx, key)
+	err := s.storageOf(key).Delete(attemptCtx, key)
 	if err != nil {
 		log.Printf("storage cleanup of %s failed again %v", key, err)
 

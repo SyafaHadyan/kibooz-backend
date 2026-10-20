@@ -231,3 +231,47 @@ func TestCopy(t *testing.T) {
 func TestDisabledStorageCopiesNothing(t *testing.T) {
 	require.Error(t, s3.Disabled{}.Copy(context.Background(), "pending/a.mp4", "videos/a.mp4", "video/mp4"))
 }
+
+func privateStorage(t *testing.T) (s3.StorageItf, *env.Env) {
+	t.Helper()
+
+	cfg := &env.Env{
+		S3Endpoint: "https://r2.example.test", S3Region: "us-east-1", S3BucketName: "bucket", S3PrivateBucketName: "private-bucket",
+		S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
+	}
+
+	storage, err := s3.NewPrivate(cfg)
+	require.NoError(t, err)
+
+	return storage, cfg
+}
+
+func TestThePrivateStorageSignsReadsInItsOwnBucketAndHasNoPublicAddress(t *testing.T) {
+	storage, _ := privateStorage(t)
+
+	require.True(t, storage.Enabled())
+
+	signed, err := storage.PresignRead(context.Background(), "chat/a/b.jpg", time.Hour)
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(signed)
+	require.NoError(t, err)
+
+	require.Equal(t, "/private-bucket/chat/a/b.jpg", parsed.Path)
+	require.Equal(t, "3600", parsed.Query().Get("X-Amz-Expires"))
+	require.NotEmpty(t, parsed.Query().Get("X-Amz-Signature"))
+
+	require.Empty(t, storage.PublicURL("chat/a/b.jpg"), "a private file has no public address")
+
+	_, ok := storage.KeyFromURL("/chat/a/b.jpg")
+	require.False(t, ok)
+}
+
+func TestThePrivateStorageIsOffWithoutABucketOfItsOwn(t *testing.T) {
+	storage, err := s3.NewPrivate(&env.Env{S3Endpoint: "https://r2.example.test", S3BucketName: "bucket"})
+	require.NoError(t, err)
+	require.False(t, storage.Enabled())
+
+	_, err = storage.PresignRead(context.Background(), "chat/a/b.jpg", time.Hour)
+	require.Error(t, err)
+}

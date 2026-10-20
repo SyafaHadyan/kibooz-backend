@@ -2,6 +2,7 @@
 package rest
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
@@ -20,10 +22,12 @@ import (
 
 type ChatHandler struct {
 	useCase usecase.ChatUseCaseItf
+	// photoMaxBytes is the most that one photo may hold, which is also the most that the handler reads of an upload
+	photoMaxBytes int64
 }
 
-func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.ChatUseCaseItf) {
-	handler := ChatHandler{useCase: useCase}
+func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.ChatUseCaseItf, cfg *env.Env) {
+	handler := ChatHandler{useCase: useCase, photoMaxBytes: int64(cfg.ChatPhotoMaxMB) * 1024 * 1024}
 
 	group := router.Group("/chat", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali))
 
@@ -37,6 +41,64 @@ func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Post("/conversations/:conversationId/messages", idempotent, handler.SendMessage)
 	group.Delete("/conversations/:conversationId/messages/:messageId", handler.DeleteMessage)
 	group.Put("/conversations/:conversationId/read", handler.MarkRead)
+	group.Post("/conversations/:conversationId/media/photo", handler.UploadPhoto)
+	group.Post("/conversations/:conversationId/media/video-upload", handler.CreateVideoUpload)
+}
+
+func (h *ChatHandler) UploadPhoto(c fiber.Ctx) error {
+	conversationID, err := pathUUID(c, "conversationId")
+	if err != nil {
+		return err
+	}
+
+	header, err := c.FormFile("file")
+	if err != nil {
+		return apperror.Validation(map[string]string{"file": "is required"})
+	}
+
+	if header.Size > h.photoMaxBytes {
+		return apperror.ErrFileTooLarge
+	}
+
+	file, err := header.Open()
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	defer func() { _ = file.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(file, h.photoMaxBytes+1))
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	res, err := h.useCase.UploadPhoto(c.Context(), middleware.UserIDFrom(c), conversationID, data)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Photo uploaded", res)
+}
+
+func (h *ChatHandler) CreateVideoUpload(c fiber.Ctx) error {
+	conversationID, err := pathUUID(c, "conversationId")
+	if err != nil {
+		return err
+	}
+
+	var req dto.ChatVideoUploadRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.CreateVideoUpload(c.Context(), middleware.UserIDFrom(c), conversationID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Upload URL created", res)
 }
 
 func (h *ChatHandler) ListContacts(c fiber.Ctx) error {
