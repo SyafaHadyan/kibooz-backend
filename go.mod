@@ -10,6 +10,7 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/gabriel-vasile/mimetype v1.4.15
 	github.com/getkin/kin-openapi v0.149.0
+	github.com/getsentry/sentry-go v0.50.0
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/gofiber/fiber/v3 v3.5.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
