@@ -3823,7 +3823,7 @@ components:
           type: string
           minLength: 20
           maxLength: 4096
-          description: The registration token that Firebase Cloud Messaging gave the installed app
+          description: The registration token that Firebase Cloud Messaging gave the installed app. The server trims it first, so the length counts after the trim, and a token with a space, tab or newline inside is refused as a validation error.
         platform:
           type: string
           enum: [android]
@@ -3836,6 +3836,7 @@ components:
           type: string
           minLength: 20
           maxLength: 4096
+          description: The token to forget, trimmed and checked the same way as the one that was registered
     ChatPhotoUpload:
       type: object
       required: [mediaKey, kind, contentType, sizeBytes]
