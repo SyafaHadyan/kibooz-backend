@@ -102,4 +102,6 @@ A proxy in front of the API can also answer `429` with no body and no `Retry-Aft
 | `VALIDATION_ERROR` | 400 | A field is missing or wrong, see `details`. A missing body or broken JSON is reported under the field `body`, and text with a NUL character is refused too | Show each message next to its field |
 | `METHOD_NOT_ALLOWED` | 405 | The route does not answer this HTTP method | This is a bug in the app |
 | `BAD_REQUEST` | 4xx | The HTTP layer refused a request that no other code describes. A request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or `zstd`, gets `415` with this code | This is a bug in the app. Send JSON bodies as they are, with no compression |
+| `UPGRADE_REQUIRED` | 426 | A plain request reached the chat socket route, `GET /chat/ws`, which only takes a WebSocket handshake | Open it with a WebSocket client, see [Chat socket](websocket.md) |
+| `CHAT_SOCKETS_FULL` | 503 | The copy of the API that got the request holds as many chat sockets as it may, or is shutting down | Connect again in a few seconds and keep polling until it works |
 | `INTERNAL_ERROR` | 500 | Something unexpected failed. The details are logged with a request id and never sent | Try again later, and report the `X-Request-Id` response header if it keeps happening |
