@@ -78,7 +78,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `go_sql_*` | `db_name` | The connection pool of the database, such as open, idle and waited-for connections |
 | `go_*`, `process_*` | none | The Go runtime and the process, such as memory, goroutines and open files |
 
-A request that answers `429` is counted in `kibooz_http_requests_total` as well. A request that panics is counted as a `500`. The metrics start from zero when the process restarts, so use `rate()` and `increase()` and not the raw counters.
+A request that answers `429` is counted in `kibooz_http_requests_total` as well. A request that panics is counted as a `500`. The metrics start from zero when the process restarts, so use `rate()` and `increase()` and not the raw counters. A Prometheus or an Alloy that scrapes the page sets its own `job` label on every series, which clashes with the `job` label of the two job metrics and turns it into `exported_job`. Scrape with `honor_labels` on, as the Alloy config of this repository does, to keep the name of the job in `job`.
 
 ## Logs
 

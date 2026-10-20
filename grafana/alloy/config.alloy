@@ -75,6 +75,10 @@ prometheus.scrape "api" {
   metrics_path    = "/metrics"
   scrape_interval = "60s"
   forward_to      = [prometheus.remote_write.cloud.receiver]
+
+  // the metrics of the background jobs have a label `job` of their own, the name of the job, and so does every scrape. Without
+  // this the scrape wins and the label of the API becomes `exported_job`, which the dashboards and alerts do not read.
+  honor_labels = true
 }
 
 prometheus.remote_write "cloud" {
