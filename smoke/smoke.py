@@ -599,6 +599,23 @@ expect("only the sender deletes a message", call("DELETE", f"/chat/conversations
 s, js = call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", gc["token"])
 check("the sender deletes a message", s == 200 and dig(js, "data", "deleted") is True and dig(js, "data", "body") == "", f"{s} {js}")
 
+# the room of the class, where the teacher and both parents talk together
+s, js = call("POST", "/chat/conversations", gc["token"], {"classId": gc["class"]})
+room = dig(js, "data", "id")
+check("teacher opens the room of the class", s == 201 and room and dig(js, "data", "kind") == "class" and dig(js, "data", "peer") is None
+      and dig(js, "data", "class", "id") == gc["class"], f"{s} {js}")
+s, js = call("POST", "/chat/conversations", wc2["token"], {"classId": gc["class"]})
+check("a parent reaches the same room", s == 200 and dig(js, "data", "id") == room, f"{s} {js}")
+expect("a teacher of another class cannot open the room", call("POST", "/chat/conversations", g2["token"], {"classId": gc["class"]}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+expect("a person and a class together are refused", call("POST", "/chat/conversations", gc["token"], {"classId": gc["class"], "userId": wc1_id}), 400, "VALIDATION_ERROR")
+s, js = call("POST", f"/chat/conversations/{room}/messages", wc2["token"], {"body": "Hello from the other parent"})
+room_message = dig(js, "data", "id")
+check("a parent writes in the room", s == 201 and room_message and dig(js, "data", "sender", "role") == "WALI", f"{s} {js}")
+s, js = call("GET", f"/chat/conversations/{room}/messages?after=0", wc1["token"])
+check("the other parent reads it with its sender", s == 200 and [m.get("id") for m in dig(js, "data", "messages") or []] == [room_message]
+      and dig(js, "data", "messages", 0, "sender", "fullName") == "Smoke Wali wc2", f"{s} {js}")
+expect("a teacher of another class cannot read the room", call("GET", f"/chat/conversations/{room}/messages", g2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
+
 # ---------- 0.9.0 teachers, owner, leaving ----------
 tb = f"/guru/classes/{cid}/teachers"
 s, js = call("GET", tb, g1["token"])
