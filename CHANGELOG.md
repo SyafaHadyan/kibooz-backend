@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.15.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.14.1...v0.15.0) (2026-10-20)
+
+
+### Features
+
+* **chat:** add direct conversations between a teacher and a parent ([#252](https://github.com/SyafaHadyan/kibooz-backend/issues/252)) ([6388648](https://github.com/SyafaHadyan/kibooz-backend/commit/6388648b9adc15b11cd9153ca3f1a5e7fc6964e3))
+* **chat:** add the contacts, conversations and messages routes for a teacher and a parent ([0473585](https://github.com/SyafaHadyan/kibooz-backend/commit/04735852879a782bba0aeec3f243f9c94305f927))
+* **chat:** add the tables of the direct conversations ([3688cb1](https://github.com/SyafaHadyan/kibooz-backend/commit/3688cb148ef6dab4569808cfbc0abbe016ad0368))
+* **errorreport:** report server failures and panics to Sentry ([#255](https://github.com/SyafaHadyan/kibooz-backend/issues/255)) ([d1b9896](https://github.com/SyafaHadyan/kibooz-backend/commit/d1b9896b693d892ad02b0609856d2fa1d03e9295))
+* **errorreport:** report server failures and panics to Sentry, scrubbed and capped ([b820768](https://github.com/SyafaHadyan/kibooz-backend/commit/b820768e6e40b824879cd225d987a5223ba1a460))
+
+
+### Bug Fixes
+
+* **errorreport:** attach a stack to the report of a panic with a string ([5d68661](https://github.com/SyafaHadyan/kibooz-backend/commit/5d6866147407d858ecdee2edf6f364449c517efa))
+* **errorreport:** use the data collection options and build the token fixture at run time ([690ef37](https://github.com/SyafaHadyan/kibooz-backend/commit/690ef374e112829e38ce1db1f3f6a5911ceeaae2))
+
 ## [0.14.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.14.0...v0.14.1) (2026-10-20)
 
 
