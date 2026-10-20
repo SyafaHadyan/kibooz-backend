@@ -37,6 +37,11 @@ services:
         required: false
     networks:
       - internal
+    # Alloy finds the containers to watch by these labels and not by name, so a copy of the API can have any name, see
+    # docs/monitoring.md. The port is the one of METRICS_ADDRESS.
+    labels:
+      kibooz.role: api
+      kibooz.metrics_port: "9100"
     read_only: true
     cap_drop:
       - ALL
@@ -82,6 +87,8 @@ services:
       start_period: 20s
     networks:
       - internal
+    labels:
+      kibooz.role: db
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -118,6 +125,8 @@ services:
       retries: 10
     networks:
       - internal
+    labels:
+      kibooz.role: redis
     user: redis
     cap_drop:
       - ALL
@@ -144,6 +153,8 @@ services:
       GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
       GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER:-}
       GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+      # the name of this host on every series and log line, which has to differ between hosts
+      GRAFANA_HOST: ${GRAFANA_HOST:-main}
     deploy:
       resources:
         limits:
@@ -161,8 +172,9 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
-  # The only container that touches the Docker socket. It answers read requests for containers and refuses everything else,
-  # so Alloy cannot start, stop or create a container even if it is compromised.
+  # The only container that touches the Docker socket. It answers read requests for containers and networks and refuses
+  # everything else, so Alloy cannot start, stop or create a container even if it is compromised. The network list is needed
+  # because the Docker discovery of Alloy asks for it and fails without it.
   socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: kibooz-socket-proxy
@@ -171,6 +183,7 @@ services:
       - monitoring
     environment:
       CONTAINERS: 1
+      NETWORKS: 1
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

@@ -33,6 +33,66 @@
         "hide": 0
       },
       {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "loki",
+          "uid": "${ds_loki}"
+        },
+        "query": {
+          "label": "host",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{service_name=\"kibooz\"}",
+          "type": 1
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "loki",
+          "uid": "${ds_loki}"
+        },
+        "query": {
+          "label": "instance",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\"}",
+          "type": 1
+        }
+      },
+      {
         "name": "request_id",
         "label": "Request id",
         "type": "textbox",
@@ -92,7 +152,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "sum by (level) (count_over_time({container=\"kibooz-api\"} [$__auto]))",
+          "expr": "sum by (level) (count_over_time({service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} [$__auto]))",
           "legendFormat": "{{level}}",
           "queryType": "range"
         }
@@ -145,7 +205,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "sum(count_over_time({container=\"kibooz-db\"} |~ \"duration:|still waiting for|deadlock\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"kibooz\", role=\"db\", host=~\"$host\"} |~ \"duration:|still waiting for|deadlock\" [$__auto]))",
           "legendFormat": "database",
           "queryType": "range"
         }
@@ -179,7 +239,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-api\"} | json | level=\"ERROR\"",
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | level=\"ERROR\"",
           "queryType": "range"
         }
       ],
@@ -212,7 +272,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-api\"} | json | status=\"429\"",
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | status=\"429\"",
           "queryType": "range"
         }
       ],
@@ -245,7 +305,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-api\"} | json | status=~\"4..\", status!=\"429\"",
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | status=~\"4..\", status!=\"429\"",
           "queryType": "range"
         }
       ],
@@ -260,7 +320,7 @@
     {
       "type": "logs",
       "title": "Slow statements",
-      "description": "Statements over 500 ms, lock waits over one second and deadlocks",
+      "description": "Statements over 500 ms, lock waits over one second and deadlocks. The API copy variable does not apply here, the database is shared",
       "datasource": {
         "type": "loki",
         "uid": "${ds_loki}"
@@ -278,7 +338,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-db\"} |~ \"duration:|still waiting for|deadlock\"",
+          "expr": "{service_name=\"kibooz\", role=\"db\", host=~\"$host\"} |~ \"duration:|still waiting for|deadlock\"",
           "queryType": "range"
         }
       ],
@@ -311,7 +371,7 @@
             "type": "loki",
             "uid": "${ds_loki}"
           },
-          "expr": "{container=\"kibooz-api\"} | json | request_id=\"$request_id\"",
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | request_id=\"$request_id\"",
           "queryType": "range"
         }
       ],

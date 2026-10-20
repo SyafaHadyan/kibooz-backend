@@ -1,17 +1,66 @@
-// Alloy reads the metrics endpoint of the API and the logs of the three containers, and sends both to Grafana Cloud.
-// It runs only with the `monitoring` profile of compose.yml, see docs/monitoring.md.
+// Alloy reads the metrics endpoint and the logs of every container that carries the label `kibooz.role`, and sends both to
+// Grafana Cloud. It finds them by label and not by name, so any number of copies of the API can run on this host under any
+// container name, and the same file runs on every other host. `GRAFANA_HOST` names the host on every series and every log
+// line, so the copies of two hosts never collide. It runs only with the `monitoring` profile of compose.yml, see
+// docs/monitoring.md.
+
+// ---- discovery ----
+
+// the containers are listed through the socket proxy, which only answers read requests. Only the containers that opt in with
+// the label `kibooz.role` (api, db or redis) are kept, anything else on the host is left alone.
+discovery.docker "kibooz" {
+  host = "tcp://socket-proxy:2375"
+
+  filter {
+    name   = "label"
+    values = ["kibooz.role"]
+  }
+}
 
 // ---- metrics ----
 
+discovery.relabel "api_metrics" {
+  targets = discovery.docker.kibooz.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_kibooz_role"]
+    regex         = "api"
+    action        = "keep"
+  }
+
+  // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
+  // of the container on the network that Alloy shares with it, plus the port that the label `kibooz.metrics_port` names
+  rule {
+    source_labels = ["__meta_docker_network_ip", "__meta_docker_container_label_kibooz_metrics_port"]
+    separator     = ":"
+    regex         = "(.+):(.+)"
+    target_label  = "__address__"
+    replacement   = "$1:$2"
+  }
+
+  // the name of the container identifies the copy, and unlike its address it survives a restart
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "instance"
+  }
+
+  rule {
+    target_label = "service"
+    replacement  = "kibooz-api"
+  }
+}
+
 prometheus.scrape "api" {
-  // the metrics listener of the API is on the private network and is never published on the host
-  targets         = [{ "__address__" = "api:9100", "service" = "kibooz-api" }]
+  targets         = discovery.relabel.api_metrics.output
   metrics_path    = "/metrics"
   scrape_interval = "60s"
   forward_to      = [prometheus.remote_write.cloud.receiver]
 }
 
 prometheus.remote_write "cloud" {
+  external_labels = { host = env("GRAFANA_HOST") }
+
   endpoint {
     url = env("GRAFANA_CLOUD_PROMETHEUS_URL")
 
@@ -24,33 +73,28 @@ prometheus.remote_write "cloud" {
 
 // ---- logs ----
 
-// the containers are listed through the socket proxy, which only answers read requests for containers
-discovery.docker "containers" {
-  host = "tcp://socket-proxy:2375"
-}
+discovery.relabel "logs" {
+  targets = []
 
-discovery.relabel "kibooz" {
-  targets = discovery.docker.containers.targets
-
-  // only the three containers of the stack, anything else on the host is left alone
   rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/kibooz-(api|db|redis)"
-    action        = "keep"
+    source_labels = ["__meta_docker_container_label_kibooz_role"]
+    target_label  = "role"
   }
 
+  // the same label as the metrics, so one `instance` variable selects a copy in both
   rule {
     source_labels = ["__meta_docker_container_name"]
-    regex         = "/(kibooz-.*)"
-    target_label  = "container"
+    regex         = "/(.*)"
+    target_label  = "instance"
   }
 }
 
 loki.source.docker "kibooz" {
-  host       = "tcp://socket-proxy:2375"
-  targets    = discovery.relabel.kibooz.output
-  labels     = { "service_name" = "kibooz" }
-  forward_to = [loki.process.kibooz.receiver]
+  host          = "tcp://socket-proxy:2375"
+  targets       = discovery.docker.kibooz.targets
+  relabel_rules = discovery.relabel.logs.rules
+  labels        = { "service_name" = "kibooz" }
+  forward_to    = [loki.process.kibooz.receiver]
 }
 
 loki.process "kibooz" {
@@ -58,7 +102,7 @@ loki.process "kibooz" {
   // many values (a request id, a path) would give every line a stream of its own. The rest stays in the line, where
   // `| json` reads it, and the request id is structured metadata that can be searched without being a label.
   stage.match {
-    selector = "{container=\"kibooz-api\"}"
+    selector = "{role=\"api\"}"
 
     stage.json {
       expressions = { level = "level", request_id = "request_id" }
@@ -77,6 +121,8 @@ loki.process "kibooz" {
 }
 
 loki.write "cloud" {
+  external_labels = { host = env("GRAFANA_HOST") }
+
   endpoint {
     url = env("GRAFANA_CLOUD_LOKI_URL")
 

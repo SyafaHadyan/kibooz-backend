@@ -1,7 +1,7 @@
 {
   "uid": "kibooz-dependencies-jobs",
   "title": "Kibooz dependencies and jobs",
-  "description": "Database pool, background jobs and the Go process",
+  "description": "Database pool, background jobs and the Go process of each copy",
   "tags": [
     "kibooz"
   ],
@@ -31,6 +31,62 @@
         "query": "loki",
         "current": {},
         "hide": 0
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\"}, host)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\", host=~\"$host\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
       }
     ]
   },
@@ -42,7 +98,7 @@
     {
       "type": "timeseries",
       "title": "Database connections",
-      "description": "The pool of the requests has 25 connections. The health check has one of its own",
+      "description": "The pool of the requests has 25 connections in each copy. The health check has one of its own",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -79,8 +135,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "go_sql_in_use_connections",
-          "legendFormat": "in use"
+          "expr": "go_sql_in_use_connections{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} in use"
         },
         {
           "refId": "B",
@@ -88,8 +144,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "go_sql_idle_connections",
-          "legendFormat": "idle"
+          "expr": "go_sql_idle_connections{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} idle"
         },
         {
           "refId": "C",
@@ -97,8 +153,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "go_sql_max_open_connections",
-          "legendFormat": "limit"
+          "expr": "go_sql_max_open_connections{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} limit"
         }
       ],
       "id": 1,
@@ -149,9 +205,9 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "rate(go_sql_wait_count_total[$__rate_interval])",
+          "expr": "rate(go_sql_wait_count_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])",
           "interval": "1m",
-          "legendFormat": "waits per second"
+          "legendFormat": "{{host}}/{{instance}} waits per second"
         },
         {
           "refId": "B",
@@ -159,9 +215,9 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "rate(go_sql_wait_duration_seconds_total[$__rate_interval])",
+          "expr": "rate(go_sql_wait_duration_seconds_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])",
           "interval": "1m",
-          "legendFormat": "seconds waited per second"
+          "legendFormat": "{{host}}/{{instance}} seconds waited per second"
         }
       ],
       "id": 2,
@@ -175,7 +231,7 @@
     {
       "type": "timeseries",
       "title": "Age of the last successful run",
-      "description": "semester_check and the keepalives run every minute, file_cleanup every 10 minutes, idempotency_purge every hour",
+      "description": "semester_check and the keepalives run every minute, file_cleanup every 10 minutes, idempotency_purge every hour. Every copy runs its own jobs",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -212,8 +268,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "time() - kibooz_job_last_success_timestamp_seconds",
-          "legendFormat": "{{job}}"
+          "expr": "time() - kibooz_job_last_success_timestamp_seconds{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} {{job}}"
         }
       ],
       "id": 3,
@@ -264,9 +320,9 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (job) (increase(kibooz_job_runs_total{result=\"failure\"}[$__rate_interval]))",
+          "expr": "sum by (host, instance, job) (increase(kibooz_job_runs_total{host=~\"$host\", instance=~\"$instance\", result=\"failure\"}[$__rate_interval]))",
           "interval": "1m",
-          "legendFormat": "{{job}}"
+          "legendFormat": "{{host}}/{{instance}} {{job}}"
         }
       ],
       "id": 4,
@@ -317,8 +373,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "process_resident_memory_bytes",
-          "legendFormat": "resident"
+          "expr": "process_resident_memory_bytes{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} resident"
         },
         {
           "refId": "B",
@@ -326,8 +382,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "go_memstats_heap_inuse_bytes",
-          "legendFormat": "Go heap in use"
+          "expr": "go_memstats_heap_inuse_bytes{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} Go heap in use"
         }
       ],
       "id": 5,
@@ -378,8 +434,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "go_goroutines",
-          "legendFormat": "goroutines"
+          "expr": "go_goroutines{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} goroutines"
         },
         {
           "refId": "B",
@@ -387,8 +443,8 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "process_open_fds",
-          "legendFormat": "open files"
+          "expr": "process_open_fds{host=~\"$host\", instance=~\"$instance\"}",
+          "legendFormat": "{{host}}/{{instance}} open files"
         }
       ],
       "id": 6,
@@ -439,9 +495,9 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "rate(process_cpu_seconds_total[$__rate_interval])",
+          "expr": "rate(process_cpu_seconds_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])",
           "interval": "1m",
-          "legendFormat": "cores used"
+          "legendFormat": "{{host}}/{{instance}} cores used"
         }
       ],
       "id": 7,
@@ -492,9 +548,9 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "rate(go_gc_duration_seconds_sum[$__rate_interval])",
+          "expr": "rate(go_gc_duration_seconds_sum{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])",
           "interval": "1m",
-          "legendFormat": "seconds per second"
+          "legendFormat": "{{host}}/{{instance}} seconds per second"
         }
       ],
       "id": 8,

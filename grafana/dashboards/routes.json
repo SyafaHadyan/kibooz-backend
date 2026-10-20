@@ -31,6 +31,62 @@
         "query": "loki",
         "current": {},
         "hide": 0
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\"}, host)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\", host=~\"$host\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
       }
     ]
   },
@@ -82,7 +138,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "topk(30, sum by (route) (rate(kibooz_http_requests_total[$__range])))",
+          "expr": "topk(30, sum by (route) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\"}[$__range])))",
           "instant": true,
           "format": "table"
         }
@@ -135,7 +191,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))))",
           "interval": "1m",
           "legendFormat": "{{route}}"
         }
@@ -188,7 +244,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (route) (rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval]))",
+          "expr": "sum by (route) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", status=~\"5..\"}[$__rate_interval]))",
           "interval": "1m",
           "legendFormat": "{{route}}"
         }
@@ -241,7 +297,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "topk(10, sum by (route) (rate(kibooz_http_requests_total{status=~\"4..\"}[$__rate_interval])))",
+          "expr": "topk(10, sum by (route) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", status=~\"4..\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "{{route}}"
         }
@@ -294,7 +350,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (route) (rate(kibooz_rate_limited_total[$__rate_interval]))",
+          "expr": "sum by (route) (rate(kibooz_rate_limited_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
           "interval": "1m",
           "legendFormat": "{{route}}"
         }
@@ -350,7 +406,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "topk(15, histogram_quantile(0.95, sum by (le, route) (rate(kibooz_http_request_duration_seconds_bucket[$__range]))))",
+          "expr": "topk(15, histogram_quantile(0.95, sum by (le, route) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__range]))))",
           "instant": true,
           "format": "table"
         }

@@ -31,6 +31,62 @@
         "query": "loki",
         "current": {},
         "hide": 0
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\"}, host)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\", host=~\"$host\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
       }
     ]
   },
@@ -78,7 +134,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/register\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/register\"}[$__range]))"
         }
       ],
       "id": 1,
@@ -128,7 +184,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/login\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/login\"}[$__range]))"
         }
       ],
       "id": 2,
@@ -178,7 +234,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/mood/log(/batch)?\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/mood/log(/batch)?\"}[$__range]))"
         }
       ],
       "id": 3,
@@ -228,7 +284,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/scan-claim\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/scan-claim\"}[$__range]))"
         }
       ],
       "id": 4,
@@ -278,7 +334,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/guidance/apply\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/guidance/apply\"}[$__range]))"
         }
       ],
       "id": 5,
@@ -328,7 +384,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/forum(/:postId/replies)?\"}[$__range]))"
+          "expr": "sum(increase(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/forum(/:postId/replies)?\"}[$__range]))"
         }
       ],
       "id": 6,
@@ -379,7 +435,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/mood/log(/batch)?\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/mood/log(/batch)?\"}[$__rate_interval])) * 3600",
           "interval": "1m",
           "legendFormat": "per hour"
         }
@@ -432,7 +488,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
           "interval": "1m",
           "legendFormat": "claims per hour"
         },
@@ -442,7 +498,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=\"429\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
+          "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=\"429\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
           "interval": "1m",
           "legendFormat": "refused by the daily limit per hour"
         }
@@ -495,7 +551,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total{method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/(login|register)\"}[$__rate_interval])) by (route) * 3600",
+          "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=~\"2..\", route=~\"/api/v1/auth/(login|register)\"}[$__rate_interval])) by (route) * 3600",
           "interval": "1m",
           "legendFormat": "{{route}} per hour"
         }
@@ -548,7 +604,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (status) (rate(kibooz_http_requests_total{method=\"POST\", route=\"/api/v1/auth/login\", status=~\"4..\"}[$__rate_interval])) * 3600",
+          "expr": "sum by (status) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", route=\"/api/v1/auth/login\", status=~\"4..\"}[$__rate_interval])) * 3600",
           "interval": "1m",
           "legendFormat": "{{status}} per hour"
         }

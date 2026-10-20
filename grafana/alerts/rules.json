@@ -14,7 +14,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "The metrics of the API have not been scraped for 5 minutes. The API, the metrics listener or Alloy is down"
+      "summary": "The metrics of the copy {{ $labels.instance }} on {{ $labels.host }} have not been scraped for 5 minutes. The API or its metrics listener is not answering. The rule also fires for every copy when no data arrives at all, which is when Alloy itself is down"
     },
     "data": [
       {
@@ -26,7 +26,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "min(up{service=\"kibooz-api\"})",
+          "expr": "min by (host, instance) (up{service=\"kibooz-api\"})",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -70,6 +70,89 @@
                 "type": "lt",
                 "params": [
                   1
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "An API copy has disappeared",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "5m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "critical",
+      "service": "kibooz-api"
+    },
+    "annotations": {
+      "summary": "A host has fewer copies of the API than at some point in the last day, so a container stopped or was removed. The rule stops firing a day after a copy was removed on purpose"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "count by (host) (up{service=\"kibooz-api\"}) < bool max_over_time(count by (host) (up{service=\"kibooz-api\"})[1d:5m])",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  0
                 ]
               }
             }
@@ -263,7 +346,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "The semester check or a keepalive has not succeeded for 10 minutes, see the logs of the API"
+      "summary": "The semester check or a keepalive of the copy {{ $labels.instance }} on {{ $labels.host }} has not succeeded for 10 minutes, see its logs"
     },
     "data": [
       {
@@ -275,7 +358,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max(time() - kibooz_job_last_success_timestamp_seconds{job=~\"semester_check|keepalive_database|keepalive_redis\"})",
+          "expr": "max by (host, instance) (time() - kibooz_job_last_success_timestamp_seconds{job=~\"semester_check|keepalive_database|keepalive_redis\"})",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -346,7 +429,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "The file cleanup or the idempotency purge has not succeeded for 3 hours"
+      "summary": "The file cleanup or the idempotency purge of the copy {{ $labels.instance }} on {{ $labels.host }} has not succeeded for 3 hours"
     },
     "data": [
       {
@@ -358,7 +441,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max(time() - kibooz_job_last_success_timestamp_seconds{job=~\"file_cleanup|idempotency_purge\"})",
+          "expr": "max by (host, instance) (time() - kibooz_job_last_success_timestamp_seconds{job=~\"file_cleanup|idempotency_purge\"})",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -429,7 +512,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "A background job failed more than 3 times in 30 minutes, see the logs of the API"
+      "summary": "A background job of the copy {{ $labels.instance }} on {{ $labels.host }} failed more than 3 times in 30 minutes, see its logs"
     },
     "data": [
       {
@@ -441,7 +524,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "sum(increase(kibooz_job_runs_total{result=\"failure\"}[30m]))",
+          "expr": "sum by (host, instance) (increase(kibooz_job_runs_total{result=\"failure\"}[30m]))",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -512,7 +595,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "Requests were refused because every password hashing slot was taken. The server needs more CPU"
+      "summary": "The copy {{ $labels.instance }} on {{ $labels.host }} refused requests because every password hashing slot was taken. It needs more CPU"
     },
     "data": [
       {
@@ -524,7 +607,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "sum(increase(kibooz_password_hash_busy_total[10m]))",
+          "expr": "sum by (host, instance) (increase(kibooz_password_hash_busy_total[10m]))",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -595,7 +678,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "More than 90 percent of the database connections of the API were in use for 5 minutes"
+      "summary": "More than 90 percent of the database connections of the copy {{ $labels.instance }} on {{ $labels.host }} were in use for 5 minutes"
     },
     "data": [
       {
@@ -607,7 +690,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max(go_sql_in_use_connections / go_sql_max_open_connections)",
+          "expr": "max by (host, instance) (go_sql_in_use_connections / go_sql_max_open_connections)",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200

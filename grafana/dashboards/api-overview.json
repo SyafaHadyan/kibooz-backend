@@ -31,6 +31,62 @@
         "query": "loki",
         "current": {},
         "hide": 0
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\"}, host)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${ds_prom}"
+        },
+        "query": {
+          "query": "label_values(up{service=\"kibooz-api\", host=~\"$host\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        }
       }
     ]
   },
@@ -41,8 +97,8 @@
   "panels": [
     {
       "type": "stat",
-      "title": "API up",
-      "description": "1 when the last scrape of the metrics listener worked",
+      "title": "API copies up",
+      "description": "How many copies of the API were scraped successfully at the last scrape",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -82,7 +138,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "min(up{service=\"kibooz-api\"})"
+          "expr": "sum(up{host=~\"$host\", instance=~\"$instance\", service=\"kibooz-api\"})"
         }
       ],
       "id": 1,
@@ -132,7 +188,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_http_requests_total[$__rate_interval]))",
+          "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
           "interval": "1m"
         }
       ],
@@ -191,7 +247,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "(sum(rate(kibooz_http_requests_total{status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(kibooz_http_requests_total[$__rate_interval]))",
+          "expr": "(sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", status=~\"5..\"}[$__rate_interval])) or vector(0)) / sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
           "interval": "1m"
         }
       ],
@@ -250,7 +306,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
           "interval": "1m"
         }
       ],
@@ -301,7 +357,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(kibooz_http_requests_in_flight)"
+          "expr": "sum(kibooz_http_requests_in_flight{host=~\"$host\", instance=~\"$instance\"})"
         }
       ],
       "id": 5,
@@ -351,7 +407,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "(sum(rate(kibooz_rate_limited_total[$__rate_interval])) or vector(0)) * 60",
+          "expr": "(sum(rate(kibooz_rate_limited_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])) or vector(0)) * 60",
           "interval": "1m"
         }
       ],
@@ -406,7 +462,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (class) (label_replace(rate(kibooz_http_requests_total[$__rate_interval]), \"class\", \"${1}xx\", \"status\", \"(.)..\"))",
+          "expr": "sum by (class) (label_replace(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]), \"class\", \"${1}xx\", \"status\", \"(.)..\"))",
           "interval": "1m",
           "legendFormat": "{{class}}"
         }
@@ -459,7 +515,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p50"
         },
@@ -469,7 +525,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p95"
         },
@@ -479,7 +535,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p99"
         }
@@ -532,7 +588,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (status) (rate(kibooz_http_requests_total{status=~\"4..\"}[$__rate_interval]))",
+          "expr": "sum by (status) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", status=~\"4..\"}[$__rate_interval]))",
           "interval": "1m",
           "legendFormat": "{{status}}"
         }
@@ -585,7 +641,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_rate_limited_total[$__rate_interval]))",
+          "expr": "sum(rate(kibooz_rate_limited_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
           "interval": "1m",
           "legendFormat": "rate limiter"
         },
@@ -595,7 +651,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(rate(kibooz_password_hash_busy_total[$__rate_interval]))",
+          "expr": "sum(rate(kibooz_password_hash_busy_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
           "interval": "1m",
           "legendFormat": "password hashing busy"
         }
@@ -604,6 +660,59 @@
       "gridPos": {
         "x": 12,
         "y": 12,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests per copy",
+      "description": "How the load is spread over the copies of the API. A copy that gets nothing is not reached by the load balancer",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${ds_prom}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "expr": "sum by (host, instance) (rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval]))",
+          "interval": "1m",
+          "legendFormat": "{{host}}/{{instance}}"
+        }
+      ],
+      "id": 11,
+      "gridPos": {
+        "x": 0,
+        "y": 20,
         "w": 12,
         "h": 8
       }
