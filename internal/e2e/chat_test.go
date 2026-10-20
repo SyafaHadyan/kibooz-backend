@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"bytes"
+	"encoding/base64"
 	"net/http"
 	"strconv"
 	"strings"
@@ -486,5 +488,155 @@ func TestClassRoomChat(t *testing.T) {
 		require.EqualValues(t, 0, call(t, http.MethodGet, chatBase+"/conversations", parent.Token, nil).data("total"))
 
 		require.Equal(t, http.StatusOK, messages(guru.Token, "").Status, "the teacher and the other parent keep the room")
+	})
+}
+
+func TestChatMedia(t *testing.T) {
+	photo, err := base64.StdEncoding.DecodeString(tinyPNG)
+	require.NoError(t, err)
+
+	guru := registerGuru(t, "Kenanga")
+	_, code := classOf(t, guru)
+	parent, _ := registerWali(t, code, "Media Child")
+	other, _ := registerWali(t, code, "Other Media Child")
+	stranger := registerGuru(t, "Seruni")
+
+	parentID := chatContactOf(t, call(t, http.MethodGet, chatBase+"/contacts", guru.Token, nil), "Media Child")["id"].(string)
+	guruID := chatContactOf(t, call(t, http.MethodGet, chatBase+"/contacts", parent.Token, nil), "")["id"].(string)
+
+	started := call(t, http.MethodPost, chatBase+"/conversations", parent.Token, map[string]any{"userId": guruID})
+	require.Equal(t, http.StatusCreated, started.Status, "body %v", started.Body)
+
+	conversationID := started.data("id").(string)
+	base := chatBase + "/conversations/" + conversationID
+	pendingPrefix := "pending/chat/" + conversationID + "/" + parentID + "/"
+
+	send := func(token string, body map[string]any) result {
+		res, _ := callKey(t, http.MethodPost, base+"/messages", token, uuid.NewString(), body)
+
+		return res
+	}
+
+	var photoKey, photoMessage string
+
+	t.Run("a photo is checked, stripped of its metadata and kept for the sender until it is sent", func(t *testing.T) {
+		res := uploadTo(t, base+"/media/photo", parent.Token, nil, "p.png", photo)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		photoKey = res.data("mediaKey").(string)
+
+		require.True(t, strings.HasPrefix(photoKey, pendingPrefix), photoKey)
+		require.Equal(t, "photo", res.data("kind"))
+		require.Equal(t, "image/png", res.data("contentType"))
+		require.Contains(t, uploaded(privateKeyPrefix+"pending/chat/"), privateKeyPrefix+photoKey, "it is in the private bucket")
+		require.Empty(t, uploaded(photoKey), "and not in the public one")
+
+		uploadTo(t, base+"/media/photo", parent.Token, nil, "p.png", []byte("not an image")).requireError(t, http.StatusBadRequest, "INVALID_IMAGE")
+		uploadTo(t, base+"/media/photo", parent.Token, nil, "", nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		uploadTo(t, base+"/media/photo", "", nil, "p.png", photo).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		uploadTo(t, base+"/media/photo", other.Token, nil, "p.png", photo).requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+		uploadTo(t, chatBase+"/conversations/not-a-uuid/media/photo", parent.Token, nil, "p.png", photo).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a message carries the photo and the file moves to its permanent key", func(t *testing.T) {
+		res := send(parent.Token, map[string]any{"mediaKey": photoKey})
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		photoMessage = itoa(messageIDOf(t, res))
+
+		require.Equal(t, "", res.data("body"), "a photo needs no text")
+		require.Equal(t, "photo", res.data("media", "kind"))
+		require.Equal(t, "image/png", res.data("media", "contentType"))
+		require.EqualValues(t, len(photo), res.data("media", "sizeBytes"))
+
+		address, _ := res.data("media", "url").(string)
+		require.Contains(t, address, "/"+testPrivateBucket+"/chat/"+conversationID+"/")
+		require.Contains(t, address, "X-Amz-Signature", "the address is signed")
+		require.Contains(t, address, "X-Amz-Expires=3600")
+
+		permanent := uploaded(privateKeyPrefix + "chat/" + conversationID + "/")
+		require.Len(t, permanent, 1)
+		require.Empty(t, uploaded(privateKeyPrefix+photoKey), "the staged file is gone")
+
+		again := send(parent.Token, map[string]any{"mediaKey": photoKey})
+		again.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("the media shows in the window and in the conversation list for the other person", func(t *testing.T) {
+		window := call(t, http.MethodGet, base+"/messages", guru.Token, nil)
+		require.Equal(t, http.StatusOK, window.Status, "body %v", window.Body)
+
+		media := window.data("messages").([]any)[0].(map[string]any)["media"].(map[string]any)
+		require.Equal(t, "photo", media["kind"])
+		require.NotEmpty(t, media["url"])
+		require.NotEmpty(t, media["expiresAt"])
+
+		last := call(t, http.MethodGet, chatBase+"/conversations", guru.Token, nil).data("conversations").([]any)[0].(map[string]any)["lastMessage"].(map[string]any)
+		require.Equal(t, "photo", last["media"].(map[string]any)["kind"])
+	})
+
+	t.Run("a key that was not issued to the sender for this conversation is refused", func(t *testing.T) {
+		send(guru.Token, map[string]any{"mediaKey": photoKey}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		send(parent.Token, map[string]any{"mediaKey": pendingPrefix + uuid.NewString() + ".png"}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		send(parent.Token, map[string]any{"mediaKey": "avatars/" + parentID + "/a.png"}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		send(parent.Token, map[string]any{}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		send(stranger.Token, map[string]any{"mediaKey": photoKey}).requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+	})
+
+	t.Run("a video goes straight to the bucket through a signed address and is sent with text", func(t *testing.T) {
+		call(t, http.MethodPost, base+"/media/video-upload", parent.Token, map[string]any{"contentType": "video/avi", "sizeBytes": 10}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, base+"/media/video-upload", parent.Token, map[string]any{"contentType": "video/mp4", "sizeBytes": 26 * 1024 * 1024}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, base+"/media/video-upload", other.Token, map[string]any{"contentType": "video/mp4", "sizeBytes": 10}).
+			requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+
+		res := call(t, http.MethodPost, base+"/media/video-upload", parent.Token, map[string]any{"contentType": "video/mp4", "sizeBytes": 2048})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		key := res.data("mediaKey").(string)
+
+		require.True(t, strings.HasPrefix(key, pendingPrefix) && strings.HasSuffix(key, ".mp4"), key)
+		require.Equal(t, "PUT", res.data("method"))
+
+		// the message cannot go before the file arrives
+		send(parent.Token, map[string]any{"mediaKey": key}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, res.data("uploadUrl").(string), bytes.NewReader(make([]byte, 2048)))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "video/mp4")
+
+		put, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		require.NoError(t, put.Body.Close())
+		require.Equal(t, http.StatusOK, put.StatusCode)
+
+		sentVideo := send(parent.Token, map[string]any{"body": "Rani singing", "mediaKey": key})
+		require.Equal(t, http.StatusCreated, sentVideo.Status, "body %v", sentVideo.Body)
+		require.Equal(t, "Rani singing", sentVideo.data("body"))
+		require.Equal(t, "video", sentVideo.data("media", "kind"))
+		require.EqualValues(t, 2048, sentVideo.data("media", "sizeBytes"))
+	})
+
+	t.Run("deleting a message removes its media and queues the file", func(t *testing.T) {
+		var before []string
+
+		require.NoError(t, testDB.Raw("SELECT media_key FROM chat_messages WHERE id = ?", photoMessage).Scan(&before).Error)
+		require.Len(t, before, 1)
+
+		res := call(t, http.MethodDelete, base+"/messages/"+photoMessage, parent.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, true, res.data("deleted"))
+		require.Nil(t, res.data("media"))
+
+		var queued int64
+
+		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM file_cleanups WHERE object_key = ?", before[0]).Scan(&queued).Error)
+		require.EqualValues(t, 1, queued, "the file is queued in the transaction of the delete")
+
+		var kept []string
+
+		require.NoError(t, testDB.Raw("SELECT media_key FROM chat_messages WHERE id = ? AND media_key IS NOT NULL", photoMessage).Scan(&kept).Error)
+		require.Empty(t, kept)
 	})
 }
