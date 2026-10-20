@@ -117,3 +117,16 @@ var (
 	}
 	ErrNotFound = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
 )
+
+// errors of the chat, in a block of their own so that their longer names do not realign the list above
+var (
+	ErrChatConversationNotFound = New(http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND", "Conversation not found")
+	ErrChatMessageNotFound      = New(http.StatusNotFound, "CHAT_MESSAGE_NOT_FOUND", "Message not found")
+	ErrChatContactNotAllowed    = New(
+		http.StatusForbidden, "CHAT_CONTACT_NOT_ALLOWED", "You can only talk to a teacher or a parent that you share a class with",
+	)
+	ErrChatSendingClosed = New(
+		http.StatusConflict, "CHAT_SENDING_CLOSED",
+		"You no longer share a class with this person, so you can read this conversation but not write in it",
+	)
+)
