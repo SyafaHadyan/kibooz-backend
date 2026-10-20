@@ -51,6 +51,7 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 | `IDEMPOTENCY_TTL_HOURS` | How long a retried request gets the first answer again. Lowering it shortens the window in which an offline app can retry safely |
 | `SENTRY_DSN`, `SENTRY_EVENTS_PER_MINUTE` | Error reports leave only when the DSN is set. The cap is the most reports in a minute, and the log says `error reports are being dropped by the cap` when a storm passes it. A DSN that cannot be read is logged and leaves the reports off, it never stops the API. A compose file that lists its settings one by one needs these lines too |
 | `S3_*` | Uploads stay off until all of them are set. The bucket needs a lifecycle rule that expires `pending/` after one day and never `videos/` |
+| `S3_PRIVATE_BUCKET_NAME` | The bucket of the chat photos and videos. It must not be the public bucket, which the server refuses at start, and the key of `S3_*` has to cover it. It needs a lifecycle rule that expires `pending/` after one day and never `chat/`, and chat media stays off while the name is empty. `/healthz` writes a probe object to it as well, so a private bucket that refuses writes shows as `degraded` |
 
 ## Background work
 

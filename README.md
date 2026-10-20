@@ -90,6 +90,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
+| `S3_PRIVATE_BUCKET_NAME`, `CHAT_PHOTO_MAX_MB`, `CHAT_VIDEO_MAX_MB`, `CHAT_MEDIA_URL_SECONDS` | empty, `4`, `25`, `3600` | The private bucket of the chat photos and videos, which uses the account and keys of `S3_*` and is never public, the largest photo and video, and how long a signed read address works. Chat media is off while the bucket name is empty, and the bucket needs the same lifecycle rule on `pending/` |
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_URL` has to serve the objects publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |

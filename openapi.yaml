@@ -1931,10 +1931,13 @@ paths:
       operationId: sendChatMessage
       summary: Send a message
       description: |
-        Text only for now, up to 4000 characters, trimmed at both ends. Send an `Idempotency-Key` so that a try that is repeated after
-        a lost answer writes the message once. Sending needs a class that the two still share and an account that is still there,
-        otherwise it answers `409` with `CHAT_SENDING_CLOSED`, while reading stays open. Only the two people of the conversation can
-        use it, and anyone else gets `404`.
+        Text of up to 4000 characters, trimmed at both ends, a photo or a video, or text with one of them. Send `mediaKey` from
+        `POST .../media/photo` or `POST .../media/video-upload` to carry a file, which the server only accepts when it is a finished upload
+        of the same account for the same conversation, and a message needs `body` or `mediaKey`. Send an `Idempotency-Key` so that a try
+        that is repeated after a lost answer writes the message once. Sending needs an open conversation, which means a class that the
+        two of a direct conversation still share, an account that is still there and a class that is not archived, otherwise it answers
+        `409` with `CHAT_SENDING_CLOSED`, while reading stays open. Only the people of the conversation can use it, and anyone else
+        gets `404`.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ConversationPath"
@@ -2044,6 +2047,118 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /chat/conversations/{conversationId}/media/photo:
+    post:
+      tags: [Chat]
+      operationId: uploadChatPhoto
+      summary: Upload a photo for a message
+      description: |
+        Send the photo as a multipart form with the field `file`, a JPEG, PNG or WebP image of at most `CHAT_PHOTO_MAX_MB` MiB (4 by
+        default). The server checks the type by content, cuts the metadata out of the file, such as the location of the phone, and stores
+        it in the private bucket under `pending/`. The answer has the `mediaKey` to send with the message in
+        `POST /chat/conversations/{conversationId}/messages`. A photo that is never sent is removed by the lifecycle rule of the bucket
+        after a day. Only a member of an open conversation can upload, and a closed conversation answers `409` with `CHAT_SENDING_CLOSED`.
+        Without a private bucket the answer is `503` with `STORAGE_UNAVAILABLE`.
+      parameters:
+        - $ref: "#/components/parameters/ConversationPath"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: The photo is stored and waits for its message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatPhotoUploadEnvelope"
+        "400":
+          description: The input is invalid, the file is not an image, or the image has more than 40 megapixels or a side longer than 8192 pixels (`VALIDATION_ERROR`, `INVALID_IMAGE`, `IMAGE_DIMENSIONS_TOO_LARGE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The conversation is closed for sending (`CHAT_SENDING_CLOSED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "413":
+          $ref: "#/components/responses/FileTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+        "503":
+          description: The private bucket is not configured (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /chat/conversations/{conversationId}/media/video-upload:
+    post:
+      tags: [Chat]
+      operationId: createChatVideoUpload
+      summary: Get a signed address to upload a video for a message
+      description: |
+        Send the file with a PUT request to `uploadUrl` before `expiresAt`, with exactly `sizeBytes` bytes and the headers of the
+        answer. The video goes straight to the private bucket under `pending/` and never passes through this API. Then send the
+        message with the `mediaKey` of this answer, which the server only accepts for the account and the conversation that asked
+        for it, once the file is there. A video is at most `CHAT_VIDEO_MAX_MB` MiB (25 by default). Only a member of an open
+        conversation can ask, and without a private bucket the answer is `503` with `STORAGE_UNAVAILABLE`.
+      parameters:
+        - $ref: "#/components/parameters/ConversationPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatVideoUploadRequest"
+      responses:
+        "200":
+          description: Upload address created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatVideoUploadEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The conversation is closed for sending (`CHAT_SENDING_CLOSED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/StorageFailed"
+        "503":
+          description: The private bucket is not configured (`STORAGE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /users/me:
     delete:
       tags: [Account]
@@ -3428,9 +3543,28 @@ components:
           type: string
           format: uuid
           description: The id of a class the account belongs to, for the room of that class
+    ChatMedia:
+      type: object
+      required: [kind, contentType, sizeBytes, url, expiresAt]
+      description: The photo or video of a message
+      properties:
+        kind:
+          type: string
+          enum: [photo, video]
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+        url:
+          type: string
+          description: A signed address that reads the file until `expiresAt`. It changes on every request, so cache the file by the id of the message and not by the address. It is empty when the address could not be signed.
+        expiresAt:
+          type: string
+          format: date-time
     ChatMessage:
       type: object
-      required: [id, conversationId, senderId, sender, body, deleted, createdAt]
+      required: [id, conversationId, senderId, sender, body, media, deleted, createdAt]
       properties:
         id:
           type: integer
@@ -3447,7 +3581,12 @@ components:
           $ref: "#/components/schemas/ChatPerson"
         body:
           type: string
-          description: Empty for a deleted message
+          description: Empty for a deleted message, and for a message that only has media
+        media:
+          allOf:
+            - $ref: "#/components/schemas/ChatMedia"
+          nullable: true
+          description: The photo or video, null for a message without one and for a deleted message
         deleted:
           type: boolean
         createdAt:
@@ -3489,7 +3628,7 @@ components:
           type: object
           nullable: true
           description: The newest message, in the same shape as a ChatMessage. Null for a conversation that was opened and has no message yet.
-          required: [id, conversationId, senderId, sender, body, deleted, createdAt]
+          required: [id, conversationId, senderId, sender, body, media, deleted, createdAt]
           properties:
             id:
               type: integer
@@ -3504,7 +3643,11 @@ components:
               $ref: "#/components/schemas/ChatPerson"
             body:
               type: string
-              description: Empty for a deleted message
+              description: Empty for a deleted message, and for a message that only has media
+            media:
+              allOf:
+                - $ref: "#/components/schemas/ChatMedia"
+              nullable: true
             deleted:
               type: boolean
             createdAt:
@@ -3559,13 +3702,91 @@ components:
           $ref: "#/components/schemas/ChatConversationList"
     SendChatMessageRequest:
       type: object
-      required: [body]
+      description: At least one of `body` and `mediaKey`
       properties:
         body:
           type: string
-          minLength: 1
           maxLength: 4000
-          description: The text, trimmed at both ends. A text of only blanks is refused.
+          description: The text, trimmed at both ends. It may be empty when `mediaKey` is sent.
+        mediaKey:
+          type: string
+          maxLength: 300
+          description: The `mediaKey` of a photo or video that was uploaded for this conversation by this account
+    ChatPhotoUpload:
+      type: object
+      required: [mediaKey, kind, contentType, sizeBytes]
+      properties:
+        mediaKey:
+          type: string
+          description: Send it with the message that carries the photo
+        kind:
+          type: string
+          enum: [photo]
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        sizeBytes:
+          type: integer
+          format: int64
+          description: The size of the stored photo, after the metadata was removed
+    ChatPhotoUploadEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatPhotoUpload"
+    ChatVideoUploadRequest:
+      type: object
+      required: [contentType, sizeBytes]
+      properties:
+        contentType:
+          type: string
+          enum: [video/mp4, video/webm]
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The exact size of the file, the server refuses a larger file than `CHAT_VIDEO_MAX_MB`
+    ChatVideoUpload:
+      type: object
+      required: [uploadUrl, method, headers, mediaKey, expiresAt]
+      properties:
+        uploadUrl:
+          type: string
+          format: uri
+          description: The signed address to send the file to
+        method:
+          type: string
+          enum: [PUT]
+        headers:
+          type: object
+          description: Headers the upload request must carry
+          required: [Content-Type]
+          properties:
+            Content-Type:
+              type: string
+        mediaKey:
+          type: string
+          description: Send it with the message that carries the video, once the upload is done
+        expiresAt:
+          type: string
+          format: date-time
+    ChatVideoUploadEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatVideoUpload"
     ChatMessageList:
       type: object
       required: [messages, hasMore]
