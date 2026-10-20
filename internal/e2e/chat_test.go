@@ -534,7 +534,7 @@ func TestChatMedia(t *testing.T) {
 
 		uploadTo(t, base+"/media/photo", parent.Token, nil, "p.png", []byte("not an image")).requireError(t, http.StatusBadRequest, "INVALID_IMAGE")
 		uploadTo(t, base+"/media/photo", parent.Token, nil, "", nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
-		uploadTo(t, base+"/media/photo", "", nil, "p.png", photo).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		uploadTo(t, base+"/media/photo", "", nil, "p.png", photo).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_INVALID")
 		uploadTo(t, base+"/media/photo", other.Token, nil, "p.png", photo).requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
 		uploadTo(t, chatBase+"/conversations/not-a-uuid/media/photo", parent.Token, nil, "p.png", photo).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
@@ -634,6 +634,9 @@ func TestChatMedia(t *testing.T) {
 
 		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM file_cleanups WHERE object_key = ?", before[0]).Scan(&queued).Error)
 		require.EqualValues(t, 1, queued, "the file is queued in the transaction of the delete")
+
+		// nothing sweeps the queue in this run, and the sweep test expects only its own keys in it
+		require.NoError(t, testDB.Exec("DELETE FROM file_cleanups WHERE object_key = ?", before[0]).Error)
 
 		var kept []string
 
