@@ -14,11 +14,14 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/helmet"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
+	"github.com/google/uuid"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
 	"github.com/SyafaHadyan/kibooz-backend/internal/response"
 )
@@ -168,6 +171,8 @@ func errorHandler(c fiber.Ctx, err error) error {
 			log.Printf("request %v failed %s %s", c.Locals("requestid"), c.Method(), appErr.Error())
 		}
 
+		report(c, appErr, appErr.Status)
+
 		return response.Error(c, appErr)
 	}
 
@@ -194,5 +199,41 @@ func errorHandler(c fiber.Ctx, err error) error {
 
 	log.Printf("request %v unexpected error %s %s %v", c.Locals("requestid"), c.Method(), c.Path(), err)
 
-	return response.Error(c, apperror.Internal(err))
+	internal := apperror.Internal(err)
+	report(c, internal, internal.Status)
+
+	return response.Error(c, internal)
+}
+
+// report sends a failure of the server to Sentry. An answer that the API chose, a 4xx, is not a failure, and a 503 says that
+// something is not set up, such as the object storage, so neither is sent.
+func report(c fiber.Ctx, err error, status int) {
+	if status < http.StatusInternalServerError || status == http.StatusServiceUnavailable {
+		return
+	}
+
+	// a panic was sent by logPanic, and the recover middleware then hands the same failure to the error handler
+	if fiber.Locals[bool](c, reportedKey{}) {
+		return
+	}
+
+	errorreport.Report(err, infoOf(c, status))
+}
+
+// reportedKey marks a request whose failure is already sent, so that a panic is not sent twice
+type reportedKey struct{}
+
+// infoOf collects what an event may hold of a request, the route pattern, the status, the request id and the account id
+func infoOf(c fiber.Ctx, status int) errorreport.Info {
+	info := errorreport.Info{Status: status, RequestID: requestid.FromContext(c)}
+
+	if route := c.Route(); route != nil {
+		info.Route = route.Path
+	}
+
+	if id := middleware.UserIDFrom(c); id != uuid.Nil {
+		info.UserID = id.String()
+	}
+
+	return info
 }

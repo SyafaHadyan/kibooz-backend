@@ -94,6 +94,9 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
 | `IDEMPOTENCY_TTL_HOURS` | `168` | How long an `Idempotency-Key` is remembered, at least 1. A repeat inside this time gets the first response again instead of doing the work twice |
+| `SENTRY_DSN` | empty | Where error reports go, and empty switches them off. A 5xx and a panic are sent with a scrubbed error text, the stack, the route pattern, the request id and the account id, and never with the request, see [Privacy](docs/privacy.md) |
+| `SENTRY_ENVIRONMENT`, `SENTRY_SERVER_NAME` | `production`, empty | The environment and the host name that each error report carries |
+| `SENTRY_EVENTS_PER_MINUTE` | `30` | The most error reports that leave in a minute, at least 1. The rest are dropped, so a crash loop cannot use up the quota |
 | `SEMESTER_START_MONTHS` | `1,7` | Months in which a semester begins. On the first day of each, in `APP_TIMEZONE`, the leaderboard of every class starts from zero and the final standings are saved. The points of all semesters stay on the child |
 
 ## Documentation

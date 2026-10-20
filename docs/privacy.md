@@ -40,6 +40,7 @@ Passwords are never stored in clear text or logged. The server holds the hash on
 | A deleted chat message | The row stays with an empty body, so the text is gone and a placeholder is left in the conversation |
 | Semester standings in `leaderboard_history` | Without an end. They keep the name of the child as it was when the semester closed |
 | Photos in the bucket | Until the account, or the child that the photo belongs to, is deleted. A video file that was uploaded and never added is removed after one day when the bucket has the lifecycle rule on `pending/` that the [README](../README.md#configuration) asks for |
+| Error reports at Sentry | For the retention of the Sentry plan, which the owner can shorten in the project settings. Nothing in the code deletes them, and deleting an account does not remove them. They hold the id of the account and no name or email |
 | Access log lines | As long as the container logs are kept, at most five files of 10 MB with the bundled Compose file |
 
 The access log holds the time, the client address, the method, the path, the status, the time taken and a request id. With `TRUST_PROXY` off, the address is the one of the reverse proxy.
@@ -61,9 +62,10 @@ What stays is the other part of the data. The rows are hidden and not erased, so
 |:---|:---|:---|
 | The S3 compatible bucket and its public address | Avatars, trash photos and class videos | The app shows them by address, so the objects are readable by anyone who has the address. The addresses are long random keys, but they are not secret |
 | Cloudflare, as this deployment is set up | The photos that pass through the media host, the documentation, and the logs that Cloudflare keeps | It serves the media and resizes the avatars with its image service |
+| Sentry, in the EU region, when `SENTRY_DSN` is set | An error report for a failure of the server (a 5xx or a panic) with the error text, the stack, the route pattern, the status, the request id, the release, the environment, the host and the id of the account. Emails, tokens and long numbers are replaced in every text, and a request body, a header, a cookie, a query string, an address of a client and a log line are never sent | To tell the owner about a new kind of error, grouped with its stack. The data about children stays out of it by design, see [ADR 0006](adr/0006-sentry-error-reports.md) |
 | Redis | The shared rate limit counters, which hold only hashed identifiers, the one minute memory of used refresh tokens and the leaderboard cache | A cache, never the source of truth |
 
-The code makes no call to an analytics, advertising or tracking service, and it sends no email. Its only outgoing connections are to PostgreSQL, Redis and the bucket.
+The code makes no call to an analytics, advertising or tracking service, and it sends no email. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when `SENTRY_DSN` is set, Sentry.
 
 ## Keeping the data small
 
