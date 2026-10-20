@@ -395,6 +395,23 @@ func (u *ChatUseCase) recipients(ctx context.Context, conversation *entity.ChatC
 	return members
 }
 
+// recipientsOfMessage are the accounts that can see a message sent at the given time, which in a room leaves out the members who
+// joined after it
+func (u *ChatUseCase) recipientsOfMessage(ctx context.Context, conversation *entity.ChatConversation, sentAt time.Time) []uuid.UUID {
+	if conversation.Kind != constants.ChatKindClass || conversation.ClassID == nil {
+		return u.recipients(ctx, conversation)
+	}
+
+	members, err := u.repo.ClassMembersJoinedBy(ctx, *conversation.ClassID, sentAt)
+	if err != nil {
+		log.Printf("the members of a class room could not be listed for a chat event %v", err)
+
+		return nil
+	}
+
+	return members
+}
+
 // announce pushes an event to the sockets of the people it concerns, and it does nothing without a notifier
 func (u *ChatUseCase) announce(recipients []uuid.UUID, event chatlive.Event) {
 	if u.notifier == nil || len(recipients) == 0 {
@@ -733,9 +750,10 @@ func (u *ChatUseCase) DeleteMessage(
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
 
-	// deleting again changes nothing, so it tells nobody
+	// deleting again changes nothing, so it tells nobody. In a room only the members who had joined when the message was sent hear
+	// about it, because a later member must not learn from the event that an older message existed.
 	if firstTime {
-		u.announce(u.recipients(ctx, conversation), chatlive.Event{
+		u.announce(u.recipientsOfMessage(ctx, conversation, message.CreatedAt), chatlive.Event{
 			Type: chatlive.EventMessageDeleted, ConversationID: conversationID, MessageID: messageID,
 		})
 	}
