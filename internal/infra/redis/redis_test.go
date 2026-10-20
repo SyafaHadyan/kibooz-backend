@@ -65,3 +65,15 @@ func TestRateStoreFallbackMovesOnToTheNextWindow(t *testing.T) {
 	require.EqualValues(t, 1, hits.Previous)
 	require.Equal(t, 5*time.Second, hits.Elapsed)
 }
+
+func TestPublishFailsFastWhileRedisIsDown(t *testing.T) {
+	cache := unreachable()
+	ctx := context.Background()
+
+	require.Error(t, cache.Publish(ctx, "chat:events", []byte("payload")))
+
+	started := time.Now()
+
+	require.ErrorIs(t, cache.Publish(ctx, "chat:events", []byte("payload")), redis.ErrUnavailable)
+	require.Less(t, time.Since(started), 100*time.Millisecond, "an outage costs no network time for the next publishers")
+}

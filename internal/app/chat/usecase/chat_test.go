@@ -15,6 +15,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/chat/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -41,6 +42,8 @@ type fakeRepo struct {
 
 	// memberships holds what the signed in account has in each class, a class that is missing means it is no member
 	memberships map[uuid.UUID]*repository.ClassMembership
+	// members are the accounts of a class, for the recipients of an event of a room
+	members []uuid.UUID
 	// listedSince and markedSince record the join time that the use case passed down
 	listedSince time.Time
 	markedSince time.Time
@@ -76,6 +79,10 @@ func (f *fakeRepo) GetOrCreateConversation(
 
 func (f *fakeRepo) MemberSince(_ context.Context, _ uuid.UUID, classID uuid.UUID) (*repository.ClassMembership, error) {
 	return f.memberships[classID], nil
+}
+
+func (f *fakeRepo) ClassMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {
+	return f.members, nil
 }
 
 func (f *fakeRepo) FindClassRoom(_ context.Context, classID uuid.UUID) (*entity.ChatConversation, error) {
@@ -243,6 +250,17 @@ func (f *fakeStorage) PresignRead(_ context.Context, key string, ttl time.Durati
 
 func testConfig() *env.Env {
 	return &env.Env{ChatPhotoMaxMB: 4, ChatVideoMaxMB: 25, ChatMediaURLSeconds: 3600, VideoUploadURLSeconds: 900}
+}
+
+// fakeNotifier records the events that the use case pushed to sockets
+type fakeNotifier struct {
+	recipients [][]uuid.UUID
+	events     []chatlive.Event
+}
+
+func (f *fakeNotifier) Publish(recipients []uuid.UUID, event chatlive.Event) {
+	f.recipients = append(f.recipients, recipients)
+	f.events = append(f.events, event)
 }
 
 func newUseCase(repo *fakeRepo, storage ...*fakeStorage) *ChatUseCase {
@@ -947,4 +965,145 @@ func TestAMessageFromBeforeAMemberJoinedTheRoomIsNotFoundForDeleting(t *testing.
 	_, err = useCase.DeleteMessage(context.Background(), me, room.ID, 2)
 	requireAppError(t, err, apperror.ErrForbidden)
 	require.Equal(t, joined, repo.foundSince)
+}
+
+func withNotifier(useCase *ChatUseCase) *fakeNotifier {
+	notifier := &fakeNotifier{}
+	useCase.notifier = notifier
+
+	return notifier
+}
+
+func TestANewMessageIsPushedToBothPeopleOfADirectConversation(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	useCase := newUseCase(&fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}})
+	notifier := withNotifier(useCase)
+
+	res, err := useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.NoError(t, err)
+
+	require.Len(t, notifier.events, 1)
+	require.Equal(t, chatlive.EventMessage, notifier.events[0].Type)
+	require.Equal(t, id, notifier.events[0].ConversationID)
+	require.Equal(t, res.ID, notifier.events[0].Message.ID)
+	require.ElementsMatch(t, []uuid.UUID{me, other}, notifier.recipients[0], "the sender hears it too, for the other devices")
+}
+
+func TestANewMessageOfARoomGoesToEveryMemberOfTheClass(t *testing.T) {
+	classID, me, parent := uuid.New(), uuid.New(), uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: time.Now()}},
+		members:       []uuid.UUID{me, parent},
+	}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+
+	_, err := useCase.SendMessage(context.Background(), me, room.ID, dto.SendChatMessageRequest{Body: "hello class"})
+	require.NoError(t, err)
+	require.Equal(t, [][]uuid.UUID{{me, parent}}, notifier.recipients)
+}
+
+func TestNothingIsPushedWhenTheMessageIsRefusedOrThereIsNoNotifier(t *testing.T) {
+	me := uuid.New()
+	conversation, id := conversationOf(me, uuid.New())
+	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}, createErr: errors.New("down")}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+
+	_, err := useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.Error(t, err)
+	require.Empty(t, notifier.events)
+
+	repo.createErr = nil
+	useCase.notifier = nil
+
+	_, err = useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.NoError(t, err, "a use case without a notifier still sends")
+}
+
+func TestDeletingAMessageTellsTheConversationOnlyTheFirstTime(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation},
+		messages:      map[int64]*repository.MessageRow{1: {ID: 1, ConversationID: id, SenderID: me, Body: "mine"}},
+	}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+
+	_, err := useCase.DeleteMessage(context.Background(), me, id, 1)
+	require.NoError(t, err)
+
+	require.Len(t, notifier.events, 1)
+	require.Equal(t, chatlive.EventMessageDeleted, notifier.events[0].Type)
+	require.EqualValues(t, 1, notifier.events[0].MessageID)
+
+	_, err = useCase.DeleteMessage(context.Background(), me, id, 1)
+	require.NoError(t, err)
+	require.Len(t, notifier.events, 1, "deleting again changes nothing and tells nobody")
+}
+
+func TestAReadMarkIsPushedToBothOfADirectPairAndOnlyToTheReaderInARoom(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	useCase := newUseCase(&fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}})
+	notifier := withNotifier(useCase)
+
+	_, err := useCase.MarkRead(context.Background(), me, id, dto.MarkChatReadRequest{MessageID: 4})
+	require.NoError(t, err)
+	require.Equal(t, chatlive.EventRead, notifier.events[0].Type)
+	require.Equal(t, me, *notifier.events[0].UserID)
+	require.ElementsMatch(t, []uuid.UUID{me, other}, notifier.recipients[0])
+
+	classID := uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	roomUseCase := newUseCase(&fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: time.Now()}},
+	})
+	roomNotifier := withNotifier(roomUseCase)
+
+	_, err = roomUseCase.MarkRead(context.Background(), me, room.ID, dto.MarkChatReadRequest{MessageID: 4})
+	require.NoError(t, err)
+	require.Equal(t, [][]uuid.UUID{{me}}, roomNotifier.recipients)
+}
+
+func TestTypingGoesToTheOtherPersonOfAnOpenDirectConversationOnly(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+	ctx := context.Background()
+
+	require.NoError(t, useCase.Typing(ctx, me, id, true))
+	require.Equal(t, [][]uuid.UUID{{other}}, notifier.recipients, "only the other person, never the typist")
+	require.True(t, *notifier.events[0].Typing)
+	require.Equal(t, me, *notifier.events[0].UserID)
+
+	require.NoError(t, useCase.Typing(ctx, other, id, false))
+	require.Equal(t, []uuid.UUID{me}, notifier.recipients[1])
+	require.False(t, *notifier.events[1].Typing)
+
+	requireAppError(t, useCase.Typing(ctx, uuid.New(), id, true), apperror.ErrChatConversationNotFound)
+
+	repo.views = map[uuid.UUID]*repository.ConversationRow{id: {ID: id, Kind: constants.ChatKindDirect, CanSend: false}}
+	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.ErrChatSendingClosed)
+	require.Len(t, notifier.events, 2, "a closed conversation shows no typing")
+}
+
+func TestTypingIsNotForARoom(t *testing.T) {
+	classID, me := uuid.New(), uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	useCase := newUseCase(&fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: time.Now()}},
+	})
+	notifier := withNotifier(useCase)
+
+	requireAppError(t, useCase.Typing(context.Background(), me, room.ID, true), apperror.ErrChatConversationNotFound)
+	require.Empty(t, notifier.events)
 }

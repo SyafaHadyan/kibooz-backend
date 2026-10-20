@@ -16,6 +16,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/chat/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -50,6 +51,8 @@ type ChatUseCaseItf interface {
 	UploadPhoto(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, data []byte) (dto.ChatPhotoUpload, error)
 	// CreateVideoUpload returns a signed address that takes one video straight into the private bucket
 	CreateVideoUpload(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.ChatVideoUploadRequest) (dto.ChatVideoUpload, error)
+	// Typing tells the other person of a direct conversation that the account started or stopped typing. A room has no typing.
+	Typing(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, typing bool) error
 	// SendMessage writes a message with text, a photo or video, or both, while the conversation is open
 	SendMessage(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.SendChatMessageRequest) (dto.ChatMessage, error)
 	// DeleteMessage empties a message of the signed in account and leaves a placeholder, deleting it again changes nothing
@@ -58,16 +61,24 @@ type ChatUseCaseItf interface {
 	MarkRead(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.MarkChatReadRequest) (dto.ChatReadState, error)
 }
 
+// Notifier hands an event to the sockets of its recipients, on this process and on the other API copies. It never fails the
+// request, because the message is already stored and an app that missed the event catches up with its cursor.
+type Notifier interface {
+	Publish(recipients []uuid.UUID, event chatlive.Event)
+}
+
 type ChatUseCase struct {
 	repo repository.ChatDBItf
 	// storage is the private bucket of the chat media, and it is disabled when the bucket is not configured
-	storage s3.StorageItf
-	cfg     *env.Env
-	now     func() time.Time
+	storage  s3.StorageItf
+	cfg      *env.Env
+	notifier Notifier
+	now      func() time.Time
 }
 
-func NewChatUseCase(repo repository.ChatDBItf, storage s3.StorageItf, cfg *env.Env) ChatUseCaseItf {
-	return &ChatUseCase{repo: repo, storage: storage, cfg: cfg, now: time.Now}
+// NewChatUseCase builds the chat rules. The notifier is optional, and without it nothing is pushed to sockets.
+func NewChatUseCase(repo repository.ChatDBItf, storage s3.StorageItf, cfg *env.Env, notifier Notifier) ChatUseCaseItf {
+	return &ChatUseCase{repo: repo, storage: storage, cfg: cfg, notifier: notifier, now: time.Now}
 }
 
 // timestamp keeps the precision PostgreSQL stores, so the order of two quick messages is stable
@@ -315,41 +326,113 @@ func (u *ChatUseCase) ListConversations(
 	return res, nil
 }
 
-// member checks that the account belongs to the conversation, as one of the two people of a direct one or as a member of the
-// class of a room, and returns the time from which it sees messages. That is the zero time for a direct conversation. Anyone
-// else gets not found, so the answer does not tell whether a conversation exists.
-func (u *ChatUseCase) member(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) (time.Time, error) {
+// access checks that the account belongs to the conversation, as one of the two people of a direct one or as a member of the
+// class of a room. It returns the conversation and the time from which the account sees messages, which is the zero time for a
+// direct conversation. Anyone else gets not found, so the answer does not tell whether a conversation exists.
+func (u *ChatUseCase) access(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) (*entity.ChatConversation, time.Time, error) {
 	conversation, err := u.repo.FindConversation(ctx, conversationID)
 	if err != nil {
-		return time.Time{}, apperror.Internal(err)
+		return nil, time.Time{}, apperror.Internal(err)
 	}
 
 	if conversation == nil {
-		return time.Time{}, apperror.ErrChatConversationNotFound
+		return nil, time.Time{}, apperror.ErrChatConversationNotFound
 	}
 
 	if conversation.Kind == constants.ChatKindClass {
 		if conversation.ClassID == nil {
-			return time.Time{}, apperror.ErrChatConversationNotFound
+			return nil, time.Time{}, apperror.ErrChatConversationNotFound
 		}
 
 		membership, memberErr := u.repo.MemberSince(ctx, userID, *conversation.ClassID)
 		if memberErr != nil {
-			return time.Time{}, apperror.Internal(memberErr)
+			return nil, time.Time{}, apperror.Internal(memberErr)
 		}
 
 		if membership == nil {
-			return time.Time{}, apperror.ErrChatConversationNotFound
+			return nil, time.Time{}, apperror.ErrChatConversationNotFound
 		}
 
-		return membership.Since, nil
+		return conversation, membership.Since, nil
 	}
 
 	if conversation.UserLowID == nil || conversation.UserHighID == nil || (*conversation.UserLowID != userID && *conversation.UserHighID != userID) {
-		return time.Time{}, apperror.ErrChatConversationNotFound
+		return nil, time.Time{}, apperror.ErrChatConversationNotFound
 	}
 
-	return time.Time{}, nil
+	return conversation, time.Time{}, nil
+}
+
+// member is access for the callers that only need the time from which the account sees messages
+func (u *ChatUseCase) member(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) (time.Time, error) {
+	_, since, err := u.access(ctx, userID, conversationID)
+
+	return since, err
+}
+
+// recipients are the accounts whose sockets hear about an event of the conversation
+func (u *ChatUseCase) recipients(ctx context.Context, conversation *entity.ChatConversation) []uuid.UUID {
+	if conversation.Kind != constants.ChatKindClass {
+		if conversation.UserLowID == nil || conversation.UserHighID == nil {
+			return nil
+		}
+
+		return []uuid.UUID{*conversation.UserLowID, *conversation.UserHighID}
+	}
+
+	if conversation.ClassID == nil {
+		return nil
+	}
+
+	members, err := u.repo.ClassMemberIDs(ctx, *conversation.ClassID)
+	if err != nil {
+		// the people of the room read the message when their app asks for it, so a failure here only costs the shortcut
+		log.Printf("the members of a class room could not be listed for a chat event %v", err)
+
+		return nil
+	}
+
+	return members
+}
+
+// announce pushes an event to the sockets of the people it concerns, and it does nothing without a notifier
+func (u *ChatUseCase) announce(recipients []uuid.UUID, event chatlive.Event) {
+	if u.notifier == nil || len(recipients) == 0 {
+		return
+	}
+
+	u.notifier.Publish(recipients, event)
+}
+
+func (u *ChatUseCase) Typing(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, typing bool) error {
+	conversation, _, err := u.access(ctx, userID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	// typing is for a private thread, because the whole class would see it in a room
+	if conversation.Kind != constants.ChatKindDirect || conversation.UserLowID == nil || conversation.UserHighID == nil {
+		return apperror.ErrChatConversationNotFound
+	}
+
+	// the other person of the pair, and a closed conversation shows nothing because nobody can answer in it
+	peer := *conversation.UserLowID
+	if peer == userID {
+		peer = *conversation.UserHighID
+	}
+
+	view, err := u.viewOf(ctx, userID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	if !view.CanSend {
+		return apperror.ErrChatSendingClosed
+	}
+
+	u.announce([]uuid.UUID{peer}, chatlive.Event{Type: chatlive.EventTyping, ConversationID: conversationID, UserID: &userID, Typing: &typing})
+
+	return nil
 }
 
 func (u *ChatUseCase) ListMessages(
@@ -551,7 +634,7 @@ func (u *ChatUseCase) stage(ctx context.Context, userID uuid.UUID, conversationI
 func (u *ChatUseCase) SendMessage(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.SendChatMessageRequest,
 ) (dto.ChatMessage, error) {
-	_, err := u.member(ctx, userID, conversationID)
+	conversation, _, err := u.access(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatMessage{}, err
 	}
@@ -613,13 +696,17 @@ func (u *ChatUseCase) SendMessage(
 		return dto.ChatMessage{}, apperror.ErrChatMessageNotFound
 	}
 
-	return u.messageResponse(ctx, stored), nil
+	res := u.messageResponse(ctx, stored)
+
+	u.announce(u.recipients(ctx, conversation), chatlive.Event{Type: chatlive.EventMessage, ConversationID: conversationID, Message: &res})
+
+	return res, nil
 }
 
 func (u *ChatUseCase) DeleteMessage(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, messageID int64,
 ) (dto.ChatMessage, error) {
-	since, err := u.member(ctx, userID, conversationID)
+	conversation, since, err := u.access(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatMessage{}, err
 	}
@@ -639,9 +726,18 @@ func (u *ChatUseCase) DeleteMessage(
 		return dto.ChatMessage{}, apperror.ErrForbidden
 	}
 
+	firstTime := message.DeletedAt == nil
+
 	err = u.repo.DeleteMessage(ctx, conversationID, messageID, userID, u.timestamp())
 	if err != nil {
 		return dto.ChatMessage{}, apperror.Internal(err)
+	}
+
+	// deleting again changes nothing, so it tells nobody
+	if firstTime {
+		u.announce(u.recipients(ctx, conversation), chatlive.Event{
+			Type: chatlive.EventMessageDeleted, ConversationID: conversationID, MessageID: messageID,
+		})
 	}
 
 	message, err = u.repo.FindMessage(ctx, conversationID, messageID, since)
@@ -659,7 +755,7 @@ func (u *ChatUseCase) DeleteMessage(
 func (u *ChatUseCase) MarkRead(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.MarkChatReadRequest,
 ) (dto.ChatReadState, error) {
-	since, err := u.member(ctx, userID, conversationID)
+	conversation, since, err := u.access(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatReadState{}, err
 	}
@@ -668,6 +764,17 @@ func (u *ChatUseCase) MarkRead(
 	if err != nil {
 		return dto.ChatReadState{}, apperror.Internal(err)
 	}
+
+	// the other person of a direct conversation sees how far the account has read, and so do its other devices. A room has no
+	// single other side, so only the other devices of the account hear about it.
+	informed := []uuid.UUID{userID}
+	if conversation.Kind == constants.ChatKindDirect {
+		informed = u.recipients(ctx, conversation)
+	}
+
+	u.announce(informed, chatlive.Event{
+		Type: chatlive.EventRead, ConversationID: conversationID, UserID: &userID, LastReadMessageID: mark,
+	})
 
 	return dto.ChatReadState{LastReadMessageID: mark, UnreadCount: unread}, nil
 }

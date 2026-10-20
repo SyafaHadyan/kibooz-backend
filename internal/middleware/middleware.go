@@ -3,6 +3,7 @@ package middleware
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -15,8 +16,9 @@ import (
 type localsKey string
 
 const (
-	userIDKey localsKey = "userID"
-	roleKey   localsKey = "role"
+	userIDKey    localsKey = "userID"
+	roleKey      localsKey = "role"
+	expiresAtKey localsKey = "expiresAt"
 )
 
 type MiddlewareItf interface {
@@ -71,6 +73,10 @@ func (m *Middleware) Authentication(c fiber.Ctx) error {
 	fiber.Locals(c, userIDKey, userID)
 	fiber.Locals(c, roleKey, claims.Role)
 
+	if claims.ExpiresAt != nil {
+		fiber.Locals(c, expiresAtKey, claims.ExpiresAt.Time)
+	}
+
 	return m.limit(c)
 }
 
@@ -100,6 +106,11 @@ func UserIDFrom(c fiber.Ctx) uuid.UUID {
 // UserKey names the authenticated user for the rate limiters, it is only set after Authentication
 func UserKey(c fiber.Ctx) string {
 	return UserIDFrom(c).String()
+}
+
+// ExpiresAtFrom returns when the access token of the request ends, or the zero time for a token without an end
+func ExpiresAtFrom(c fiber.Ctx) time.Time {
+	return fiber.Locals[time.Time](c, expiresAtKey)
 }
 
 // RoleFrom returns the authenticated role set by Authentication

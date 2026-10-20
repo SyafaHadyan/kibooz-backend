@@ -190,6 +190,9 @@ func errorHandler(c fiber.Ctx, err error) error {
 			return response.Error(c, apperror.ErrBodyTooLarge)
 		case http.StatusMethodNotAllowed:
 			return response.Error(c, apperror.New(fiberErr.Code, "METHOD_NOT_ALLOWED", "HTTP method not allowed"))
+		case http.StatusUpgradeRequired:
+			// the chat socket answers a plain request like this, and the code tells an app what the route is for
+			return response.Error(c, apperror.New(fiberErr.Code, "UPGRADE_REQUIRED", "This route needs a WebSocket connection"))
 		default:
 			if fiberErr.Code < http.StatusInternalServerError {
 				return response.Error(c, apperror.New(fiberErr.Code, "BAD_REQUEST", "The request could not be processed"))

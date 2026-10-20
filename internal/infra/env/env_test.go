@@ -21,6 +21,8 @@ func valid() *Env {
 		ChatPhotoMaxMB:               4,
 		ChatVideoMaxMB:               25,
 		ChatMediaURLSeconds:          3600,
+		ChatMaxSockets:               1000,
+		ChatMaxSocketsPerUser:        5,
 
 		RequestTimeoutSeconds: 10,
 
@@ -305,9 +307,11 @@ func TestTheErrorReportsAreOffByDefaultAndCapped(t *testing.T) {
 
 func TestChatMediaSettingsNeedAPositiveValueAndABucketOfTheirOwn(t *testing.T) {
 	for name, set := range map[string]func(*Env){
-		"CHAT_PHOTO_MAX_MB":      func(e *Env) { e.ChatPhotoMaxMB = 0 },
-		"CHAT_VIDEO_MAX_MB":      func(e *Env) { e.ChatVideoMaxMB = 0 },
-		"CHAT_MEDIA_URL_SECONDS": func(e *Env) { e.ChatMediaURLSeconds = 0 },
+		"CHAT_PHOTO_MAX_MB":         func(e *Env) { e.ChatPhotoMaxMB = 0 },
+		"CHAT_VIDEO_MAX_MB":         func(e *Env) { e.ChatVideoMaxMB = 0 },
+		"CHAT_MEDIA_URL_SECONDS":    func(e *Env) { e.ChatMediaURLSeconds = 0 },
+		"CHAT_MAX_SOCKETS":          func(e *Env) { e.ChatMaxSockets = 0 },
+		"CHAT_MAX_SOCKETS_PER_USER": func(e *Env) { e.ChatMaxSocketsPerUser = 0 },
 	} {
 		cfg := valid()
 		set(cfg)

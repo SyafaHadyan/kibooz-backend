@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -32,6 +33,7 @@ import (
 	walihandler "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/interface/rest"
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
+	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
@@ -62,6 +64,7 @@ type Bootstrap struct {
 	stopSeason    func()
 	stopKeys      func()
 	stopReports   func()
+	stopLive      func()
 	metrics       *metrics.Listener
 	healthDB      *sql.DB
 }
@@ -163,7 +166,34 @@ func Start(version string) (*Bootstrap, error) {
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
 		classroomrepository.NewClassroomDB(database), storage, cfg,
 	))
-	chathandler.NewChatHandler(app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg), cfg)
+	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
+	hub := chatlive.NewHub(chatlive.Config{
+		MaxSockets: cfg.ChatMaxSockets, MaxPerUser: cfg.ChatMaxSocketsPerUser, Bus: chatlive.NewRedisBus(cache),
+	})
+
+	for _, collector := range hub.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register chat socket metrics: %w", err)
+		}
+	}
+
+	liveCtx, cancelLive := context.WithCancel(context.Background())
+
+	var live sync.WaitGroup
+
+	live.Go(func() { hub.Run(liveCtx) })
+
+	stopLive := func() {
+		// the sockets get a going away frame and the apps connect to another copy, then the subscription ends
+		hub.Shutdown()
+		cancelLive()
+		live.Wait()
+	}
+
+	chathandler.NewChatHandler(
+		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub), hub, cfg,
+	)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
@@ -217,12 +247,13 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, stopLive: stopLive, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
 // Close stops the keepalive, then releases the database and Redis connections
 func (b *Bootstrap) Close() {
+	b.stopLive()
 	b.stopKeepalive()
 	b.stopCleanup()
 	b.stopSeason()
