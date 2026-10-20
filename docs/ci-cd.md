@@ -55,7 +55,7 @@ Without the secret everything still works through the mirror alone. Pull request
 
 Renovate opens the update pull requests, and `renovate.json` holds its rules. It runs on Mondays before 07:00 WIB, proposes a release only after it is 7 days old, and groups minor and patch updates of Go modules (`go-minor-patch`), Actions (`actions`) and the documentation tooling (`docs-tooling`). A major update gets its own pull request. After a Go update it runs `go mod tidy`, because a plain `go get` leaves `tools/go.sum` without the entries that govulncheck needs. The commit type is `chore` for Go modules, `ci` for Actions and the tools of the workflows, and `build` for npm, Dockerfiles and compose files, so none of them starts a release. The bot keeps an issue called Dependency Dashboard with every update it knows about. Security fixes ignore the schedule and the 7 day wait. Renovate learns about them from the Dependabot alerts of the repository, so those alerts stay on.
 
-The Go release is held on purpose. `go.mod` stays on the oldest Go release the code supports, and `go-version` in the workflows names a patch release by hand, see the comment in `ci.yaml`, so `renovate.json` turns off updates of the Go version itself. The Go image in the Dockerfile is still updated.
+The Go release is held on purpose. The `go` line of `go.mod` names the patch release, and the workflows read it with `go-version-file`, so `renovate.json` turns off updates of the Go version itself and a new patch release is raised by hand in one place. Snyk used to fail on a `go` line with a patch newer than 1.27.1, and it reads 1.27.2 now. The Go image in the Dockerfile is still updated.
 
 ## Pinned tools
 
@@ -65,7 +65,7 @@ The bot cannot read a tool that is named inside a `run` step, so the tools of th
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
 - The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
-The Google style release in `.vale.ini` and the Vale image in the commands of this page are read by two more patterns in `renovate.json`, so only `go-version` is still bumped by hand.
+The Google style release in `.vale.ini` and the Vale image in the commands of this page are read by two more patterns in `renovate.json`, so only the `go` line of `go.mod` is still bumped by hand.
 
 ## Required checks
 
