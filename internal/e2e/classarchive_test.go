@@ -191,7 +191,7 @@ func TestAddTeacherRefusesAnArchivedClass(t *testing.T) {
 
 	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?", classID).Error)
 
-	_, err := repository.NewGuruDB(testDB, nil).AddTeacher(context.Background(), uuid.MustParse(classID), other.Email)
+	_, err := repository.NewGuruDB(testDB, nil).AddTeacher(context.Background(), uuid.MustParse(classID), uuid.New(), other.Email)
 	require.ErrorIs(t, err, apperror.ErrClassNotFound)
 
 	var linked int64
@@ -248,4 +248,25 @@ func TestAddingATeacherWhileTheLastTeacherLeavesNeverAttachesToAnArchivedClass(t
 		require.EqualValues(t, 1, active, "round %d, the class went to the teacher who was added", round)
 		require.Equal(t, http.StatusCreated, added.Status, "round %d, body %v", round, added.Body)
 	}
+}
+
+// A teacher who was removed while the request waited for the class lock must not bring anyone in, so the actor is checked
+// again once the lock is held
+func TestAddTeacherRefusesAnActorWhoNoLongerTeachesTheClass(t *testing.T) {
+	owner := registerGuru(t, "Pengundang Keluar")
+	removed := registerGuru(t, "Sudah Dikeluarkan")
+	candidate := registerGuru(t, "Calon Baru")
+	classID, _ := classOf(t, owner)
+
+	var removedGuru string
+
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", removed.Email).Scan(&removedGuru).Error)
+
+	_, err := repository.NewGuruDB(testDB, nil).AddTeacher(context.Background(), uuid.MustParse(classID), uuid.MustParse(removedGuru), candidate.Email)
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	var linked int64
+
+	require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM class_teachers WHERE class_id = ? AND guru_id <> (SELECT g.id FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?)", classID, owner.Email).Scan(&linked).Error)
+	require.Zero(t, linked, "the candidate was not attached")
 }
