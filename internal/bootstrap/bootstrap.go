@@ -14,6 +14,9 @@ import (
 	authhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/interface/rest"
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	authusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
+	chathandler "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/interface/rest"
+	chatrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/repository"
+	chatusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/usecase"
 	classroomhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/interface/rest"
 	classroomrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	classroomusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/usecase"
@@ -143,6 +146,7 @@ func Start(version string) (*Bootstrap, error) {
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
 		classroomrepository.NewClassroomDB(database), storage, cfg,
 	))
+	chathandler.NewChatHandler(app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database)))
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))

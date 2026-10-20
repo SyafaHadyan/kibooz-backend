@@ -29,7 +29,7 @@ func requireRepeatIsReplay(t *testing.T, path string, token string, body map[str
 	return first
 }
 
-// TestEveryOtherCreatingRouteRepeatsSafely covers the routes that TestIdempotencyKey does not, so all ten routes that take an
+// TestEveryOtherCreatingRouteRepeatsSafely covers the routes that TestIdempotencyKey does not, so all eleven routes that take an
 // Idempotency-Key are held to the same rule. Each one is repeated with its own key and has to write once.
 func TestEveryOtherCreatingRouteRepeatsSafely(t *testing.T) {
 	guru := registerGuru(t, "Seruni")

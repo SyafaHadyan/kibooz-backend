@@ -17,6 +17,9 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `guidance_applications` | A parent who applied a piece of emotional guidance to a child, with their notes |
 | `learning_videos` | A video that a teacher added to a class |
 | `forum_posts` | A thread or a reply in the forum of a class |
+| `chat_conversations` | The direct conversation of a teacher and a parent, one for each pair of accounts. The smaller id of the two is always `user_low_id` |
+| `chat_messages` | A message of a conversation. The `id` only grows and is the cursor of the conversation. A deleted message keeps its row with an empty body and `deleted_at` |
+| `chat_reads` | How far each person of a conversation has read, the id of the last message |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `leaderboard_history` | The final standings of a class for a semester that ended |

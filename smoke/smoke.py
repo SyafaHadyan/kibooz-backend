@@ -546,6 +546,59 @@ expect("delete reply", call("DELETE", f"/classes/{cid}/forum/{pid}/replies/{rid}
 expect("teacher deletes thread", call("DELETE", f"/classes/{cid}/forum/{pid}", g1["token"]), 200)
 expect("deleted thread gone", call("GET", f"/classes/{cid}/forum/{pid}/replies", g1["token"]), 404, "FORUM_POST_NOT_FOUND")
 
+# ---------- chat ----------
+# The chat has a teacher and two parents of its own. The requests of g1 and w1 are counted by the limiter of the user, and the
+# checks around here already use most of it.
+gc = register_guru("gc", "Smoke Chat")
+wc1 = register_wali("wc1", gc["code"], "Smoke Chat Child One")
+wc2 = register_wali("wc2", gc["code"], "Smoke Chat Child Two")
+
+
+def contact_named(js, name):
+    return next((c for c in dig(js, "data", "contacts") or [] if c.get("fullName") == name), None)
+
+
+s, js = call("GET", "/chat/contacts", gc["token"])
+wc1_contact = contact_named(js, "Smoke Wali wc1")
+check("teacher sees the parent as a contact", s == 200 and wc1_contact is not None and wc1_contact.get("children") == ["Smoke Chat Child One"]
+      and wc1_contact.get("conversationId") is None and dig(js, "data", "total") == 2, f"{s} {js}")
+s, js = call("GET", "/chat/contacts", wc1["token"])
+gc_contact = contact_named(js, "Smoke Guru gc")
+check("parent sees the teacher as a contact", s == 200 and gc_contact is not None and dig(js, "data", "total") == 1, f"{s} {js}")
+wc1_id, gc_id = (wc1_contact or {}).get("id"), (gc_contact or {}).get("id")
+s, js = call("POST", "/chat/conversations", wc1["token"], {"userId": gc_id})
+conv = dig(js, "data", "id")
+check("parent starts a conversation", s == 201 and conv and dig(js, "data", "lastMessage") is None and dig(js, "data", "canSend") is True, f"{s} {js}")
+s, js = call("POST", "/chat/conversations", gc["token"], {"userId": wc1_id})
+check("the teacher reaches the same conversation", s == 200 and dig(js, "data", "id") == conv, f"{s} {js}")
+expect("two parents cannot talk in private", call("POST", "/chat/conversations", wc2["token"], {"userId": wc1_id}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+expect("a conversation with nobody", call("POST", "/chat/conversations", wc1["token"], {"userId": str(uuid.uuid4())}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+
+chat_key = str(uuid.uuid4())
+s, js, replayed = call_key("POST", f"/chat/conversations/{conv}/messages", wc1["token"], chat_key, {"body": "  Good morning  "})
+first_message = dig(js, "data", "id")
+check("parent sends a message", s == 201 and first_message and dig(js, "data", "body") == "Good morning" and not replayed, f"{s} {js}")
+s, js, replayed = call_key("POST", f"/chat/conversations/{conv}/messages", wc1["token"], chat_key, {"body": "  Good morning  "})
+check("repeating the key replays the message", s == 201 and dig(js, "data", "id") == first_message and replayed, f"{s} {js} {replayed}")
+s, js = call("POST", f"/chat/conversations/{conv}/messages", gc["token"], {"body": "Good morning, how is the child?"})
+reply_message = dig(js, "data", "id")
+check("teacher replies", s == 201 and reply_message and first_message and reply_message > first_message, f"{s} {js}")
+expect("blank message is refused", call("POST", f"/chat/conversations/{conv}/messages", gc["token"], {"body": "   "}), 400, "VALIDATION_ERROR")
+
+s, js = call("GET", "/chat/conversations", wc1["token"])
+check("the conversation is listed with its unread count", s == 200 and dig(js, "data", "total") == 1
+      and dig(js, "data", "conversations", 0, "unreadCount") == 1 and dig(js, "data", "conversations", 0, "lastMessage", "id") == reply_message, f"{s} {js}")
+s, js = call("GET", f"/chat/conversations/{conv}/messages?after=0", wc1["token"])
+check("the messages come in the order they were sent", s == 200 and [m.get("id") for m in dig(js, "data", "messages") or []] == [first_message, reply_message]
+      and dig(js, "data", "hasMore") is False, f"{s} {js}")
+s, js = call("PUT", f"/chat/conversations/{conv}/read", wc1["token"], {"messageId": reply_message})
+check("parent marks the conversation read", s == 200 and dig(js, "data", "lastReadMessageId") == reply_message and dig(js, "data", "unreadCount") == 0, f"{s} {js}")
+expect("a teacher of another class cannot read it", call("GET", f"/chat/conversations/{conv}/messages", g2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
+expect("another parent cannot read it", call("GET", f"/chat/conversations/{conv}/messages", wc2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
+expect("only the sender deletes a message", call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", wc1["token"]), 403, "AUTH_FORBIDDEN")
+s, js = call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", gc["token"])
+check("the sender deletes a message", s == 200 and dig(js, "data", "deleted") is True and dig(js, "data", "body") == "", f"{s} {js}")
+
 # ---------- 0.9.0 teachers, owner, leaving ----------
 tb = f"/guru/classes/{cid}/teachers"
 s, js = call("GET", tb, g1["token"])
