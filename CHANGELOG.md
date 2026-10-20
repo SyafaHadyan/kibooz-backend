@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.14.0...v0.14.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* **monitoring:** leave the health check out of the p95 latency alert and panels ([2648f1e](https://github.com/SyafaHadyan/kibooz-backend/commit/2648f1e6be77c2ea98c2b1791aed27b1ef67d9a9))
+* **monitoring:** leave the health check out of the p95 latency alert and panels ([#249](https://github.com/SyafaHadyan/kibooz-backend/issues/249)) ([d5d7bdf](https://github.com/SyafaHadyan/kibooz-backend/commit/d5d7bdf66745d697fce87902175d753c96943d6b))
+
 ## [0.14.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.13.0...v0.14.0) (2026-10-20)
 
 
