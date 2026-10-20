@@ -114,5 +114,12 @@ func TestPushTokensBelongToOneAccountAtATime(t *testing.T) {
 
 		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM push_tokens AS p JOIN users AS u ON u.id = p.user_id WHERE u.email = ?", parent.Email).Scan(&total).Error)
 		require.EqualValues(t, 0, total)
+
+		// the access token still works until it expires, and it must not bring a token back for a deleted account
+		late := call(t, http.MethodPost, pushBase, parent.Token, map[string]any{"token": strings.Repeat("z", 30)})
+		late.requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_INVALID")
+
+		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM push_tokens AS p JOIN users AS u ON u.id = p.user_id WHERE u.email = ?", parent.Email).Scan(&total).Error)
+		require.EqualValues(t, 0, total)
 	})
 }
