@@ -71,7 +71,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `METRICS_ADDRESS` | empty | Where the Prometheus endpoint listens, such as `:9100`, and empty switches it off. It is a listener of its own that serves only `GET /metrics`, so never publish its port or route it through the proxy, see [operations](docs/operations.md#metrics) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
-| `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the two photo uploads can use. Every other request is limited to 64 KB |
+| `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the three photo uploads (the avatar, the trash photo and the photo of a chat message) can use, and `CHAT_PHOTO_MAX_MB` has to stay below it. Every other request is limited to 64 KB |
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |
 | `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
@@ -90,6 +90,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
+| `S3_PRIVATE_BUCKET_NAME`, `CHAT_PHOTO_MAX_MB`, `CHAT_VIDEO_MAX_MB`, `CHAT_MEDIA_URL_SECONDS` | empty, `4`, `25`, `3600` | The private bucket of the chat photos and videos, which uses the account and keys of `S3_*` and is never public, the largest photo and video, and how long a signed read address works. Chat media is off while the bucket name is empty, and the bucket needs the same lifecycle rule on `pending/` |
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_URL` has to serve the objects publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |

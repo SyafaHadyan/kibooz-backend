@@ -5,6 +5,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -15,6 +19,10 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/imageutil"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -38,7 +46,11 @@ type ChatUseCaseItf interface {
 	ListConversations(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ChatConversationList, error)
 	// ListMessages returns a window of a conversation in the order the messages were sent, see ChatMessageList
 	ListMessages(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, after *int64, before *int64, limit int) (dto.ChatMessageList, error)
-	// SendMessage writes a message while the two still share a class
+	// UploadPhoto checks a photo, strips its metadata and stores it in the private bucket until a message carries it
+	UploadPhoto(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, data []byte) (dto.ChatPhotoUpload, error)
+	// CreateVideoUpload returns a signed address that takes one video straight into the private bucket
+	CreateVideoUpload(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.ChatVideoUploadRequest) (dto.ChatVideoUpload, error)
+	// SendMessage writes a message with text, a photo or video, or both, while the conversation is open
 	SendMessage(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.SendChatMessageRequest) (dto.ChatMessage, error)
 	// DeleteMessage empties a message of the signed in account and leaves a placeholder, deleting it again changes nothing
 	DeleteMessage(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, messageID int64) (dto.ChatMessage, error)
@@ -48,11 +60,14 @@ type ChatUseCaseItf interface {
 
 type ChatUseCase struct {
 	repo repository.ChatDBItf
-	now  func() time.Time
+	// storage is the private bucket of the chat media, and it is disabled when the bucket is not configured
+	storage s3.StorageItf
+	cfg     *env.Env
+	now     func() time.Time
 }
 
-func NewChatUseCase(repo repository.ChatDBItf) ChatUseCaseItf {
-	return &ChatUseCase{repo: repo, now: time.Now}
+func NewChatUseCase(repo repository.ChatDBItf, storage s3.StorageItf, cfg *env.Env) ChatUseCaseItf {
+	return &ChatUseCase{repo: repo, storage: storage, cfg: cfg, now: time.Now}
 }
 
 // timestamp keeps the precision PostgreSQL stores, so the order of two quick messages is stable
@@ -277,7 +292,7 @@ func (u *ChatUseCase) viewOf(ctx context.Context, userID uuid.UUID, conversation
 		return dto.ChatConversation{}, apperror.ErrChatConversationNotFound
 	}
 
-	return conversationResponse(row), nil
+	return u.conversationResponse(ctx, row), nil
 }
 
 func (u *ChatUseCase) ListConversations(
@@ -294,7 +309,7 @@ func (u *ChatUseCase) ListConversations(
 	}
 
 	for i := range rows {
-		res.Conversations = append(res.Conversations, conversationResponse(&rows[i]))
+		res.Conversations = append(res.Conversations, u.conversationResponse(ctx, &rows[i]))
 	}
 
 	return res, nil
@@ -374,10 +389,163 @@ func (u *ChatUseCase) ListMessages(
 
 	res := dto.ChatMessageList{Messages: make([]dto.ChatMessage, 0, len(messages)), HasMore: more}
 	for i := range messages {
-		res.Messages = append(res.Messages, messageResponse(&messages[i]))
+		res.Messages = append(res.Messages, u.messageResponse(ctx, &messages[i]))
 	}
 
 	return res, nil
+}
+
+// photoTypes and videoTypes map each accepted type to the extension of its object key
+var (
+	photoTypes = map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+	videoTypes = map[string]string{"video/mp4": ".mp4", "video/webm": ".webm"}
+)
+
+const (
+	bytesPerMB = 1024 * 1024
+
+	// pendingPrefix holds the files that were uploaded and not sent in a message yet, and the bucket expires it after a day
+	pendingPrefix = "pending/"
+	// mediaDirectory holds the files of sent messages, and it is also how the cleanup job knows a key belongs to the private bucket
+	mediaDirectory = filecleanup.PrivatePrefix
+)
+
+// pendingKeyPrefix is where the uploads of one account for one conversation wait. The key of a message has to start with it, so
+// a key of another conversation or of another account is refused before the bucket is asked about it.
+func pendingKeyPrefix(conversationID uuid.UUID, userID uuid.UUID) string {
+	return pendingPrefix + mediaDirectory + conversationID.String() + "/" + userID.String() + "/"
+}
+
+// openForUpload checks that the account is in the conversation, that the conversation still takes messages and that the
+// private bucket is there, so a file is never stored for a conversation that cannot use it
+func (u *ChatUseCase) openForUpload(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) error {
+	_, err := u.member(ctx, userID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	if !u.storage.Enabled() {
+		return apperror.ErrStorageDisabled
+	}
+
+	view, err := u.viewOf(ctx, userID, conversationID)
+	if err != nil {
+		return err
+	}
+
+	if !view.CanSend {
+		return apperror.ErrChatSendingClosed
+	}
+
+	return nil
+}
+
+func (u *ChatUseCase) UploadPhoto(
+	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, data []byte,
+) (dto.ChatPhotoUpload, error) {
+	err := u.openForUpload(ctx, userID, conversationID)
+	if err != nil {
+		return dto.ChatPhotoUpload{}, err
+	}
+
+	image, err := imageutil.Inspect(data, u.cfg.ChatPhotoMaxMB*bytesPerMB)
+	if err != nil {
+		return dto.ChatPhotoUpload{}, err
+	}
+
+	key := pendingKeyPrefix(conversationID, userID) + uuid.NewString() + image.Extension
+
+	_, err = u.storage.Upload(ctx, key, image.ContentType, image.Data)
+	if err != nil {
+		return dto.ChatPhotoUpload{}, err
+	}
+
+	return dto.ChatPhotoUpload{MediaKey: key, Kind: "photo", ContentType: image.ContentType, SizeBytes: int64(len(image.Data))}, nil
+}
+
+func (u *ChatUseCase) CreateVideoUpload(
+	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.ChatVideoUploadRequest,
+) (dto.ChatVideoUpload, error) {
+	err := u.openForUpload(ctx, userID, conversationID)
+	if err != nil {
+		return dto.ChatVideoUpload{}, err
+	}
+
+	maxBytes := int64(u.cfg.ChatVideoMaxMB) * bytesPerMB
+	if req.SizeBytes > maxBytes {
+		return dto.ChatVideoUpload{}, apperror.Validation(map[string]string{
+			"sizeBytes": fmt.Sprintf("must be at most %d bytes", maxBytes),
+		})
+	}
+
+	key := pendingKeyPrefix(conversationID, userID) + uuid.NewString() + videoTypes[req.ContentType]
+	ttl := time.Duration(u.cfg.VideoUploadURLSeconds) * time.Second
+
+	uploadURL, err := u.storage.PresignUpload(ctx, key, req.ContentType, req.SizeBytes, ttl)
+	if err != nil {
+		return dto.ChatVideoUpload{}, err
+	}
+
+	return dto.ChatVideoUpload{
+		UploadURL: uploadURL,
+		Method:    http.MethodPut,
+		Headers:   map[string]string{"Content-Type": req.ContentType},
+		MediaKey:  key,
+		ExpiresAt: u.now().Add(ttl).UTC(),
+	}, nil
+}
+
+// stagedMedia is a finished upload that a message is about to carry
+type stagedMedia struct {
+	pendingKey string
+	finalKey   string
+	kind       string
+	object     *s3.Object
+}
+
+// stage makes sure the key is a finished upload of this account for this conversation, that its type and size are accepted, and
+// copies it to the permanent key. The caller removes the copy when the message cannot be stored.
+func (u *ChatUseCase) stage(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, mediaKey string) (*stagedMedia, error) {
+	// the name after the prefix is the one that an upload returned, so it has no path in it
+	name, ours := strings.CutPrefix(mediaKey, pendingKeyPrefix(conversationID, userID))
+	if !ours || name == "" || strings.Contains(name, "/") {
+		return nil, apperror.Validation(map[string]string{"mediaKey": "is not an upload of yours for this conversation"})
+	}
+
+	if !u.storage.Enabled() {
+		return nil, apperror.ErrStorageDisabled
+	}
+
+	object, err := u.storage.Stat(ctx, mediaKey)
+	if err != nil {
+		return nil, err
+	}
+
+	if object == nil {
+		return nil, apperror.Validation(map[string]string{"mediaKey": "has no uploaded file yet"})
+	}
+
+	kind, limit := "", int64(0)
+
+	switch {
+	case photoTypes[object.ContentType] != "":
+		kind, limit = "photo", int64(u.cfg.ChatPhotoMaxMB)*bytesPerMB
+	case videoTypes[object.ContentType] != "":
+		kind, limit = "video", int64(u.cfg.ChatVideoMaxMB)*bytesPerMB
+	}
+
+	if kind == "" || object.Size < 1 || object.Size > limit {
+		return nil, apperror.Validation(map[string]string{"mediaKey": "is not an accepted photo or video"})
+	}
+
+	finalKey := mediaDirectory + conversationID.String() + "/" + uuid.NewString() + path.Ext(mediaKey)
+
+	err = u.storage.Copy(ctx, mediaKey, finalKey, object.ContentType)
+	if err != nil {
+		return nil, err
+	}
+
+	return &stagedMedia{pendingKey: mediaKey, finalKey: finalKey, kind: kind, object: object}, nil
 }
 
 func (u *ChatUseCase) SendMessage(
@@ -388,12 +556,12 @@ func (u *ChatUseCase) SendMessage(
 		return dto.ChatMessage{}, err
 	}
 
-	body := strings.TrimSpace(req.Body)
-	if body == "" {
-		return dto.ChatMessage{}, apperror.Validation(map[string]string{"body": "is required"})
+	body, mediaKey := strings.TrimSpace(req.Body), strings.TrimSpace(req.MediaKey)
+	if body == "" && mediaKey == "" {
+		return dto.ChatMessage{}, apperror.Validation(map[string]string{"body": "is required when no mediaKey is sent"})
 	}
 
-	// reading is always open to the two people, writing needs a class they still share and an account that is still there
+	// reading is always open to the people of a conversation, writing needs it to be open and the account to be there
 	view, err := u.viewOf(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatMessage{}, err
@@ -405,13 +573,34 @@ func (u *ChatUseCase) SendMessage(
 
 	message := entity.ChatMessage{ConversationID: conversationID, SenderID: userID, Body: body, CreatedAt: u.timestamp()}
 
-	err = u.repo.CreateMessage(ctx, &message)
-	if errors.Is(err, repository.ErrConversationGone) {
-		return dto.ChatMessage{}, apperror.ErrChatConversationNotFound
+	var staged *stagedMedia
+
+	if mediaKey != "" {
+		staged, err = u.stage(ctx, userID, conversationID, mediaKey)
+		if err != nil {
+			return dto.ChatMessage{}, err
+		}
+
+		message.MediaKey, message.MediaKind = &staged.finalKey, &staged.kind
+		message.MediaType, message.MediaSize = &staged.object.ContentType, &staged.object.Size
 	}
 
+	err = u.repo.CreateMessage(ctx, &message)
 	if err != nil {
+		if staged != nil {
+			s3.Discard(ctx, u.storage, staged.finalKey)
+		}
+
+		if errors.Is(err, repository.ErrConversationGone) {
+			return dto.ChatMessage{}, apperror.ErrChatConversationNotFound
+		}
+
 		return dto.ChatMessage{}, apperror.Internal(err)
+	}
+
+	if staged != nil {
+		// the staged file is no longer needed, and the lifecycle rule of the bucket removes it within a day if this fails
+		s3.Discard(ctx, u.storage, staged.pendingKey)
 	}
 
 	// the stored message is read again so that it carries the person who wrote it, in the shape every other answer has
@@ -424,7 +613,7 @@ func (u *ChatUseCase) SendMessage(
 		return dto.ChatMessage{}, apperror.ErrChatMessageNotFound
 	}
 
-	return messageResponse(stored), nil
+	return u.messageResponse(ctx, stored), nil
 }
 
 func (u *ChatUseCase) DeleteMessage(
@@ -464,7 +653,7 @@ func (u *ChatUseCase) DeleteMessage(
 		return dto.ChatMessage{}, apperror.ErrChatMessageNotFound
 	}
 
-	return messageResponse(message), nil
+	return u.messageResponse(ctx, message), nil
 }
 
 func (u *ChatUseCase) MarkRead(
@@ -495,19 +684,44 @@ func personOf(id uuid.UUID, name string, role constants.Role, avatar *string, de
 	return person
 }
 
-func messageResponse(message *repository.MessageRow) dto.ChatMessage {
+// mediaOf turns the media columns of a message into the photo or video with a signed read address, and nil for a message without
+// one. A file whose address cannot be signed is still reported, with an empty address, so one failure does not hide the others.
+func (u *ChatUseCase) mediaOf(ctx context.Context, key *string, kind *string, contentType *string, size *int64) *dto.ChatMedia {
+	if key == nil || kind == nil || contentType == nil || size == nil {
+		return nil
+	}
+
+	ttl := time.Duration(u.cfg.ChatMediaURLSeconds) * time.Second
+	media := &dto.ChatMedia{Kind: *kind, ContentType: *contentType, SizeBytes: *size, ExpiresAt: u.now().Add(ttl).UTC()}
+
+	address, err := u.storage.PresignRead(ctx, *key, ttl)
+	if err != nil {
+		log.Printf("signing the read address of chat media failed %v", err)
+
+		media.ExpiresAt = u.now().UTC()
+
+		return media
+	}
+
+	media.URL = address
+
+	return media
+}
+
+func (u *ChatUseCase) messageResponse(ctx context.Context, message *repository.MessageRow) dto.ChatMessage {
 	return dto.ChatMessage{
 		ID:             message.ID,
 		ConversationID: message.ConversationID,
 		SenderID:       message.SenderID,
 		Sender:         personOf(message.SenderID, message.SenderName, message.SenderRole, message.SenderAvatarURL, message.SenderDeleted),
 		Body:           message.Body,
+		Media:          u.mediaOf(ctx, message.MediaKey, message.MediaKind, message.MediaType, message.MediaSize),
 		Deleted:        message.DeletedAt != nil,
 		CreatedAt:      message.CreatedAt.UTC(),
 	}
 }
 
-func conversationResponse(row *repository.ConversationRow) dto.ChatConversation {
+func (u *ChatUseCase) conversationResponse(ctx context.Context, row *repository.ConversationRow) dto.ChatConversation {
 	res := dto.ChatConversation{
 		ID:             row.ID,
 		Kind:           row.Kind,
@@ -536,6 +750,7 @@ func conversationResponse(row *repository.ConversationRow) dto.ChatConversation 
 				*row.LastSenderID, *row.LastSenderName, *row.LastSenderRole, row.LastSenderAvatarURL, *row.LastSenderDeleted,
 			),
 			Body:      *row.LastBody,
+			Media:     u.mediaOf(ctx, row.LastMediaKey, row.LastMediaKind, row.LastMediaType, row.LastMediaSize),
 			Deleted:   *row.LastDeleted,
 			CreatedAt: row.LastCreatedAt.UTC(),
 		}

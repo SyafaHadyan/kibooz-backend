@@ -42,6 +42,8 @@ type StorageItf interface {
 	// Copy duplicates an object under another key inside the bucket, so the data never passes through this API,
 	// and stores the copy with the content type
 	Copy(ctx context.Context, sourceKey string, objectKey string, contentType string) error
+	// PresignRead returns a URL that reads the object until the ttl passes, for a bucket that is not public
+	PresignRead(ctx context.Context, objectKey string, ttl time.Duration) (string, error)
 }
 
 // Object describes a stored object
@@ -74,10 +76,11 @@ func TryDiscard(ctx context.Context, storage StorageItf, objectKey string) error
 }
 
 type Storage struct {
-	client    *awss3.Client
-	presigner *awss3.PresignClient
-	bucket    string
-	publicURL string
+	client       *awss3.Client
+	presigner    *awss3.PresignClient
+	bucket       string
+	publicURL    string
+	cacheControl string
 }
 
 // New returns a working storage when configured, otherwise a disabled one so local development needs no bucket
@@ -86,6 +89,20 @@ func New(cfg *env.Env) (StorageItf, error) {
 		return Disabled{}, nil
 	}
 
+	return open(cfg, cfg.S3BucketName, strings.TrimRight(cfg.S3PublicURL, "/"), "public, max-age=31536000, immutable")
+}
+
+// NewPrivate returns the storage of the private bucket of the chat media, which has no public address and is read through
+// signed addresses. It is disabled when the bucket is not configured.
+func NewPrivate(cfg *env.Env) (StorageItf, error) {
+	if !cfg.PrivateStorageEnabled() {
+		return Disabled{}, nil
+	}
+
+	return open(cfg, cfg.S3PrivateBucketName, "", "private, max-age=31536000, immutable")
+}
+
+func open(cfg *env.Env, bucket string, publicURL string, cacheControl string) (StorageItf, error) {
 	awsCfg, err := awsconfig.LoadDefaultConfig(
 		context.Background(),
 		// the deadline of a request normally ends a call sooner, this one bounds the calls that do not have one
@@ -113,10 +130,11 @@ func New(cfg *env.Env) (StorageItf, error) {
 	})
 
 	return &Storage{
-		client:    client,
-		presigner: awss3.NewPresignClient(client),
-		bucket:    cfg.S3BucketName,
-		publicURL: strings.TrimRight(cfg.S3PublicURL, "/"),
+		client:       client,
+		presigner:    awss3.NewPresignClient(client),
+		bucket:       bucket,
+		publicURL:    publicURL,
+		cacheControl: cacheControl,
 	}, nil
 }
 
@@ -140,6 +158,11 @@ func (s *Storage) Upload(ctx context.Context, objectKey string, contentType stri
 }
 
 func (s *Storage) PublicURL(objectKey string) string {
+	// a private bucket has no public address, and a file there is only reached through PresignRead
+	if s.publicURL == "" {
+		return ""
+	}
+
 	return s.publicURL + "/" + objectKey
 }
 
@@ -152,6 +175,18 @@ func (s *Storage) PresignUpload(
 		Key:           aws.String(objectKey),
 		ContentType:   aws.String(contentType),
 		ContentLength: aws.Int64(size),
+	}, awss3.WithPresignExpires(ttl))
+	if err != nil {
+		return "", apperror.ErrStorageFailed.WithErr(err)
+	}
+
+	return req.URL, nil
+}
+
+func (s *Storage) PresignRead(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
+	req, err := s.presigner.PresignGetObject(ctx, &awss3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(objectKey),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", apperror.ErrStorageFailed.WithErr(err)
@@ -190,7 +225,7 @@ func (s *Storage) Copy(ctx context.Context, sourceKey string, objectKey string, 
 		// the copy is described again because the staged file was uploaded without cache headers
 		MetadataDirective: types.MetadataDirectiveReplace,
 		ContentType:       aws.String(contentType),
-		CacheControl:      aws.String("public, max-age=31536000, immutable"),
+		CacheControl:      aws.String(s.cacheControl),
 	})
 	if err != nil {
 		return apperror.ErrStorageFailed.WithErr(err)
@@ -200,6 +235,10 @@ func (s *Storage) Copy(ctx context.Context, sourceKey string, objectKey string, 
 }
 
 func (s *Storage) KeyFromURL(rawURL string) (string, bool) {
+	if s.publicURL == "" {
+		return "", false
+	}
+
 	key, found := strings.CutPrefix(rawURL, s.publicURL+"/")
 	if !found || key == "" {
 		return "", false
@@ -240,6 +279,10 @@ func (Disabled) PublicURL(string) string {
 }
 
 func (Disabled) PresignUpload(context.Context, string, string, int64, time.Duration) (string, error) {
+	return "", apperror.ErrStorageDisabled
+}
+
+func (Disabled) PresignRead(context.Context, string, time.Duration) (string, error) {
 	return "", apperror.ErrStorageDisabled
 }
 

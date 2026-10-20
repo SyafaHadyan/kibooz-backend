@@ -13,6 +13,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 )
 
 // ErrConversationGone is returned when a message is stored in a conversation that no longer exists
@@ -64,6 +65,10 @@ type MessageRow struct {
 	Body            string
 	CreatedAt       time.Time
 	DeletedAt       *time.Time
+	MediaKey        *string
+	MediaKind       *string
+	MediaType       *string
+	MediaSize       *int64
 	SenderName      string
 	SenderRole      constants.Role
 	SenderAvatarURL *string
@@ -93,6 +98,10 @@ type ConversationRow struct {
 	LastBody              *string
 	LastDeleted           *bool
 	LastCreatedAt         *time.Time
+	LastMediaKey          *string
+	LastMediaKind         *string
+	LastMediaType         *string
+	LastMediaSize         *int64
 	UnreadCount           int
 	PeerLastReadMessageID int64
 	CanSend               bool
@@ -134,6 +143,7 @@ const conversationColumns = `c.id, c.kind, c.created_at,
 	m.id AS last_id, m.sender_id AS last_sender_id, ls.full_name AS last_sender_name, ls.role AS last_sender_role,
 	ls.avatar_url AS last_sender_avatar_url, (ls.deleted_at IS NOT NULL) AS last_sender_deleted,
 	m.body AS last_body, (m.deleted_at IS NOT NULL) AS last_deleted, m.created_at AS last_created_at,
+	m.media_key AS last_media_key, m.media_kind AS last_media_kind, m.media_type AS last_media_type, m.media_size AS last_media_size,
 	(SELECT COUNT(*) FROM chat_messages AS x
 		WHERE x.conversation_id = c.id AND x.sender_id <> @user AND x.deleted_at IS NULL
 		AND x.id > COALESCE(mine.last_read_message_id, 0) AND x.created_at >= ` + visibleSince + `) AS unread_count,
@@ -177,7 +187,8 @@ type ChatDBItf interface {
 	// FindMessage returns nil when the conversation has no such message sent at or after since, so an account never learns from
 	// the answer that an older message exists. A zero since shows everything.
 	FindMessage(ctx context.Context, conversationID uuid.UUID, messageID int64, since time.Time) (*MessageRow, error)
-	// DeleteMessage empties a message of its sender and keeps the time of the first deletion
+	// DeleteMessage empties a message of its sender, clears its media and queues the file for removal, and keeps the time of the
+	// first deletion
 	DeleteMessage(ctx context.Context, conversationID uuid.UUID, messageID int64, senderID uuid.UUID, now time.Time) error
 	// MarkRead moves the read mark of the account forward to the message, never back and never past the newest message it can see,
 	// and returns the mark and the number of unread messages from other people. A zero since shows everything.
@@ -442,6 +453,7 @@ func (r *ChatDB) ListConversations(ctx context.Context, userID uuid.UUID, limit 
 
 // messageColumns selects a message with the account that wrote it
 const messageColumns = `m.id, m.conversation_id, m.sender_id, m.body, m.created_at, m.deleted_at,
+	m.media_key, m.media_kind, m.media_type, m.media_size,
 	u.full_name AS sender_name, u.role AS sender_role, u.avatar_url AS sender_avatar_url, (u.deleted_at IS NOT NULL) AS sender_deleted`
 
 func (r *ChatDB) ListMessages(
@@ -522,10 +534,30 @@ func (r *ChatDB) FindMessage(ctx context.Context, conversationID uuid.UUID, mess
 func (r *ChatDB) DeleteMessage(
 	ctx context.Context, conversationID uuid.UUID, messageID int64, senderID uuid.UUID, now time.Time,
 ) error {
-	return r.db.WithContext(ctx).Exec(
-		"UPDATE chat_messages SET body = '', deleted_at = COALESCE(deleted_at, ?) WHERE conversation_id = ? AND id = ? AND sender_id = ?",
-		now, conversationID, messageID, senderID,
-	).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the file of the message is queued in the same transaction that drops its key, so a crash cannot lose it
+		var keys []string
+
+		err := tx.Raw(
+			`SELECT media_key FROM chat_messages
+			WHERE conversation_id = ? AND id = ? AND sender_id = ? AND media_key IS NOT NULL FOR UPDATE`,
+			conversationID, messageID, senderID,
+		).Scan(&keys).Error
+		if err != nil {
+			return err
+		}
+
+		err = tx.Exec(
+			`UPDATE chat_messages SET body = '', media_key = NULL, media_kind = NULL, media_type = NULL, media_size = NULL,
+				deleted_at = COALESCE(deleted_at, ?) WHERE conversation_id = ? AND id = ? AND sender_id = ?`,
+			now, conversationID, messageID, senderID,
+		).Error
+		if err != nil {
+			return err
+		}
+
+		return filecleanup.Queue(tx, keys)
+	})
 }
 
 func (r *ChatDB) MarkRead(

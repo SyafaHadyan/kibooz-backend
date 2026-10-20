@@ -101,6 +101,15 @@ func Start(version string) (*Bootstrap, error) {
 		log.Println("object storage is not configured, uploads are disabled")
 	}
 
+	privateStorage, err := s3.NewPrivate(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if !privateStorage.Enabled() {
+		log.Println("the private bucket is not configured, chat photos and videos are disabled")
+	}
+
 	jwtService := jwt.New(cfg)
 	// the metrics middleware runs inside the access log and ahead of every check and route, so each request is measured,
 	// the ones that the body checks refuse too, and a refusal is counted by its route
@@ -117,9 +126,15 @@ func Start(version string) (*Bootstrap, error) {
 	)
 	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey), keys.Handler())
 
+	// every bucket that is on is probed, so a private bucket that refuses writes shows in /healthz as well
 	var pingStorage pinger
 	if storage.Enabled() {
-		pingStorage = newStorageProbe(storage).Ping
+		probed := []s3.StorageItf{storage}
+		if privateStorage.Enabled() {
+			probed = append(probed, privateStorage)
+		}
+
+		pingStorage = newStorageProbe(probed...).Ping
 	}
 
 	// a connection of its own, so the health check does not queue behind the requests that use the pool
@@ -148,7 +163,7 @@ func Start(version string) (*Bootstrap, error) {
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
 		classroomrepository.NewClassroomDB(database), storage, cfg,
 	))
-	chathandler.NewChatHandler(app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database)))
+	chathandler.NewChatHandler(app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg), cfg)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
@@ -189,7 +204,8 @@ func Start(version string) (*Bootstrap, error) {
 
 	stopCleanup := func() {}
 	if storage.Enabled() {
-		stopCleanup = filecleanup.New(database, storage).Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
+		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
+			Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
 	}
 
 	// the reports start last, so that a failure while the API starts is only logged, and they stop last, so that the errors of the

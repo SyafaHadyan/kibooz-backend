@@ -15,20 +15,21 @@ const (
 	storageProbeTTL = time.Minute
 )
 
-// storageProbe checks that the bucket accepts a write, which configured settings alone do not prove. It stores a tiny
-// object and deletes it, and reuses the answer for storageProbeTTL so only one request in that time pays for the round trip.
+// storageProbe checks that every bucket accepts a write, which configured settings alone do not prove. It stores a tiny
+// object in each and deletes it, and reuses the answer for storageProbeTTL so only one request in that time pays for the round trip.
 type storageProbe struct {
-	storage s3.StorageItf
-	ttl     time.Duration
-	now     func() time.Time
+	storages []s3.StorageItf
+	ttl      time.Duration
+	now      func() time.Time
 
 	mu      sync.Mutex
 	checked time.Time
 	result  error
 }
 
-func newStorageProbe(storage s3.StorageItf) *storageProbe {
-	return &storageProbe{storage: storage, ttl: storageProbeTTL, now: time.Now}
+// newStorageProbe probes each of the buckets it is given, so the caller leaves out the ones that are not configured
+func newStorageProbe(storages ...s3.StorageItf) *storageProbe {
+	return &storageProbe{storages: storages, ttl: storageProbeTTL, now: time.Now}
 }
 
 // Ping returns the cached outcome of the last probe, or runs a new one when it is older than the ttl
@@ -40,9 +41,17 @@ func (p *storageProbe) Ping(ctx context.Context) error {
 		return p.result
 	}
 
-	_, err := p.storage.Upload(ctx, storageProbeKey, "text/plain", []byte("ok"))
-	if err == nil {
-		err = p.storage.Delete(ctx, storageProbeKey)
+	var err error
+
+	for _, storage := range p.storages {
+		_, err = storage.Upload(ctx, storageProbeKey, "text/plain", []byte("ok"))
+		if err == nil {
+			err = storage.Delete(ctx, storageProbeKey)
+		}
+
+		if err != nil {
+			break
+		}
 	}
 
 	// a caller that gave up says nothing about the bucket, so its error must not be reused for the next minute
