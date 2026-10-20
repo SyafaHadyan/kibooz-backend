@@ -39,6 +39,7 @@ type fakeRepo struct {
 	// listedSince and markedSince record the join time that the use case passed down
 	listedSince time.Time
 	markedSince time.Time
+	foundSince  time.Time
 }
 
 func (f *fakeRepo) FindAccount(context.Context, uuid.UUID) (*repository.AccountRow, error) {
@@ -134,8 +135,15 @@ func (f *fakeRepo) CreateMessage(_ context.Context, message *entity.ChatMessage)
 	return nil
 }
 
-func (f *fakeRepo) FindMessage(_ context.Context, conversationID uuid.UUID, id int64) (*repository.MessageRow, error) {
+func (f *fakeRepo) FindMessage(_ context.Context, conversationID uuid.UUID, id int64, since time.Time) (*repository.MessageRow, error) {
+	f.foundSince = since
+
 	if message, found := f.messages[id]; found {
+		// a message from before the join time is out of sight, as it is in the real query
+		if message.CreatedAt.Before(since) {
+			return nil, nil
+		}
+
 		return message, nil
 	}
 
@@ -613,4 +621,31 @@ func TestARoomIsNotFoundForAnAccountThatLeftTheClass(t *testing.T) {
 
 	_, err = useCase.MarkRead(ctx, uuid.New(), room.ID, dto.MarkChatReadRequest{MessageID: 1})
 	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+}
+
+func TestAMessageFromBeforeAMemberJoinedTheRoomIsNotFoundForDeleting(t *testing.T) {
+	classID, other, me := uuid.New(), uuid.New(), uuid.New()
+	joined := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: joined}},
+		messages: map[int64]*repository.MessageRow{
+			1: {ID: 1, ConversationID: room.ID, SenderID: other, Body: "before", CreatedAt: joined.Add(-time.Hour)},
+			2: {ID: 2, ConversationID: room.ID, SenderID: other, Body: "after", CreatedAt: joined.Add(time.Hour)},
+		},
+	}
+	useCase := newUseCase(repo)
+
+	// an older message and one that does not exist look the same, so the answer does not say that older messages exist
+	_, err := useCase.DeleteMessage(context.Background(), me, room.ID, 1)
+	requireAppError(t, err, apperror.ErrChatMessageNotFound)
+
+	_, err = useCase.DeleteMessage(context.Background(), me, room.ID, 99)
+	requireAppError(t, err, apperror.ErrChatMessageNotFound)
+
+	// a message that the member can see belongs to somebody else, which is the answer for any message of another sender
+	_, err = useCase.DeleteMessage(context.Background(), me, room.ID, 2)
+	requireAppError(t, err, apperror.ErrForbidden)
+	require.Equal(t, joined, repo.foundSince)
 }
