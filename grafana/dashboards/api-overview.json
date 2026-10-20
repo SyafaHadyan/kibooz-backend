@@ -262,7 +262,7 @@
     {
       "type": "stat",
       "title": "p95 latency",
-      "description": "",
+      "description": "Requests other than the health check",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -306,7 +306,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\", route!=\"/healthz\"}[$__rate_interval])))",
           "interval": "1m"
         }
       ],
@@ -478,7 +478,7 @@
     {
       "type": "timeseries",
       "title": "Latency percentiles",
-      "description": "",
+      "description": "Requests other than the health check, whose storage write probe is slow on purpose",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -515,7 +515,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\", route!=\"/healthz\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p50"
         },
@@ -525,7 +525,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\", route!=\"/healthz\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p95"
         },
@@ -535,7 +535,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(kibooz_http_request_duration_seconds_bucket{host=~\"$host\", instance=~\"$instance\", route!=\"/healthz\"}[$__rate_interval])))",
           "interval": "1m",
           "legendFormat": "p99"
         }
