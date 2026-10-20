@@ -49,6 +49,7 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 | `SEMESTER_START_MONTHS` | On the first day of each listed month the leaderboard of every class resets and the final standings are saved |
 | `TRUST_PROXY`, `PROXY_HEADER` | Only the access log reads the client address, no limit does. Set them when a proxy sits in front, or every request is logged with the proxy address |
 | `IDEMPOTENCY_TTL_HOURS` | How long a retried request gets the first answer again. Lowering it shortens the window in which an offline app can retry safely |
+| `SENTRY_DSN`, `SENTRY_EVENTS_PER_MINUTE` | Error reports leave only when the DSN is set. The cap is the most reports in a minute, and the log says `error reports are being dropped by the cap` when a storm passes it. A DSN that cannot be read is logged and leaves the reports off, it never stops the API. A compose file that lists its settings one by one needs these lines too |
 | `S3_*` | Uploads stay off until all of them are set. The bucket needs a lifecycle rule that expires `pending/` after one day and never `videos/` |
 
 ## Background work
@@ -143,4 +144,4 @@ A volume from an older PostgreSQL major version does not start on PostgreSQL 18,
 
 ## Secrets
 
-The `.env` file holds the database and Redis passwords, the JWT key and the bucket keys. Keep it out of version control and readable only by the user that runs Docker. To rotate a secret, change it in `.env` and run `docker compose up -d`. Rotating `JWT_SECRET_KEY` makes the access tokens that are out stop working until their apps refresh, and rotating a database password also needs the same change inside PostgreSQL.
+The `.env` file holds the database and Redis passwords, the JWT key, the bucket keys and the Sentry DSN. Keep it out of version control and readable only by the user that runs Docker. To rotate a secret, change it in `.env` and run `docker compose up -d`. Rotating `JWT_SECRET_KEY` makes the access tokens that are out stop working until their apps refresh, and rotating a database password also needs the same change inside PostgreSQL.

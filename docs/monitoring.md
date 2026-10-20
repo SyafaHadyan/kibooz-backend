@@ -48,6 +48,12 @@ The dashboards pick their data sources with two variables at the top (`Metrics` 
 
 Alloy keeps a small write-ahead log in the `kibooz-alloy` volume, so a short outage of the network does not lose samples.
 
+## Errors in Sentry
+
+Grafana says that the API is unhealthy, and Sentry says what broke. The API sends a failure of the server, a 5xx or a panic, to Sentry when `SENTRY_DSN` is set. The report holds the error text, the stack, the route pattern, the request id and the id of the account, and the request id is how a report is matched to its line in the logs. A 4xx is part of the API and a 503 means that something such as the storage is not set up, so neither is sent. See [ADR 0006](adr/0006-sentry-error-reports.md) for what is sent and what never is.
+
+To set it up, create a project for the Go platform with error monitoring only, copy its DSN from the client keys of the project into `SENTRY_DSN` of the `.env` of the server, and restart the API. Then turn on the data scrubber with its default scrubbers and the setting that prevents storing IP addresses in the security and privacy settings of the organization, and turn on spike protection. The limit for each client key is a feature of the Business plan, so the cap of the code, `SENTRY_EVENTS_PER_MINUTE`, is what keeps a crash loop from using the 5000 errors a month of the free plan. A host that runs more than one stack keeps one project and gives each stack its own `SENTRY_ENVIRONMENT`.
+
 ## Keep it inside the free plan
 
 The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs a month. The API has a few thousand series for each copy, mostly the buckets of the latency histogram for each route, so a new route adds about 15 series for each method and copy. The logs are the larger cost, because every request is one line. A health check that answers `200` is written below the default level and is not logged. If the logs come close to the limit, stop collecting the Redis container first, by giving it no `kibooz.role` label, or raise the level of the access log.
