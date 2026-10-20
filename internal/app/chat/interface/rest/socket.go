@@ -34,6 +34,8 @@ const (
 	// frameBurst and frameRate are the budget of one socket, so a client cannot turn typing frames into a flood of queries
 	frameBurst = 10
 	frameRate  = 5.0
+	// typingTimeout bounds the database work of one typing frame
+	typingTimeout = 5 * time.Second
 	// maxTypingConversations bounds what the socket remembers about its typing frames
 	maxTypingConversations = 50
 
@@ -229,7 +231,12 @@ func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *ch
 
 		lastTyped[frame.ConversationID] = now
 
-		err = h.useCase.Typing(ctx, client.UserID, frame.ConversationID, frame.Typing)
+		// the reader does not read the socket while a query waits, so a query that stalls must end before the read deadline does
+		typingCtx, cancelTyping := context.WithTimeout(ctx, typingTimeout)
+		err = h.useCase.Typing(typingCtx, client.UserID, frame.ConversationID, frame.Typing)
+
+		cancelTyping()
+
 		if err != nil && !isRefusal(err) {
 			log.Printf("a typing frame failed %v", err)
 		}
