@@ -40,30 +40,37 @@ type ChatContactList struct {
 	PageInfo
 }
 
+// StartChatRequest names the person to talk to, or the class whose room to open. Exactly one of the two is set.
 type StartChatRequest struct {
-	UserID uuid.UUID `json:"userId" validate:"required"`
+	UserID  *uuid.UUID `json:"userId"`
+	ClassID *uuid.UUID `json:"classId"`
 }
 
-// ChatMessage is a message of a conversation. A deleted message has an empty body and Deleted set.
+// ChatMessage is a message of a conversation. A deleted message has an empty body and Deleted set. Sender is the person who
+// wrote it, which is how a class room shows who spoke, and a deleted account shows as Deleted account.
 type ChatMessage struct {
-	ID             int64     `json:"id"`
-	ConversationID uuid.UUID `json:"conversationId"`
-	SenderID       uuid.UUID `json:"senderId"`
-	Body           string    `json:"body"`
-	Deleted        bool      `json:"deleted"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             int64      `json:"id"`
+	ConversationID uuid.UUID  `json:"conversationId"`
+	SenderID       uuid.UUID  `json:"senderId"`
+	Sender         ChatPerson `json:"sender"`
+	Body           string     `json:"body"`
+	Deleted        bool       `json:"deleted"`
+	CreatedAt      time.Time  `json:"createdAt"`
 }
 
-// ChatConversation is a conversation as the signed in account sees it. CanSend is false when the two no longer share a class
-// or the other account was deleted, and the history stays readable.
+// ChatConversation is a conversation as the signed in account sees it. Kind is direct, with Peer set, or class, with Class set.
+// CanSend is false when a direct pair no longer shares a class, the other account was deleted or the class is archived, and the
+// history stays readable. PeerLastReadID is 0 for a class room, which has no single other side.
 type ChatConversation struct {
-	ID             uuid.UUID    `json:"id"`
-	Peer           ChatPerson   `json:"peer"`
-	LastMessage    *ChatMessage `json:"lastMessage"`
-	UnreadCount    int          `json:"unreadCount"`
-	PeerLastReadID int64        `json:"peerLastReadMessageId"`
-	CanSend        bool         `json:"canSend"`
-	CreatedAt      time.Time    `json:"createdAt"`
+	ID             uuid.UUID         `json:"id"`
+	Kind           string            `json:"kind"`
+	Peer           *ChatPerson       `json:"peer"`
+	Class          *ChatContactClass `json:"class"`
+	LastMessage    *ChatMessage      `json:"lastMessage"`
+	UnreadCount    int               `json:"unreadCount"`
+	PeerLastReadID int64             `json:"peerLastReadMessageId"`
+	CanSend        bool              `json:"canSend"`
+	CreatedAt      time.Time         `json:"createdAt"`
 }
 
 type ChatConversationList struct {

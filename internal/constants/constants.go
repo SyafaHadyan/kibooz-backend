@@ -116,3 +116,9 @@ var MoodColors = map[Mood]string{
 	MoodSedih:   "#5856D6",
 	MoodMarah:   "#FF3B30",
 }
+
+// The two kinds of chat conversation. A direct one is between a teacher and a parent, a class one is the room of a class.
+const (
+	ChatKindDirect = "direct"
+	ChatKindClass  = "class"
+)
