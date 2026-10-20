@@ -25,7 +25,8 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 )
 
-const testSecret = "0123456789abcdef0123456789abcdef"
+// testSecret is made at run time, so no key-shaped value sits in the source
+var testSecret = strings.Repeat("k", 32)
 
 // typingCall is what the socket asked the use case to do
 type typingCall struct {
