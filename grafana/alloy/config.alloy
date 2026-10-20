@@ -19,8 +19,20 @@ discovery.docker "kibooz" {
 
 // ---- metrics ----
 
+// the same containers, but with a target for every network of each. By default Alloy returns only the first network of a
+// container, which can be one that Alloy does not share, and the rule below then has to be able to pick the right one.
+discovery.docker "kibooz_metrics" {
+  host                = "tcp://socket-proxy:2375"
+  match_first_network = false
+
+  filter {
+    name   = "label"
+    values = ["kibooz.role"]
+  }
+}
+
 discovery.relabel "api_metrics" {
-  targets = discovery.docker.kibooz.targets
+  targets = discovery.docker.kibooz_metrics.targets
 
   rule {
     source_labels = ["__meta_docker_container_label_kibooz_role"]
@@ -28,12 +40,32 @@ discovery.relabel "api_metrics" {
     action        = "keep"
   }
 
-  // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
-  // of the container on the network that Alloy shares with it, plus the port that the label `kibooz.metrics_port` names
+  // a container can be on other networks besides the one of this compose file, such as a network that it shares with a database
+  // from another stack, and Alloy only reaches the network that compose made from the `internal` entry of compose.yml. Compose
+  // labels a network with the name of that entry, so only the target on a network with that name is kept. A target on another
+  // network would be scraped at an address that Alloy cannot reach and would report the copy as down. A network of another
+  // stack that has an entry of the same name would pass as well, so do not give one to a container of this stack.
   rule {
-    source_labels = ["__meta_docker_network_ip", "__meta_docker_container_label_kibooz_metrics_port"]
+    source_labels = ["__meta_docker_network_label_com_docker_compose_network"]
+    regex         = "internal"
+    action        = "keep"
+  }
+
+  // the label `kibooz.metrics_port` names the port of the metrics listener, as 9100 or in the form of METRICS_ADDRESS, such as
+  // :9100, and only the digits after the last colon are kept
+  rule {
+    source_labels = ["__meta_docker_container_label_kibooz_metrics_port"]
+    regex         = "(?:.*:)?([0-9]+)"
+    target_label  = "__tmp_metrics_port"
+    replacement   = "$1"
+  }
+
+  // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
+  // of the container on the network that Alloy shares with it, plus that port
+  rule {
+    source_labels = ["__meta_docker_network_ip", "__tmp_metrics_port"]
     separator     = ":"
-    regex         = "(.+):(.+)"
+    regex         = "(.+):([0-9]+)"
     target_label  = "__address__"
     replacement   = "$1:$2"
   }
@@ -56,6 +88,10 @@ prometheus.scrape "api" {
   metrics_path    = "/metrics"
   scrape_interval = "60s"
   forward_to      = [prometheus.remote_write.cloud.receiver]
+
+  // the metrics of the background jobs have a label `job` of their own, the name of the job, and so does every scrape. Without
+  // this the scrape wins and the label of the API becomes `exported_job`, which the dashboards and alerts do not read.
+  honor_labels = true
 }
 
 prometheus.remote_write "cloud" {
