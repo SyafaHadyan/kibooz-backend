@@ -94,6 +94,8 @@ OSSF Scorecard is not required because it only runs on `main`, and the Cloudflar
 
 The five DeepSource checks (Docker, Go, SQL, Secrets and JavaScript) are not required at the moment, because the free quota of the account ran out on 2026-10-15. They go back into the ruleset, pinned to DeepSource, when the quota returns, about November 1, 2026. Until then the other checks and the review of the diff carry the load.
 
+CodeRabbit is a review app on a trial of the account, and it is not a required check, so nothing in the ruleset waits for it. Its trial is expected to end around October 21, 2026, and from then on pull requests get no automatic review comments and no `CodeRabbit` status. Nothing has to change in the ruleset when that happens. The review of the diff, the tests, CodeQL and the other checks carry the load, and a pull request that used to be reviewed by it needs a careful read by a person. If the plan is renewed, the app starts reviewing again with no change here.
+
 ### Signed commits
 
 The ruleset of `main` also requires verified signatures on every commit that reaches the branch. GitHub signs the merge commits, the commits made in its web editor, the "Update branch" merges and the commits of Renovate, which makes its commits through the GitHub API. The release commits are made by a GitHub App, because commits that an App makes through the API are signed by GitHub, while the old personal access token made unsigned ones. That is one more reason the release workflow uses an App token. Commits that landed on `main` before the rule stay as they are.
