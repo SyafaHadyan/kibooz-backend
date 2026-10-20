@@ -422,7 +422,8 @@ func TestClassRoomChat(t *testing.T) {
 		require.Equal(t, sent, idsOf(t, window))
 
 		items := window.data("messages").([]any)
-		require.Equal(t, "Cempaka", items[0].(map[string]any)["sender"].(map[string]any)["fullName"])
+		teacherName := chatContactOf(t, call(t, http.MethodGet, chatBase+"/contacts", parent.Token, nil), "")["fullName"]
+		require.Equal(t, teacherName, items[0].(map[string]any)["sender"].(map[string]any)["fullName"])
 		require.Equal(t, "GURU", items[0].(map[string]any)["sender"].(map[string]any)["role"])
 		require.Equal(t, "WALI", items[2].(map[string]any)["sender"].(map[string]any)["role"])
 
