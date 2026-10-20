@@ -46,6 +46,8 @@ tags:
     description: Learning videos and the forum of a class, for the teachers and the parents of that class
   - name: Chat
     description: Conversations between a teacher and a parent who share a class
+  - name: Push
+    description: The push tokens of the installed apps, which wake a closed chat app
   - name: Trash
     description: Claiming points and the leaderboard
   - name: Account
@@ -2197,6 +2199,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /push/tokens:
+    post:
+      tags: [Push]
+      operationId: registerPushToken
+      summary: Save the push token of this phone
+      description: |
+        Send the token that Firebase gave the installed app after sign in and whenever Firebase hands out a new one. A token belongs to
+        one account at a time, so a phone that signs in as somebody else moves its token to that account. Sending the same token again
+        changes nothing. An account keeps the 10 newest tokens. Tokens are stored whether or not the server is set up to send pushes, so an
+        app can register before pushes are switched on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushTokenRequest"
+      responses:
+        "200":
+          description: The token is saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Push]
+      operationId: removePushToken
+      summary: Forget the push token of this phone
+      description: |
+        Call it before sign out, so the phone is not woken for an account that is no longer signed in on it. The token goes in the JSON
+        body. A token that is not there, or that belongs to another account, answers `200` and nothing changes, so a retry is safe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemovePushTokenRequest"
+      responses:
+        "200":
+          description: The token is gone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /users/me:
     delete:
       tags: [Account]
@@ -3754,6 +3815,27 @@ components:
           type: string
           maxLength: 300
           description: The `mediaKey` of a photo or video that was uploaded for this conversation by this account
+    PushTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 20
+          maxLength: 4096
+          description: The registration token that Firebase Cloud Messaging gave the installed app
+        platform:
+          type: string
+          enum: [android]
+          default: android
+    RemovePushTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 20
+          maxLength: 4096
     ChatPhotoUpload:
       type: object
       required: [mediaKey, kind, contentType, sizeBytes]
