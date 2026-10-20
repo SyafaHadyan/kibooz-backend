@@ -71,7 +71,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `METRICS_ADDRESS` | empty | Where the Prometheus endpoint listens, such as `:9100`, and empty switches it off. It is a listener of its own that serves only `GET /metrics`, so never publish its port or route it through the proxy, see [operations](docs/operations.md#metrics) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
-| `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the two photo uploads can use. Every other request is limited to 64 KB |
+| `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the three photo uploads (the avatar, the trash photo and the photo of a chat message) can use, and `CHAT_PHOTO_MAX_MB` has to stay below it. Every other request is limited to 64 KB |
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |
 | `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |

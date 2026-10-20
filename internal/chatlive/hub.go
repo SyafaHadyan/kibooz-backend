@@ -54,8 +54,10 @@ type Client struct {
 	UserID uuid.UUID
 	Send   chan []byte
 
-	done chan struct{}
-	once sync.Once
+	// opened orders the sockets of an account by when they were registered, so the oldest one is the one that makes room
+	opened uint64
+	done   chan struct{}
+	once   sync.Once
 }
 
 // Done is closed when the hub no longer delivers to the client, because it was replaced, was too slow or the socket ended
@@ -96,6 +98,7 @@ type Hub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[*Client]struct{}
 	total   int
+	counter uint64
 	closed  bool
 
 	sockets  prometheus.Gauge
@@ -181,7 +184,9 @@ func (h *Hub) Register(userID uuid.UUID) (*Client, error) {
 		return nil, ErrFull
 	}
 
-	client := &Client{UserID: userID, Send: make(chan []byte, sendBuffer), done: make(chan struct{})}
+	h.counter++
+
+	client := &Client{UserID: userID, Send: make(chan []byte, sendBuffer), opened: h.counter, done: make(chan struct{})}
 
 	own := h.clients[userID]
 	if own == nil {
@@ -189,17 +194,21 @@ func (h *Hub) Register(userID uuid.UUID) (*Client, error) {
 		h.clients[userID] = own
 	}
 
-	// a map has no order, so the one that is closed is any of the old ones, and the account keeps the newest connection
+	// the oldest connection makes room, and the account keeps the newest ones
 	for len(own) >= h.cfg.MaxPerUser && h.cfg.MaxPerUser > 0 {
-		for old := range own {
-			delete(own, old)
-			h.total--
+		var oldest *Client
 
-			old.Close()
-			h.dropped.WithLabelValues("replaced").Inc()
-
-			break
+		for candidate := range own {
+			if oldest == nil || candidate.opened < oldest.opened {
+				oldest = candidate
+			}
 		}
+
+		delete(own, oldest)
+		h.total--
+
+		oldest.Close()
+		h.dropped.WithLabelValues("replaced").Inc()
 	}
 
 	own[client] = struct{}{}

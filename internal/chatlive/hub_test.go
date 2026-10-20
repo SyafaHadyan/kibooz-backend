@@ -115,17 +115,35 @@ func TestTheOldestSocketMakesRoomWhenAnAccountHasTooMany(t *testing.T) {
 
 	require.Equal(t, 2, hub.Count())
 
-	closed := 0
+	select {
+	case <-clients[0].Done():
+	default:
+		require.FailNow(t, "the oldest socket was not closed")
+	}
 
-	for _, client := range clients {
+	for _, client := range clients[1:] {
 		select {
 		case <-client.Done():
-			closed++
+			require.FailNow(t, "a newer socket was closed")
 		default:
 		}
 	}
 
-	require.Equal(t, 1, closed, "exactly one socket was closed to make room")
+	// the next connection closes the oldest one that is left
+	next, err := hub.Register(user)
+	require.NoError(t, err)
+
+	select {
+	case <-clients[1].Done():
+	default:
+		require.FailNow(t, "the second oldest socket was not closed")
+	}
+
+	select {
+	case <-next.Done():
+		require.FailNow(t, "the new socket was closed")
+	default:
+	}
 }
 
 func TestAFullProcessRefusesANewSocketAndAFreedSlotWorksAgain(t *testing.T) {
