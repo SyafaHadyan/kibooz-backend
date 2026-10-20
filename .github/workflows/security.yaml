@@ -34,9 +34,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # go.mod stays on the oldest Go release the code supports because Snyk cannot read a newer go directive or a toolchain line,
-          # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
-          go-version: "1.27.2"
+          go-version-file: go.mod
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
@@ -64,9 +62,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # go.mod stays on the oldest Go release the code supports because Snyk cannot read a newer go directive or a toolchain line,
-          # so CI names the patch release that fixes GO-2026-6617 in the standard library. Raise it when a newer patch fixes another.
-          go-version: "1.27.2"
+          go-version-file: go.mod
 
       # The tool is pinned in tools/go.mod, so a bad release of it cannot break every pull request, and the update bot raises it there.
       # The vulnerability database it reads is always the current one.
