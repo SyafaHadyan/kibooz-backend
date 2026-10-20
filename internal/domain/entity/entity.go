@@ -147,12 +147,15 @@ type ForumPost struct {
 	EditedAt *time.Time
 }
 
-// ChatConversation is the direct conversation of two accounts, UserLowID is always the smaller of the two ids
+// ChatConversation is a direct conversation of two accounts or the room of a class. A direct one has UserLowID, which is always
+// the smaller of the two ids, and UserHighID. A class room has ClassID and no pair.
 type ChatConversation struct {
-	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserLowID  uuid.UUID `gorm:"type:uuid;not null"`
-	UserHighID uuid.UUID `gorm:"type:uuid;not null"`
-	CreatedAt  time.Time `gorm:"autoCreateTime:false;not null"`
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Kind       string     `gorm:"size:10;not null"`
+	UserLowID  *uuid.UUID `gorm:"type:uuid"`
+	UserHighID *uuid.UUID `gorm:"type:uuid"`
+	ClassID    *uuid.UUID `gorm:"type:uuid"`
+	CreatedAt  time.Time  `gorm:"autoCreateTime:false;not null"`
 }
 
 // ChatMessage is one message of a conversation. The id only grows and is the cursor of the conversation. A deleted message
