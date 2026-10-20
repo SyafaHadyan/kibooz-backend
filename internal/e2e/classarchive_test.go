@@ -159,14 +159,18 @@ func TestAChildJoiningWhileTheLastTeacherLeavesNeverEndsInAnArchivedClass(t *tes
 // race itself is too narrow to hit on purpose, so the check after the lock is made on its own.
 func TestLockOpenRefusesAnArchivedClass(t *testing.T) {
 	teacher := registerGuru(t, "Terkunci")
-	classID, _ := classOf(t, teacher)
+	classID, code := classOf(t, teacher)
 	id := uuid.MustParse(classID)
 
-	require.NoError(t, testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id) }), "an open class is locked")
+	require.NoError(t, testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id, code) }), "an open class is locked")
+
+	// a code that was replaced while the request waited no longer leads to the class
+	stale := testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id, "REPLACED") })
+	require.ErrorIs(t, stale, apperror.ErrClassCodeNotFound)
 
 	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?", classID).Error)
 
-	err := testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id) })
+	err := testDB.Transaction(func(tx *gorm.DB) error { return classteam.LockOpen(tx, id, code) })
 	require.ErrorIs(t, err, apperror.ErrClassCodeNotFound)
 }
 
@@ -178,7 +182,7 @@ func TestLockOpenReportsAFailingTransaction(t *testing.T) {
 	require.NoError(t, tx.Error)
 	require.NoError(t, tx.Rollback().Error)
 
-	err := classteam.LockOpen(tx, uuid.New())
+	err := classteam.LockOpen(tx, uuid.New(), "")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, apperror.ErrClassCodeNotFound)
 }
