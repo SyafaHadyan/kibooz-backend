@@ -45,8 +45,9 @@ type fakeRepo struct {
 	err     error
 	deleted int
 
-	// successor is the email the last deletion passed on
-	successor string
+	// successor is the email the last deletion passed on, and verifiedHash the hash it was bound to
+	successor    string
+	verifiedHash string
 
 	// queued holds the keys the deletion put on the cleanup queue, unqueued the ones taken off it again
 	queued     []string
@@ -92,9 +93,10 @@ func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error
 }
 
 func (f *fakeRepo) SoftDeleteAccount(
-	_ context.Context, _ uuid.UUID, _ constants.Role, successorEmail string, fileKey repository.FileKeyFunc,
+	_ context.Context, _ uuid.UUID, _ constants.Role, verifiedHash string, successorEmail string, fileKey repository.FileKeyFunc,
 ) (repository.DeletedAccount, error) {
 	f.deleted++
+	f.verifiedHash = verifiedHash
 	f.successor = successorEmail
 
 	if f.err != nil {
@@ -194,6 +196,16 @@ func TestDeleteAccount(t *testing.T) {
 		require.Equal(t, http.StatusForbidden, appErr.Status)
 		require.Equal(t, "AUTH_PASSWORD_INCORRECT", appErr.Code)
 		require.Zero(t, repo.deleted)
+	})
+
+	t.Run("the deletion is bound to the hash that the password was checked against", func(t *testing.T) {
+		repo := &fakeRepo{user: accountOf(t, constants.RoleWali, "correct-password")}
+		useCase := usecase.NewUserUseCase(repo, s3.Disabled{}, &fakeCache{}, hasher)
+
+		err := useCase.DeleteAccount(ctx, repo.user.ID, constants.RoleWali, dto.DeleteAccountRequest{Password: "correct-password"})
+
+		require.NoError(t, err)
+		require.Equal(t, repo.user.PasswordHash, repo.verifiedHash)
 	})
 
 	t.Run("a password longer than bcrypt reads cannot match a shorter one", func(t *testing.T) {
