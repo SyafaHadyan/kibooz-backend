@@ -139,6 +139,12 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// a photo travels in a multipart body, and Fiber refuses a body over BODY_LIMIT_MB before the handler runs. So the largest photo
+	// has to be below the limit of the body, with room for the framing of the form, or a photo that is allowed would get a 413.
+	if e.ChatPhotoMaxMB >= e.BodyLimitMB {
+		return fmt.Errorf("CHAT_PHOTO_MAX_MB is %d and has to be smaller than BODY_LIMIT_MB, which is %d", e.ChatPhotoMaxMB, e.BodyLimitMB)
+	}
+
 	// the chat media would be served to anyone from the public bucket, so the two names must differ
 	if e.S3PrivateBucketName != "" && e.S3PrivateBucketName == e.S3BucketName {
 		return errors.New("S3_PRIVATE_BUCKET_NAME must not be the public bucket S3_BUCKET_NAME")

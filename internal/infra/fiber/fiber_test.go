@@ -27,6 +27,8 @@ func newServer(accountMax int) *gofiber.App {
 	server.Router.Post("/public", server.EmailLimiter(), ok)
 	server.Router.Post("/users/avatar", ok)
 	server.Router.Post("/trash/scan-claim", ok)
+	server.Router.Post("/chat/conversations/:conversationId/media/photo", ok)
+	server.Router.Post("/chat/conversations/:conversationId/media/other", ok)
 
 	return server.Fiber
 }
@@ -204,6 +206,20 @@ func TestAJSONBodyOver64KBIsRefusedExceptOnTheUploads(t *testing.T) {
 		"/api/v1/users/avatar", "/api/v1/trash/scan-claim", "/api/v1/users/avatar/", "/API/V1/USERS/AVATAR", "/api/v1/Trash/Scan-Claim/",
 	} {
 		require.Equal(t, http.StatusOK, post(t, app, path, big).StatusCode, "%s takes a photo and has its own limit", path)
+	}
+
+	// the photo of a chat message has the conversation in its path, and only that route and that shape take a photo
+	id := "6f1c1a52-0c55-4d6c-a4a9-8f54a39bd1a8"
+
+	for _, path := range []string{"/api/v1/chat/conversations/" + id + "/media/photo", "/api/v1/Chat/Conversations/" + id + "/media/photo/"} {
+		require.Equal(t, http.StatusOK, post(t, app, path, big).StatusCode, "%s takes a photo and has its own limit", path)
+	}
+
+	for _, path := range []string{
+		"/api/v1/chat/conversations/" + id + "/media/other", "/api/v1/chat/conversations/media/photo",
+		"/api/v1/chat/conversations/a/b/media/photo", "/api/v1/chat/conversations//media/photo",
+	} {
+		require.Equal(t, http.StatusRequestEntityTooLarge, post(t, app, path, big).StatusCode, "%s is not a photo upload", path)
 	}
 }
 

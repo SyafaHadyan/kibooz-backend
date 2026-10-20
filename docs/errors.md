@@ -91,7 +91,7 @@ A proxy in front of the API can also answer `429` with no body and no `Retry-Aft
 | `INVALID_IMAGE` | 400 | The file is not a JPEG, PNG or WebP image | Ask for another photo |
 | `IMAGE_DIMENSIONS_TOO_LARGE` | 400 | The image is more than 8192 pixels on a side or 40 megapixels | Shrink the photo before sending it |
 | `FILE_TOO_LARGE` | 413 | The file is larger than the limit | Shrink the photo, the app should do this before the upload anyway |
-| `BODY_TOO_LARGE` | 413 | A JSON body is larger than 64 KB. Only the photo uploads (`/users/avatar`, `/trash/scan-claim`) are allowed more | A real request never gets near this, treat it as a bug in the app |
+| `BODY_TOO_LARGE` | 413 | A JSON body is larger than 64 KB. Only the photo uploads (`/users/avatar`, `/trash/scan-claim` and `/chat/conversations/{conversationId}/media/photo`) are allowed more | A real request never gets near this, treat it as a bug in the app |
 | `STORAGE_UNAVAILABLE` | 503 | Object storage is not configured, so uploads are off | Hide uploads, retrying will not help |
 | `STORAGE_ERROR` | 502 | The bucket refused or failed a storage operation | Try again later |
 
