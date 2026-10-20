@@ -28,6 +28,16 @@ discovery.relabel "api_metrics" {
     action        = "keep"
   }
 
+  // Docker discovery returns one target for each network that a container is on, and a container can be on others besides the
+  // one of this compose file, such as a network that it shares with a database from another stack. Alloy only reaches the
+  // network that compose created from the `internal` entry of compose.yml, which compose labels with its name, so only that
+  // target is kept. A second target would be scraped at an address that Alloy cannot reach and would report the copy as down.
+  rule {
+    source_labels = ["__meta_docker_network_label_com_docker_compose_network"]
+    regex         = "internal"
+    action        = "keep"
+  }
+
   // the metrics listener of the API is on the private network and is never published on the host, so the address is the one
   // of the container on the network that Alloy shares with it, plus the port that the label `kibooz.metrics_port` names
   rule {
