@@ -157,6 +157,7 @@ func TestAPanicIsReportedWithTheSamePrivacy(t *testing.T) {
 
 	text := textsOf(events[0])
 	require.NotContains(t, text, "ana.putri@example.com")
+	require.True(t, len(events[0].Threads) > 0 || (len(events[0].Exception) > 0 && events[0].Exception[0].Stacktrace != nil), "a panic report holds the stack")
 	require.Equal(t, "true", events[0].Tags["panic"])
 	require.Equal(t, "/api/v1/guru/mood/log", events[0].Tags["route"])
 	require.Contains(t, text+events[0].Message, "[email]")

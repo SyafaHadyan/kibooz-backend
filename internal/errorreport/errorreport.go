@@ -82,6 +82,8 @@ func Start(cfg Config) func() {
 		},
 		MaxBreadcrumbs: -1,
 		EnableTracing:  false,
+		// a panic with a string becomes a message event, which has a stack only when this is on
+		AttachStacktrace: true,
 		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
 			scrubEvent(event)
 
