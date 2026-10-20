@@ -8,11 +8,11 @@ The repository has one maintainer and no second reviewer, so the checks are the 
 
 ## Decision
 
-The ruleset of `main` has no bypass. It requires a pull request that is merged with a merge commit ([0003](0003-merge-commits-only.md)), resolved review threads, verified signatures on every commit, and strict status checks, so a branch must be up to date with `main` before it merges. It also holds the code scanning and code quality rules.
+The ruleset of `main` has no bypass. It requires a pull request that is merged with a merge commit ([0003](0003-merge-commits-only.md)), resolved review threads, verified signatures on every commit that reaches the branch after the rule took effect, and the older commits stay as they are, and strict status checks, so a branch must be up to date with `main` before it merges. It also holds the code scanning and code quality rules.
 
 Every required check is pinned to the app that reports it (GitHub Actions, GitHub Advanced Security or Codecov), so another app cannot post a check with the same name. Snyk reports a plain commit status without an app, and it is the one check that stays on any source. A pull request that adds, renames or removes a job updates the ruleset in the same change.
 
-The gates are lint and format, unit and end to end tests with a coverage patch status, a Go vulnerability check, dependency review, a secret scan, a filesystem scan, CodeQL, a ZAP baseline scan, a k6 smoke test, a smoke test on a throwaway stack, the workflow and OpenAPI linters, prose lint, Conventional Commits, and Snyk.
+The gates are lint and format, unit and end-to-end tests with a coverage patch status, a Go vulnerability check, dependency review, a secret scan, a filesystem scan, CodeQL, a ZAP baseline scan, a k6 smoke test, a smoke test on a throwaway stack, the workflow and OpenAPI linters, prose lint, Conventional Commits, and Snyk.
 
 Some tools are not required on purpose.
 

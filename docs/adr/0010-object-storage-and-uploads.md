@@ -16,7 +16,7 @@ Photos go through the API. The server checks their size and type by content and 
 
 Everything that is uploaded and not yet attached sits under `pending/`, and a lifecycle rule of the bucket expires that prefix after one day. The rule must never cover `videos/`. A file that a deleted account left behind is queued in the `file_cleanups` table and removed by a job ([0007](0007-accounts-are-hidden-not-erased.md)).
 
-`/healthz` writes and removes a small probe object. A bucket that refuses it turns the status to `degraded` and never to `down`, so the API keeps serving.
+`/healthz` writes and removes a small probe object, at most once a minute for each API process. A bucket that refuses it turns the status to `degraded` and never to `down`, so the API keeps serving.
 
 ## Consequences
 
@@ -24,4 +24,4 @@ Everything that is uploaded and not yet attached sits under `pending/`, and a li
 - A bucket and its lifecycle rule are settings outside the repository. A rule with a wrong prefix deletes real videos, so the docs say it in the operations table and the troubleshooting list.
 - Chat media can be private without changing how the public media works, and a feature that needs a third policy gets a third bucket and not a mixed one.
 - Every new feature that stores a file has to say what its prefix is, which bucket it uses and who cleans it up.
-- The probe makes a write on every health check, and a slow bucket shows up as a slow `/healthz` or a `degraded` status and not as an outage.
+- The probe makes a write at most once a minute for each API process, because the answer is reused for that long. A slow bucket shows up as a slow `/healthz` or a `degraded` status and not as an outage.
