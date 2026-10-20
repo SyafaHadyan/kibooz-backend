@@ -10,8 +10,8 @@ Settings come from the environment
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
   SMOKE_STORAGE          off for a stack that has no bucket. The upload checks then expect STORAGE_UNAVAILABLE instead
-  SMOKE_CHAT_MEDIA       off when there is no private bucket for the chat photos and videos, on by default when storage is on. The
-                         chat media checks then expect STORAGE_UNAVAILABLE instead
+  SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
+                         bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
 import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
 from datetime import datetime
@@ -27,7 +27,7 @@ RUN = time.strftime("%m%d%H%M%S")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
-CHAT_MEDIA_ON = os.environ.get("SMOKE_CHAT_MEDIA", "on" if STORAGE_ON else "off") == "on"
+CHAT_MEDIA_ON = os.environ.get("SMOKE_CHAT_MEDIA", "off") == "on"
 # The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
 # http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
 URL = urlsplit(BASE)
