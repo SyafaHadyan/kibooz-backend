@@ -1,0 +1,387 @@
+{
+  "uid": "kibooz-logs",
+  "title": "Kibooz logs",
+  "description": "The JSON logs of the API and the slow statements of the database",
+  "tags": [
+    "kibooz"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "ds_prom",
+        "label": "Metrics",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "ds_loki",
+        "label": "Logs",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "host",
+        "label": "Host",
+        "datasource": {
+          "type": "loki",
+          "uid": "${ds_loki}"
+        },
+        "query": {
+          "label": "host",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{service_name=\"kibooz\"}",
+          "type": 1
+        }
+      },
+      {
+        "type": "query",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "sort": 1,
+        "hide": 0,
+        "name": "instance",
+        "label": "API copy",
+        "datasource": {
+          "type": "loki",
+          "uid": "${ds_loki}"
+        },
+        "query": {
+          "label": "instance",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\"}",
+          "type": 1
+        }
+      },
+      {
+        "name": "request_id",
+        "label": "Request id",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Lines by level",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 40,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "sum by (level) (count_over_time({service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} [$__auto]))",
+          "legendFormat": "{{level}}",
+          "queryType": "range"
+        }
+      ],
+      "id": 1,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Slow statements and lock waits",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "sum(count_over_time({service_name=\"kibooz\", role=\"db\", host=~\"$host\"} |~ \"duration:|still waiting for|deadlock\" [$__auto]))",
+          "legendFormat": "database",
+          "queryType": "range"
+        }
+      ],
+      "id": 2,
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 7
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Errors",
+      "description": "5xx answers, panics with their stack, failed jobs",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | level=\"ERROR\"",
+          "queryType": "range"
+        }
+      ],
+      "id": 3,
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 24,
+        "h": 12
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Rate limited",
+      "description": "error_code and retry_after say which kind of refusal it was",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | status=\"429\"",
+          "queryType": "range"
+        }
+      ],
+      "id": 4,
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Client errors",
+      "description": "",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | status=~\"4..\", status!=\"429\"",
+          "queryType": "range"
+        }
+      ],
+      "id": 5,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Slow statements",
+      "description": "Statements over 500 ms, lock waits over one second and deadlocks. The API copy variable does not apply here, the database is shared",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "{service_name=\"kibooz\", role=\"db\", host=~\"$host\"} |~ \"duration:|still waiting for|deadlock\"",
+          "queryType": "range"
+        }
+      ],
+      "id": 6,
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 9
+      }
+    },
+    {
+      "type": "logs",
+      "title": "One request",
+      "description": "Set the request_id variable to the id from a response header",
+      "datasource": {
+        "type": "loki",
+        "uid": "${ds_loki}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${ds_loki}"
+          },
+          "expr": "{service_name=\"kibooz\", role=\"api\", host=~\"$host\", instance=~\"$instance\"} | json | request_id=\"$request_id\"",
+          "queryType": "range"
+        }
+      ],
+      "id": 7,
+      "gridPos": {
+        "x": 0,
+        "y": 46,
+        "w": 24,
+        "h": 8
+      }
+    }
+  ]
+}

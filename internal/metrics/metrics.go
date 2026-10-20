@@ -180,11 +180,13 @@ func (m *Metrics) countRefusal(c fiber.Ctx, err error) {
 }
 
 // Job returns what a background job calls after every run with the error of the run, nil for a success. A run that was
-// cut short by the shutdown is the job's to leave out.
+// cut short by the shutdown is the job's to leave out. A job that is registered here is one that runs, so its last success
+// starts at the moment of the registration, and a job that never succeeds grows old and an alert on its age fires.
 func (m *Metrics) Job(name string) func(error) {
-	// the series exist from the start, so a job that never ran still shows and an alert on its age can tell
+	// the series exist from the start, so a job that never ran still shows
 	m.jobRuns.WithLabelValues(name, "success")
 	m.jobRuns.WithLabelValues(name, "failure")
+	m.jobSuccess.WithLabelValues(name).Set(float64(m.now().Unix()))
 
 	return func(err error) {
 		if err != nil {

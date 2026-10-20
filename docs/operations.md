@@ -6,6 +6,8 @@ This page is for whoever runs the stack. It covers deploying a version, what the
 
 The `compose.yml` file starts three containers on one host. `kibooz-api` is the image `syafa/kibooz-backend` and listens on `127.0.0.1:${APP_PORT}`, so only a reverse proxy on the same host reaches it. `kibooz-db` is PostgreSQL 18 and `kibooz-redis` is Redis 8. The API container has a read-only filesystem, drops every Linux capability and runs without new privileges. Each container keeps at most five log files of 10 MB. The API and Redis containers have a hard memory cap (`API_MEMORY_LIMIT`, `REDIS_MEMORY_LIMIT`) and the database has none, so a memory problem of the API kills the API and not the database. The API and the database get 30 seconds to stop, because the API gives running requests 10 seconds and PostgreSQL ends with a checkpoint.
 
+Two more containers, `kibooz-alloy` and `kibooz-socket-proxy`, start only when `COMPOSE_PROFILES` holds `monitoring`. They ship the metrics and the logs to Grafana Cloud, see [Monitoring](monitoring.md).
+
 A hosted PostgreSQL, Redis or bucket can replace the bundled ones by pointing `DB_*`, `REDIS_*` and `S3_*` at them. Redis and the bucket are optional, see [Redis is optional](design.md#redis-is-optional).
 
 ## Deploy a version
@@ -72,7 +74,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |
 | `kibooz_password_hash_busy_total` | none | Requests that got `429 RATE_LIMITED` because every password hashing slot was taken, which means the server needs more CPU or a higher `PASSWORD_HASH_CONCURRENCY` |
 | `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `keepalive_database` and `keepalive_redis` |
-| `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, so an alert can fire when a job has not succeeded for too long |
+| `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, or of the moment the job started when it has not succeeded yet, so an alert can fire when a job has not succeeded for too long. A job that is switched off, such as the file cleanup without a bucket or the keepalive with `KEEPALIVE_SECONDS=0`, has no series |
 | `go_sql_*` | `db_name` | The connection pool of the database, such as open, idle and waited-for connections |
 | `go_*`, `process_*` | none | The Go runtime and the process, such as memory, goroutines and open files |
 

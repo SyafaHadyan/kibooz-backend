@@ -24,6 +24,8 @@ services:
       REDIS_ADDRESS: redis
       REDIS_PORT: 6379
       GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
+      # the metrics listener is on the private network only, nothing publishes this port, and Alloy scrapes it from there
+      METRICS_ADDRESS: ":9100"
     ports:
       # only the reverse proxy on this host reaches the API, so it is never exposed on a public address by accident
       - "127.0.0.1:${APP_PORT}:${APP_PORT}"
@@ -35,6 +37,11 @@ services:
         required: false
     networks:
       - internal
+    # Alloy finds the containers to watch by these labels and not by name, so a copy of the API can have any name, see
+    # docs/monitoring.md. The port is the one of METRICS_ADDRESS.
+    labels:
+      kibooz.role: api
+      kibooz.metrics_port: "9100"
     read_only: true
     cap_drop:
       - ALL
@@ -53,6 +60,23 @@ services:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # slow statements and long lock waits go to the log, where Alloy ships them. A statement that takes over half a second is
+    # slow for this API, whose queries are small.
+    command:
+      - postgres
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_lock_waits=on
+      - -c
+      - deadlock_timeout=1s
+      - -c
+      - log_temp_files=0
+      # a slow statement is logged without the values that were bound to it, which can hold names, emails and tokens
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
     volumes:
       - kibooz-db:/var/lib/postgresql
     healthcheck:
@@ -63,6 +87,8 @@ services:
       start_period: 20s
     networks:
       - internal
+    labels:
+      kibooz.role: db
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -99,6 +125,8 @@ services:
       retries: 10
     networks:
       - internal
+    labels:
+      kibooz.role: redis
     user: redis
     cap_drop:
       - ALL
@@ -106,9 +134,72 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # Metrics and logs go to Grafana Cloud. These two services only start with the `monitoring` profile, which is set with
+  # COMPOSE_PROFILES=monitoring in .env once the GRAFANA_CLOUD_* values are filled in, see docs/monitoring.md.
+  alloy:
+    image: grafana/alloy:v1.21.0
+    container_name: kibooz-alloy
+    restart: always
+    profiles:
+      - monitoring
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    environment:
+      GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL:-}
+      GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER:-}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
+      GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER:-}
+      GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+      # the name of this host on every series and log line, which has to differ between hosts
+      GRAFANA_HOST: ${GRAFANA_HOST:-main}
+    deploy:
+      resources:
+        limits:
+          memory: ${ALLOY_MEMORY_LIMIT:-256m}
+    volumes:
+      - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - kibooz-alloy:/var/lib/alloy/data
+    depends_on:
+      - api
+      - socket-proxy
+    networks:
+      - internal
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # The only container that touches the Docker socket. It answers read requests for containers and networks and refuses
+  # everything else, so Alloy cannot start, stop or create a container even if it is compromised. The network list is needed
+  # because the Docker discovery of Alloy asks for it and fails without it.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: kibooz-socket-proxy
+    restart: always
+    profiles:
+      - monitoring
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
 networks:
   internal:
+  # no route out and shared by the socket proxy and Alloy only, so nothing else can reach the Docker API
+  docker-api:
+    internal: true
 
 volumes:
   kibooz-db:
   kibooz-redis:
+  kibooz-alloy:

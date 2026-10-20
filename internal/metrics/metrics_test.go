@@ -195,8 +195,9 @@ func TestJobRunsAreCountedAndTheLastSuccessIsKept(t *testing.T) {
 	_, ok := sample(t, m, "kibooz_job_runs_total", map[string]string{"job": "sweep", "result": "success"})
 	require.True(t, ok, "the series exists before the first run, so a job that never runs can be seen")
 
-	_, ok = sample(t, m, "kibooz_job_last_success_timestamp_seconds", map[string]string{"job": "sweep"})
-	require.False(t, ok, "there is no success time before a success")
+	start, ok := sample(t, m, "kibooz_job_last_success_timestamp_seconds", map[string]string{"job": "sweep"})
+	require.True(t, ok, "a job that never succeeds still has a time, the one it started at, so it grows old")
+	require.InDelta(t, float64(time.Now().Unix()), start, 5)
 
 	observe(errors.New("bucket refused"))
 	observe(nil)
