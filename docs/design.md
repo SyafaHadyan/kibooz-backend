@@ -90,7 +90,7 @@ When Redis is unreachable the API logs it once and keeps serving. Calls to Redis
 
 ## Idempotency keys
 
-A client that queues an action while it is offline sends the same `Idempotency-Key` with every try. The middleware in `internal/idempotency` runs after authentication on the ten routes that create something, and a request without the header passes through untouched.
+A client that queues an action while it is offline sends the same `Idempotency-Key` with every try. The middleware in `internal/idempotency` runs after authentication on the eleven routes that create something, and a request without the header passes through untouched.
 
 The keys live in the PostgreSQL table `idempotency_keys` and not in Redis, because Redis is optional here and an outage would turn every repeat into a duplicate. A row is claimed with one `INSERT ... ON CONFLICT` before the work starts, so two tries at the same time cannot both run. The row holds a SHA-256 fingerprint of the method, the address and the body, the status code and the response. A repeat with another fingerprint is refused, and a repeat of a finished request gets the stored response.
 

@@ -44,6 +44,8 @@ tags:
     description: Routes for the GURU role
   - name: Classroom
     description: Learning videos and the forum of a class, for the teachers and the parents of that class
+  - name: Chat
+    description: Conversations between a teacher and a parent who share a class
   - name: Trash
     description: Claiming points and the leaderboard
   - name: Account
@@ -1772,6 +1774,269 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /chat/contacts:
+    get:
+      tags: [Chat]
+      operationId: listChatContacts
+      summary: List the people you can start a chat with
+      description: |
+        A teacher gets the parents who have an active child in a class they teach, and a parent gets the teachers of the classes of their
+        children. A person shows up as soon as the child joins the class, and drops out when the child leaves or the class is archived.
+        Nothing is stored for it, the list is worked out from the classes. Parents do not see other parents and teachers do not see
+        other teachers. By name. `children` holds the names of the parent's children in the shared classes, so a teacher can show
+        "Siti (Rani)", and `conversationId` is set once a conversation with that person exists.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The contacts of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatContactListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /chat/conversations:
+    get:
+      tags: [Chat]
+      operationId: listChatConversations
+      summary: List your conversations
+      description: |
+        The conversations that have at least one message, the one with the newest message first. A conversation that was opened
+        and never written in is not listed. `canSend` is false when the two no longer share a class or the other account was deleted,
+        the history stays readable. `unreadCount` counts the messages of the other person after your read mark, and
+        `peerLastReadMessageId` is how far the other person has read, for a read mark on your own messages.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The conversations of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Chat]
+      operationId: startChatConversation
+      summary: Start a conversation with a person
+      description: |
+        Returns the conversation with that person, and makes it when it does not exist yet. A conversation is one for each pair of
+        accounts, so a parent has one with each teacher however many children they have, and asking again returns the same one with
+        `200` while the first call answers `201`. A new conversation needs a teacher and a parent who share an active class.
+        Two people who no longer share one can still open the old conversation. An id that belongs to nobody, to a deleted account
+        or to a person of the same role gets the same `403` as a person without a shared class (`CHAT_CONTACT_NOT_ALLOWED`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartChatRequest"
+      responses:
+        "200":
+          description: The conversation that already existed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationEnvelope"
+        "201":
+          description: The conversation that was just made
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatConversationEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /chat/conversations/{conversationId}/messages:
+    get:
+      tags: [Chat]
+      operationId: listChatMessages
+      summary: Read the messages of a conversation
+      description: |
+        Always in the order the messages were sent, by `id`. Without a cursor it returns the latest `limit` messages, `before` returns
+        the ones older than that message and `after` returns the ones that follow it, which is how an app catches up after it was
+        offline. Send one of the two, not both. `hasMore` tells whether more exist in the direction that was asked for. The `id`
+        only grows inside a conversation, so keep the highest one you have as the cursor. A deleted message stays with an empty
+        body and `deleted` set. Only the two people of the conversation can read it, and anyone else gets `404`.
+      parameters:
+        - $ref: "#/components/parameters/ConversationPath"
+        - name: after
+          in: query
+          description: Return the messages that follow this message id, or from the start with 0
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: before
+          in: query
+          description: Return the latest messages older than this message id
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+        - name: limit
+          in: query
+          description: The number of messages, 50 by default
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: A window of the conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessageListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Chat]
+      operationId: sendChatMessage
+      summary: Send a message
+      description: |
+        Text only for now, up to 4000 characters, trimmed at both ends. Send an `Idempotency-Key` so that a try that is repeated after
+        a lost answer writes the message once. Sending needs a class that the two still share and an account that is still there,
+        otherwise it answers `409` with `CHAT_SENDING_CLOSED`, while reading stays open. Only the two people of the conversation can
+        use it, and anyone else gets `404`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ConversationPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendChatMessageRequest"
+      responses:
+        "201":
+          description: Message sent
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessageEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The two no longer share a class, or the other account was deleted (`CHAT_SENDING_CLOSED`), or a request with this
+            Idempotency-Key is still running (`IDEMPOTENCY_IN_PROGRESS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /chat/conversations/{conversationId}/messages/{messageId}:
+    delete:
+      tags: [Chat]
+      operationId: deleteChatMessage
+      summary: Delete a message of your own
+      description: |
+        Empties the message and leaves a placeholder, so both people see that a message was deleted. Only the sender can do it, and
+        the other person gets `403`. Deleting a message again changes nothing and answers `200`. It stays possible after the two
+        stopped sharing a class.
+      parameters:
+        - $ref: "#/components/parameters/ConversationPath"
+        - name: messageId
+          in: path
+          required: true
+          description: The id of a message of the conversation
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: The message as it is now
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMessageEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /chat/conversations/{conversationId}/read:
+    put:
+      tags: [Chat]
+      operationId: markChatRead
+      summary: Mark a conversation as read
+      description: |
+        Moves your read mark to `messageId`. The mark only moves forward, a smaller or equal value changes nothing, and a value
+        past the newest message is cut to the newest one. Send 0 or the id of the newest message you have shown. The answer
+        has the mark and how many messages of the other person are still unread.
+      parameters:
+        - $ref: "#/components/parameters/ConversationPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkChatReadRequest"
+      responses:
+        "200":
+          description: Your read mark now
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatReadStateEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /users/me:
     delete:
       tags: [Account]
@@ -1920,6 +2185,14 @@ components:
       schema:
         type: string
         format: uuid
+    ConversationPath:
+      name: conversationId
+      in: path
+      required: true
+      description: A conversation of the signed in user
+      schema:
+        type: string
+        format: uuid
     TeacherPath:
       name: teacherId
       in: path
@@ -2028,7 +2301,7 @@ components:
           schema:
             $ref: "#/components/schemas/Failure"
     Forbidden:
-      description: The role or the data is not allowed for this user (`AUTH_FORBIDDEN`)
+      description: The role or the data is not allowed for this user (`AUTH_FORBIDDEN`, `CHAT_CONTACT_NOT_ALLOWED`)
       content:
         application/json:
           schema:
@@ -2036,7 +2309,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -3066,6 +3339,260 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/VideoList"
+    ChatPerson:
+      type: object
+      required: [id, fullName, role, avatarUrl, deleted]
+      description: A person of the chat. A deleted account shows the name `Deleted account`, no photo and `deleted` set.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The id of the account
+        fullName:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+        deleted:
+          type: boolean
+    ChatContactClass:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    ChatContact:
+      allOf:
+        - $ref: "#/components/schemas/ChatPerson"
+        - type: object
+          required: [classes, children, conversationId]
+          properties:
+            classes:
+              type: array
+              description: The active classes that the two share
+              items:
+                $ref: "#/components/schemas/ChatContactClass"
+            children:
+              type: array
+              description: The names of the children of the parent in those classes
+              items:
+                type: string
+            conversationId:
+              type: string
+              format: uuid
+              nullable: true
+              description: The conversation with this person, or null until one exists
+    ChatContactList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [contacts]
+          properties:
+            contacts:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChatContact"
+    ChatContactListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatContactList"
+    StartChatRequest:
+      type: object
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+          description: The `id` of a contact
+    ChatMessage:
+      type: object
+      required: [id, conversationId, senderId, body, deleted, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Only grows inside a conversation, and is the cursor for `after` and `before`
+        conversationId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+          format: uuid
+          description: The id of the account that wrote it, compare it with the id of the signed in user
+        body:
+          type: string
+          description: Empty for a deleted message
+        deleted:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+    ChatMessageEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatMessage"
+    ChatConversation:
+      type: object
+      required: [id, peer, lastMessage, unreadCount, peerLastReadMessageId, canSend, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        peer:
+          $ref: "#/components/schemas/ChatPerson"
+        lastMessage:
+          type: object
+          nullable: true
+          description: The newest message, in the same shape as a ChatMessage. Null for a conversation that was opened and has no message yet.
+          required: [id, conversationId, senderId, body, deleted, createdAt]
+          properties:
+            id:
+              type: integer
+              format: int64
+            conversationId:
+              type: string
+              format: uuid
+            senderId:
+              type: string
+              format: uuid
+            body:
+              type: string
+              description: Empty for a deleted message
+            deleted:
+              type: boolean
+            createdAt:
+              type: string
+              format: date-time
+        unreadCount:
+          type: integer
+          minimum: 0
+          description: The messages of the other person after your read mark
+        peerLastReadMessageId:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The message the other person has read up to, 0 when none
+        canSend:
+          type: boolean
+          description: False when the two no longer share a class or the other account was deleted
+        createdAt:
+          type: string
+          format: date-time
+    ChatConversationEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatConversation"
+    ChatConversationList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [conversations]
+          properties:
+            conversations:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChatConversation"
+    ChatConversationListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatConversationList"
+    SendChatMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: The text, trimmed at both ends. A text of only blanks is refused.
+    ChatMessageList:
+      type: object
+      required: [messages, hasMore]
+      properties:
+        messages:
+          type: array
+          description: In the order the messages were sent
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        hasMore:
+          type: boolean
+          description: Whether more messages exist in the direction that was asked for, older ones for `before` and newer ones for `after`
+    ChatMessageListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatMessageList"
+    MarkChatReadRequest:
+      type: object
+      required: [messageId]
+      properties:
+        messageId:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The newest message that was shown, or 0
+    ChatReadState:
+      type: object
+      required: [lastReadMessageId, unreadCount]
+      properties:
+        lastReadMessageId:
+          type: integer
+          format: int64
+          minimum: 0
+        unreadCount:
+          type: integer
+          minimum: 0
+    ChatReadStateEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ChatReadState"
     ForumAuthor:
       type: object
       required: [id, fullName, role, avatarUrl]

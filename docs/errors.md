@@ -21,6 +21,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | `AUTH_TOKEN_INVALID` | 401 | The access token is malformed, forged or expired | Refresh the token once and repeat the request |
 | `AUTH_REFRESH_INVALID` | 401 | The refresh token was used before, expired, or its session ended | Send the user to sign in again, a session that ended cannot be revived |
 | `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist. This holds for an id that is a valid UUID, a malformed one answers `400` with `VALIDATION_ERROR` | Do not show the action to that role, and treat it as a class that is gone on the class routes |
+| `CHAT_CONTACT_NOT_ALLOWED` | 403 | A new conversation needs a teacher and a parent who share an active class. A person who does not exist, was deleted, has the same role or shares no class gets this same answer | Show that this person cannot be contacted, and offer the contact list instead |
 | `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
 
 ## Registration and conflicts
@@ -46,6 +47,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | `CLASS_NOT_FOUND` | 404 | The class does not exist, or the signed in teacher does not teach it. Both get the same answer on purpose. It is the answer of the `/guru/classes/{classId}` routes, and of `/leaderboard` when it names no class and the caller has none. The `/classes/{classId}` routes answer `403` with `AUTH_FORBIDDEN` instead | Return to the class list |
 | `CLASS_NO_ACTIVE_TEACHER` | 409 | The class has no active teacher, so it cannot take new children | Tell the parent to contact the school |
 | `TEACHER_NOT_FOUND` | 404 | No active teacher account has the email that was named, as a new teacher or as the successor | Ask the teacher to check the email |
+| `CHAT_SENDING_CLOSED` | 409 | The two people of a conversation no longer share an active class, or the other account was deleted. Reading stays open | Keep the history, and replace the text box with a note that the conversation is closed |
 | `TEACHER_ALREADY_IN_CLASS` | 409 | The teacher already teaches the class | Nothing to do, the teacher is already there |
 | `TEACHER_NOT_IN_CLASS` | 404 | The teacher named in the path does not teach this class | Refresh the teacher list |
 | `CLASS_OWNER_REQUIRED` | 403 | Only the owner of the class may remove another teacher or hand the class over | Hide the action from teachers who are not the owner |
@@ -62,6 +64,8 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | `GUIDANCE_NOT_FOUND` | 404 | The guidance does not exist | Refresh the guidance list |
 | `FORUM_POST_NOT_FOUND` | 404 | The thread or reply does not exist, or was deleted | Refresh the thread or its replies |
 | `VIDEO_NOT_FOUND` | 404 | The learning video does not exist, or was removed | Refresh the video list |
+| `CHAT_CONVERSATION_NOT_FOUND` | 404 | The conversation does not exist, or the signed in account is not one of its two people. Both get the same answer on purpose | Refresh the conversation list |
+| `CHAT_MESSAGE_NOT_FOUND` | 404 | The conversation has no message with this id | Refresh the messages |
 | `NOT_FOUND` | 404 | The route does not exist | This is a bug in the app |
 
 ## Limits
