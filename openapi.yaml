@@ -3583,6 +3583,7 @@ components:
           type: string
           description: Empty for a deleted message, and for a message that only has media
         media:
+          type: object
           allOf:
             - $ref: "#/components/schemas/ChatMedia"
           nullable: true
@@ -3647,6 +3648,7 @@ components:
               type: string
               description: Empty for a deleted message, and for a message that only has media
             media:
+              type: object
               allOf:
                 - $ref: "#/components/schemas/ChatMedia"
               nullable: true
