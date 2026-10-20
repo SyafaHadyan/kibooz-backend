@@ -3615,11 +3615,13 @@ components:
           enum: [direct, class]
           description: A direct conversation between a teacher and a parent, or the room of a class
         peer:
+          type: object
           allOf:
             - $ref: "#/components/schemas/ChatPerson"
           nullable: true
           description: The other person of a direct conversation, null for a class room
         class:
+          type: object
           allOf:
             - $ref: "#/components/schemas/ChatContactClass"
           nullable: true
