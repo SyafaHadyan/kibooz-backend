@@ -335,3 +335,13 @@ func TestThePrivateBucketNeedsTheSharedStorageSettingsToo(t *testing.T) {
 	cfg.S3PrivateBucketName = ""
 	require.False(t, cfg.PrivateStorageEnabled())
 }
+
+func TestAChatPhotoLimitThatDoesNotFitInTheBodyLimitIsRejected(t *testing.T) {
+	cfg := valid()
+	cfg.ChatPhotoMaxMB, cfg.BodyLimitMB = 8, 8
+
+	require.ErrorContains(t, cfg.validate(), "CHAT_PHOTO_MAX_MB")
+
+	cfg.ChatPhotoMaxMB = 7
+	require.NoError(t, cfg.validate())
+}
