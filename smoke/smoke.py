@@ -13,7 +13,7 @@ Settings come from the environment
   SMOKE_CHAT_MEDIA       off when there is no private bucket for the chat photos and videos, on by default when storage is on. The
                          chat media checks then expect STORAGE_UNAVAILABLE instead
 """
-import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
+import atexit, base64, json, os, random, secrets, socket, ssl, subprocess, sys, time, uuid
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 
@@ -84,6 +84,64 @@ def curl(method, url, headers, data=None, timeout=60):
     out = subprocess.run(cmd, input=data, capture_output=True, check=False).stdout.decode(errors="replace")
     text, _, code = out.rpartition("\n")
     return int(code or 0), text
+
+
+class Socket:
+    """A minimal WebSocket client over the standard library, enough to read the text frames of the chat socket. The handshake goes
+    through the same proxy as the app, so it also proves that the proxy passes the upgrade."""
+
+    def __init__(self, token):
+        port = URL.port or (443 if URL.scheme == "https" else 80)
+        raw = socket.create_connection((URL.hostname, port), timeout=15)
+        self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=URL.hostname) if URL.scheme == "https" else raw
+        self.sock.settimeout(15)
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.sock.sendall((
+            f"GET /api/v1/chat/ws HTTP/1.1\r\nHost: {URL.netloc}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {token}\r\n\r\n").encode())
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        head, _, self.buffer = data.partition(b"\r\n\r\n")
+        parts = head.split(b" ")
+        self.status = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+    def _read(self, count):
+        while len(self.buffer) < count:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("the socket closed")
+            self.buffer += chunk
+        taken, self.buffer = self.buffer[:count], self.buffer[count:]
+        return taken
+
+    def frame(self):
+        """The next text frame as JSON, skipping pings, or None when the socket closes or nothing arrives in time"""
+        try:
+            while True:
+                first, second = self._read(2)
+                length = second & 0x7F
+                if length == 126:
+                    length = int.from_bytes(self._read(2), "big")
+                elif length == 127:
+                    length = int.from_bytes(self._read(8), "big")
+                payload = self._read(length)
+                opcode = first & 0x0F
+                if opcode == 0x1:
+                    return json.loads(payload)
+                if opcode == 0x8:
+                    return None
+        except (OSError, ConnectionError, ValueError):
+            return None
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
 
 
 def call(method, path, token=None, body=None, raw=None, ctype=None, base=API, timeout=60):
@@ -601,6 +659,19 @@ expect("another parent cannot read it", call("GET", f"/chat/conversations/{conv}
 expect("only the sender deletes a message", call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", wc1["token"]), 403, "AUTH_FORBIDDEN")
 s, js = call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", gc["token"])
 check("the sender deletes a message", s == 200 and dig(js, "data", "deleted") is True and dig(js, "data", "body") == "", f"{s} {js}")
+
+# the live socket, through the proxy and across the API copies
+live = Socket(wc1["token"])
+ready = live.frame() if live.status == 101 else None
+check("the chat socket upgrades", live.status == 101 and (ready or {}).get("type") == "ready", f"{live.status} {ready}")
+s, js = call("POST", f"/chat/conversations/{conv}/messages", gc["token"], {"body": "Heard on the socket"})
+pushed = live.frame()
+check("a message is pushed to the open socket", s == 201 and (pushed or {}).get("type") == "message"
+      and dig(pushed, "message", "body") == "Heard on the socket" and pushed.get("conversationId") == conv, f"{s} {pushed}")
+live.close()
+bare = Socket("not-a-token")
+check("the socket refuses a bad token", bare.status == 401, str(bare.status))
+bare.close()
 
 # photos and videos in the private bucket
 chat_path = f"/chat/conversations/{conv}"
