@@ -16,5 +16,6 @@ An architecture decision record says why a choice was made, so that nobody has t
 | [0010 Files live in buckets, one bucket for each access policy, and uploads wait under `pending/`](0010-object-storage-and-uploads.md) | Accepted |
 | [0011 The service runs as two small copies behind nginx](0011-how-the-service-runs.md) | Accepted |
 | [0012 Which checks gate a merge into main, and which ones do not](0012-required-ci-gates.md) | Accepted |
+| [0013 A closed app is woken by a push without text, and fetches the message from the API](0013-chat-push-notifications.md) | Proposed |
 
 To add one, copy the layout of an existing record, give it the next number and a short name, and add it to the table. Keep it to what was decided and why, and link to the pages that describe the details.
