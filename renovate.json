@@ -16,7 +16,7 @@
   "dependencyDashboard": true,
   "packageRules": [
     {
-      "description": "go.mod stays on the oldest Go release the code supports for Snyk, and CI names its Go patch release by hand, see ci.yaml",
+      "description": "the Go release is raised by hand in go.mod, which the workflows read, so a patch release is a decision and not a bot update",
       "matchDatasources": ["golang-version"],
       "enabled": false
     },
