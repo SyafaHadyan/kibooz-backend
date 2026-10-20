@@ -546,6 +546,52 @@ expect("delete reply", call("DELETE", f"/classes/{cid}/forum/{pid}/replies/{rid}
 expect("teacher deletes thread", call("DELETE", f"/classes/{cid}/forum/{pid}", g1["token"]), 200)
 expect("deleted thread gone", call("GET", f"/classes/{cid}/forum/{pid}/replies", g1["token"]), 404, "FORUM_POST_NOT_FOUND")
 
+# ---------- chat ----------
+def contact_named(js, name):
+    return next((c for c in dig(js, "data", "contacts") or [] if c.get("fullName") == name), None)
+
+
+s, js = call("GET", "/chat/contacts", g1["token"])
+w1_contact = contact_named(js, "Smoke Wali w1")
+check("teacher sees the parent as a contact", s == 200 and w1_contact is not None and "Smoke Child One" in w1_contact.get("children", [])
+      and w1_contact.get("conversationId") is None and (dig(js, "data", "total") or 0) >= 2, f"{s} {js}")
+s, js = call("GET", "/chat/contacts", w1["token"])
+g1_contact = contact_named(js, "Smoke Guru g1")
+check("parent sees the teacher as a contact", s == 200 and g1_contact is not None and (dig(js, "data", "total") or 0) >= 1, f"{s} {js}")
+w1_id, g1_user = (w1_contact or {}).get("id"), (g1_contact or {}).get("id")
+s, js = call("POST", "/chat/conversations", w1["token"], {"userId": g1_user})
+conv = dig(js, "data", "id")
+check("parent starts a conversation", s == 201 and conv and dig(js, "data", "lastMessage") is None and dig(js, "data", "canSend") is True, f"{s} {js}")
+s, js = call("POST", "/chat/conversations", g1["token"], {"userId": w1_id})
+check("the teacher reaches the same conversation", s == 200 and dig(js, "data", "id") == conv, f"{s} {js}")
+expect("two parents cannot talk in private", call("POST", "/chat/conversations", w2["token"], {"userId": w1_id}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+expect("a conversation with nobody", call("POST", "/chat/conversations", w1["token"], {"userId": str(uuid.uuid4())}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+
+chat_key = str(uuid.uuid4())
+s, js, replayed = call_key("POST", f"/chat/conversations/{conv}/messages", w1["token"], chat_key, {"body": "  Good morning  "})
+first_message = dig(js, "data", "id")
+check("parent sends a message", s == 201 and first_message and dig(js, "data", "body") == "Good morning" and not replayed, f"{s} {js}")
+s, js, replayed = call_key("POST", f"/chat/conversations/{conv}/messages", w1["token"], chat_key, {"body": "  Good morning  "})
+check("repeating the key replays the message", s == 201 and dig(js, "data", "id") == first_message and replayed, f"{s} {js} {replayed}")
+s, js = call("POST", f"/chat/conversations/{conv}/messages", g1["token"], {"body": "Good morning, how is the child?"})
+reply_message = dig(js, "data", "id")
+check("teacher replies", s == 201 and reply_message and reply_message > first_message, f"{s} {js}")
+expect("blank message is refused", call("POST", f"/chat/conversations/{conv}/messages", g1["token"], {"body": "   "}), 400, "VALIDATION_ERROR")
+
+s, js = call("GET", "/chat/conversations", w1["token"])
+check("the conversation is listed with its unread count", s == 200 and dig(js, "data", "total") == 1
+      and dig(js, "data", "conversations", 0, "unreadCount") == 1 and dig(js, "data", "conversations", 0, "lastMessage", "id") == reply_message, f"{s} {js}")
+s, js = call("GET", f"/chat/conversations/{conv}/messages?after=0", w1["token"])
+check("the messages come in the order they were sent", s == 200 and [m.get("id") for m in dig(js, "data", "messages") or []] == [first_message, reply_message]
+      and dig(js, "data", "hasMore") is False, f"{s} {js}")
+s, js = call("PUT", f"/chat/conversations/{conv}/read", w1["token"], {"messageId": reply_message})
+check("parent marks the conversation read", s == 200 and dig(js, "data", "lastReadMessageId") == reply_message and dig(js, "data", "unreadCount") == 0, f"{s} {js}")
+expect("a teacher of another class cannot read it", call("GET", f"/chat/conversations/{conv}/messages", g2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
+expect("another parent cannot read it", call("GET", f"/chat/conversations/{conv}/messages", w2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
+expect("only the sender deletes a message", call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", w1["token"]), 403, "AUTH_FORBIDDEN")
+s, js = call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", g1["token"])
+check("the sender deletes a message", s == 200 and dig(js, "data", "deleted") is True and dig(js, "data", "body") == "", f"{s} {js}")
+
 # ---------- 0.9.0 teachers, owner, leaving ----------
 tb = f"/guru/classes/{cid}/teachers"
 s, js = call("GET", tb, g1["token"])

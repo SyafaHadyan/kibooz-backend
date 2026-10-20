@@ -79,6 +79,14 @@ thread_id="$(pick "$thread" '.data.id')"
 reply="$(post_as "/classes/$class/forum/$thread_id/replies" "$guru_session" '{"body": "ZAP reply"}')"
 reply_id="$(pick "$reply" '.data.id')"
 
+# a conversation between the teacher and the parent with one message in it, so that the chat routes answer real data
+parent_user="$(pick "$(get /chat/contacts "$guru_session")" '.data.contacts[0].id')"
+teacher_user="$(pick "$(get /chat/contacts "$wali_session")" '.data.contacts[0].id')"
+conversation="$(post_as /chat/conversations "$guru_session" "$(jq -n --arg u "$parent_user" '{userId: $u}')")"
+conversation_id="$(pick "$conversation" '.data.id')"
+message="$(post_as "/chat/conversations/$conversation_id/messages" "$guru_session" '{"body": "ZAP chat message"}')"
+message_id="$(pick "$message" '.data.id')"
+
 # a second class, so that replacing its join code never takes the code that the parent registration above relies on
 other="$(post_as /guru/classes "$guru_session" '{"name": "zap two", "gradeLevel": "Class Y"}')"
 other_id="$(pick "$other" '.data.id')"
@@ -108,7 +116,8 @@ photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
 extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg c "$class" --arg v "$video_id" \
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" --arg pw "$pw_token" --arg lt "$leaver_token" \
-  --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" '[
+  --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" \
+  --arg mi "$message_id" --arg tu "$teacher_user" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.nocode." + $x + "@example.com"), password: $p, fullName: "ZAP No Code", role: "WALI", classCode: "ZZZZZZZZ", student: {nisn: "323456789012", fullName: "ZAP Nobody"}}},
@@ -137,6 +146,32 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "GET", path: ("/api/v1/classes/" + $c + "/forum/" + $t + "/replies"), token: $gt},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/forum/" + $t + "/replies"), token: $wt, body: {body: "ZAP parent reply"}},
   {method: "PATCH", path: ("/api/v1/classes/" + $c + "/forum/" + $t + "/replies/" + $r), token: $gt, body: {body: "ZAP edited reply"}},
+  {method: "GET", path: "/api/v1/chat/contacts", token: $gt},
+  {method: "GET", path: "/api/v1/chat/contacts", token: $wt},
+  {method: "GET", path: "/api/v1/chat/conversations", token: $gt},
+  {method: "GET", path: "/api/v1/chat/conversations", token: $wt},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $wt, body: {userId: $tu}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {userId: $tu}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {userId: "not-a-uuid"}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {}},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $wt},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages?after=0&limit=10"), token: $gt},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages?before=" + $mi + "&limit=10"), token: $wt},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages?after=x&limit=0"), token: $gt},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $pw},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $wt, body: {body: "ZAP parent chat"}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {body: "ZAP keyed chat"}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {body: "ZAP keyed chat"}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $gt, body: {body: "   "}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $gt, body: {}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $pw, body: {body: "not a member"}},
+  {method: "PUT", path: ("/api/v1/chat/conversations/" + $ci + "/read"), token: $wt, body: {messageId: 1000000}},
+  {method: "PUT", path: ("/api/v1/chat/conversations/" + $ci + "/read"), token: $gt, body: {messageId: -1}},
+  {method: "PUT", path: ("/api/v1/chat/conversations/" + $ci + "/read"), token: $pw, body: {messageId: 1}},
+  {method: "DELETE", path: ("/api/v1/chat/conversations/" + $ci + "/messages/" + $mi), token: $wt},
+  {method: "DELETE", path: ("/api/v1/chat/conversations/" + $ci + "/messages/" + $mi), token: $pw},
+  {method: "DELETE", path: ("/api/v1/chat/conversations/" + $ci + "/messages/0"), token: $gt},
+  {method: "DELETE", path: ("/api/v1/chat/conversations/" + $ci + "/messages/" + $mi), token: $gt},
   {method: "GET", path: "/api/v1/guru/classes", token: $gt},
   {method: "GET", path: ("/api/v1/guru/classes/" + $c), token: $gt},
   {method: "GET", path: ("/api/v1/guru/classes/" + $c), token: $wt},
