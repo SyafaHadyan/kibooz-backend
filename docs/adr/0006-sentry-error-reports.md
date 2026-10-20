@@ -1,6 +1,6 @@
 # 0006 Errors go to Sentry through the core SDK, scrubbed and capped in our own code
 
-Status: Proposed, 2026-10-20
+Status: Accepted, 2026-10-21
 
 ## Context
 
