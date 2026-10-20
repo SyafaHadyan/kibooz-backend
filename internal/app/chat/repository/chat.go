@@ -184,8 +184,9 @@ type ChatDBItf interface {
 	// CreateMessage stores a message under a lock on its conversation, so the ids of one conversation are in the order the
 	// messages commit. It returns ErrConversationGone when the conversation was deleted in the meantime.
 	CreateMessage(ctx context.Context, message *entity.ChatMessage) error
-	// FindMessage returns nil when the conversation has no such message
-	FindMessage(ctx context.Context, conversationID uuid.UUID, messageID int64) (*MessageRow, error)
+	// FindMessage returns nil when the conversation has no such message sent at or after since, so an account never learns from
+	// the answer that an older message exists. A zero since shows everything.
+	FindMessage(ctx context.Context, conversationID uuid.UUID, messageID int64, since time.Time) (*MessageRow, error)
 	// DeleteMessage empties a message of its sender, clears its media and queues the file for removal, and keeps the time of the
 	// first deletion
 	DeleteMessage(ctx context.Context, conversationID uuid.UUID, messageID int64, senderID uuid.UUID, now time.Time) error
@@ -516,12 +517,12 @@ func (r *ChatDB) CreateMessage(ctx context.Context, message *entity.ChatMessage)
 	})
 }
 
-func (r *ChatDB) FindMessage(ctx context.Context, conversationID uuid.UUID, messageID int64) (*MessageRow, error) {
+func (r *ChatDB) FindMessage(ctx context.Context, conversationID uuid.UUID, messageID int64, since time.Time) (*MessageRow, error) {
 	var rows []MessageRow
 
 	err := r.db.WithContext(ctx).
 		Raw("SELECT "+messageColumns+` FROM chat_messages AS m JOIN users AS u ON u.id = m.sender_id
-			WHERE m.conversation_id = ? AND m.id = ? LIMIT 1`, conversationID, messageID).
+			WHERE m.conversation_id = ? AND m.id = ? AND m.created_at >= ? LIMIT 1`, conversationID, messageID, since).
 		Scan(&rows).Error
 	if err != nil || len(rows) == 0 {
 		return nil, err

@@ -604,7 +604,7 @@ func (u *ChatUseCase) SendMessage(
 	}
 
 	// the stored message is read again so that it carries the person who wrote it, in the shape every other answer has
-	stored, err := u.repo.FindMessage(ctx, conversationID, message.ID)
+	stored, err := u.repo.FindMessage(ctx, conversationID, message.ID, time.Time{})
 	if err != nil {
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
@@ -619,12 +619,13 @@ func (u *ChatUseCase) SendMessage(
 func (u *ChatUseCase) DeleteMessage(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, messageID int64,
 ) (dto.ChatMessage, error) {
-	_, err := u.member(ctx, userID, conversationID)
+	since, err := u.member(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatMessage{}, err
 	}
 
-	message, err := u.repo.FindMessage(ctx, conversationID, messageID)
+	// a message from before the account joined a room is not found, the same answer as for an id that does not exist
+	message, err := u.repo.FindMessage(ctx, conversationID, messageID, since)
 	if err != nil {
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
@@ -643,7 +644,7 @@ func (u *ChatUseCase) DeleteMessage(
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
 
-	message, err = u.repo.FindMessage(ctx, conversationID, messageID)
+	message, err = u.repo.FindMessage(ctx, conversationID, messageID, since)
 	if err != nil {
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
