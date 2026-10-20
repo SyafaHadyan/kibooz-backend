@@ -1,3 +1,7 @@
 # A fake token that a test of the error report scrub used as a fixture in the first commit of the Sentry pull request. It is built
 # at run time now, but the history keeps the first version, and the secret scan reads the whole history.
 b820768e6e40b824879cd225d987a5223ba1a460:internal/errorreport/errorreport_test.go:jwt:122
+
+# The signing key that the socket tests of the chat handler used as a fixture in the first commit of the chat socket pull request.
+# It is built at run time now, but the history keeps the first version, and the secret scan reads the whole history.
+f72ea56f8b8881100d6e6d0e1f6e0108ea940225:internal/app/chat/interface/rest/socket_test.go:generic-api-key:28
