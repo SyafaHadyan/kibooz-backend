@@ -56,8 +56,8 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 
 | Alert | Fires when |
 |:---|:---|
-| API is down | The metrics of a copy were not scraped for 5 minutes, which means the API or its metrics listener is not answering. It also fires for every copy when no data arrives at all, which is what happens when Alloy itself is down |
-| An API copy has disappeared | A host has fewer copies of the API than at some point in the last day, so a container stopped or was removed. A container that is gone is no longer discovered, so the rule above cannot see it. This rule stops firing a day after a copy was removed on purpose |
+| API is down | The metrics of a copy were not scraped for 5 minutes, which means the API or its metrics listener is not answering. It also fires when no data arrives at all, which is what happens when every Alloy is down |
+| An API copy has disappeared | A copy of the API reported metrics at some point in the last day and does not any more, for 5 minutes. A container that is gone is no longer discovered, so the rule above cannot see it, and the same goes for a host whose Alloy stopped. It names the copy and its host, and it stops firing a day after a copy was removed on purpose |
 | 5xx ratio is high | More than 5 percent of the requests failed with a 5xx for 10 minutes |
 | p95 latency is high | The p95 latency, which 95 percent of the requests stay under, was above one second for 10 minutes |
 | A background job has not succeeded | The semester check or a keepalive of a copy has not succeeded for 10 minutes |
