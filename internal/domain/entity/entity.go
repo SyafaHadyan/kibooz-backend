@@ -146,3 +146,22 @@ type ForumPost struct {
 	// EditedAt is when the author last changed the words of the post, and nil for a post that was never edited
 	EditedAt *time.Time
 }
+
+// ChatConversation is the direct conversation of two accounts, UserLowID is always the smaller of the two ids
+type ChatConversation struct {
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UserLowID  uuid.UUID `gorm:"type:uuid;not null"`
+	UserHighID uuid.UUID `gorm:"type:uuid;not null"`
+	CreatedAt  time.Time `gorm:"autoCreateTime:false;not null"`
+}
+
+// ChatMessage is one message of a conversation. The id only grows and is the cursor of the conversation. A deleted message
+// keeps its row with an empty body and the time it was deleted.
+type ChatMessage struct {
+	ID             int64     `gorm:"primaryKey;autoIncrement"`
+	ConversationID uuid.UUID `gorm:"type:uuid;not null"`
+	SenderID       uuid.UUID `gorm:"type:uuid;not null"`
+	Body           string    `gorm:"not null"`
+	CreatedAt      time.Time `gorm:"autoCreateTime:false;not null"`
+	DeletedAt      *time.Time
+}
