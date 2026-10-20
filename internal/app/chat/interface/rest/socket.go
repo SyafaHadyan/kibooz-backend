@@ -109,9 +109,12 @@ func (h *ChatHandler) Socket(conn *websocket.Conn) {
 		defer close(written)
 
 		h.write(conn, client, expires)
+
+		// the reader may be waiting on a client that only sends pongs, so the socket ends with the writer
+		_ = conn.Close()
 	}()
 
-	h.read(ctx, conn, client)
+	h.read(ctx, conn, client, expires)
 
 	// the writer ends when the client is closed, and it sends the closing frame on its way out
 	client.Close()
@@ -177,12 +180,12 @@ func (h *ChatHandler) write(conn *websocket.Conn, client *chatlive.Client, expir
 }
 
 // read handles what the app sends until the socket ends. Its frames are typing hints, and a hint that is refused is dropped.
-func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *chatlive.Client) {
+func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *chatlive.Client, expires time.Time) {
 	var (
 		bad       int
 		tokens    = float64(frameBurst)
 		refilled  = time.Now()
-		lastTyped = map[uuid.UUID]time.Time{}
+		lastTyped = map[uuid.UUID]typedAt{}
 	)
 
 	for {
@@ -191,8 +194,14 @@ func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *ch
 			return
 		}
 
-		// a token bucket per socket, so a client cannot turn typing frames into a stream of database queries
 		now := time.Now()
+
+		// the writer closes the socket when the token ends, and a frame that was already read must not outlive it
+		if !expires.IsZero() && now.After(expires) {
+			return
+		}
+
+		// a token bucket per socket, so a client cannot turn typing frames into a stream of database queries
 		tokens = min(frameBurst, tokens+now.Sub(refilled).Seconds()*frameRate)
 		refilled = now
 
@@ -221,7 +230,8 @@ func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *ch
 			continue
 		}
 
-		if last, seen := lastTyped[frame.ConversationID]; seen && now.Sub(last) < typingEvery {
+		// only a repeat of the same hint is throttled, so "stopped typing" right after "typing" still gets through
+		if last, seen := lastTyped[frame.ConversationID]; seen && last.typing == frame.Typing && now.Sub(last.at) < typingEvery {
 			continue
 		}
 
@@ -229,7 +239,7 @@ func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *ch
 			clear(lastTyped)
 		}
 
-		lastTyped[frame.ConversationID] = now
+		lastTyped[frame.ConversationID] = typedAt{at: now, typing: frame.Typing}
 
 		// the reader does not read the socket while a query waits, so a query that stalls must end before the read deadline does
 		typingCtx, cancelTyping := context.WithTimeout(ctx, typingTimeout)
@@ -241,6 +251,12 @@ func (h *ChatHandler) read(ctx context.Context, conn *websocket.Conn, client *ch
 			log.Printf("a typing frame failed %v", err)
 		}
 	}
+}
+
+// typedAt is the last typing hint that went through for a conversation
+type typedAt struct {
+	at     time.Time
+	typing bool
 }
 
 // isRefusal tells an answer that means the frame was not allowed, which a socket ignores, from a failure worth a log line
