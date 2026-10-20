@@ -28,11 +28,17 @@ type fakeRepo struct {
 	conversations map[uuid.UUID]*entity.ChatConversation
 	links         []repository.ConversationLinkRow
 	views         map[uuid.UUID]*repository.ConversationRow
-	messages      map[int64]*entity.ChatMessage
+	messages      map[int64]*repository.MessageRow
 	createErr     error
 	created       []*entity.ChatMessage
 	contactRows   []repository.ContactRow
 	contactLinks  []repository.ContactLinkRow
+
+	// memberships holds what the signed in account has in each class, a class that is missing means it is no member
+	memberships map[uuid.UUID]*repository.ClassMembership
+	// listedSince and markedSince record the join time that the use case passed down
+	listedSince time.Time
+	markedSince time.Time
 }
 
 func (f *fakeRepo) FindAccount(context.Context, uuid.UUID) (*repository.AccountRow, error) {
@@ -51,15 +57,55 @@ func (f *fakeRepo) GetOrCreateConversation(
 	_ context.Context, low uuid.UUID, high uuid.UUID, now time.Time,
 ) (*entity.ChatConversation, bool, error) {
 	for _, conversation := range f.conversations {
-		if conversation.UserLowID == low && conversation.UserHighID == high {
+		if conversation.UserLowID != nil && *conversation.UserLowID == low && *conversation.UserHighID == high {
 			return conversation, false, nil
 		}
 	}
 
-	conversation := &entity.ChatConversation{ID: uuid.New(), UserLowID: low, UserHighID: high, CreatedAt: now}
+	conversation := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindDirect, UserLowID: &low, UserHighID: &high, CreatedAt: now}
 	f.conversations[conversation.ID] = conversation
 
 	return conversation, true, nil
+}
+
+func (f *fakeRepo) MemberSince(_ context.Context, _ uuid.UUID, classID uuid.UUID) (*repository.ClassMembership, error) {
+	return f.memberships[classID], nil
+}
+
+func (f *fakeRepo) FindClassRoom(_ context.Context, classID uuid.UUID) (*entity.ChatConversation, error) {
+	for _, conversation := range f.conversations {
+		if conversation.ClassID != nil && *conversation.ClassID == classID {
+			return conversation, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (f *fakeRepo) GetOrCreateClassRoom(ctx context.Context, classID uuid.UUID, now time.Time) (*entity.ChatConversation, bool, error) {
+	existing, _ := f.FindClassRoom(ctx, classID)
+	if existing != nil {
+		return existing, false, nil
+	}
+
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID, CreatedAt: now}
+	f.conversations[room.ID] = room
+
+	return room, true, nil
+}
+
+func (f *fakeRepo) ListMessages(
+	_ context.Context, _ uuid.UUID, since time.Time, _ *int64, _ *int64, _ int,
+) ([]repository.MessageRow, bool, error) {
+	f.listedSince = since
+
+	return nil, false, nil
+}
+
+func (f *fakeRepo) MarkRead(_ context.Context, _ uuid.UUID, _ uuid.UUID, since time.Time, _ int64, _ time.Time) (int64, int, error) {
+	f.markedSince = since
+
+	return 0, 0, nil
 }
 
 func (f *fakeRepo) FindConversation(_ context.Context, id uuid.UUID) (*entity.ChatConversation, error) {
@@ -71,7 +117,10 @@ func (f *fakeRepo) FindConversationFor(_ context.Context, _ uuid.UUID, id uuid.U
 		return view, nil
 	}
 
-	return &repository.ConversationRow{ID: id, CanSend: true}, nil
+	return &repository.ConversationRow{
+		ID: id, Kind: constants.ChatKindDirect, CanSend: true,
+		PeerID: ptr(uuid.New()), PeerName: ptr("Siti"), PeerRole: ptr(constants.RoleWali), PeerDeleted: ptr(false),
+	}, nil
 }
 
 func (f *fakeRepo) CreateMessage(_ context.Context, message *entity.ChatMessage) error {
@@ -85,8 +134,22 @@ func (f *fakeRepo) CreateMessage(_ context.Context, message *entity.ChatMessage)
 	return nil
 }
 
-func (f *fakeRepo) FindMessage(_ context.Context, _ uuid.UUID, id int64) (*entity.ChatMessage, error) {
-	return f.messages[id], nil
+func (f *fakeRepo) FindMessage(_ context.Context, conversationID uuid.UUID, id int64) (*repository.MessageRow, error) {
+	if message, found := f.messages[id]; found {
+		return message, nil
+	}
+
+	// a message that this test wrote through CreateMessage comes back with the name of its sender
+	for _, created := range f.created {
+		if created.ID == id {
+			return &repository.MessageRow{
+				ID: created.ID, ConversationID: conversationID, SenderID: created.SenderID, Body: created.Body,
+				CreatedAt: created.CreatedAt, SenderName: "Bu Ani", SenderRole: constants.RoleGuru,
+			}, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (f *fakeRepo) DeleteMessage(_ context.Context, _ uuid.UUID, id int64, _ uuid.UUID, now time.Time) error {
@@ -152,14 +215,14 @@ func TestPeerRoleIsTheOtherRoleAndAdminHasNone(t *testing.T) {
 func TestStartConversationRefusesYourOwnAccount(t *testing.T) {
 	me := uuid.New()
 
-	_, _, err := newUseCase(&fakeRepo{}).StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: me})
+	_, _, err := newUseCase(&fakeRepo{}).StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: &me})
 
 	requireAppError(t, err, apperror.Validation(nil))
 }
 
 func TestStartConversationRefusesAnAdmin(t *testing.T) {
 	_, _, err := newUseCase(&fakeRepo{}).StartConversation(
-		context.Background(), uuid.New(), constants.RoleAdmin, dto.StartChatRequest{UserID: uuid.New()},
+		context.Background(), uuid.New(), constants.RoleAdmin, dto.StartChatRequest{UserID: ptr(uuid.New())},
 	)
 
 	requireAppError(t, err, apperror.ErrForbidden)
@@ -170,7 +233,7 @@ func TestStartConversationGivesOneAnswerForAnUnknownAndAWrongRolePerson(t *testi
 
 	// an id that belongs to no active account
 	_, _, err := newUseCase(&fakeRepo{}).StartConversation(
-		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: peer},
+		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: &peer},
 	)
 	requireAppError(t, err, apperror.ErrChatContactNotAllowed)
 
@@ -178,7 +241,7 @@ func TestStartConversationGivesOneAnswerForAnUnknownAndAWrongRolePerson(t *testi
 	repo := &fakeRepo{account: &repository.AccountRow{ID: peer, Role: constants.RoleGuru}, shared: true}
 
 	_, _, err = newUseCase(repo).StartConversation(
-		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: peer},
+		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: &peer},
 	)
 	requireAppError(t, err, apperror.ErrChatContactNotAllowed)
 }
@@ -188,7 +251,7 @@ func TestStartConversationNeedsASharedClassForANewOne(t *testing.T) {
 	repo := &fakeRepo{account: &repository.AccountRow{ID: peer, Role: constants.RoleWali}}
 
 	_, _, err := newUseCase(repo).StartConversation(
-		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: peer},
+		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: &peer},
 	)
 
 	requireAppError(t, err, apperror.ErrChatContactNotAllowed)
@@ -204,7 +267,7 @@ func TestStartConversationReturnsTheOldOneOfPeopleWhoNoLongerShareAClass(t *test
 	}
 
 	res, created, err := newUseCase(repo).StartConversation(
-		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: peer},
+		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: &peer},
 	)
 
 	require.NoError(t, err)
@@ -218,11 +281,11 @@ func TestStartConversationCreatesOnceAndThenReturnsTheSameOne(t *testing.T) {
 	repo := &fakeRepo{account: &repository.AccountRow{ID: peer, Role: constants.RoleWali}, shared: true}
 	useCase := newUseCase(repo)
 
-	first, created, err := useCase.StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: peer})
+	first, created, err := useCase.StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: &peer})
 	require.NoError(t, err)
 	require.True(t, created)
 
-	second, created, err := useCase.StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: peer})
+	second, created, err := useCase.StartConversation(context.Background(), me, constants.RoleGuru, dto.StartChatRequest{UserID: &peer})
 	require.NoError(t, err)
 	require.False(t, created)
 	require.Equal(t, first.ID, second.ID)
@@ -230,12 +293,19 @@ func TestStartConversationCreatesOnceAndThenReturnsTheSameOne(t *testing.T) {
 
 	stored := repo.conversations[first.ID]
 	require.Negative(t, strings.Compare(stored.UserLowID.String(), stored.UserHighID.String()))
+	require.Equal(t, constants.ChatKindDirect, first.Kind)
+	require.NotNil(t, first.Peer)
+	require.Nil(t, first.Class)
 }
 
 func conversationOf(low uuid.UUID, high uuid.UUID) (*entity.ChatConversation, uuid.UUID) {
 	id := uuid.New()
 
-	return &entity.ChatConversation{ID: id, UserLowID: low, UserHighID: high}, id
+	return &entity.ChatConversation{ID: id, Kind: constants.ChatKindDirect, UserLowID: &low, UserHighID: &high}, id
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }
 
 func TestAnAccountOutsideAConversationGetsNotFoundOnEveryRoute(t *testing.T) {
@@ -297,6 +367,7 @@ func TestSendMessageTrimsTheTextAndStoresItForTheSender(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Good morning", res.Body)
 	require.Equal(t, me, res.SenderID)
+	require.Equal(t, "Bu Ani", res.Sender.FullName)
 	require.Equal(t, id, res.ConversationID)
 	require.False(t, res.Deleted)
 	require.Equal(t, time.Date(2026, 10, 20, 9, 0, 0, 123456000, time.UTC), res.CreatedAt)
@@ -342,7 +413,7 @@ func TestDeleteMessageIsForTheSenderAndLeavesAPlaceholder(t *testing.T) {
 	conversation, id := conversationOf(me, other)
 	repo := &fakeRepo{
 		conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation},
-		messages: map[int64]*entity.ChatMessage{
+		messages: map[int64]*repository.MessageRow{
 			1: {ID: 1, ConversationID: id, SenderID: me, Body: "mine"},
 			2: {ID: 2, ConversationID: id, SenderID: other, Body: "theirs"},
 		},
@@ -405,7 +476,8 @@ func TestListContactsRefusesAnAdminAndShowsNoConversationYet(t *testing.T) {
 func TestConversationResponseHidesADeletedPersonAndAMissingLastMessage(t *testing.T) {
 	avatar := "https://cdn.example.test/avatars/a.png"
 	row := &repository.ConversationRow{
-		ID: uuid.New(), PeerID: uuid.New(), PeerName: "Siti", PeerRole: constants.RoleWali, PeerAvatarURL: &avatar,
+		ID: uuid.New(), Kind: constants.ChatKindDirect, PeerID: ptr(uuid.New()), PeerName: ptr("Siti"),
+		PeerRole: ptr(constants.RoleWali), PeerAvatarURL: &avatar, PeerDeleted: ptr(false),
 		UnreadCount: 2, PeerLastReadMessageID: 7, CanSend: true,
 	}
 
@@ -419,7 +491,8 @@ func TestConversationResponseHidesADeletedPersonAndAMissingLastMessage(t *testin
 
 	id, sender, body, deleted, at := int64(9), uuid.New(), "see you", false, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
 	row.LastID, row.LastSenderID, row.LastBody, row.LastDeleted, row.LastCreatedAt = &id, &sender, &body, &deleted, &at
-	row.PeerDeleted = true
+	row.LastSenderName, row.LastSenderRole, row.LastSenderDeleted = ptr("Bu Ani"), ptr(constants.RoleGuru), ptr(true)
+	row.PeerDeleted = ptr(true)
 
 	gone := conversationResponse(row)
 	require.Equal(t, DeletedAccountName, gone.Peer.FullName)
@@ -429,4 +502,115 @@ func TestConversationResponseHidesADeletedPersonAndAMissingLastMessage(t *testin
 	require.Equal(t, int64(9), gone.LastMessage.ID)
 	require.Equal(t, "see you", gone.LastMessage.Body)
 	require.Equal(t, row.ID, gone.LastMessage.ConversationID)
+	require.Equal(t, DeletedAccountName, gone.LastMessage.Sender.FullName)
+}
+
+func TestConversationResponseOfARoomHasTheClassAndNoPeer(t *testing.T) {
+	classID := uuid.New()
+	row := &repository.ConversationRow{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID, ClassName: ptr("Kelas A"), CanSend: true}
+
+	res := conversationResponse(row)
+
+	require.Equal(t, constants.ChatKindClass, res.Kind)
+	require.Nil(t, res.Peer)
+	require.Equal(t, &dto.ChatContactClass{ID: classID, Name: "Kelas A"}, res.Class)
+}
+
+func TestStartConversationNeedsExactlyOneOfAPersonAndAClass(t *testing.T) {
+	useCase := newUseCase(&fakeRepo{})
+
+	_, _, err := useCase.StartConversation(context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{})
+	requireAppError(t, err, apperror.Validation(nil))
+
+	_, _, err = useCase.StartConversation(
+		context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{UserID: ptr(uuid.New()), ClassID: ptr(uuid.New())},
+	)
+	requireAppError(t, err, apperror.Validation(nil))
+}
+
+func TestOpeningARoomNeedsMembershipAndGivesOneAnswerForAnUnknownClass(t *testing.T) {
+	classID := uuid.New()
+	repo := &fakeRepo{}
+
+	_, _, err := newUseCase(repo).StartConversation(
+		context.Background(), uuid.New(), constants.RoleWali, dto.StartChatRequest{ClassID: &classID},
+	)
+
+	requireAppError(t, err, apperror.ErrChatContactNotAllowed)
+	require.Empty(t, repo.conversations)
+}
+
+func TestOpeningARoomCreatesItOnceForEveryMember(t *testing.T) {
+	classID := uuid.New()
+	repo := &fakeRepo{memberships: map[uuid.UUID]*repository.ClassMembership{classID: {ClassName: "Kelas A", Since: time.Now()}}}
+	useCase := newUseCase(repo)
+
+	first, created, err := useCase.StartConversation(context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{ClassID: &classID})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	second, created, err := useCase.StartConversation(context.Background(), uuid.New(), constants.RoleWali, dto.StartChatRequest{ClassID: &classID})
+	require.NoError(t, err)
+	require.False(t, created)
+	require.Equal(t, first.ID, second.ID)
+	require.Len(t, repo.conversations, 1)
+}
+
+func TestAnArchivedClassOnlyReturnsARoomThatAlreadyExists(t *testing.T) {
+	classID := uuid.New()
+	repo := &fakeRepo{memberships: map[uuid.UUID]*repository.ClassMembership{classID: {Archived: true, Since: time.Now()}}}
+	useCase := newUseCase(repo)
+
+	_, _, err := useCase.StartConversation(context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{ClassID: &classID})
+	requireAppError(t, err, apperror.ErrChatContactNotAllowed)
+	require.Empty(t, repo.conversations)
+
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo.conversations = map[uuid.UUID]*entity.ChatConversation{room.ID: room}
+	repo.views = map[uuid.UUID]*repository.ConversationRow{room.ID: {ID: room.ID, Kind: constants.ChatKindClass, CanSend: false}}
+
+	res, created, err := useCase.StartConversation(context.Background(), uuid.New(), constants.RoleGuru, dto.StartChatRequest{ClassID: &classID})
+	require.NoError(t, err)
+	require.False(t, created)
+	require.False(t, res.CanSend)
+}
+
+func TestARoomShowsAMemberOnlyTheMessagesFromTheirJoinTime(t *testing.T) {
+	classID := uuid.New()
+	joined := time.Date(2026, 10, 10, 8, 0, 0, 0, time.UTC)
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: joined}},
+	}
+	useCase := newUseCase(repo)
+	me := uuid.New()
+
+	_, err := useCase.ListMessages(context.Background(), me, room.ID, nil, nil, 10)
+	require.NoError(t, err)
+	require.Equal(t, joined, repo.listedSince)
+
+	_, err = useCase.MarkRead(context.Background(), me, room.ID, dto.MarkChatReadRequest{MessageID: 5})
+	require.NoError(t, err)
+	require.Equal(t, joined, repo.markedSince)
+}
+
+func TestARoomIsNotFoundForAnAccountThatLeftTheClass(t *testing.T) {
+	classID := uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room}}
+	useCase := newUseCase(repo)
+	ctx := context.Background()
+
+	_, err := useCase.ListMessages(ctx, uuid.New(), room.ID, nil, nil, 10)
+	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+
+	_, err = useCase.SendMessage(ctx, uuid.New(), room.ID, dto.SendChatMessageRequest{Body: "hi"})
+	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+
+	_, err = useCase.DeleteMessage(ctx, uuid.New(), room.ID, 1)
+	requireAppError(t, err, apperror.ErrChatConversationNotFound)
+
+	_, err = useCase.MarkRead(ctx, uuid.New(), room.ID, dto.MarkChatReadRequest{MessageID: 1})
+	requireAppError(t, err, apperror.ErrChatConversationNotFound)
 }

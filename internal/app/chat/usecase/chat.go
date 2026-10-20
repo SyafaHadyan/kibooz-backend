@@ -31,7 +31,8 @@ type ChatUseCaseItf interface {
 	// ListContacts returns the people the account can start a conversation with, the parents of the classes of a teacher or the
 	// teachers of the classes of a parent
 	ListContacts(ctx context.Context, userID uuid.UUID, role constants.Role, page pagination.Params) (dto.ChatContactList, error)
-	// StartConversation returns the conversation with a person and whether this call made it. A new one needs a shared class.
+	// StartConversation returns the conversation with a person, or the room of a class, and whether this call made it. A new direct
+	// conversation needs a shared class and a room needs the account to belong to the class.
 	StartConversation(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.StartChatRequest) (dto.ChatConversation, bool, error)
 	// ListConversations returns the conversations that have a message, the newest message first
 	ListConversations(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ChatConversationList, error)
@@ -147,18 +148,74 @@ func (u *ChatUseCase) ListContacts(
 func (u *ChatUseCase) StartConversation(
 	ctx context.Context, userID uuid.UUID, role constants.Role, req dto.StartChatRequest,
 ) (dto.ChatConversation, bool, error) {
-	if req.UserID == userID {
-		return dto.ChatConversation{}, false, apperror.Validation(map[string]string{"userId": "cannot be your own account"})
+	if (req.UserID == nil) == (req.ClassID == nil) {
+		return dto.ChatConversation{}, false, apperror.Validation(map[string]string{"userId": "send either userId or classId"})
 	}
 
-	wanted, ok := peerRole(role)
+	_, ok := peerRole(role)
 	if !ok {
 		return dto.ChatConversation{}, false, apperror.ErrForbidden
 	}
 
+	if req.ClassID != nil {
+		return u.openRoom(ctx, userID, *req.ClassID)
+	}
+
+	return u.openDirect(ctx, userID, role, *req.UserID)
+}
+
+// openRoom returns the room of a class for one of its members. A class that nobody opened a room for gets one, unless it is
+// archived, and the answer for a class the account does not belong to is the same as for a class that does not exist.
+func (u *ChatUseCase) openRoom(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ChatConversation, bool, error) {
+	membership, err := u.repo.MemberSince(ctx, userID, classID)
+	if err != nil {
+		return dto.ChatConversation{}, false, apperror.Internal(err)
+	}
+
+	if membership == nil {
+		return dto.ChatConversation{}, false, apperror.ErrChatContactNotAllowed
+	}
+
+	room, err := u.repo.FindClassRoom(ctx, classID)
+	if err != nil {
+		return dto.ChatConversation{}, false, apperror.Internal(err)
+	}
+
+	created := false
+
+	if room == nil {
+		// the room of an archived class that was never opened would only ever be empty and closed
+		if membership.Archived {
+			return dto.ChatConversation{}, false, apperror.ErrChatContactNotAllowed
+		}
+
+		room, created, err = u.repo.GetOrCreateClassRoom(ctx, classID, u.timestamp())
+		if err != nil {
+			return dto.ChatConversation{}, false, apperror.Internal(err)
+		}
+
+		if room == nil {
+			return dto.ChatConversation{}, false, apperror.Internal(errors.New("the class room is gone after it was opened"))
+		}
+	}
+
+	view, err := u.viewOf(ctx, userID, room.ID)
+
+	return view, created, err
+}
+
+func (u *ChatUseCase) openDirect(
+	ctx context.Context, userID uuid.UUID, role constants.Role, peerID uuid.UUID,
+) (dto.ChatConversation, bool, error) {
+	if peerID == userID {
+		return dto.ChatConversation{}, false, apperror.Validation(map[string]string{"userId": "cannot be your own account"})
+	}
+
+	wanted, _ := peerRole(role)
+
 	// a person who does not exist, was deleted or has the same role gets the same answer, so the request does not tell
 	// whether an id belongs to an account
-	peer, err := u.repo.FindAccount(ctx, req.UserID)
+	peer, err := u.repo.FindAccount(ctx, peerID)
 	if err != nil {
 		return dto.ChatConversation{}, false, apperror.Internal(err)
 	}
@@ -243,25 +300,47 @@ func (u *ChatUseCase) ListConversations(
 	return res, nil
 }
 
-// member returns the conversation when the account is one of its two people, and not found for anyone else, so the answer does
-// not tell whether a conversation exists
-func (u *ChatUseCase) member(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) (*entity.ChatConversation, error) {
+// member checks that the account belongs to the conversation, as one of the two people of a direct one or as a member of the
+// class of a room, and returns the time from which it sees messages. That is the zero time for a direct conversation. Anyone
+// else gets not found, so the answer does not tell whether a conversation exists.
+func (u *ChatUseCase) member(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID) (time.Time, error) {
 	conversation, err := u.repo.FindConversation(ctx, conversationID)
 	if err != nil {
-		return nil, apperror.Internal(err)
+		return time.Time{}, apperror.Internal(err)
 	}
 
-	if conversation == nil || (conversation.UserLowID != userID && conversation.UserHighID != userID) {
-		return nil, apperror.ErrChatConversationNotFound
+	if conversation == nil {
+		return time.Time{}, apperror.ErrChatConversationNotFound
 	}
 
-	return conversation, nil
+	if conversation.Kind == constants.ChatKindClass {
+		if conversation.ClassID == nil {
+			return time.Time{}, apperror.ErrChatConversationNotFound
+		}
+
+		membership, memberErr := u.repo.MemberSince(ctx, userID, *conversation.ClassID)
+		if memberErr != nil {
+			return time.Time{}, apperror.Internal(memberErr)
+		}
+
+		if membership == nil {
+			return time.Time{}, apperror.ErrChatConversationNotFound
+		}
+
+		return membership.Since, nil
+	}
+
+	if conversation.UserLowID == nil || conversation.UserHighID == nil || (*conversation.UserLowID != userID && *conversation.UserHighID != userID) {
+		return time.Time{}, apperror.ErrChatConversationNotFound
+	}
+
+	return time.Time{}, nil
 }
 
 func (u *ChatUseCase) ListMessages(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, after *int64, before *int64, limit int,
 ) (dto.ChatMessageList, error) {
-	_, err := u.member(ctx, userID, conversationID)
+	since, err := u.member(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatMessageList{}, err
 	}
@@ -288,7 +367,7 @@ func (u *ChatUseCase) ListMessages(
 		return dto.ChatMessageList{}, apperror.Validation(details)
 	}
 
-	messages, more, err := u.repo.ListMessages(ctx, conversationID, after, before, limit)
+	messages, more, err := u.repo.ListMessages(ctx, conversationID, since, after, before, limit)
 	if err != nil {
 		return dto.ChatMessageList{}, apperror.Internal(err)
 	}
@@ -335,7 +414,17 @@ func (u *ChatUseCase) SendMessage(
 		return dto.ChatMessage{}, apperror.Internal(err)
 	}
 
-	return messageResponse(&message), nil
+	// the stored message is read again so that it carries the person who wrote it, in the shape every other answer has
+	stored, err := u.repo.FindMessage(ctx, conversationID, message.ID)
+	if err != nil {
+		return dto.ChatMessage{}, apperror.Internal(err)
+	}
+
+	if stored == nil {
+		return dto.ChatMessage{}, apperror.ErrChatMessageNotFound
+	}
+
+	return messageResponse(stored), nil
 }
 
 func (u *ChatUseCase) DeleteMessage(
@@ -380,12 +469,12 @@ func (u *ChatUseCase) DeleteMessage(
 func (u *ChatUseCase) MarkRead(
 	ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, req dto.MarkChatReadRequest,
 ) (dto.ChatReadState, error) {
-	_, err := u.member(ctx, userID, conversationID)
+	since, err := u.member(ctx, userID, conversationID)
 	if err != nil {
 		return dto.ChatReadState{}, err
 	}
 
-	mark, unread, err := u.repo.MarkRead(ctx, conversationID, userID, req.MessageID, u.timestamp())
+	mark, unread, err := u.repo.MarkRead(ctx, conversationID, userID, since, req.MessageID, u.timestamp())
 	if err != nil {
 		return dto.ChatReadState{}, apperror.Internal(err)
 	}
@@ -393,11 +482,24 @@ func (u *ChatUseCase) MarkRead(
 	return dto.ChatReadState{LastReadMessageID: mark, UnreadCount: unread}, nil
 }
 
-func messageResponse(message *entity.ChatMessage) dto.ChatMessage {
+// personOf turns the columns of an account into a person, and a deleted account shows as Deleted account without a photo
+func personOf(id uuid.UUID, name string, role constants.Role, avatar *string, deleted bool) dto.ChatPerson {
+	person := dto.ChatPerson{ID: id, FullName: name, Role: role, AvatarURL: avatar, Deleted: deleted}
+
+	if deleted {
+		person.FullName = DeletedAccountName
+		person.AvatarURL = nil
+	}
+
+	return person
+}
+
+func messageResponse(message *repository.MessageRow) dto.ChatMessage {
 	return dto.ChatMessage{
 		ID:             message.ID,
 		ConversationID: message.ConversationID,
 		SenderID:       message.SenderID,
+		Sender:         personOf(message.SenderID, message.SenderName, message.SenderRole, message.SenderAvatarURL, message.SenderDeleted),
 		Body:           message.Body,
 		Deleted:        message.DeletedAt != nil,
 		CreatedAt:      message.CreatedAt.UTC(),
@@ -405,30 +507,36 @@ func messageResponse(message *entity.ChatMessage) dto.ChatMessage {
 }
 
 func conversationResponse(row *repository.ConversationRow) dto.ChatConversation {
-	peer := dto.ChatPerson{ID: row.PeerID, FullName: row.PeerName, Role: row.PeerRole, AvatarURL: row.PeerAvatarURL, Deleted: row.PeerDeleted}
-
-	if row.PeerDeleted {
-		peer.FullName = DeletedAccountName
-		peer.AvatarURL = nil
-	}
-
 	res := dto.ChatConversation{
 		ID:             row.ID,
-		Peer:           peer,
+		Kind:           row.Kind,
 		UnreadCount:    row.UnreadCount,
 		PeerLastReadID: row.PeerLastReadMessageID,
 		CanSend:        row.CanSend,
 		CreatedAt:      row.CreatedAt.UTC(),
 	}
 
-	if row.LastID != nil && row.LastSenderID != nil && row.LastBody != nil && row.LastDeleted != nil && row.LastCreatedAt != nil {
+	if row.Kind == constants.ChatKindClass {
+		if row.ClassID != nil && row.ClassName != nil {
+			res.Class = &dto.ChatContactClass{ID: *row.ClassID, Name: *row.ClassName}
+		}
+	} else if row.PeerID != nil && row.PeerName != nil && row.PeerRole != nil && row.PeerDeleted != nil {
+		peer := personOf(*row.PeerID, *row.PeerName, *row.PeerRole, row.PeerAvatarURL, *row.PeerDeleted)
+		res.Peer = &peer
+	}
+
+	if row.LastID != nil && row.LastSenderID != nil && row.LastBody != nil && row.LastDeleted != nil && row.LastCreatedAt != nil &&
+		row.LastSenderName != nil && row.LastSenderRole != nil && row.LastSenderDeleted != nil {
 		res.LastMessage = &dto.ChatMessage{
 			ID:             *row.LastID,
 			ConversationID: row.ID,
 			SenderID:       *row.LastSenderID,
-			Body:           *row.LastBody,
-			Deleted:        *row.LastDeleted,
-			CreatedAt:      row.LastCreatedAt.UTC(),
+			Sender: personOf(
+				*row.LastSenderID, *row.LastSenderName, *row.LastSenderRole, row.LastSenderAvatarURL, *row.LastSenderDeleted,
+			),
+			Body:      *row.LastBody,
+			Deleted:   *row.LastDeleted,
+			CreatedAt: row.LastCreatedAt.UTC(),
 		}
 	}
 
