@@ -1,6 +1,6 @@
 # 0005 Chat sends over REST and receives over a WebSocket
 
-Status: Proposed, 2026-10-20
+Status: Accepted, 2026-10-21
 
 ## Context
 

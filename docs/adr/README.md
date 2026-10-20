@@ -8,7 +8,7 @@ An architecture decision record says why a choice was made, so that nobody has t
 | [0002 Idempotency keys live in a middleware backed by PostgreSQL](0002-idempotency-middleware.md) | Accepted |
 | [0003 Pull requests are merged with merge commits](0003-merge-commits-only.md) | Accepted |
 | [0004 Only the release GitHub App creates version tags](0004-release-app-creates-tags.md) | Accepted |
-| [0005 Chat sends over REST and receives over a WebSocket](0005-chat-rest-and-websocket.md) | Proposed |
+| [0005 Chat sends over REST and receives over a WebSocket](0005-chat-rest-and-websocket.md) | Accepted |
 | [0006 Errors go to Sentry through the core SDK, scrubbed and capped in our own code](0006-sentry-error-reports.md) | Accepted |
 | [0007 Accounts are hidden, not erased](0007-accounts-are-hidden-not-erased.md) | Accepted |
 | [0008 Sessions end in PostgreSQL, and logins are limited by account and not by address](0008-sessions-and-login-limits.md) | Accepted |

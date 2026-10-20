@@ -127,6 +127,7 @@ var (
 	)
 	ErrChatSendingClosed = New(
 		http.StatusConflict, "CHAT_SENDING_CLOSED",
-		"You no longer share a class with this person, so you can read this conversation but not write in it",
+		"This conversation is closed, so you can read it but not write in it",
 	)
+	ErrChatSocketsFull = New(http.StatusServiceUnavailable, "CHAT_SOCKETS_FULL", "The server cannot take another chat connection right now")
 )

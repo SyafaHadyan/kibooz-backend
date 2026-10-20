@@ -58,7 +58,7 @@ A message with a file has `media` with the `kind` (`photo` or `video`), `content
 - `DELETE /chat/conversations/{conversationId}/messages/{messageId}` deletes a message of your own. The message stays with an empty `body` and `deleted` set, so the people who can see the message, which in a room means the members who had joined by then, see that a message was deleted. Nobody else can delete it, and deleting it twice changes nothing.
 - `PUT /chat/conversations/{conversationId}/read` with `{"messageId": 12}` moves your read mark to that message. The mark only moves forward and is cut to the newest message, and the answer has the new mark and the `unreadCount` that is left. Send it when the person has seen the messages.
 
-There is no live delivery yet, so the app polls. While a conversation is open, ask for `after` the highest id every few seconds, and refresh the list of conversations when the app comes to the front. A WebSocket that pushes new messages is planned.
+**Live delivery.** The app opens one socket, `GET /chat/ws`, and the server pushes new messages, deleted messages, read marks and typing hints, as described in [Chat socket](websocket.md). The socket is a shortcut and not the source of truth. When it closes, connect again. After the new socket sends its `ready` frame, and when the app comes back from the background, ask for `after` the highest id of each open conversation and refresh the list of conversations. An app that cannot hold a socket can poll the same way every few seconds.
 
 ## Edit a profile
 

@@ -166,6 +166,11 @@ type ChatDBItf interface {
 	GetOrCreateConversation(ctx context.Context, low uuid.UUID, high uuid.UUID, now time.Time) (*entity.ChatConversation, bool, error)
 	// MemberSince returns what the account has in a class, or nil when it is no teacher of it and has no active child in it
 	MemberSince(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (*ClassMembership, error)
+	// ClassMemberIDs returns the accounts that belong to a class, its teachers and the parents with an active child in it
+	ClassMemberIDs(ctx context.Context, classID uuid.UUID) ([]uuid.UUID, error)
+	// ClassMembersJoinedBy returns the members of a class who had joined it at the given time, which are the ones that can see a
+	// message sent then
+	ClassMembersJoinedBy(ctx context.Context, classID uuid.UUID, at time.Time) ([]uuid.UUID, error)
 	// FindClassRoom returns the room of a class, or nil when nobody opened it yet
 	FindClassRoom(ctx context.Context, classID uuid.UUID) (*entity.ChatConversation, error)
 	// GetOrCreateClassRoom returns the room of a class and whether this call made it
@@ -344,6 +349,47 @@ func (r *ChatDB) MemberSince(ctx context.Context, userID uuid.UUID, classID uuid
 	}
 
 	return &rows[0], nil
+}
+
+func (r *ChatDB) ClassMemberIDs(ctx context.Context, classID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+
+	err := r.db.WithContext(ctx).
+		Raw(`SELECT member.user_id FROM (
+				SELECT g.user_id FROM class_teachers AS ct
+					JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
+					WHERE ct.class_id = @class
+				UNION
+				SELECT w.user_id FROM students AS s
+					JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
+					WHERE s.class_id = @class AND s.deleted_at IS NULL
+			) AS member
+			JOIN users AS u ON u.id = member.user_id AND u.deleted_at IS NULL`,
+			sql.Named("class", classID)).
+		Scan(&ids).Error
+
+	return ids, err
+}
+
+func (r *ChatDB) ClassMembersJoinedBy(ctx context.Context, classID uuid.UUID, at time.Time) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+
+	err := r.db.WithContext(ctx).
+		Raw(`SELECT member.user_id FROM (
+				SELECT g.user_id, ct.created_at AS joined_at FROM class_teachers AS ct
+					JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
+					WHERE ct.class_id = @class
+				UNION ALL
+				SELECT w.user_id, s.created_at AS joined_at FROM students AS s
+					JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
+					WHERE s.class_id = @class AND s.deleted_at IS NULL
+			) AS member
+			JOIN users AS u ON u.id = member.user_id AND u.deleted_at IS NULL
+			GROUP BY member.user_id HAVING MIN(member.joined_at) <= @at`,
+			sql.Named("class", classID), sql.Named("at", at)).
+		Scan(&ids).Error
+
+	return ids, err
 }
 
 func (r *ChatDB) FindClassRoom(ctx context.Context, classID uuid.UUID) (*entity.ChatConversation, error) {

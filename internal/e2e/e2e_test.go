@@ -152,6 +152,15 @@ func uploaded(prefix string) []string {
 	return matches
 }
 
+// forgetUploaded removes a file from the mock bucket the way the cleanup sweep would
+func forgetUploaded(key string) {
+	storedMu.Lock()
+	defer storedMu.Unlock()
+
+	storedKeys = slices.DeleteFunc(storedKeys, func(stored string) bool { return stored == key })
+	delete(storedObjects, key)
+}
+
 func app(t *testing.T) *fiber.App {
 	t.Helper()
 

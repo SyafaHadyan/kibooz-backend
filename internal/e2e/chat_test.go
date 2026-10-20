@@ -671,8 +671,9 @@ func TestChatMedia(t *testing.T) {
 		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM file_cleanups WHERE object_key = ?", before[0]).Scan(&queued).Error)
 		require.EqualValues(t, 1, queued, "the file is queued in the transaction of the delete")
 
-		// nothing sweeps the queue in this run, and the sweep test expects only its own keys in it
+		// nothing sweeps the queue in this run, and the sweep test expects only its own keys in it, so do what the sweep would
 		require.NoError(t, testDB.Exec("DELETE FROM file_cleanups WHERE object_key = ?", before[0]).Error)
+		forgetUploaded(privateKeyPrefix + before[0])
 
 		var kept []string
 

@@ -5,12 +5,15 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
+	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/chat/usecase"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -22,17 +25,23 @@ import (
 
 type ChatHandler struct {
 	useCase usecase.ChatUseCaseItf
+	hub     *chatlive.Hub
 	// photoMaxBytes is the most that one photo may hold, which is also the most that the handler reads of an upload
 	photoMaxBytes int64
 }
 
-func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.ChatUseCaseItf, cfg *env.Env) {
-	handler := ChatHandler{useCase: useCase, photoMaxBytes: int64(cfg.ChatPhotoMaxMB) * 1024 * 1024}
+func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.ChatUseCaseItf, hub *chatlive.Hub, cfg *env.Env) {
+	handler := ChatHandler{useCase: useCase, hub: hub, photoMaxBytes: int64(cfg.ChatPhotoMaxMB) * 1024 * 1024}
 
 	group := router.Group("/chat", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali))
 
 	// a repeat of a request that already wrote a message gets the first response again
 	idempotent := mw.Idempotent()
+
+	// the socket needs the same account as every other chat route, and it answers 426 to a plain request
+	group.Get("/ws", handler.UpgradeSocket, websocket.New(handler.Socket, websocket.Config{
+		ReadBufferSize: 512, WriteBufferSize: 1024, HandshakeTimeout: 10 * time.Second,
+	}))
 
 	group.Get("/contacts", handler.ListContacts)
 	group.Get("/conversations", handler.ListConversations)
