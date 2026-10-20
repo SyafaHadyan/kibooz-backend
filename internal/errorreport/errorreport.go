@@ -68,8 +68,18 @@ func Start(cfg Config) func() {
 		Transport:   cfg.Transport,
 		// the cap below is the limit, and an event that passes it is always sent
 		SampleRate: 1,
-		// no request data, no address of the client and no breadcrumbs, which can hold log lines
-		SendDefaultPII: false,
+		// nothing of a request is collected, and no breadcrumbs, which can hold log lines. The code never hands a request to the
+		// SDK, so this is the second lock after the scrub of BeforeSend, and only the user that the code sets stays.
+		DataCollection: &sentry.DataCollection{
+			UserInfo: sentry.Set(false),
+			Cookies:  &sentry.KeyValueCollectionBehavior{Mode: sentry.CollectionOff},
+			HTTPHeaders: &sentry.HeaderCollectionConfig{
+				Request:  &sentry.KeyValueCollectionBehavior{Mode: sentry.CollectionOff},
+				Response: &sentry.KeyValueCollectionBehavior{Mode: sentry.CollectionOff},
+			},
+			HTTPBodies:  []sentry.BodyType{},
+			QueryParams: &sentry.KeyValueCollectionBehavior{Mode: sentry.CollectionOff},
+		},
 		MaxBreadcrumbs: -1,
 		EnableTracing:  false,
 		BeforeSend: func(event *sentry.Event, _ *sentry.EventHint) *sentry.Event {
