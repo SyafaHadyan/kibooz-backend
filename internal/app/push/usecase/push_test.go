@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 )
 
 type saved struct {
@@ -32,6 +33,10 @@ func (f *fakeRepo) SaveToken(_ context.Context, userID uuid.UUID, token string, 
 
 	return f.err
 }
+
+func (f *fakeRepo) TokensOf(context.Context, []uuid.UUID) ([]push.TokenRow, error) { return nil, nil }
+
+func (f *fakeRepo) DeleteTokenValues(context.Context, []string) error { return nil }
 
 func (f *fakeRepo) DeleteToken(_ context.Context, _ uuid.UUID, token string) error {
 	f.removed = append(f.removed, token)

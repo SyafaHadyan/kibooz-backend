@@ -64,13 +64,15 @@ type Env struct {
 	ChatVideoMaxMB      int    `env:"CHAT_VIDEO_MAX_MB" envDefault:"25"`
 	ChatMediaURLSeconds int    `env:"CHAT_MEDIA_URL_SECONDS" envDefault:"3600"`
 	// ChatMaxSockets is how many chat sockets one API copy holds, and ChatMaxSocketsPerUser how many one account keeps open
-	ChatMaxSockets        int `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
-	ChatMaxSocketsPerUser int `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
-	PointsOrganik         int `env:"POINTS_ORGANIK" envDefault:"10"`
-	PointsAnorganik       int `env:"POINTS_ANORGANIK" envDefault:"15"`
-	PointsB3              int `env:"POINTS_B3" envDefault:"0"`
-	TrashDailyLimit       int `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
-	IdempotencyTTLHours   int `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
+	// FirebaseCredentialsFile is the key file of the Firebase service account. Empty switches the push notifications off.
+	FirebaseCredentialsFile string `env:"FIREBASE_CREDENTIALS_FILE"`
+	ChatMaxSockets          int    `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
+	ChatMaxSocketsPerUser   int    `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
+	PointsOrganik           int    `env:"POINTS_ORGANIK" envDefault:"10"`
+	PointsAnorganik         int    `env:"POINTS_ANORGANIK" envDefault:"15"`
+	PointsB3                int    `env:"POINTS_B3" envDefault:"0"`
+	TrashDailyLimit         int    `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	IdempotencyTTLHours     int    `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
 	// SentryDSN is where the error reports go, and empty switches them off. SentryEventsPerMinute is the cap on how many leave in a minute.
 	SentryDSN             string `env:"SENTRY_DSN"`
 	SentryEnvironment     string `env:"SENTRY_ENVIRONMENT" envDefault:"production"`

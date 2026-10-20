@@ -1107,3 +1107,62 @@ func TestTypingIsNotForARoom(t *testing.T) {
 	requireAppError(t, useCase.Typing(context.Background(), me, room.ID, true), apperror.ErrChatConversationNotFound)
 	require.Empty(t, notifier.events)
 }
+
+type fakePusher struct {
+	recipients [][]uuid.UUID
+	messages   []int64
+}
+
+func (f *fakePusher) NewMessage(recipients []uuid.UUID, _ uuid.UUID, messageID int64) {
+	f.recipients = append(f.recipients, recipients)
+	f.messages = append(f.messages, messageID)
+}
+
+func TestAClosedAppIsWokenForEveryoneButTheSender(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	useCase := newUseCase(&fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}})
+	pusher := &fakePusher{}
+	useCase.pusher = pusher
+
+	res, err := useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.NoError(t, err)
+
+	require.Equal(t, [][]uuid.UUID{{other}}, pusher.recipients, "the phone of the sender needs no wake-up")
+	require.Equal(t, []int64{res.ID}, pusher.messages)
+}
+
+func TestAWakeUpGoesToEveryMemberOfARoomExceptTheSender(t *testing.T) {
+	classID, me, first, second := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	useCase := newUseCase(&fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: time.Now()}},
+		members:       []uuid.UUID{first, me, second},
+	})
+	pusher := &fakePusher{}
+	useCase.pusher = pusher
+
+	_, err := useCase.SendMessage(context.Background(), me, room.ID, dto.SendChatMessageRequest{Body: "hello class"})
+	require.NoError(t, err)
+	require.Equal(t, [][]uuid.UUID{{first, second}}, pusher.recipients)
+}
+
+func TestNoWakeUpIsAskedForARefusedMessageOrWithoutAPusher(t *testing.T) {
+	me := uuid.New()
+	conversation, id := conversationOf(me, uuid.New())
+	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}, createErr: errors.New("down")}
+	useCase := newUseCase(repo)
+	pusher := &fakePusher{}
+	useCase.pusher = pusher
+
+	_, err := useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.Error(t, err)
+	require.Empty(t, pusher.recipients)
+
+	repo.createErr = nil
+	useCase.pusher = nil
+
+	_, err = useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
+	require.NoError(t, err, "a use case without a pusher still sends")
+}

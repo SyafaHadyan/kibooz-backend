@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 )
 
 // MaxTokensPerUser is how many devices of one account keep a token. A phone that is replaced leaves its token behind until
@@ -21,6 +22,10 @@ type PushDBItf interface {
 	SaveToken(ctx context.Context, userID uuid.UUID, token string, platform string, now time.Time) error
 	// DeleteToken removes the token of the account, and a token that is not there or belongs to somebody else is left alone
 	DeleteToken(ctx context.Context, userID uuid.UUID, token string) error
+	// TokensOf returns the tokens of the accounts, for the wake-ups of a message
+	TokensOf(ctx context.Context, userIDs []uuid.UUID) ([]push.TokenRow, error)
+	// DeleteTokenValues removes tokens that Firebase no longer knows, whoever held them
+	DeleteTokenValues(ctx context.Context, tokens []string) error
 }
 
 type PushDB struct {
@@ -53,4 +58,26 @@ func (r *PushDB) SaveToken(ctx context.Context, userID uuid.UUID, token string, 
 
 func (r *PushDB) DeleteToken(ctx context.Context, userID uuid.UUID, token string) error {
 	return r.db.WithContext(ctx).Where("user_id = ? AND token = ?", userID, token).Delete(&entity.PushToken{}).Error
+}
+
+func (r *PushDB) TokensOf(ctx context.Context, userIDs []uuid.UUID) ([]push.TokenRow, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	var rows []push.TokenRow
+
+	err := r.db.WithContext(ctx).
+		Raw("SELECT user_id, token FROM push_tokens WHERE user_id IN ? ORDER BY updated_at DESC, id", userIDs).
+		Scan(&rows).Error
+
+	return rows, err
+}
+
+func (r *PushDB) DeleteTokenValues(ctx context.Context, tokens []string) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+
+	return r.db.WithContext(ctx).Where("token IN ?", tokens).Delete(&entity.PushToken{}).Error
 }
