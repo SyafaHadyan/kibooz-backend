@@ -343,3 +343,148 @@ func TestTeacherAndParentChat(t *testing.T) {
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
+
+func TestClassRoomChat(t *testing.T) {
+	guru := registerGuru(t, "Cempaka")
+	classID, code := classOf(t, guru)
+	parent, raniID := registerWali(t, code, "Rani Putri")
+	other, _ := registerWali(t, code, "Dimas Aji")
+	stranger := registerGuru(t, "Dahlia")
+	_, strangerCode := classOf(t, stranger)
+	farParent, _ := registerWali(t, strangerCode, "Far Child")
+
+	var (
+		roomID string
+		sent   []int64
+	)
+
+	open := func(token string, id string) result {
+		return call(t, http.MethodPost, chatBase+"/conversations", token, map[string]any{"classId": id})
+	}
+	send := func(token string, body string) result {
+		res, _ := callKey(t, http.MethodPost, chatBase+"/conversations/"+roomID+"/messages", token, uuid.NewString(), map[string]any{"body": body})
+
+		return res
+	}
+	messages := func(token string, query string) result {
+		return call(t, http.MethodGet, chatBase+"/conversations/"+roomID+"/messages"+query, token, nil)
+	}
+
+	t.Run("a member opens the room of the class and it is one for everyone", func(t *testing.T) {
+		first := open(guru.Token, classID)
+		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
+
+		roomID = first.data("id").(string)
+
+		require.Equal(t, "class", first.data("kind"))
+		require.Nil(t, first.data("peer"), "a room has no single other person")
+		require.Equal(t, classID, first.data("class", "id"))
+		require.Equal(t, true, first.data("canSend"))
+		require.Nil(t, first.data("lastMessage"))
+
+		again := open(parent.Token, classID)
+		require.Equal(t, http.StatusOK, again.Status, "body %v", again.Body)
+		require.Equal(t, roomID, again.data("id"), "a parent reaches the same room")
+
+		require.Equal(t, roomID, open(other.Token, classID).data("id"))
+		require.EqualValues(t, 0, call(t, http.MethodGet, chatBase+"/conversations", guru.Token, nil).data("total"), "a room without a message is not listed")
+	})
+
+	t.Run("only the members of the class can open it", func(t *testing.T) {
+		open(farParent.Token, classID).requireError(t, http.StatusForbidden, "CHAT_CONTACT_NOT_ALLOWED")
+		open(stranger.Token, classID).requireError(t, http.StatusForbidden, "CHAT_CONTACT_NOT_ALLOWED")
+		open(guru.Token, uuid.NewString()).requireError(t, http.StatusForbidden, "CHAT_CONTACT_NOT_ALLOWED")
+
+		both := call(t, http.MethodPost, chatBase+"/conversations", guru.Token, map[string]any{"classId": classID, "userId": uuid.NewString()})
+		both.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		for _, token := range []string{farParent.Token, stranger.Token} {
+			messages(token, "").requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+			send(token, "hello").requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+		}
+	})
+
+	t.Run("everyone in the room reads what the others write and sees who wrote it", func(t *testing.T) {
+		for _, step := range []struct {
+			token, body string
+		}{
+			{guru.Token, "Welcome to the class room"},
+			{parent.Token, "Thank you, Ma'am"},
+			{other.Token, "Good morning everyone"},
+		} {
+			res := send(step.token, step.body)
+			require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+			sent = append(sent, messageIDOf(t, res))
+		}
+
+		window := messages(parent.Token, "?limit=100")
+		require.Equal(t, sent, idsOf(t, window))
+
+		items := window.data("messages").([]any)
+		require.Equal(t, "Cempaka", items[0].(map[string]any)["sender"].(map[string]any)["fullName"])
+		require.Equal(t, "GURU", items[0].(map[string]any)["sender"].(map[string]any)["role"])
+		require.Equal(t, "WALI", items[2].(map[string]any)["sender"].(map[string]any)["role"])
+
+		list := call(t, http.MethodGet, chatBase+"/conversations", parent.Token, nil)
+		require.EqualValues(t, 1, list.data("total"))
+
+		item := list.data("conversations").([]any)[0].(map[string]any)
+		require.Equal(t, roomID, item["id"])
+		require.Equal(t, "class", item["kind"])
+		require.EqualValues(t, 2, item["unreadCount"], "the teacher and the other parent wrote, the parent's own message does not count")
+		require.EqualValues(t, 0, item["peerLastReadMessageId"], "a room has no single other side to show a read mark for")
+		require.Equal(t, "Good morning everyone", item["lastMessage"].(map[string]any)["body"])
+	})
+
+	t.Run("a parent who joins later sees only what is sent from then on", func(t *testing.T) {
+		late, _ := registerWali(t, code, "Latecomer Kid")
+
+		joined := open(late.Token, classID)
+		require.Equal(t, http.StatusOK, joined.Status, "body %v", joined.Body)
+		require.Equal(t, roomID, joined.data("id"))
+		require.Nil(t, joined.data("lastMessage"), "the earlier messages are out of sight")
+		require.Empty(t, idsOf(t, messages(late.Token, "?limit=100")))
+		require.EqualValues(t, 0, call(t, http.MethodGet, chatBase+"/conversations", late.Token, nil).data("total"))
+
+		res := send(guru.Token, "A new message after the latecomer joined")
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		fresh := messageIDOf(t, res)
+		sent = append(sent, fresh)
+
+		require.Equal(t, []int64{fresh}, idsOf(t, messages(late.Token, "?limit=100")))
+		require.Equal(t, sent, idsOf(t, messages(parent.Token, "?limit=100")), "the older members still see everything")
+
+		backwards := messages(late.Token, "?limit=100&before="+itoa(fresh))
+		require.Empty(t, idsOf(t, backwards), "paging back never reaches the older messages")
+
+		read := call(t, http.MethodPut, chatBase+"/conversations/"+roomID+"/read", late.Token, map[string]any{"messageId": 1_000_000_000})
+		require.Equal(t, http.StatusOK, read.Status, "body %v", read.Body)
+		require.EqualValues(t, fresh, read.data("lastReadMessageId"), "the mark stops at the newest message the member can see")
+		require.EqualValues(t, 0, read.data("unreadCount"))
+	})
+
+	t.Run("only the author deletes a message of the room", func(t *testing.T) {
+		path := chatBase + "/conversations/" + roomID + "/messages/" + itoa(sent[1])
+
+		call(t, http.MethodDelete, path, guru.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+
+		res := call(t, http.MethodDelete, path, parent.Token, nil)
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+		require.Equal(t, true, res.data("deleted"))
+		require.Equal(t, "", res.data("body"))
+	})
+
+	t.Run("a parent loses the room when the child leaves the class", func(t *testing.T) {
+		removed := call(t, http.MethodDelete, "/api/v1/guru/classes/"+classID+"/students/"+raniID, guru.Token, nil)
+		require.Equal(t, http.StatusOK, removed.Status, "body %v", removed.Body)
+
+		messages(parent.Token, "").requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+		send(parent.Token, "still here?").requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
+		open(parent.Token, classID).requireError(t, http.StatusForbidden, "CHAT_CONTACT_NOT_ALLOWED")
+		require.EqualValues(t, 0, call(t, http.MethodGet, chatBase+"/conversations", parent.Token, nil).data("total"))
+
+		require.Equal(t, http.StatusOK, messages(guru.Token, "").Status, "the teacher and the other parent keep the room")
+	})
+}
