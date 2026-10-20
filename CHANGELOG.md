@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.13.0...v0.14.0) (2026-10-20)
+
+
+### Features
+
+* **monitoring:** find the containers by label and name every series by host and copy ([976ae27](https://github.com/SyafaHadyan/kibooz-backend/commit/976ae27ce49dcf919eb1a4a6a2d15e211aa5227e))
+* **monitoring:** ship metrics and logs to Grafana Cloud with Alloy ([#246](https://github.com/SyafaHadyan/kibooz-backend/issues/246)) ([a219fd1](https://github.com/SyafaHadyan/kibooz-backend/commit/a219fd1e0b2b5dcde13db40897cf67febbf02951))
+
+
+### Bug Fixes
+
+* **monitoring:** accept the metrics port of the label with or without a colon ([e30874f](https://github.com/SyafaHadyan/kibooz-backend/commit/e30874ffec22e665f7ae2f4044b322e826c66b78))
+* **monitoring:** discover every network of the API so the internal one can be picked ([0edd64c](https://github.com/SyafaHadyan/kibooz-backend/commit/0edd64c5d453b55a44f1e5f4b47f9a08bf6dcb09))
+* **monitoring:** keep the job label of the job metrics when Alloy scrapes them ([59a1278](https://github.com/SyafaHadyan/kibooz-backend/commit/59a1278a07021b0091ff72401f78abaf732b06c3))
+* **monitoring:** make Alloy scrape the API and keep its labels ([#248](https://github.com/SyafaHadyan/kibooz-backend/issues/248)) ([965c0a7](https://github.com/SyafaHadyan/kibooz-backend/commit/965c0a785deb1fb9ed6a28f73e1645b1550fa37b))
+* **monitoring:** name a vanished API copy in the alert and word the no-data summary ([3f9f726](https://github.com/SyafaHadyan/kibooz-backend/commit/3f9f726a4510e2666fa6e4e3f9acdca947803719))
+* **monitoring:** scrape the API only through the internal network of the compose file ([b5731c6](https://github.com/SyafaHadyan/kibooz-backend/commit/b5731c6acc2aa1e3d95c3beab4293248e748c760))
+
 ## [0.13.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.12.1...v0.13.0) (2026-10-19)
 
 
