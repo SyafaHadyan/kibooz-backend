@@ -35,7 +35,7 @@ Merging the release pull request starts a chain that needs nothing from you.
 2. The App creates the tag `v<version>` and the GitHub release. Only this App may create a `v*` tag, and nobody can move, update or delete one, because the two tag rulesets `release-tags-creation` and `release-tags` say so. The release is immutable, so its tag and assets cannot change after it is published.
 3. The tag starts `docker.yaml`, which builds the image for `linux/amd64` and `linux/arm64` and pushes the `0.12.0`, `0.12` and `0` tags. The workflow then scans the image, attaches an SBOM, signs it with cosign and verifies the signatures. The push to `main` builds the `latest` and `sha-` tags in a separate run.
 
-Watch both Docker runs and the Release Please run until they finish. A failure that only comes from a timeout or a registry limit can be re-run once. Anything else is investigated like any failing check.
+Docker Hub gets the image only from the `Docker Hub mirror` workflow, which starts when a Docker run succeeds. So watch the two Docker runs, the two mirror runs that follow them (one for the tag and one for `main`) and the Release Please run until they finish, and deploy only after the mirror run of the tag is green, because the server pulls from Docker Hub and the version tag is not there before that. A mirror run that failed is started again from its own run page, since a new build would not help. The mirror of a release tag is the one path that has not yet been seen on a real release, so read its log the first time. A failure that only comes from a timeout or a registry limit can be re-run once. Anything else is investigated like any failing check.
 
 ## After the release
 
