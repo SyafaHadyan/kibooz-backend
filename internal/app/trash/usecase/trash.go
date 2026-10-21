@@ -26,7 +26,10 @@ const podiumSize = 3
 
 type TrashUseCaseItf interface {
 	ScanClaim(ctx context.Context, userID uuid.UUID, req dto.ScanClaimRequest) (dto.ScanClaimResponse, error)
-	Leaderboard(ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID) (dto.LeaderboardResponse, error)
+	// Leaderboard ranks a class by the points of the running semester, or by the points of a day, week or month when a period is given
+	Leaderboard(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID, period constants.Period,
+	) (dto.LeaderboardResponse, error)
 	// LeaderboardHistory shows the final standings of the semesters that ended, newest first, to whoever may see the leaderboard
 	LeaderboardHistory(
 		ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID, page pagination.Params,
@@ -146,11 +149,24 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 }
 
 func (u *TrashUseCase) Leaderboard(
-	ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID,
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID *uuid.UUID, period constants.Period,
 ) (dto.LeaderboardResponse, error) {
 	resolved, err := u.authorizeClass(ctx, userID, role, classID)
 	if err != nil {
 		return dto.LeaderboardResponse{}, err
+	}
+
+	// The boards of a day, week or month are not cached. A claim, a rename or a removal only clears the key of the semester board,
+	// and one indexed query for one class is cheap enough that the board is always current
+	if period != "" {
+		from, to := clock.PeriodBounds(period, u.now(), u.cfg.Location())
+
+		students, err := u.repo.ListClassStudentsBetween(ctx, resolved, from, to)
+		if err != nil {
+			return dto.LeaderboardResponse{}, apperror.Internal(err)
+		}
+
+		return buildLeaderboard(students), nil
 	}
 
 	cacheKey := constants.LeaderboardKeyPrefix + resolved.String()

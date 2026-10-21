@@ -9,7 +9,6 @@
 [![DAST](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast.yaml)
 [![DAST active](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast-active.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/dast-active.yaml)
 [![Vale](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/vale.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/vale.yaml)
-[![codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/SyafaHadyan/kibooz-backend)
 
 [![Release](https://img.shields.io/github/v/release/SyafaHadyan/kibooz-backend?sort=semver)](https://github.com/SyafaHadyan/kibooz-backend/releases)
 [![License](https://img.shields.io/github/license/SyafaHadyan/kibooz-backend)](LICENSE)
@@ -25,6 +24,7 @@
 [![Conventional Commits](https://img.shields.io/badge/conventional%20commits-1.0.0-FE5196)](https://www.conventionalcommits.org)
 [![Renovate](https://img.shields.io/badge/renovate-enabled-brightgreen?logo=renovatebot)](https://docs.renovatebot.com/)
 
+[![codecov](https://codecov.io/gh/SyafaHadyan/kibooz-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/SyafaHadyan/kibooz-backend)
 [![Snyk](https://snyk.io/test/github/SyafaHadyan/kibooz-backend/badge.svg)](https://snyk.io/test/github/SyafaHadyan/kibooz-backend)
 [![DeepSource](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend.svg/?label=active+issues&show_trend=true)](https://app.deepsource.com/gh/SyafaHadyan/kibooz-backend/)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/SyafaHadyan/kibooz-backend/badge)](https://scorecard.dev/viewer/?uri=github.com/SyafaHadyan/kibooz-backend)
