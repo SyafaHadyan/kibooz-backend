@@ -67,8 +67,10 @@ jobs:
           chmod 644 ci-certs/storage.key ci-certs/storage.crt
           echo 'resolve = "storage:7070:127.0.0.1"' > ci-curl/.curlrc
 
-      - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d --build --wait --wait-timeout 240
+      # The buckets have to exist before the API starts, because its first storage check runs at start-up and the result is kept
+      # for a while, so a bucket that is made afterwards would still show as down
+      - name: Start the storage server
+        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d storage
 
       - name: Create the buckets
         run: |
@@ -91,6 +93,9 @@ jobs:
               sleep 3
             done
           done
+
+      - name: Start the stack
+        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d --build --wait --wait-timeout 240
 
       # The keeper teacher is registered by the script on its first run, and the password only lives in this job
       - name: Run the smoke test
