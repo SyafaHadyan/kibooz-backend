@@ -1,0 +1,63 @@
+name: OpenAPI diff
+
+# The Android app is written against openapi.yaml, so a change that breaks the contract has to be on purpose. This compares the
+# file of the pull request with the file of its base and fails on a breaking change, such as a removed route, a removed or
+# renamed field, a field that changes type or a new required request field. A pull request whose title marks a breaking change
+# (type(scope)!: summary) only prints the changes, which also makes Release Please bump the version as it should. It runs on every
+# pull request and has nothing to report when the file did not change, so it can be a required check.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: openapi-diff-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  breaking:
+    name: OpenAPI breaking changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      - name: Get the file of the base branch
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          mkdir "$RUNNER_TEMP/base"
+          git show "${BASE_SHA}:openapi.yaml" > "$RUNNER_TEMP/base/openapi.yaml"
+
+      - name: Compare the two files
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          image="$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh oasdiff)")"
+          run_oasdiff() {
+            docker run --rm -v "$RUNNER_TEMP/base:/base:ro" -v "$PWD:/repo:ro" "$image" "$@"
+          }
+          echo "Every change, for the record"
+          run_oasdiff changelog /base/openapi.yaml /repo/openapi.yaml
+          echo
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
+            echo "The title marks a breaking change, so the breaking changes below are on purpose"
+            run_oasdiff breaking /base/openapi.yaml /repo/openapi.yaml
+          else
+            run_oasdiff breaking /base/openapi.yaml /repo/openapi.yaml --fail-on ERR
+          fi
