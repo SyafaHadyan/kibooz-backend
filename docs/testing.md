@@ -24,6 +24,8 @@ The code that takes untrusted input has fuzz tests, namely the check of uploaded
 go test ./internal/imageutil/ -run '^$' -fuzz FuzzDecodeBase64 -fuzztime 30s
 ```
 
+The `Fuzz` workflow does the same for all four targets every Saturday, three minutes each, and can be started by hand with another `fuzztime`. When a target crashes, it uploads the input as an artifact, and that file goes into `testdata/fuzz/<FuzzTargetName>/` of its package, for example `internal/imageutil/testdata/fuzz/FuzzInspect/<file>`, so a normal `go test` replays it from then on.
+
 ## Performance tests
 
 The `k6/` folder holds the load scripts. `smoke.js` is a short check that runs on every pull request, and `load.js` holds a steady arrival rate below the ceiling to measure how the API behaves with a whole class claiming points at once, and `stress.js` ramps past the ceiling on demand to find where the API slows down. `spike.js` sends a sudden burst above the ceiling and checks that the API recovers afterwards, and `soak.js` holds a steady load for 30 minutes to catch leaks, so its summary also lists the memory of every container at the start and at the end. All of them create their own accounts, so they only need a running API. The default rate limits and the daily claim limit would answer with errors during a load test, so the workflow raises them in its generated `.env`.
