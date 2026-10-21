@@ -18,6 +18,8 @@ services:
     environment:
       ROOT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
       ROOT_SECRET_KEY: ${S3_ACCESS_KEY_SECRET:?set S3_ACCESS_KEY_SECRET in .env}
+    networks:
+      - internal
     ports:
       - "127.0.0.1:7070:7070"
     volumes:
