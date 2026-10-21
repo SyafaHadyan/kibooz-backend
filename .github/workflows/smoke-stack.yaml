@@ -34,7 +34,7 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
-      # The limits stay at their defaults, as in production, so the script also shows that its own traffic fits in them
+      # The limits stay at their defaults, as in production, except the allowance of a signed in user, see below
       - name: Create the environment file
         run: |
           {
@@ -45,6 +45,9 @@ jobs:
             echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
             echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
             echo "KEEPALIVE_SECONDS=0"
+            # The script finishes sooner against a storage server on the same machine than against Cloudflare R2, so it sends more
+            # requests in a minute than the default allowance of 120 for each user. The production run keeps the default
+            echo "USER_LIMITER_MAX=240"
             echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"
             echo "S3_ENDPOINT=https://storage:7070"
             echo "S3_REGION=us-east-1"
