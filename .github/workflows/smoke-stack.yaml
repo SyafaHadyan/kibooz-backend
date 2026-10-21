@@ -55,16 +55,17 @@ jobs:
             echo "S3_PRIVATE_BUCKET_NAME=kibooz-private"
           } > .env
 
-      # The signed addresses name the server as storage, which the containers know by its service name. The runner has to
-      # resolve the same name to upload through them, and the API and the script have to trust the certificate of the server.
-      - name: Make the storage name resolve and create its certificate
+      # The signed addresses name the server as storage, which the containers know by its service name. The runner reaches the
+      # same name through curl, which is told where it is, and not through /etc/hosts, because Docker would then answer the
+      # containers with the address of the runner as well. The API and the script have to trust the certificate of the server.
+      - name: Create the certificate of the storage server
         run: |
-          echo "127.0.0.1 storage" | sudo tee -a /etc/hosts > /dev/null
-          mkdir ci-certs
+          mkdir ci-certs ci-curl
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=storage" -addext "subjectAltName=DNS:storage" \
             -keyout ci-certs/storage.key -out ci-certs/storage.crt
           chmod 755 ci-certs
           chmod 644 ci-certs/storage.key ci-certs/storage.crt
+          echo 'resolve = "storage:7070:127.0.0.1"' > ci-curl/.curlrc
 
       - name: Start the stack
         run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d --build --wait --wait-timeout 240
@@ -78,7 +79,7 @@ jobs:
           empty="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
           for bucket in "$S3_PUBLIC_BUCKET_NAME" "$S3_PRIVATE_BUCKET_NAME"; do
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
-              if curl -fsS -X PUT "https://storage:7070/${bucket}" --cacert ci-certs/storage.crt \
+              if curl -fsS -X PUT "https://storage:7070/${bucket}" --cacert ci-certs/storage.crt --resolve storage:7070:127.0.0.1 \
                 --aws-sigv4 "aws:amz:${S3_REGION}:s3" --user "${S3_ACCESS_KEY_ID}:${S3_ACCESS_KEY_SECRET}" \
                 -H "x-amz-content-sha256: ${empty}"; then
                 break
@@ -102,6 +103,7 @@ jobs:
           SMOKE_KEEPER_EMAIL: kibooz-smoke-keeper-ci@example.com
           SMOKE_CHAT_MEDIA: "on"
           CURL_CA_BUNDLE: ${{ github.workspace }}/ci-certs/storage.crt
+          CURL_HOME: ${{ github.workspace }}/ci-curl
 
       - name: Collect container logs
         if: ${{ failure() }}
