@@ -22,8 +22,6 @@ permissions: {}
 jobs:
   breaking:
     name: OpenAPI breaking changes
-    # An edit of the body or the labels changes nothing that this reads, only a new title or a new commit does
-    if: github.event.action != 'edited' || github.event.changes.title != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
