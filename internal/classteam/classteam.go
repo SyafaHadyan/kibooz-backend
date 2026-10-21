@@ -208,10 +208,11 @@ func LockLive(tx *gorm.DB, classID uuid.UUID) (archived bool, err error) {
 	return archived, err
 }
 
-// LockOpen takes the lock for a class that a join code led to and then checks again that the class was not archived while
-// the request waited. An archived class answers like a code that does not exist, and a class whose teachers closed joining
-// answers ErrClassJoiningClosed.
-func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
+// LockOpen takes the lock for a class that a join code led to and then checks again that the class was not archived and
+// that the code is still the one that was sent, because a teacher replaces the code under the same lock while the request
+// waited. An archived class and a code that was replaced answer like a code that does not exist, and a class whose
+// teachers closed joining answers ErrClassJoiningClosed.
+func LockOpen(tx *gorm.DB, classID uuid.UUID, joinCode string) error {
 	archived, err := LockLive(tx, classID)
 	if err != nil {
 		return err
@@ -221,14 +222,21 @@ func LockOpen(tx *gorm.DB, classID uuid.UUID) error {
 		return apperror.ErrClassCodeNotFound
 	}
 
-	var open bool
+	var state struct {
+		JoinOpen    bool
+		CodeMatches bool
+	}
 
-	err = tx.Raw("SELECT join_open FROM classes WHERE id = ?", classID).Scan(&open).Error
+	err = tx.Raw("SELECT join_open, join_code = ? AS code_matches FROM classes WHERE id = ?", joinCode, classID).Scan(&state).Error
 	if err != nil {
 		return err
 	}
 
-	if !open {
+	if !state.CodeMatches {
+		return apperror.ErrClassCodeNotFound
+	}
+
+	if !state.JoinOpen {
 		return apperror.ErrClassJoiningClosed
 	}
 
