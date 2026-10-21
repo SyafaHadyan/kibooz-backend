@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.16.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.15.0...v0.16.0) (2026-10-21)
+
+
+### Features
+
+* **chat:** add the room of a class to the chat ([988d44d](https://github.com/SyafaHadyan/kibooz-backend/commit/988d44d5828e549104e3b2a121f2d504672225fc))
+* **chat:** add the room of a class to the chat ([#260](https://github.com/SyafaHadyan/kibooz-backend/issues/260)) ([bdaac41](https://github.com/SyafaHadyan/kibooz-backend/commit/bdaac41935e42db657f3d301b89b0895ea523e52))
+* **chat:** push chat events to open sockets ([f72ea56](https://github.com/SyafaHadyan/kibooz-backend/commit/f72ea56f8b8881100d6e6d0e1f6e0108ea940225))
+* **chat:** push chat events to open sockets ([#265](https://github.com/SyafaHadyan/kibooz-backend/issues/265)) ([134989e](https://github.com/SyafaHadyan/kibooz-backend/commit/134989ea982e607e926005d36c99afd286d0c189))
+* **chat:** send photos and videos through a private bucket ([2c97a85](https://github.com/SyafaHadyan/kibooz-backend/commit/2c97a85eb94d29199d3319d78f9db3fe2a3c4d5a))
+* **chat:** send photos and videos through a private bucket ([#263](https://github.com/SyafaHadyan/kibooz-backend/issues/263)) ([c193a64](https://github.com/SyafaHadyan/kibooz-backend/commit/c193a64db3ddb61b78e93c441bde982a8584bcb3))
+* **push:** save the push token of an installed app ([95ebc5c](https://github.com/SyafaHadyan/kibooz-backend/commit/95ebc5c56f94ad6cf1fef75f66e2d473cdfa561c))
+* **push:** save the push token of an installed app ([#266](https://github.com/SyafaHadyan/kibooz-backend/issues/266)) ([777c2ff](https://github.com/SyafaHadyan/kibooz-backend/commit/777c2ff36a28df387565ef84c40a7464b43e2357))
+* **push:** wake a closed chat app through Firebase when a message arrives ([21aff28](https://github.com/SyafaHadyan/kibooz-backend/commit/21aff28e5c3819223d32f71e446f2518c2d14d24))
+* **push:** wake a closed chat app through Firebase when a message arrives ([#271](https://github.com/SyafaHadyan/kibooz-backend/issues/271)) ([929a412](https://github.com/SyafaHadyan/kibooz-backend/commit/929a412597c8bc6089d7ec2793157dad40262437))
+
+
+### Bug Fixes
+
+* **chat:** announce a deleted room message only to the members who had joined ([a0d4607](https://github.com/SyafaHadyan/kibooz-backend/commit/a0d46073cff4707595284fd9c7671614657e7488))
+* **chat:** build the signing key of the socket tests at run time and ignore its first version ([7f0f077](https://github.com/SyafaHadyan/kibooz-backend/commit/7f0f077f9b1cddcebc3ed5ae2c442c7160f90f65))
+* **chat:** close the oldest socket of an account first ([57e3404](https://github.com/SyafaHadyan/kibooz-backend/commit/57e34048f7c63240a994171e9fc394cff2ab87ec))
+* **chat:** end the socket with its writer, refuse frames after the token ends and let a stopped typing hint through ([ba390b3](https://github.com/SyafaHadyan/kibooz-backend/commit/ba390b3ae949c99b9be116101e901d2edab84782))
+* **chat:** give the nullable media a type ([59bc79f](https://github.com/SyafaHadyan/kibooz-backend/commit/59bc79fd1555c373d7ba9d6be736770001cbd54a))
+* **chat:** give the nullable peer and class a type and read the teacher name in the room test ([8f15cc7](https://github.com/SyafaHadyan/kibooz-backend/commit/8f15cc7436856de0fac6c6e541b3aa2992caa6ef))
+* **chat:** hide older room messages from a late joiner when deleting and word the room access rules precisely ([ec816f1](https://github.com/SyafaHadyan/kibooz-backend/commit/ec816f1ba066a60524ba728673f6b9a1d546f3df))
+* **chat:** keep the media test from leaving a file on the cleanup queue ([468b984](https://github.com/SyafaHadyan/kibooz-backend/commit/468b984075950bfec1ab7dbb369b4bab6c79d539))
+* **chat:** let the chat photo upload carry a photo and keep the photo limit inside the body limit ([187a099](https://github.com/SyafaHadyan/kibooz-backend/commit/187a09908d458fa434a1ead64f6b0cbd699694c3))
+* **chat:** put a deadline on the database work of a typing frame ([fe868db](https://github.com/SyafaHadyan/kibooz-backend/commit/fe868dbc90d357de5a05d6c7e5e785e580d445fc))
+* **ci:** ignore the first version of a socket test key in the secret scan ([de57f94](https://github.com/SyafaHadyan/kibooz-backend/commit/de57f9453f6713cb26b0dcec61fa3530169bab10))
+* **ci:** ignore the first version of a socket test key in the secret scan ([08fb5bf](https://github.com/SyafaHadyan/kibooz-backend/commit/08fb5bf90d79d6c2a8dd50a44d3540b41b55d83c))
+* **ci:** ignore the first version of a socket test key in the secret scan ([76b79cd](https://github.com/SyafaHadyan/kibooz-backend/commit/76b79cd020924c781965828c59efea2de662d97e))
+* **ci:** read the request counts of the active scan from the JSON access log ([9583097](https://github.com/SyafaHadyan/kibooz-backend/commit/95830970bf11f7ffec2b595d051bf53990879118))
+* **ci:** read the request counts of the active scan from the JSON access log ([#262](https://github.com/SyafaHadyan/kibooz-backend/issues/262)) ([064db85](https://github.com/SyafaHadyan/kibooz-backend/commit/064db85c5cf5b269ef49a6e61c282c62f0294bf6))
+* **ci:** turn the chat media checks of the smoke test on by an input and not by the public bucket ([4cf42d9](https://github.com/SyafaHadyan/kibooz-backend/commit/4cf42d9fb7123a8bbb620ec3ff2cde85de768bf8))
+* **classes:** check the join code again under the class lock and replace it under the same lock ([bb4b834](https://github.com/SyafaHadyan/kibooz-backend/commit/bb4b834a0188ccc57933f90f92c5a0d216c6202b))
+* **classes:** check the join code again under the class lock and replace it under the same lock ([#269](https://github.com/SyafaHadyan/kibooz-backend/issues/269)) ([36155fa](https://github.com/SyafaHadyan/kibooz-backend/commit/36155fa6c8d8b820a6b1088cc069deefba9adad6))
+* **deps:** move to Go 1.27.3 for the crypto/x509 advisory GO-2026-6809 ([b4d3aeb](https://github.com/SyafaHadyan/kibooz-backend/commit/b4d3aeb7c6ccc52b9d567244e159182b3f15a637))
+* **deps:** move to Go 1.27.3 for the crypto/x509 advisory GO-2026-6809 ([#272](https://github.com/SyafaHadyan/kibooz-backend/issues/272)) ([fec63fe](https://github.com/SyafaHadyan/kibooz-backend/commit/fec63fe31c2597829b798b699fc0df3c8dec86e9))
+* **guru:** check the teacher who adds another teacher again once the class lock is held ([007a501](https://github.com/SyafaHadyan/kibooz-backend/commit/007a5018de8f548061d8e1cf69f62b24882b5b9e))
+* **guru:** check the teacher who adds another teacher again once the class lock is held ([#268](https://github.com/SyafaHadyan/kibooz-backend/issues/268)) ([9ad2486](https://github.com/SyafaHadyan/kibooz-backend/commit/9ad248649ca26a1adda527722ef9ec8ac770efe0))
+* **push:** check the length of a push token after the trim ([8b4f54e](https://github.com/SyafaHadyan/kibooz-backend/commit/8b4f54e73842a95b508d1ee7aaafef9a0d352c00))
+* **push:** delete a token only when Firebase says it is unregistered ([acf5562](https://github.com/SyafaHadyan/kibooz-backend/commit/acf5562508ab0c557114c275ef52416e1db5f616))
+* **push:** leave the token length to the use case so a padded token is judged after the trim ([a7d3178](https://github.com/SyafaHadyan/kibooz-backend/commit/a7d31784a9a46634cc92a5a9961efe4d0c50a369))
+* **push:** refuse a token for a deleted account by locking the user row first ([f18194e](https://github.com/SyafaHadyan/kibooz-backend/commit/f18194ed9541ada064a7e17cb7997ba880f756fd))
+* **season:** archive and reset only the classes that the rollover locked ([2f65938](https://github.com/SyafaHadyan/kibooz-backend/commit/2f659384ca272c92f4e5c91b3670b72024062b5b))
+* **season:** archive and reset only the classes that the rollover locked ([#270](https://github.com/SyafaHadyan/kibooz-backend/issues/270)) ([40adbdd](https://github.com/SyafaHadyan/kibooz-backend/commit/40adbdd0f2c1ef511068df67a81c9abc15ba2757))
+* **user:** bind the account deletion to the password hash that was verified ([fb34230](https://github.com/SyafaHadyan/kibooz-backend/commit/fb34230cfb044a513af987967e8639a73ae8af6d))
+* **user:** bind the account deletion to the password hash that was verified ([#267](https://github.com/SyafaHadyan/kibooz-backend/issues/267)) ([a03d064](https://github.com/SyafaHadyan/kibooz-backend/commit/a03d0644b34944f2afe0daee0011f28ab7ae4eaf))
+
 ## [0.15.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.14.1...v0.15.0) (2026-10-20)
 
 
