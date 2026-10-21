@@ -330,7 +330,7 @@ func (u *AuthUseCase) issueSession(ctx context.Context, user *entity.User) (dto.
 	raw, row := u.newRefreshToken()
 	row.UserID = user.ID
 
-	err := u.repo.CreateRefreshToken(ctx, row, user.PasswordHash)
+	err := u.repo.CreateRefreshToken(ctx, row, user.PasswordHash, time.Duration(u.cfg.JWTSessionMaxDays)*24*time.Hour)
 	if errors.Is(err, repository.ErrCredentialsChanged) {
 		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
 	}
