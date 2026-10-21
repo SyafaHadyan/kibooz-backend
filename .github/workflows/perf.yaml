@@ -11,7 +11,7 @@ on:
       script:
         description: Which k6 script to run
         type: choice
-        options: [smoke, load, stress, spike, soak]
+        options: [smoke, load, stress, spike, soak, chat]
         default: load
       duration:
         description: How long the soak test runs, for example 30m. Other scripts ignore it.
