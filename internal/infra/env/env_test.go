@@ -27,7 +27,7 @@ func valid() *Env {
 		RequestTimeoutSeconds: 10,
 
 		AppPort: 8080, DBPort: 5432, RedisPort: 6379,
-		BodyLimitMB: 8, VideoMaxMB: 100, VideoUploadURLSeconds: 900,
+		BodyLimitMB: 8, ClassVideoMaxMB: 100, VideoUploadURLSeconds: 900,
 		UserLimiterMax: 120, AuthLimiterMax: 10, ClassCodeLimiterMax: 60, MoodBatchLimiterMax: 30, LimiterExpirationSeconds: 60,
 		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90,
 	}
@@ -162,7 +162,7 @@ func TestTheSampleJWTSecretIsRejected(t *testing.T) {
 func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 	tests := map[string]func(*Env){
 		"BODY_LIMIT_MB":                   func(e *Env) { e.BodyLimitMB = 0 },
-		"VIDEO_MAX_MB":                    func(e *Env) { e.VideoMaxMB = 0 },
+		"CLASS_VIDEO_MAX_MB":              func(e *Env) { e.ClassVideoMaxMB = 0 },
 		"VIDEO_UPLOAD_URL_SECONDS":        func(e *Env) { e.VideoUploadURLSeconds = -1 },
 		"USER_LIMITER_MAX":                func(e *Env) { e.UserLimiterMax = 0 },
 		"AUTH_LIMITER_MAX":                func(e *Env) { e.AuthLimiterMax = 0 },
@@ -320,7 +320,7 @@ func TestChatMediaSettingsNeedAPositiveValueAndABucketOfTheirOwn(t *testing.T) {
 	}
 
 	cfg := valid()
-	cfg.S3BucketName, cfg.S3PrivateBucketName = "kibooz-production-media", "kibooz-production-media"
+	cfg.S3PublicBucketName, cfg.S3PrivateBucketName = "kibooz-production-media", "kibooz-production-media"
 	require.ErrorContains(t, cfg.validate(), "S3_PRIVATE_BUCKET_NAME")
 
 	cfg.S3PrivateBucketName = "kibooz-production-private"
@@ -332,7 +332,7 @@ func TestThePrivateBucketNeedsTheSharedStorageSettingsToo(t *testing.T) {
 	cfg.S3PrivateBucketName = "kibooz-production-private"
 	require.False(t, cfg.PrivateStorageEnabled(), "the account and the keys are missing")
 
-	cfg.S3BucketName, cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "kibooz-production-media", "id", "secret"
+	cfg.S3PublicBucketName, cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "kibooz-production-media", "id", "secret"
 	cfg.S3PublicURL, cfg.S3AccountID = "https://media.example.test", "account"
 	require.True(t, cfg.PrivateStorageEnabled())
 
@@ -348,4 +348,28 @@ func TestAChatPhotoLimitThatDoesNotFitInTheBodyLimitIsRejected(t *testing.T) {
 
 	cfg.ChatPhotoMaxMB = 7
 	require.NoError(t, cfg.validate())
+}
+
+func TestASettingThatWasRenamedIsRefusedWithItsNewName(t *testing.T) {
+	set := func(names ...string) func(string) (string, bool) {
+		return func(name string) (string, bool) {
+			for _, candidate := range names {
+				if candidate == name {
+					return "x", true
+				}
+			}
+
+			return "", false
+		}
+	}
+
+	require.NoError(t, refuseRenamed(set()))
+	require.NoError(t, refuseRenamed(set("CLASS_VIDEO_MAX_MB", "S3_PUBLIC_BUCKET_NAME")), "the new names are fine")
+
+	err := refuseRenamed(set("VIDEO_MAX_MB"))
+	require.ErrorContains(t, err, "VIDEO_MAX_MB was renamed to CLASS_VIDEO_MAX_MB")
+
+	err = refuseRenamed(set("S3_BUCKET_NAME", "VIDEO_MAX_MB"))
+	require.ErrorContains(t, err, "S3_BUCKET_NAME was renamed to S3_PUBLIC_BUCKET_NAME")
+	require.ErrorContains(t, err, "VIDEO_MAX_MB was renamed to CLASS_VIDEO_MAX_MB")
 }

@@ -89,7 +89,7 @@ func (f *fakeRepo) CreateWali(
 	return uuid.Nil, nil
 }
 
-func (f *fakeRepo) CreateRefreshToken(_ context.Context, _ *entity.RefreshToken, verifiedHash string) error {
+func (f *fakeRepo) CreateRefreshToken(_ context.Context, _ *entity.RefreshToken, verifiedHash string, _ time.Duration) error {
 	f.separateTokens++
 	f.verifiedHash = verifiedHash
 

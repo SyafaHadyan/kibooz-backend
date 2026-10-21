@@ -3466,7 +3466,7 @@ components:
           type: integer
           format: int64
           minimum: 1
-          description: The exact size of the file, the server refuses a larger file than `VIDEO_MAX_MB`
+          description: The exact size of the file, the server refuses a larger file than `CLASS_VIDEO_MAX_MB`
     VideoUpload:
       type: object
       required: [uploadUrl, method, headers, videoUrl, expiresAt]
