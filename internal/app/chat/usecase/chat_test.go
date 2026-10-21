@@ -44,6 +44,9 @@ type fakeRepo struct {
 	memberships map[uuid.UUID]*repository.ClassMembership
 	// members are the accounts of a class, for the recipients of an event of a room
 	members []uuid.UUID
+	// joined are the members that had joined by the time of a deleted message, and joinedBy is the time that was asked for
+	joined   []uuid.UUID
+	joinedBy time.Time
 	// listedSince and markedSince record the join time that the use case passed down
 	listedSince time.Time
 	markedSince time.Time
@@ -83,6 +86,12 @@ func (f *fakeRepo) MemberSince(_ context.Context, _ uuid.UUID, classID uuid.UUID
 
 func (f *fakeRepo) ClassMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, error) {
 	return f.members, nil
+}
+
+func (f *fakeRepo) ClassMembersJoinedBy(_ context.Context, _ uuid.UUID, at time.Time) ([]uuid.UUID, error) {
+	f.joinedBy = at
+
+	return f.joined, nil
 }
 
 func (f *fakeRepo) FindClassRoom(_ context.Context, classID uuid.UUID) (*entity.ChatConversation, error) {
@@ -1165,4 +1174,25 @@ func TestNoWakeUpIsAskedForARefusedMessageOrWithoutAPusher(t *testing.T) {
 
 	_, err = useCase.SendMessage(context.Background(), me, id, dto.SendChatMessageRequest{Body: "hello"})
 	require.NoError(t, err, "a use case without a pusher still sends")
+}
+
+func TestADeletedMessageOfARoomIsOnlyAnnouncedToTheMembersWhoHadJoined(t *testing.T) {
+	classID, me, early, late := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	sent := time.Date(2026, 10, 10, 9, 0, 0, 0, time.UTC)
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: sent.Add(-time.Hour)}},
+		members:       []uuid.UUID{me, early, late},
+		joined:        []uuid.UUID{me, early},
+		messages:      map[int64]*repository.MessageRow{1: {ID: 1, ConversationID: room.ID, SenderID: me, Body: "mine", CreatedAt: sent}},
+	}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+
+	_, err := useCase.DeleteMessage(context.Background(), me, room.ID, 1)
+	require.NoError(t, err)
+
+	require.Equal(t, [][]uuid.UUID{{me, early}}, notifier.recipients, "the member who joined later hears nothing")
+	require.Equal(t, sent, repo.joinedBy, "the cut is the time the message was sent")
 }

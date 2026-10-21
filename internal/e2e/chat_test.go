@@ -3,6 +3,8 @@ package e2e
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
+	"hash/crc32"
 	"net/http"
 	"strconv"
 	"strings"
@@ -492,6 +494,34 @@ func TestClassRoomChat(t *testing.T) {
 	})
 }
 
+// paddedPNG is the tiny test image with a text chunk of the given size after its header. The server cuts the chunk out, but the
+// upload is that large when it arrives, which is what a real photo is.
+func paddedPNG(t *testing.T, png []byte, size int) []byte {
+	t.Helper()
+
+	// signature (8) and the IHDR chunk (4 length, 4 type, 13 data, 4 crc) come first
+	const headerEnd = 8 + 4 + 4 + 13 + 4
+
+	chunk := make([]byte, 0, size+12)
+	body := append([]byte("Comment\x00"), bytes.Repeat([]byte("x"), size)...)
+
+	length := make([]byte, 4)
+	binary.BigEndian.PutUint32(length, uint32(len(body)))
+
+	crc := make([]byte, 4)
+	binary.BigEndian.PutUint32(crc, crc32.ChecksumIEEE(append([]byte("tEXt"), body...)))
+
+	chunk = append(chunk, length...)
+	chunk = append(chunk, "tEXt"...)
+	chunk = append(chunk, body...)
+	chunk = append(chunk, crc...)
+
+	out := append([]byte(nil), png[:headerEnd]...)
+	out = append(out, chunk...)
+
+	return append(out, png[headerEnd:]...)
+}
+
 func TestChatMedia(t *testing.T) {
 	photo, err := base64.StdEncoding.DecodeString(tinyPNG)
 	require.NoError(t, err)
@@ -532,9 +562,15 @@ func TestChatMedia(t *testing.T) {
 		require.Contains(t, uploaded(privateKeyPrefix+"pending/chat/"), privateKeyPrefix+photoKey, "it is in the private bucket")
 		require.Empty(t, uploaded(photoKey), "and not in the public one")
 
+		// a photo is far larger than the 64 KB that any other body may have, and it must arrive
+		large := paddedPNG(t, photo, 200*1024)
+		bigRes := uploadTo(t, base+"/media/photo", parent.Token, nil, "p.png", large)
+		require.Equal(t, http.StatusOK, bigRes.Status, "body %v", bigRes.Body)
+		require.Less(t, bigRes.data("sizeBytes"), float64(len(large)), "the text chunk was cut out")
+
 		uploadTo(t, base+"/media/photo", parent.Token, nil, "p.png", []byte("not an image")).requireError(t, http.StatusBadRequest, "INVALID_IMAGE")
 		uploadTo(t, base+"/media/photo", parent.Token, nil, "", nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
-		uploadTo(t, base+"/media/photo", "", nil, "p.png", photo).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_MISSING")
+		uploadTo(t, base+"/media/photo", "", nil, "p.png", photo).requireError(t, http.StatusUnauthorized, "AUTH_TOKEN_INVALID")
 		uploadTo(t, base+"/media/photo", other.Token, nil, "p.png", photo).requireError(t, http.StatusNotFound, "CHAT_CONVERSATION_NOT_FOUND")
 		uploadTo(t, chatBase+"/conversations/not-a-uuid/media/photo", parent.Token, nil, "p.png", photo).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
@@ -634,6 +670,10 @@ func TestChatMedia(t *testing.T) {
 
 		require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM file_cleanups WHERE object_key = ?", before[0]).Scan(&queued).Error)
 		require.EqualValues(t, 1, queued, "the file is queued in the transaction of the delete")
+
+		// nothing sweeps the queue in this run, and the sweep test expects only its own keys in it, so do what the sweep would
+		require.NoError(t, testDB.Exec("DELETE FROM file_cleanups WHERE object_key = ?", before[0]).Error)
+		forgetUploaded(privateKeyPrefix + before[0])
 
 		var kept []string
 

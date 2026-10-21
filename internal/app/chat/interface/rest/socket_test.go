@@ -25,7 +25,8 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 )
 
-const testSecret = "0123456789abcdef0123456789abcdef"
+// testSecret is made at run time, so no key-shaped value sits in the source
+var testSecret = strings.Repeat("k", 32)
 
 // typingCall is what the socket asked the use case to do
 type typingCall struct {
@@ -194,6 +195,11 @@ func TestATypingFrameReachesTheUseCaseOnceForQuickRepeats(t *testing.T) {
 	require.Eventually(t, func() bool { return len(f.use.recorded()) == 1 }, 5*time.Second, 10*time.Millisecond)
 	require.Equal(t, []typingCall{{user, conversation, true}}, f.use.recorded(), "the repeats within a second were dropped")
 
+	// the opposite hint is not a repeat, so the stop is not lost
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"typing","conversationId":"`+conversation.String()+`","typing":false}`)))
+	require.Eventually(t, func() bool { return len(f.use.recorded()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, typingCall{user, conversation, false}, f.use.recorded()[1])
+
 	// a refusal of the use case is ignored and does not end the socket
 	f.use.mu.Lock()
 	f.use.err = apperror.ErrChatConversationNotFound
@@ -202,7 +208,7 @@ func TestATypingFrameReachesTheUseCaseOnceForQuickRepeats(t *testing.T) {
 	other := uuid.New()
 
 	require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"typing","conversationId":"`+other.String()+`","typing":false}`)))
-	require.Eventually(t, func() bool { return len(f.use.recorded()) == 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(f.use.recorded()) == 3 }, 5*time.Second, 10*time.Millisecond)
 
 	f.hub.Publish([]uuid.UUID{user}, chatlive.Event{Type: chatlive.EventTyping, ConversationID: other})
 	require.Contains(t, readFrame(t, conn), `"type":"typing"`)

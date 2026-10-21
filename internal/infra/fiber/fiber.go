@@ -124,13 +124,33 @@ func plainBody() fiber.Handler {
 	}
 }
 
-// uploadPaths are the two routes that take a photo and have the size limits of a photo
+// uploadPaths are the routes that take a photo and have the size limits of a photo
 var uploadPaths = []string{"/api/v1/users/avatar", "/api/v1/trash/scan-claim"}
 
-// isUpload tells whether a request path leads to one of the photo uploads. Fiber routes without regard to case and to a
-// trailing slash, so the path is cleaned the same way before it is compared.
+const (
+	// chatPhotoPrefix and chatPhotoSuffix surround the id of a conversation in the third photo upload, the chat photo
+	chatPhotoPrefix = "/api/v1/chat/conversations/"
+	chatPhotoSuffix = "/media/photo"
+)
+
+// isUpload tells whether a request path leads to one of the photo uploads, the avatar, the trash photo and the photo of a chat
+// message. Fiber routes without regard to case and to a trailing slash, so the path is cleaned the same way before it is compared.
 func isUpload(path string) bool {
-	return slices.Contains(uploadPaths, strings.ToLower(strings.TrimRight(path, "/")))
+	path = strings.ToLower(strings.TrimRight(path, "/"))
+
+	if slices.Contains(uploadPaths, path) {
+		return true
+	}
+
+	// the id of the conversation is one segment between the two fixed parts
+	middle, found := strings.CutPrefix(path, chatPhotoPrefix)
+	if !found {
+		return false
+	}
+
+	conversation, found := strings.CutSuffix(middle, chatPhotoSuffix)
+
+	return found && conversation != "" && !strings.Contains(conversation, "/")
 }
 
 // smallBody refuses a request whose body is larger than max, except on the paths that take a photo. Fiber has read the body

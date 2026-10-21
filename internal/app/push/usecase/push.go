@@ -3,8 +3,10 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -32,11 +34,19 @@ func NewPushUseCase(repo repository.PushDBItf) PushUseCaseItf {
 	return &PushUseCase{repo: repo, now: time.Now}
 }
 
-// clean trims the token and refuses one with a blank inside, which Firebase never gives
+// token lengths that the table accepts, counted after the trim
+const (
+	minTokenLength = 20
+	maxTokenLength = 4096
+)
+
+// clean trims the token and refuses one with a blank inside, which Firebase never gives, or one that is too short or too
+// long once it is trimmed
 func clean(token string) (string, bool) {
 	token = strings.TrimSpace(token)
+	length := utf8.RuneCountInString(token)
 
-	return token, token != "" && !strings.ContainsAny(token, " \t\r\n")
+	return token, length >= minTokenLength && length <= maxTokenLength && !strings.ContainsAny(token, " \t\r\n")
 }
 
 func (u *PushUseCase) Register(ctx context.Context, userID uuid.UUID, req dto.PushTokenRequest) error {
@@ -51,6 +61,10 @@ func (u *PushUseCase) Register(ctx context.Context, userID uuid.UUID, req dto.Pu
 	}
 
 	err := u.repo.SaveToken(ctx, userID, token, platform, u.now().UTC().Truncate(time.Microsecond))
+	if errors.Is(err, repository.ErrAccountGone) {
+		return apperror.ErrTokenInvalid
+	}
+
 	if err != nil {
 		return apperror.Internal(err)
 	}

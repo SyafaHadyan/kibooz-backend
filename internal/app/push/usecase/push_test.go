@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/push"
@@ -71,7 +72,7 @@ func TestATokenWithABlankInsideOrNothingInItIsRefused(t *testing.T) {
 	repo := &fakeRepo{}
 	useCase := newUseCase(repo)
 
-	for _, token := range []string{"", "   ", strings.Repeat("a", 20) + " " + strings.Repeat("b", 20)} {
+	for _, token := range []string{"", "   ", strings.Repeat("a", 20) + " " + strings.Repeat("b", 20), "     " + strings.Repeat("c", 15), strings.Repeat("d", 4097)} {
 		requireAppError(t, useCase.Register(context.Background(), uuid.New(), dto.PushTokenRequest{Token: token}), apperror.Validation(nil))
 		requireAppError(t, useCase.Remove(context.Background(), uuid.New(), dto.RemovePushTokenRequest{Token: token}), apperror.Validation(nil))
 	}
@@ -92,5 +93,13 @@ func TestARemovedTokenIsPassedOnAndAFailureIsAnInternalError(t *testing.T) {
 	requireAppError(t, newUseCase(repo).Remove(context.Background(), uuid.New(), dto.RemovePushTokenRequest{Token: token}), apperror.Internal(nil))
 	requireAppError(
 		t, newUseCase(repo).Register(context.Background(), uuid.New(), dto.PushTokenRequest{Token: token, Platform: "android"}), apperror.Internal(nil),
+	)
+}
+
+func TestATokenOfADeletedAccountIsRefusedAsAnEndedSession(t *testing.T) {
+	repo := &fakeRepo{err: repository.ErrAccountGone}
+
+	requireAppError(
+		t, newUseCase(repo).Register(context.Background(), uuid.New(), dto.PushTokenRequest{Token: strings.Repeat("g", 30)}), apperror.ErrTokenInvalid,
 	)
 }
