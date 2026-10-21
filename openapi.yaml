@@ -572,8 +572,8 @@ paths:
       description: |
         The classes that the child was in before its current one, the latest first. Each has the dates the child was in it and what
         the child had when it left, which are the points of all semesters, the points of the last semester, the rank and the number
-        of scans. These numbers are saved when a teacher accepts a move or when the child is removed, and the child starts from
-        zero in the next class. A child that never moved has an empty list.
+        of scans. These numbers are saved when a teacher accepts a move, and the child starts from zero in the next class. A child that
+        never moved has an empty list, and the list is complete and not paged.
       parameters:
         - $ref: "#/components/parameters/StudentPath"
       responses:

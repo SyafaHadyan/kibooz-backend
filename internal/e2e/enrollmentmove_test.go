@@ -303,7 +303,13 @@ func TestMoveRoutesRefuseBadIdsStrangersAndClassesThatCannotTakeAChild(t *testin
 
 		never := call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", parent.Token, nil)
 		require.Equal(t, http.StatusOK, never.Status, "body %v", never.Body)
-		require.Empty(t, never.data("classes"), "a child that never moved has no previous class")
+
+		none, ok := never.data("classes").([]any)
+		require.True(t, ok, "the list is an array and not null")
+		require.Empty(t, none, "a child that never moved has no previous class")
+
+		call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", teacher.Token, nil).
+			requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 	})
 
 	t.Run("a parent cannot read the requests of another parent's child", func(t *testing.T) {
@@ -380,6 +386,18 @@ func TestAChildCanMoveBackAndForthBetweenTwoClasses(t *testing.T) {
 	}
 
 	require.Equal(t, map[string]int{"ended": 2, "active": 1}, statuses)
+
+	previous := call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", parent.Token, nil)
+	require.Equal(t, http.StatusOK, previous.Status, "body %v", previous.Body)
+
+	classes, ok := previous.data("classes").([]any)
+	require.True(t, ok)
+	require.Len(t, classes, 2)
+	require.Equal(t, classB, dig(classes[0], "classId"), "the class that the child left last comes first")
+	require.Equal(t, classA, dig(classes[1], "classId"))
+	require.NotEmpty(t, dig(classes[0], "schoolName"))
+	require.NotEmpty(t, dig(classes[0], "gradeLevel"))
+	require.NotEmpty(t, dig(classes[0], "academicYear"))
 }
 
 // TestEnrollmentRulesHoldWhenCalledDirectly reaches the refusals of Accept that the routes only meet when two requests race, such as
