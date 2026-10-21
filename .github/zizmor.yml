@@ -9,3 +9,8 @@ rules:
       - perf.yaml
       - security.yaml
       - smoke-stack.yaml
+  dangerous-triggers:
+    # workflow_run is the point of this workflow. It runs from main, never checks out the repository and only copies an image by
+    # digest after it has checked the signature, see the comment at the top of the file
+    ignore:
+      - docker-hub-mirror.yaml
