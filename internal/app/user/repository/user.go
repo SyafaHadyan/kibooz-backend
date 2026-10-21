@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
@@ -31,9 +32,11 @@ type UserDBItf interface {
 	// addresses of their files. fileKey turns an address into the object key of a file to delete, and false for an
 	// address that is not ours. The keys are queued for cleanup in the same transaction, so a file is never forgotten
 	// after the address that pointed at it is gone. It returns the classes whose ranking changed and the queued keys,
-	// so the caller can delete the files and then take them off the queue.
+	// so the caller can delete the files and then take them off the queue. The deletion only goes through while the stored
+	// hash is still verifiedHash, the one the caller checked the password against, and otherwise it returns
+	// apperror.ErrPasswordIncorrect, so a password that was replaced in between does not confirm a deletion.
 	SoftDeleteAccount(
-		ctx context.Context, userID uuid.UUID, role constants.Role, successorEmail string, fileKey FileKeyFunc,
+		ctx context.Context, userID uuid.UUID, role constants.Role, verifiedHash string, successorEmail string, fileKey FileKeyFunc,
 	) (DeletedAccount, error)
 	// UpdatePassword stores newHash and ends every session of the account, but only while the stored hash is still
 	// oldHash, so a change that was made in between is not overwritten. It returns false when nothing was changed.
@@ -167,7 +170,7 @@ func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 }
 
 func (r *UserDB) SoftDeleteAccount(
-	ctx context.Context, userID uuid.UUID, role constants.Role, successorEmail string, fileKey FileKeyFunc,
+	ctx context.Context, userID uuid.UUID, role constants.Role, verifiedHash string, successorEmail string, fileKey FileKeyFunc,
 ) (DeletedAccount, error) {
 	var deleted DeletedAccount
 
@@ -180,6 +183,19 @@ func (r *UserDB) SoftDeleteAccount(
 		// The user row comes first, so a sign in that is under way finishes before the sessions are ended and one that
 		// starts later finds the account gone. A password change takes the locks in the same order.
 		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		// The password was checked before this transaction, so it only counts while it is still the password of the account.
+		// A change that committed in between, or a deletion that came first, ends the request without deleting anything.
+		var current int64
+
+		err = tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
+		if err == nil && current == 0 {
+			err = apperror.ErrPasswordIncorrect
+		}
+
 		if err != nil {
 			return err
 		}
