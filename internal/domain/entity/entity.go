@@ -77,6 +77,24 @@ type Student struct {
 	DeletedAt     gorm.DeletedAt `gorm:"index"`
 }
 
+// Enrollment is a child in a class, asked for, current or over. The class of the one active enrollment of a child is the class in
+// the row of the child, and the Final fields hold what the child had in the class when the enrollment ended.
+type Enrollment struct {
+	ID                uuid.UUID                  `gorm:"type:uuid;primaryKey"`
+	StudentID         uuid.UUID                  `gorm:"type:uuid;not null"`
+	ClassID           uuid.UUID                  `gorm:"type:uuid;not null"`
+	Status            constants.EnrollmentStatus `gorm:"size:10;not null"`
+	RequestedAt       time.Time                  `gorm:"autoCreateTime;not null"`
+	DecidedAt         *time.Time
+	DecidedByGuruID   *uuid.UUID `gorm:"type:uuid"`
+	ActivatedAt       *time.Time
+	EndedAt           *time.Time
+	FinalPoints       *int
+	FinalSeasonPoints *int
+	FinalRank         *int
+	FinalScans        *int
+}
+
 type MoodLog struct {
 	ID               uuid.UUID            `gorm:"type:uuid;primaryKey"`
 	StudentID        uuid.UUID            `gorm:"type:uuid;not null"`
