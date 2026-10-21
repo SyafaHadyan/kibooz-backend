@@ -49,7 +49,7 @@ type Env struct {
 	LeaderboardCacheSeconds int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
 	KeepaliveSeconds        int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
 	JWTSecretKey            string `env:"JWT_SECRET_KEY,required"`
-	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"60"`
+	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
 	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
 	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
 	DeviceTokenTTLDays      int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
