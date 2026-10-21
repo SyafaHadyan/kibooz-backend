@@ -8,5 +8,6 @@ rules:
       - dast.yaml
       - openapi-diff.yaml
       - perf.yaml
+      - pentest-target.yaml
       - security.yaml
       - smoke-stack.yaml

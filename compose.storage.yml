@@ -1,4 +1,4 @@
-# Used with compose.yml and compose.ci.yml by the Smoke stack workflow. It adds a throwaway S3 compatible server, so the upload
+# Used with compose.yml and compose.ci.yml by the Smoke stack and Pentest target workflows. It adds a throwaway S3 compatible server, so the upload
 # routes of a pull request run against a real bucket and not against STORAGE_UNAVAILABLE. Versity Gateway checks the signature
 # of every request, including the signed upload and read addresses, so a wrong header or a missing signature fails here as it
 # would on Cloudflare R2. It keeps the buckets as directories in a volume that `docker compose down -v` removes.
