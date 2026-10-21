@@ -1,20 +1,27 @@
 name: Docker Hub mirror
 
 # Copies the image that the Docker workflow built to Docker Hub. The Docker workflow also runs for pull requests, and a pull
-# request can change that workflow, so the Docker Hub token does not belong in it. The token lives in the docker-hub environment,
-# which only main and version tags may use. This workflow is started by workflow_run, so GitHub always runs the copy of this
-# file that is on main and a pull request cannot change it. It never checks out the repository and never runs anything from the
-# pull request, it only moves an image by digest after it has checked the signature of the Docker workflow.
+# request can change that workflow, so the Docker Hub token does not belong in it. The token lives in the docker-hub environment.
+# This workflow is started by workflow_run, so GitHub always runs the copy of this file that is on main and a pull request cannot
+# change it. It never checks out the repository and never runs anything from the pull request, it only moves an image by digest.
+#
+# A person with write access can push a branch with a workflow that is also called Docker, or change docker.yaml in a pull request
+# and push any image under any tag of GitHub Container Registry. So nothing here trusts a tag. The image is copied only when
+# its signature was made by exactly the run that started this one, which means docker.yaml on main for a push to main,
+# docker.yaml on the tag for a release, and docker.yaml of the merge of that pull request for a pull request.
 
 on:
-  workflow_run:
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: [Docker]
     types: [completed]
 
 concurrency:
   # One copy at a time for each pull request, branch or tag. A copy that waits is replaced by a newer one, and a copy that has
-  # started is never cancelled halfway
-  group: hub-mirror-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+  # started is never cancelled halfway. A run that has nothing to copy, such as the one of a failed build, gets a group of
+  # its own, so it cannot replace the copy that is waiting for a good build.
+  group: >-
+    hub-mirror-${{ github.event.workflow_run.conclusion == 'success' &&
+    (github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch) || github.run_id }}
   cancel-in-progress: false
 
 permissions: {}
@@ -25,6 +32,7 @@ jobs:
     # Dependabot and fork runs are built without a push, so there is nothing to copy
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.path, '.github/workflows/docker.yaml') &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.actor.login != 'dependabot[bot]' &&
       vars.DOCKERHUB_USERNAME != ''
@@ -48,34 +56,45 @@ jobs:
           EVENT: ${{ github.event.workflow_run.event }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
         run: |
           set -euo pipefail
           echo "ghcr=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           sha7="${HEAD_SHA::7}"
+          workflow="https://github.com/${REPOSITORY}/.github/workflows/docker.yaml"
           skip() { echo "::notice::$1"; echo "copy=false" >> "$GITHUB_OUTPUT"; exit 0; }
           case "$EVENT" in
             pull_request)
-              [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || skip "This run has no pull request, so there is nothing to copy"
+              # The pull request of this commit with this repository as its source, found from the commit and not from the
+              # first entry of the event, which can be another pull request of the same branch
+              number="$(gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}/pulls" \
+                --jq '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == env.HEAD_SHA and .head.repo.full_name == env.REPOSITORY)] | .[0].number // empty')"
+              [[ "$number" =~ ^[0-9]+$ ]] || skip "No open pull request of this repository has ${sha7} as its head, so there is nothing to copy"
               # A newer push builds its own image and copies it, so an older build never overwrites the newer tag
-              current="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha)"
-              [ "$current" = "$HEAD_SHA" ] || skip "Pull request ${PR_NUMBER} has a newer commit than ${sha7}, so its own build copies the image"
+              current="$(gh api "repos/${REPOSITORY}/pulls/${number}" --jq .head.sha)"
+              [ "$current" = "$HEAD_SHA" ] || skip "Pull request ${number} has a newer commit than ${sha7}, so its own build copies the image"
               source="sha-${sha7}"
-              tags="pr-${PR_NUMBER} sha-${sha7}"
+              tags="pr-${number}"
+              identity="${workflow}@refs/pull/${number}/merge"
+              trigger="pull_request"
               ;;
             push | workflow_dispatch)
               if [ "$HEAD_BRANCH" = "main" ]; then
                 current="$(gh api "repos/${REPOSITORY}/commits/main" --jq .sha)"
                 [ "$current" = "$HEAD_SHA" ] || skip "main has a newer commit than ${sha7}, so its own build copies the image"
                 source="sha-${sha7}"
-                tags="latest sha-${sha7}"
+                tags="sha-${sha7} latest"
+                identity="${workflow}@refs/heads/main"
+                trigger="$EVENT"
               elif [ "$EVENT" = "push" ] && [[ "$HEAD_BRANCH" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-                # The build decides which of 1.2.3, 1.2 and 1 it sets, so only the ones that point at the same image are copied
+                # The build decides which of 1.2.3, 1.2 and 1 it sets, so only the ones that point at the same image are copied.
+                # A branch with a name like this builds with another identity, so the signature check below refuses its image
                 major="${BASH_REMATCH[1]}"
                 minor="${BASH_REMATCH[2]}"
                 source="${major}.${minor}.${BASH_REMATCH[3]}"
                 tags="$source"
                 candidates="${major}.${minor} ${major}"
+                identity="${workflow}@refs/tags/${HEAD_BRANCH}"
+                trigger="push"
               else
                 skip "A run of ${EVENT} on this ref publishes nothing"
               fi
@@ -89,6 +108,8 @@ jobs:
             echo "source=${source}"
             echo "tags=${tags}"
             echo "candidates=${candidates:-}"
+            echo "identity=${identity}"
+            echo "trigger=${trigger}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
@@ -103,19 +124,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        if: steps.plan.outputs.copy == 'true'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Install cosign
         if: steps.plan.outputs.copy == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      # The image is only copied when the signature of docker.yaml of this repository is on it, so a tag that someone moved to
-      # another image in GitHub Container Registry is never copied
+      # The image is only copied when the signature on it was made by the run that started this one, and not by any run of
+      # docker.yaml of this repository, so a tag that someone pushed to another image in GitHub Container Registry is never copied.
+      # A push or a manual run also has to name this commit in the certificate. The certificate of a pull request names the merge
+      # commit that GitHub made, so there the trigger and the merge ref are what bind the image to the pull request.
+      # Docker Hub is not logged in yet at this point
       - name: Find the image and check its signature
         id: image
         if: steps.plan.outputs.copy == 'true'
@@ -124,6 +141,10 @@ jobs:
           SOURCE: ${{ steps.plan.outputs.source }}
           TAGS: ${{ steps.plan.outputs.tags }}
           CANDIDATES: ${{ steps.plan.outputs.candidates }}
+          IDENTITY: ${{ steps.plan.outputs.identity }}
+          TRIGGER: ${{ steps.plan.outputs.trigger }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
           digest="$(docker buildx imagetools inspect "${GHCR_IMAGE}:${SOURCE}" --format '{{.Manifest.Digest}}')"
@@ -135,39 +156,56 @@ jobs:
               TAGS="${TAGS} ${candidate}"
             fi
           done
+          flags=(--certificate-github-workflow-trigger "$TRIGGER")
+          if [ "$EVENT" != "pull_request" ]; then
+            flags+=(--certificate-github-workflow-sha "$HEAD_SHA")
+          fi
           cosign verify \
             --new-bundle-format=false \
-            --certificate-identity-regexp "^https://github\.com/${REPOSITORY}/\.github/workflows/docker\.yaml@refs/(heads/main|tags/v.+|pull/[0-9]+/merge)$" \
+            --certificate-identity "$IDENTITY" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${flags[@]}" \
             "${GHCR_IMAGE}@${digest}" > /dev/null
           {
             echo "digest=${digest}"
             echo "tags=${TAGS}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Login to Docker Hub
+        if: steps.plan.outputs.copy == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The first tag is not one that people pull as the newest image. The signature is copied and checked on it before
+      # latest or a floating version tag moves, so Docker Hub never holds a moved tag without a signature
       - name: Copy the image and its signature
         if: steps.plan.outputs.copy == 'true'
         env:
           GHCR_IMAGE: ${{ steps.plan.outputs.ghcr }}
           DIGEST: ${{ steps.image.outputs.digest }}
           TAGS: ${{ steps.image.outputs.tags }}
+          IDENTITY: ${{ steps.plan.outputs.identity }}
+          TRIGGER: ${{ steps.plan.outputs.trigger }}
+          EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          first=""
-          for tag in $TAGS; do
-            docker buildx imagetools create --tag "${HUB_IMAGE}:${tag}" "${GHCR_IMAGE}@${DIGEST}"
-            first="${first:-$tag}"
-          done
+          read -r first rest <<< "$TAGS"
+          docker buildx imagetools create --tag "${HUB_IMAGE}:${first}" "${GHCR_IMAGE}@${DIGEST}"
           # The signature stays the one that docker.yaml made, so the identity that the docs tell people to check does not change
           cosign copy --only=sig "${GHCR_IMAGE}@${DIGEST}" "${HUB_IMAGE}:${first}"
-
-      - name: Verify the signature on Docker Hub
-        if: steps.plan.outputs.copy == 'true'
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: |
+          flags=(--certificate-github-workflow-trigger "$TRIGGER")
+          if [ "$EVENT" != "pull_request" ]; then
+            flags+=(--certificate-github-workflow-sha "$HEAD_SHA")
+          fi
           cosign verify \
             --new-bundle-format=false \
-            --certificate-identity-regexp "^https://github\.com/${REPOSITORY}/\.github/workflows/docker\.yaml@refs/(heads/main|tags/v.+|pull/[0-9]+/merge)$" \
+            --certificate-identity "$IDENTITY" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${flags[@]}" \
             "${HUB_IMAGE}@${DIGEST}" > /dev/null
+          for tag in $rest; do
+            docker buildx imagetools create --tag "${HUB_IMAGE}:${tag}" "${GHCR_IMAGE}@${DIGEST}"
+          done
