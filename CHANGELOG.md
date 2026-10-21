@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.17.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.17.0...v0.17.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **auth:** shorten the default access token lifetime to 15 minutes ([4b7582c](https://github.com/SyafaHadyan/kibooz-backend/commit/4b7582c90bb05825f6edcfc6e66e39645c10f30b))
+* **auth:** shorten the default access token lifetime to 15 minutes ([#281](https://github.com/SyafaHadyan/kibooz-backend/issues/281)) ([e29d1d7](https://github.com/SyafaHadyan/kibooz-backend/commit/e29d1d751f38d28e1014734f5601a3c9ca7a9be6))
+* **docs:** pin undici to 7.30.1 in the docs tooling ([#280](https://github.com/SyafaHadyan/kibooz-backend/issues/280)) ([94f21e5](https://github.com/SyafaHadyan/kibooz-backend/commit/94f21e55ce2e95721fc734fad2af1445a38068de))
+* **fuzz:** reject a malformed fuzztime and keep the failed input when the job stops early ([a7bf4ad](https://github.com/SyafaHadyan/kibooz-backend/commit/a7bf4ad3617888f50110bc8242bc405ddcac62ea))
+* **monitoring:** do not name one host in the copies alert text ([bbcdb92](https://github.com/SyafaHadyan/kibooz-backend/commit/bbcdb921a229e1066f89badfec4e155589a38727))
+* **monitoring:** fire the copies alert only when fewer than 2 API copies are up ([4285a8f](https://github.com/SyafaHadyan/kibooz-backend/commit/4285a8f2c5e3313e8d6ec046d000fa79e095ee7f))
+* **monitoring:** fire the copies alert only when fewer than 2 API copies are up ([#285](https://github.com/SyafaHadyan/kibooz-backend/issues/285)) ([df457a6](https://github.com/SyafaHadyan/kibooz-backend/commit/df457a6b66f4d67229054c9dbd3c5c2f9c947ccb))
+* **pentest:** keep a running target, fail on a bad seed, tighten the inputs and document the limits ([b656a48](https://github.com/SyafaHadyan/kibooz-backend/commit/b656a489bbf1c31be984f140537318469460f716))
+* **perf:** hold one socket per listener, fail a run without delivered frames and document the chat script ([b705d8f](https://github.com/SyafaHadyan/kibooz-backend/commit/b705d8f872a69ba2fdfd1649b7cc1438a7232217))
+
 ## [0.17.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.16.0...v0.17.0) (2026-10-21)
 
 
