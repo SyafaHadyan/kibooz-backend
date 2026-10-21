@@ -13,9 +13,15 @@
 # copy with no dependencies, and polls /healthz of that copy until the answer is status ok, every check ok or disabled, and the
 # version that was asked for, twice in a row. It goes on to the next copy only when the one before is healthy. When a copy does not
 # become healthy it stops, says which copies are already new and which are still old, and prints the command that goes back.
-# Nothing is rolled back by itself. The new version may already have applied a migration, and an old image cannot start on a newer
+# Going back to an older version is allowed, with a warning, see below. Nothing is rolled back by itself. The new version may already have applied a migration, and an old image cannot start on a newer
 # schema, so read the changelog before going back. A rolling update is only safe when the migrations of the new version leave the
 # old version working, because both versions run on the same database for a short while.
+#
+# Going back. When the version is older than the one that runs now, the script warns that this is only safe while no migration ran
+# since that version, and asks GitHub which migration files the newer versions added. When there are some it stops, because the old
+# image cannot start on the newer schema. Restore the database or apply the down files first, see docs/operations.md, and then run
+# it again with MIGRATIONS_HANDLED=1. When there are none, or GitHub cannot be asked, it asks you to type the version to go on, or
+# to set ROLLBACK_OK to it when there is no terminal.
 #
 # Settings, all optional, given as environment variables
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
@@ -23,6 +29,9 @@
 #   COPIES        the services and the host port of each, in update order, default "api-1:8000 api-2:8001"
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy to become healthy, default 120
+#   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
+#   ROLLBACK_OK   the version that you confirm to go back to when there is no terminal
+#   MIGRATIONS_HANDLED  1 when the database is ready for the older version, after a restore or the down files
 #   DRY_RUN       1, true or yes prints the steps and changes nothing, but it still checks the services
 set -euo pipefail
 
@@ -39,6 +48,7 @@ env_file="${ENV_FILE:-.env}"
 copies="${COPIES:-api-1:8000 api-2:8001}"
 image="${IMAGE:-syafa/kibooz-backend}"
 timeout="${TIMEOUT:-120}"
+repo="${REPO:-SyafaHadyan/kibooz-backend}"
 
 case "${DRY_RUN:-0}" in
   1 | true | yes) dry_run=1 ;;
@@ -118,6 +128,49 @@ if [ "$dry_run" = "1" ]; then
   echo "DRY RUN docker pull $image:$version"
 else
   docker pull "$image:$version" || die "$image:$version could not be pulled, so nothing was changed. The tag may not exist or Docker Hub refused the pull"
+fi
+
+# the version that runs now, taken from the first copy and, when it does not answer, from the env file
+running="$(curl -sS --max-time 5 "http://localhost:${ports[0]}/healthz" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+semver='^[0-9]+\.[0-9]+\.[0-9]+$'
+[[ "$running" =~ $semver ]] || running="$previous"
+[[ "$running" =~ $semver ]] || running=""
+
+if [ -n "$running" ] && [ "$running" != "$version" ] &&
+  [ "$(printf '%s\n%s\n' "$version" "$running" | sort -V | head -n 1)" = "$version" ]; then
+  echo
+  echo "WARNING. This goes back from $running to $version." >&2
+  echo "It is only safe while no migration ran since $version, because an older image cannot start on a newer schema." >&2
+  echo "Take a dump of the database first, see Roll back in docs/operations.md." >&2
+
+  if added="$(curl -fsS --max-time 15 "https://api.github.com/repos/${repo}/compare/v${version}...v${running}" 2>/dev/null |
+    jq -r '.files[]? | select(.status == "added" and (.filename | test("^internal/infra/db/migrations/.*[.]up[.]sql$"))) | .filename | split("/") | last')"; then
+    if [ -n "$added" ]; then
+      echo "These migrations were added after $version and may have run on this database" >&2
+      while IFS= read -r name; do
+        echo "  $name" >&2
+      done <<<"$added"
+      if [ "$dry_run" = "1" ]; then
+        echo "DRY RUN a real run stops here until MIGRATIONS_HANDLED=1 is set"
+      elif [ "${MIGRATIONS_HANDLED:-0}" != "1" ]; then
+        die "Restore the database from a backup or apply the down files of these migrations, then run this again with MIGRATIONS_HANDLED=1. Nothing was changed"
+      fi
+    else
+      echo "GitHub shows no migration between $version and $running, so the older image should start" >&2
+    fi
+  else
+    echo "GitHub could not be asked about migrations, so assume that one may exist" >&2
+  fi
+
+  if [ "$dry_run" = "1" ]; then
+    echo "DRY RUN a real run asks you to type $version to confirm"
+  elif [ "${ROLLBACK_OK:-}" != "$version" ]; then
+    [ -t 0 ] || die "Set ROLLBACK_OK=$version to go back without a terminal. Nothing was changed"
+    read -r -p "Type $version to go back to it, anything else cancels: " answer
+    [ "$answer" = "$version" ] || die "Cancelled, nothing was changed"
+  fi
+elif [ "$running" = "$version" ]; then
+  echo "$version already runs, the copies are recreated one at a time anyway"
 fi
 
 echo "IMAGE_TAG was ${previous:-not set} and becomes $version"
