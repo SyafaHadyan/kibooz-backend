@@ -109,9 +109,9 @@ func TestTheAPIStartsWithOrWithoutAUsableFirebaseKey(t *testing.T) {
 		started, err := bootstrap.Start("e2e-push-on")
 		require.NoError(t, err)
 
+		t.Cleanup(started.Close)
+
 		health := callApp(t, started.App.Fiber, http.MethodGet, "/healthz", "", nil)
 		require.Equal(t, http.StatusOK, health.Status, "body %v", health.Body)
-
-		started.Close()
 	})
 }
