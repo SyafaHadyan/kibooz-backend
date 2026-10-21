@@ -24,6 +24,9 @@ import (
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
+	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
+	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
+	pushusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/push/usecase"
 	trashhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/interface/rest"
 	trashrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
 	trashusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/usecase"
@@ -190,6 +193,8 @@ func Start(version string) (*Bootstrap, error) {
 		cancelLive()
 		live.Wait()
 	}
+
+	pushhandler.NewPushHandler(app.Router, mw, pushusecase.NewPushUseCase(pushrepository.NewPushDB(database)))
 
 	chathandler.NewChatHandler(
 		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub), hub, cfg,

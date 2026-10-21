@@ -173,3 +173,13 @@ type ChatMessage struct {
 	MediaType *string
 	MediaSize *int64
 }
+
+// PushToken is the address that Firebase gave one installed app. A token belongs to one account at a time.
+type PushToken struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null"`
+	Token     string    `gorm:"not null"`
+	Platform  string    `gorm:"size:10;not null"`
+	CreatedAt time.Time `gorm:"autoCreateTime:false;not null"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime:false;not null"`
+}
