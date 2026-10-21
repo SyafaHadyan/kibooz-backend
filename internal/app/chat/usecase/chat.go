@@ -739,7 +739,9 @@ func (u *ChatUseCase) SendMessage(
 
 	res := u.messageResponse(ctx, stored)
 
-	recipients := u.recipients(ctx, conversation)
+	// only the members who had joined a room when the message was sent hear about it, live or through a wake-up, because a later
+	// member cannot read it in the history either
+	recipients := u.recipientsOfMessage(ctx, conversation, stored.CreatedAt)
 
 	u.announce(recipients, chatlive.Event{Type: chatlive.EventMessage, ConversationID: conversationID, Message: &res})
 	u.wake(recipients, userID, conversationID, res.ID)
