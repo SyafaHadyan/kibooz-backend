@@ -51,6 +51,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"gorm.io/gorm"
@@ -68,6 +69,7 @@ type Bootstrap struct {
 	stopKeys      func()
 	stopReports   func()
 	stopLive      func()
+	stopPush      func()
 	metrics       *metrics.Listener
 	healthDB      *sql.DB
 }
@@ -194,10 +196,41 @@ func Start(version string) (*Bootstrap, error) {
 		live.Wait()
 	}
 
-	pushhandler.NewPushHandler(app.Router, mw, pushusecase.NewPushUseCase(pushrepository.NewPushDB(database)))
+	pushRepository := pushrepository.NewPushDB(database)
+
+	pushhandler.NewPushHandler(app.Router, mw, pushusecase.NewPushUseCase(pushRepository))
+
+	// a closed app is woken through Firebase when a key is set. A key that cannot be used leaves the pushes off and the API running,
+	// because a notification is a shortcut and never a reason to stay down.
+	var (
+		pusher   chatusecase.Pusher
+		stopPush = func() {}
+	)
+
+	if cfg.FirebaseCredentialsFile != "" {
+		sender, pushErr := push.NewFCM(cfg.FirebaseCredentialsFile)
+		if pushErr != nil {
+			log.Printf("push notifications are off because the Firebase key cannot be used %v", pushErr)
+		} else {
+			dispatcher := push.NewDispatcher(pushRepository, sender)
+
+			for _, collector := range dispatcher.Collectors() {
+				err = stats.Registry().Register(collector)
+				if err != nil {
+					return nil, fmt.Errorf("register push metrics: %w", err)
+				}
+			}
+
+			dispatcher.Start()
+
+			pusher, stopPush = dispatcher, dispatcher.Stop
+
+			log.Println("push notifications are on")
+		}
+	}
 
 	chathandler.NewChatHandler(
-		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub), hub, cfg,
+		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub, pusher), hub, cfg,
 	)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache, hasher,
@@ -252,13 +285,14 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, stopLive: stopLive, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
 // Close stops the keepalive, then releases the database and Redis connections
 func (b *Bootstrap) Close() {
 	b.stopLive()
+	b.stopPush()
 	b.stopKeepalive()
 	b.stopCleanup()
 	b.stopSeason()

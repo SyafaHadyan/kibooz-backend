@@ -67,18 +67,25 @@ type Notifier interface {
 	Publish(recipients []uuid.UUID, event chatlive.Event)
 }
 
+// Pusher wakes the closed apps of the recipients of a message, and it never fails the request
+type Pusher interface {
+	NewMessage(recipients []uuid.UUID, conversationID uuid.UUID, messageID int64)
+}
+
 type ChatUseCase struct {
 	repo repository.ChatDBItf
 	// storage is the private bucket of the chat media, and it is disabled when the bucket is not configured
 	storage  s3.StorageItf
 	cfg      *env.Env
 	notifier Notifier
+	pusher   Pusher
 	now      func() time.Time
 }
 
-// NewChatUseCase builds the chat rules. The notifier is optional, and without it nothing is pushed to sockets.
-func NewChatUseCase(repo repository.ChatDBItf, storage s3.StorageItf, cfg *env.Env, notifier Notifier) ChatUseCaseItf {
-	return &ChatUseCase{repo: repo, storage: storage, cfg: cfg, notifier: notifier, now: time.Now}
+// NewChatUseCase builds the chat rules. The notifier and the pusher are optional. Without a notifier nothing is pushed to
+// sockets, and without a pusher no closed app is woken.
+func NewChatUseCase(repo repository.ChatDBItf, storage s3.StorageItf, cfg *env.Env, notifier Notifier, pusher Pusher) ChatUseCaseItf {
+	return &ChatUseCase{repo: repo, storage: storage, cfg: cfg, notifier: notifier, pusher: pusher, now: time.Now}
 }
 
 // timestamp keeps the precision PostgreSQL stores, so the order of two quick messages is stable
@@ -421,6 +428,23 @@ func (u *ChatUseCase) announce(recipients []uuid.UUID, event chatlive.Event) {
 	u.notifier.Publish(recipients, event)
 }
 
+// wake asks for a push to the closed apps of everybody in the conversation except the sender, whose own phone needs none
+func (u *ChatUseCase) wake(recipients []uuid.UUID, senderID uuid.UUID, conversationID uuid.UUID, messageID int64) {
+	if u.pusher == nil {
+		return
+	}
+
+	others := make([]uuid.UUID, 0, len(recipients))
+
+	for _, id := range recipients {
+		if id != senderID {
+			others = append(others, id)
+		}
+	}
+
+	u.pusher.NewMessage(others, conversationID, messageID)
+}
+
 func (u *ChatUseCase) Typing(ctx context.Context, userID uuid.UUID, conversationID uuid.UUID, typing bool) error {
 	conversation, _, err := u.access(ctx, userID, conversationID)
 	if err != nil {
@@ -715,7 +739,10 @@ func (u *ChatUseCase) SendMessage(
 
 	res := u.messageResponse(ctx, stored)
 
-	u.announce(u.recipients(ctx, conversation), chatlive.Event{Type: chatlive.EventMessage, ConversationID: conversationID, Message: &res})
+	recipients := u.recipients(ctx, conversation)
+
+	u.announce(recipients, chatlive.Event{Type: chatlive.EventMessage, ConversationID: conversationID, Message: &res})
+	u.wake(recipients, userID, conversationID, res.ID)
 
 	return res, nil
 }
