@@ -31,3 +31,5 @@ node_modules/
 !.github/vale/styles/Kibooz/
 
 __pycache__/
+/ci-certs/
+/ci-curl/
