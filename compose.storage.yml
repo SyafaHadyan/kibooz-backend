@@ -3,14 +3,16 @@
 # of every request, including the signed upload and read addresses, so a wrong header or a missing signature fails here as it
 # would on Cloudflare R2. It keeps the buckets as directories in a volume that `docker compose down -v` removes.
 # The API and the smoke script only accept https addresses for uploads, so the server uses a certificate that the workflow makes
-# for the name storage and that lasts one day. The API trusts it through SSL_CERT_FILE and the script through CURL_CA_BUNDLE.
+# for the name storage and that lasts one day. The API trusts it through SSL_CERT_FILE, which makes it the only certificate that the
+# API trusts in this stack, and the script through CURL_CA_BUNDLE. Only the certificate reaches the API, the key stays in the storage
+# container. Neither bucket is readable without a signature here, because Versity Gateway makes every bucket private.
 # The workflow creates the certificate and the two buckets and puts the generated keys into .env, see docs/testing.md.
 services:
   api:
     environment:
       SSL_CERT_FILE: /certs/storage.crt
     volumes:
-      - ./ci-certs:/certs:ro
+      - ./ci-certs/trust:/certs:ro
 
   storage:
     image: versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7
@@ -24,7 +26,7 @@ services:
       - "127.0.0.1:7070:7070"
     volumes:
       - storage-data:/data
-      - ./ci-certs:/certs:ro
+      - ./ci-certs/server:/certs:ro
     deploy:
       resources:
         limits:
