@@ -35,6 +35,10 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	group.Delete("/children/:studentId", handler.DeleteChild)
 	// the class code is the secret between a stranger and a class, so naming one is limited for every caller of this route
 	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
+	// a move names a class code as well, so it shares the limit of the route above
+	group.Post("/children/:studentId/move-requests", idempotent, classCodeLimiter, handler.RequestMove)
+	group.Get("/children/:studentId/move-requests", handler.MoveRequests)
+	group.Delete("/children/:studentId/move-requests/:requestId", handler.CancelMove)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
 }
@@ -190,4 +194,58 @@ func optionalStudentID(c fiber.Ctx) (*uuid.UUID, error) {
 	}
 
 	return &parsed, nil
+}
+
+func (h *WaliHandler) RequestMove(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	var req dto.MoveRequestInput
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.RequestMove(c.Context(), middleware.UserIDFrom(c), studentID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusCreated, "Move requested", res)
+}
+
+func (h *WaliHandler) MoveRequests(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.MoveRequests(c.Context(), middleware.UserIDFrom(c), studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *WaliHandler) CancelMove(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	requestID, err := uuid.Parse(c.Params("requestId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"requestId": "invalid UUID format"})
+	}
+
+	err = h.useCase.CancelMove(c.Context(), middleware.UserIDFrom(c), studentID, requestID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Move request cancelled", nil)
 }

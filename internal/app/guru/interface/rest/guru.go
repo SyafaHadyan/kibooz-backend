@@ -38,6 +38,9 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Put("/classes/:classId/joining", handler.SetJoining)
 	group.Delete("/classes/:classId/students/:studentId", handler.RemoveStudent)
+	group.Get("/classes/:classId/move-requests", handler.MoveRequests)
+	group.Post("/classes/:classId/move-requests/:requestId/accept", handler.AcceptMove)
+	group.Post("/classes/:classId/move-requests/:requestId/reject", handler.RejectMove)
 	group.Get("/classes/:classId/teachers", handler.Teachers)
 	group.Post("/classes/:classId/teachers", idempotent, handler.AddTeacher)
 	group.Delete("/classes/:classId/teachers/:teacherId", handler.RemoveTeacher)
@@ -326,4 +329,60 @@ func (h *GuruHandler) TransferOwnership(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Ownership handed over", res)
+}
+
+func (h *GuruHandler) MoveRequests(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.MoveRequests(c.Context(), middleware.UserIDFrom(c), classID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *GuruHandler) AcceptMove(c fiber.Ctx) error {
+	classID, requestID, err := moveParams(c)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.AcceptMove(c.Context(), middleware.UserIDFrom(c), classID, requestID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Move accepted", nil)
+}
+
+func (h *GuruHandler) RejectMove(c fiber.Ctx) error {
+	classID, requestID, err := moveParams(c)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.RejectMove(c.Context(), middleware.UserIDFrom(c), classID, requestID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Move rejected", nil)
+}
+
+func moveParams(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return uuid.Nil, uuid.Nil, apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	requestID, err := uuid.Parse(c.Params("requestId"))
+	if err != nil {
+		return uuid.Nil, uuid.Nil, apperror.Validation(map[string]string{"requestId": "invalid UUID format"})
+	}
+
+	return classID, requestID, nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 )
 
@@ -47,6 +48,32 @@ type fakeRepo struct {
 	removeErr     error
 	removedChild  uuid.UUID
 	removedParent uuid.UUID
+
+	moveRow    enrollment.ParentRow
+	moveRows   []enrollment.ParentRow
+	moveErr    error
+	moveCode   string
+	moveChild  uuid.UUID
+	moveParent uuid.UUID
+	moveCancel uuid.UUID
+}
+
+func (f *fakeRepo) RequestMove(_ context.Context, waliID uuid.UUID, studentID uuid.UUID, joinCode string) (enrollment.ParentRow, error) {
+	f.moveParent, f.moveChild, f.moveCode = waliID, studentID, joinCode
+
+	return f.moveRow, f.moveErr
+}
+
+func (f *fakeRepo) CancelMove(_ context.Context, waliID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error {
+	f.moveParent, f.moveChild, f.moveCancel = waliID, studentID, requestID
+
+	return f.moveErr
+}
+
+func (f *fakeRepo) ListMoves(_ context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error) {
+	f.moveParent, f.moveChild = waliID, studentID
+
+	return f.moveRows, f.moveErr
 }
 
 func (f *fakeRepo) FindWaliByUserID(context.Context, uuid.UUID) (*entity.Wali, error) {

@@ -16,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
@@ -77,6 +78,12 @@ type MoodRecord struct {
 }
 
 type GuruDBItf interface {
+	// ListMoveRequests returns the requests to move a child into the class that wait for a teacher, the oldest first
+	ListMoveRequests(ctx context.Context, classID uuid.UUID) ([]enrollment.ClassRow, error)
+	// AcceptMove moves the child of a request that waits into the class and returns the class that the child left
+	AcceptMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) (uuid.UUID, error)
+	// RejectMove turns down a request that waits for the class
+	RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error
 	FindGuruByUserID(ctx context.Context, userID uuid.UUID) (*GuruRow, error)
 	// FindTaughtClass returns the requested class when the guru teaches it, or the oldest taught class when classID is nil
 	FindTaughtClass(ctx context.Context, guruID uuid.UUID, classID *uuid.UUID) (*entity.Class, error)
@@ -703,4 +710,26 @@ func (r *GuruDB) TransferOwnership(ctx context.Context, classID uuid.UUID, actor
 	}
 
 	return owner, nil
+}
+
+func (r *GuruDB) ListMoveRequests(ctx context.Context, classID uuid.UUID) ([]enrollment.ClassRow, error) {
+	return enrollment.ListForClass(r.db.WithContext(ctx), classID)
+}
+
+func (r *GuruDB) AcceptMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) (uuid.UUID, error) {
+	var left uuid.UUID
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+
+		left, err = enrollment.Accept(tx, classID, requestID, guruID)
+
+		return err
+	})
+
+	return left, err
+}
+
+func (r *GuruDB) RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error {
+	return enrollment.Reject(r.db.WithContext(ctx), classID, requestID, guruID)
 }

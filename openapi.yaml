@@ -474,6 +474,126 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/children/{studentId}/move-requests:
+    post:
+      tags: [Parent]
+      operationId: requestChildMove
+      summary: Ask for a child to move to another class
+      description: |
+        Asks for the child to move to the class that owns `classCode`. A first registration stays instant and needs no request,
+        but a move needs a teacher of the new class to accept it, and nothing changes until then. A child has at most one request
+        that waits, and the parent can withdraw it with `DELETE /wali/children/{studentId}/move-requests/{requestId}`. A request
+        is rejected by itself when the new class closes joining or is archived. When a teacher accepts, the child starts from
+        zero in the new class, which means no points, no semester points, rank 1 or the place its first points earn, and no scans.
+        What the child had in the old class is saved. A request that names a class code has a budget of its own, counted for this
+        route and shared by every caller, so it can answer `429` while many codes are being tried.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveRequestInput"
+      responses:
+        "201":
+          description: The request was made and waits for a teacher
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoveRequestEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`), or nobody has this class code
+            (`CLASS_CODE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: |
+            The child is already in that class (`ALREADY_IN_CLASS`), it already has a request that waits (`MOVE_REQUEST_PENDING`),
+            the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), its teachers closed joining (`CLASS_JOINING_CLOSED`) or it
+            already has 60 children (`CLASS_FULL`), or a request with the same `Idempotency-Key` is still running
+            (`IDEMPOTENCY_IN_PROGRESS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    get:
+      tags: [Parent]
+      operationId: listChildMoveRequests
+      summary: List the move requests of a child
+      description: |
+        The requests of the child that wait for a teacher or that a teacher rejected, the newest first and at most 20. A request that
+        a teacher accepted is not listed, because the child is in that class now, and a withdrawn request is gone.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+      responses:
+        "200":
+          description: The requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoveRequestListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /wali/children/{studentId}/move-requests/{requestId}:
+    delete:
+      tags: [Parent]
+      operationId: cancelChildMove
+      summary: Withdraw a move request
+      description: Withdraws a request of the parent that no teacher has decided yet. The request is removed.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+        - $ref: "#/components/parameters/MoveRequestPath"
+      responses:
+        "200":
+          description: The request was withdrawn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The request does not wait for a teacher any more, or it is not one of this parent (`MOVE_REQUEST_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/dashboard:
     get:
       tags: [Teacher]
@@ -820,6 +940,109 @@ paths:
           description: |
             The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
             (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/move-requests:
+    get:
+      tags: [Teacher]
+      operationId: listClassMoveRequests
+      summary: List the requests to move a child into a class
+      description: |
+        The requests of parents who ask for their child to move into this class, which wait for a teacher of the class, the oldest
+        first. The teacher sees the name of the child and when it was asked for. Any teacher of the class can decide.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The requests that wait
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassMoveRequestListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/move-requests/{requestId}/accept:
+    post:
+      tags: [Teacher]
+      operationId: acceptClassMove
+      summary: Accept a child into a class
+      description: |
+        Moves the child into the class in one step. The child starts from zero here, with no points, no semester points and no
+        scans, and the class ranking and the leaderboard of both classes are renumbered. The points, the rank and the number of
+        scans that the child had in the old class are saved on its enrollment that ends. The moods, the notes and the other
+        history of the child are not moved or deleted.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/MoveRequestPath"
+      responses:
+        "200":
+          description: The request was decided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or the request does not wait for this class any more (`MOVE_REQUEST_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class already has 60 children (`CLASS_FULL`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/move-requests/{requestId}/reject:
+    post:
+      tags: [Teacher]
+      operationId: rejectClassMove
+      summary: Reject a child from a class
+      description: |
+        Turns the request down. The child stays in its class and the parent sees the request as rejected. The parent can ask again,
+        and there is no limit beyond the rate limits of the account.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/MoveRequestPath"
+      responses:
+        "200":
+          description: The request was decided
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or the request does not wait for this class any more (`MOVE_REQUEST_NOT_FOUND`)
           content:
             application/json:
               schema:
@@ -2464,6 +2687,14 @@ components:
       schema:
         type: string
         format: uuid
+    MoveRequestPath:
+      name: requestId
+      in: path
+      required: true
+      description: A request to move a child, the `id` of an entry of a list of move requests
+      schema:
+        type: string
+        format: uuid
     ClassStudentPath:
       name: studentId
       in: path
@@ -2692,6 +2923,106 @@ components:
           format: uuid
         className:
           type: string
+    MoveRequestInput:
+      type: object
+      required: [classCode]
+      properties:
+        classCode:
+          type: string
+          minLength: 4
+          maxLength: 12
+          description: The join code of the class that the child moves to
+          example: K7M2QX4R
+    MoveRequest:
+      type: object
+      required: [id, studentId, classId, className, status, requestedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        classId:
+          type: string
+          format: uuid
+          description: The class that the child asks to move to
+        className:
+          type: string
+        status:
+          type: string
+          enum: [pending, rejected]
+        requestedAt:
+          type: string
+          format: date-time
+        decidedAt:
+          type: string
+          format: date-time
+          description: When a teacher or a closed class rejected the request, missing while it waits
+    MoveRequestEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/MoveRequest"
+    MoveRequestList:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/MoveRequest"
+    MoveRequestListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/MoveRequestList"
+    ClassMoveRequest:
+      type: object
+      required: [id, studentId, studentName, requestedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        studentId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        requestedAt:
+          type: string
+          format: date-time
+    ClassMoveRequestList:
+      type: object
+      required: [requests]
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClassMoveRequest"
+    ClassMoveRequestListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ClassMoveRequestList"
     ChildEnvelope:
       type: object
       required: [success, data]
