@@ -1,5 +1,8 @@
 name: Docker
 
+# Never add workflow_call here. A workflow that calls this one would get signatures with the identity of this file on main, and the
+# Docker Hub mirror and the checks in the docs accept that identity.
+
 on:
   push:
     branches: [main]
