@@ -47,7 +47,7 @@ case "${DRY_RUN:-0}" in
 esac
 
 for tool in docker curl jq flock; do
-  command -v "$tool" > /dev/null || die "$tool is not installed"
+  command -v "$tool" >/dev/null || die "$tool is not installed"
 done
 
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "The version must look like 1.2.3, got $version"
@@ -68,7 +68,7 @@ cd "$compose_dir"
 [ -f "$env_file" ] || die "$env_file was not found in $compose_dir"
 
 # only one update runs at a time, because two of them would fight over the env file and the same copy
-exec 9> "$compose_dir/.rolling-update.lock"
+exec 9>"$compose_dir/.rolling-update.lock"
 flock -n 9 || die "Another update is running on this host"
 
 compose() {
@@ -86,10 +86,10 @@ run() {
 # healthy prints the answer of one copy and succeeds only when it is the right version and nothing is wrong
 healthy() {
   local port="$1" body
-  body="$(curl -sS --max-time 5 "http://localhost:${port}/healthz" 2> /dev/null)" || return 1
-  echo "$body" | jq -c . 2> /dev/null || return 1
+  body="$(curl -sS --max-time 5 "http://localhost:${port}/healthz" 2>/dev/null)" || return 1
+  echo "$body" | jq -c . 2>/dev/null || return 1
   echo "$body" | jq -e --arg v "$version" \
-    '.success == true and .status == "ok" and .version == $v and (.checks | type == "object") and (.checks | all(.[]; . == "ok" or . == "disabled"))' > /dev/null
+    '.success == true and .status == "ok" and .version == $v and (.checks | type == "object") and (.checks | all(.[]; . == "ok" or . == "disabled"))' >/dev/null
 }
 
 # the tag of the env file as it is now, without quotes or a carriage return
@@ -108,7 +108,7 @@ trap on_signal INT TERM HUP
 echo "Checking that the services exist"
 known="$(compose config --services)"
 for service in "${services[@]}"; do
-  grep -qx "$service" <<< "$known" || die "The service $service is not in the compose file, nothing was changed. The services are $(echo "$known" | tr '\n' ' ')"
+  grep -qx "$service" <<<"$known" || die "The service $service is not in the compose file, nothing was changed. The services are $(echo "$known" | tr '\n' ' ')"
 done
 
 echo "Pulling $image:$version, which also proves that the tag exists"
@@ -125,7 +125,7 @@ else
   if grep -q '^IMAGE_TAG=' "$env_file"; then
     sed -i --follow-symlinks "s/^IMAGE_TAG=.*/IMAGE_TAG=${version}/" "$env_file"
   else
-    printf '\nIMAGE_TAG=%s\n' "$version" >> "$env_file"
+    printf '\nIMAGE_TAG=%s\n' "$version" >>"$env_file"
   fi
   changed=1
 fi
