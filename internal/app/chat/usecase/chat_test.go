@@ -1216,10 +1216,10 @@ func TestANewMessageOfARoomOnlyReachesTheMembersWhoHadJoined(t *testing.T) {
 	pusher := &fakePusher{}
 	useCase.pusher = pusher
 
-	_, err := useCase.SendMessage(context.Background(), me, room.ID, dto.SendChatMessageRequest{Body: "hello class"})
+	res, err := useCase.SendMessage(context.Background(), me, room.ID, dto.SendChatMessageRequest{Body: "hello class"})
 	require.NoError(t, err)
 
 	require.Equal(t, [][]uuid.UUID{{me, early}}, notifier.recipients, "the member who joined meanwhile hears nothing live")
 	require.Equal(t, [][]uuid.UUID{{early}}, pusher.recipients, "and is not woken either, and the sender needs no wake-up")
-	require.False(t, repo.joinedBy.IsZero(), "the cut is the time the message was stored")
+	require.Equal(t, res.CreatedAt, repo.joinedBy, "the cut is the time the message was stored")
 }
