@@ -71,8 +71,10 @@ cd "$compose_dir"
 exec 9>"$compose_dir/.rolling-update.lock"
 flock -n 9 || die "Another update is running on this host"
 
+# IMAGE_TAG is set for every compose command, because a value that is exported in the shell of the operator would otherwise win
+# over the env file and the copies would start on another tag than the one that was pulled and checked
 compose() {
-  docker compose --env-file "$env_file" "$@"
+  IMAGE_TAG="$version" docker compose --env-file "$env_file" "$@"
 }
 
 run() {
