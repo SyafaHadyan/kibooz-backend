@@ -1643,9 +1643,13 @@ paths:
       tags: [Trash]
       operationId: trashStats
       summary: Trash sorting statistics of a child
-      description: Only for the WALI role. The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
+      description: |
+        Only for the WALI role. The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
+        With `period` the `breakdown` and `totalScans` only count the scans of that day, week or month, `periodPoints` holds their
+        points and `period` repeats the name. The totals of the child (`totalPoints`, `seasonPoints`, `classRank`) do not change.
       parameters:
         - $ref: "#/components/parameters/StudentId"
+        - $ref: "#/components/parameters/Period"
       responses:
         "200":
           description: The statistics
@@ -1671,8 +1675,12 @@ paths:
       description: |
         Ranked by the points of the semester that is under way, then name, and every class starts from zero when a new
         semester begins. A parent sees the class of their child and a teacher sees a class they teach.
+        With `period` the board ranks by the points of the scans in that day, week or month instead, and every child of the class
+        is listed, a child without a scan with zero points. The boards of a period are always current, and only the board of the
+        semester is cached for a short time.
       parameters:
         - $ref: "#/components/parameters/ClassId"
+        - $ref: "#/components/parameters/Period"
       responses:
         "200":
           description: The leaderboard
@@ -2398,6 +2406,16 @@ components:
       schema:
         type: string
         format: uuid
+    Period:
+      name: period
+      in: query
+      description: |
+        Limits the answer to the calendar day, week or month that contains now, in the school timezone (Asia/Jakarta). The day starts
+        at 00:00, the week on Monday at 00:00 and the month on the 1st at 00:00. Without it the leaderboard shows the semester that
+        is under way and the trash stats count all time.
+      schema:
+        type: string
+        enum: [today, week, month]
     ClassPath:
       name: classId
       in: path
@@ -4687,6 +4705,14 @@ components:
         remainingDailyScans:
           type: integer
           minimum: 0
+        period:
+          type: string
+          enum: [today, week, month]
+          description: Only present when the request named a period
+        periodPoints:
+          type: integer
+          minimum: 0
+          description: The points of the scans in the period, only present when the request named a period
     TrashStatsEnvelope:
       type: object
       required: [success, data]

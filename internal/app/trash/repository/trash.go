@@ -37,6 +37,8 @@ type TrashDBItf interface {
 	// Claim checks the daily limit, stores the scan, adds the points and renumbers the class in one transaction
 	Claim(ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, from time.Time, to time.Time) (ClaimResult, error)
 	ListClassStudents(ctx context.Context, classID uuid.UUID) ([]entity.Student, error)
+	// ListClassStudentsBetween ranks the children of a class by the points of the scans in the window, with SeasonPoints holding those points
+	ListClassStudentsBetween(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time) ([]entity.Student, error)
 	// ListHistorySeasons returns the labels of the semesters that ended and left standings in the class, newest first
 	ListHistorySeasons(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]string, int, error)
 	// ListHistoryEntries returns the saved standings of the given semesters, newest semester first and best place first
@@ -183,6 +185,23 @@ func (r *TrashDB) ListClassStudents(ctx context.Context, classID uuid.UUID) ([]e
 		Where("class_id = ?", classID).
 		Order("season_points DESC, full_name ASC, id ASC").
 		Find(&students).Error
+
+	return students, err
+}
+
+// ListClassStudentsBetween keeps every active child of the class in the list, a child without a scan in the window has zero points,
+// and orders them the way the semester board does
+func (r *TrashDB) ListClassStudentsBetween(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time) ([]entity.Student, error) {
+	var students []entity.Student
+
+	err := r.db.WithContext(ctx).
+		Table("students AS s").
+		Select("s.id, s.full_name, s.avatar_url, COALESCE(SUM(t.points_awarded), 0) AS season_points").
+		Joins("LEFT JOIN trash_scans AS t ON t.student_id = s.id AND t.scanned_at >= ? AND t.scanned_at < ?", from, to).
+		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
+		Group("s.id").
+		Order("season_points DESC, s.full_name ASC, s.id ASC").
+		Scan(&students).Error
 
 	return students, err
 }

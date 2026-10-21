@@ -77,4 +77,7 @@ type TrashStatsResponse struct {
 	TodayScans          int               `json:"todayScans"`
 	DailyLimit          int               `json:"dailyLimit"`
 	RemainingDailyScans int               `json:"remainingDailyScans"`
+	// Period and PeriodPoints are only set when the request names a period, and then the breakdown and totalScans count that period only
+	Period       string `json:"period,omitempty"`
+	PeriodPoints *int   `json:"periodPoints,omitempty"`
 }
