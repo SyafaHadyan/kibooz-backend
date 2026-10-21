@@ -351,6 +351,14 @@ s, js = call("GET", "/leaderboard", w1["token"])
 names = [e.get("studentName") for e in (dig(js, "data", "podium") or []) + (dig(js, "data", "rankings") or [])]
 check("leaderboard lists both children", s == 200 and "Smoke Child One" in names and "Smoke Child Two" in names, f"{s} {names}")
 expect("leaderboard by class (guru)", call("GET", f"/leaderboard?classId={g1['class']}", g1["token"]), 200)
+for period in ("today", "week", "month"):
+    s, js = call("GET", f"/leaderboard?period={period}", w1["token"])
+    names = [e.get("studentName") for e in (dig(js, "data", "podium") or []) + (dig(js, "data", "rankings") or [])]
+    check(f"leaderboard of the {period} lists both children", s == 200 and "Smoke Child One" in names and "Smoke Child Two" in names, f"{s} {names}")
+expect("leaderboard bad period", call("GET", "/leaderboard?period=year", w1["token"]), 400, "VALIDATION_ERROR")
+s, js = call("GET", "/trash/stats?period=today", w1["token"])
+check("trash stats of the day", s == 200 and dig(js, "data", "period") == "today" and isinstance(dig(js, "data", "periodPoints"), int) and dig(js, "data", "totalScans") >= 1, f"{s} {js}")
+expect("trash stats bad period", call("GET", "/trash/stats?period=year", w1["token"]), 400, "VALIDATION_ERROR")
 s, js = call("GET", "/leaderboard/history", w1["token"])
 check("history empty for a young class", s == 200 and dig(js, "data", "seasons") == [] and dig(js, "data", "total") == 0, f"{s} {js}")
 check("history page info", dig(js, "data", "page") == 1 and dig(js, "data", "limit") == 20)

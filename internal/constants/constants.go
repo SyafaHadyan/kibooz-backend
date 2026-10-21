@@ -59,6 +59,26 @@ func (t TrashType) Valid() bool {
 	return t == TrashOrganik || t == TrashAnorganik || t == TrashB3
 }
 
+// Period is a calendar window of the school timezone that the leaderboard and the trash stats can be limited to. An empty
+// period means the default view, the running semester for the leaderboard and all time for the stats.
+type Period string
+
+const (
+	PeriodToday Period = "today"
+	PeriodWeek  Period = "week"
+	PeriodMonth Period = "month"
+)
+
+// ParsePeriod accepts an empty string as the default view and the three names of a period, and reports false for anything else
+func ParsePeriod(raw string) (Period, bool) {
+	switch period := Period(raw); period {
+	case "", PeriodToday, PeriodWeek, PeriodMonth:
+		return period, true
+	default:
+		return "", false
+	}
+}
+
 type StorageDirectory string
 
 const (

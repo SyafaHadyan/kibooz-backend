@@ -51,7 +51,12 @@ func (h *TrashHandler) Leaderboard(c fiber.Ctx) error {
 		return err
 	}
 
-	res, err := h.useCase.Leaderboard(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID)
+	period, ok := constants.ParsePeriod(c.Query("period"))
+	if !ok {
+		return apperror.Validation(map[string]string{"period": "must be today, week or month"})
+	}
+
+	res, err := h.useCase.Leaderboard(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, period)
 	if err != nil {
 		return err
 	}
