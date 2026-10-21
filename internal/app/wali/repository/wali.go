@@ -100,6 +100,8 @@ type WaliDBItf interface {
 	RequestMove(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, joinCode string) (enrollment.ParentRow, error)
 	// CancelMove withdraws a request that no teacher has decided yet, and answers apperror.ErrMoveNotFound when there is none
 	CancelMove(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error
+	// PreviousClasses returns the classes that a child of the wali left, the latest first
+	PreviousClasses(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.PreviousRow, error)
 	// ListMoves returns the requests of a child that wait or were rejected, the newest first
 	ListMoves(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error)
 }
@@ -549,4 +551,8 @@ func (r *WaliDB) CancelMove(ctx context.Context, waliID uuid.UUID, studentID uui
 
 func (r *WaliDB) ListMoves(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error) {
 	return enrollment.ListForChild(r.db.WithContext(ctx), waliID, studentID)
+}
+
+func (r *WaliDB) PreviousClasses(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.PreviousRow, error) {
+	return enrollment.ListEnded(r.db.WithContext(ctx), waliID, studentID)
 }

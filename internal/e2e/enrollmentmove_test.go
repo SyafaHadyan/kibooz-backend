@@ -228,6 +228,21 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.Equal(t, classB, active.ClassID)
 		require.Equal(t, requestID, active.ID)
 
+		previous := call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", parent.Token, nil)
+		require.Equal(t, http.StatusOK, previous.Status, "body %v", previous.Body)
+
+		classes, ok := previous.data("classes").([]any)
+		require.True(t, ok)
+		require.Len(t, classes, 1, "the first class is the only one that the child left")
+		require.Equal(t, classA, dig(classes[0], "classId"))
+		require.EqualValues(t, 25, dig(classes[0], "totalPoints"))
+		require.EqualValues(t, 25, dig(classes[0], "seasonPoints"))
+		require.EqualValues(t, 1, dig(classes[0], "classRank"))
+		require.EqualValues(t, 2, dig(classes[0], "totalScans"))
+		require.NotEmpty(t, dig(classes[0], "className"))
+		require.NotEmpty(t, dig(classes[0], "startedAt"))
+		require.NotEmpty(t, dig(classes[0], "endedAt"))
+
 		// a scan in the new class counts there and only there
 		claimScan(t, parent.Token, childID, "ORGANIK")
 
@@ -278,6 +293,17 @@ func TestMoveRoutesRefuseBadIdsStrangersAndClassesThatCannotTakeAChild(t *testin
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		call(t, http.MethodPost, "/api/v1/guru/classes/not-a-uuid/move-requests/"+someID+"/reject", teacher.Token, nil).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("the previous classes of a child need a valid id and the parent of the child", func(t *testing.T) {
+		call(t, http.MethodGet, "/api/v1/wali/children/not-a-uuid/previous-classes", parent.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", stranger.Token, nil).
+			requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+
+		never := call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/previous-classes", parent.Token, nil)
+		require.Equal(t, http.StatusOK, never.Status, "body %v", never.Body)
+		require.Empty(t, never.data("classes"), "a child that never moved has no previous class")
 	})
 
 	t.Run("a parent cannot read the requests of another parent's child", func(t *testing.T) {

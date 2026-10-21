@@ -350,3 +350,49 @@ func lockBoth(tx *gorm.DB, a uuid.UUID, b uuid.UUID) error {
 
 	return ranking.Lock(tx, second)
 }
+
+// PreviousRow is a class that a child was in, with what the child had in it when it left
+type PreviousRow struct {
+	ID           uuid.UUID
+	ClassID      uuid.UUID
+	ClassName    string
+	GradeLevel   string
+	SchoolName   string
+	AcademicYear string
+	ActivatedAt  time.Time
+	EndedAt      time.Time
+	FinalPoints  int
+	FinalSeason  int
+	FinalRank    int
+	FinalScans   int
+}
+
+// ListEnded returns the classes that the child of a parent left, the latest first. A child that was never moved has none.
+func ListEnded(tx *gorm.DB, waliID uuid.UUID, studentID uuid.UUID) ([]PreviousRow, error) {
+	var owned int64
+
+	err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Count(&owned).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if owned == 0 {
+		return nil, apperror.ErrStudentNotFound
+	}
+
+	return listEnded(tx, studentID)
+}
+
+func listEnded(tx *gorm.DB, studentID uuid.UUID) ([]PreviousRow, error) {
+	var rows []PreviousRow
+
+	err := tx.Table("enrollments AS e").
+		Select(`e.id, e.class_id, c.name AS class_name, c.grade_level, c.school_name, c.academic_year, e.activated_at, e.ended_at,
+			e.final_points, e.final_season_points AS final_season, e.final_rank, e.final_scans`).
+		Joins("JOIN classes AS c ON c.id = e.class_id").
+		Where("e.student_id = ? AND e.status = ?", studentID, constants.EnrollmentEnded).
+		Order("e.ended_at DESC, e.id DESC").
+		Scan(&rows).Error
+
+	return rows, err
+}
