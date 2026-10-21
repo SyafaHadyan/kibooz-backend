@@ -4,7 +4,7 @@
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review (which also refuses a new dependency under SSPL, the one license here that does not fit the GPL-3.0 of the repository), gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
-| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
+| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
 | `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. Merge commits are skipped, and the line lengths of the body and footer are not limited because Renovate and Release Please write long ones |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike, soak or chat socket test on demand) and fails when a container was killed or restarted |
@@ -66,7 +66,7 @@ The Go release is held on purpose. The `go` line of `go.mod` names the patch rel
 
 The bot cannot read a tool that is named inside a `run` step, so the tools of the jobs are listed where it can.
 
-- `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
+- `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, ShellCheck, shfmt, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
 - The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
@@ -87,7 +87,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | ZAP baseline scan | GitHub Actions |
 | k6 performance test | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
-| Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
+| Actionlint, Zizmor, Hadolint, Shell lint and OpenAPI lint | GitHub Actions |
 | OpenAPI breaking changes | GitHub Actions |
 | Renovate config | GitHub Actions |
 | Vale prose lint | GitHub Actions |

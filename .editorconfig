@@ -1,0 +1,7 @@
+# Read by shfmt and by most editors. The shell files use two spaces and indented case branches, which is the style of the Google shell guide.
+root = true
+
+[*.sh]
+indent_style = space
+indent_size = 2
+switch_case_indent = true

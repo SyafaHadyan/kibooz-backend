@@ -5,9 +5,9 @@ set -euo pipefail
 
 image="$1"
 
-if docker pull --quiet "mirror.gcr.io/${image}" > /dev/null; then
+if docker pull --quiet "mirror.gcr.io/${image}" >/dev/null; then
   echo "mirror.gcr.io/${image}"
 else
-  docker pull --quiet "${image}" > /dev/null
+  docker pull --quiet "${image}" >/dev/null
   echo "${image}"
 fi
