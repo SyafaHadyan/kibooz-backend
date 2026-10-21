@@ -41,6 +41,9 @@ func readExample(t *testing.T) map[string]exampleSetting {
 			continue
 		}
 
+		_, twice := settings[match[2]]
+		require.False(t, twice, "%s has two lines in .env.example, and the copy of the file would keep only one of them", match[2])
+
 		settings[match[2]] = exampleSetting{value: match[3], commented: match[1] != ""}
 	}
 
