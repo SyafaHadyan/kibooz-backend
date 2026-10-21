@@ -155,3 +155,86 @@ func TestMoveRequestsHideTheFailureOfTheList(t *testing.T) {
 	require.ErrorAs(t, err, &appErr)
 	require.Equal(t, "INTERNAL_ERROR", appErr.Code)
 }
+
+// historyRepo adds the answer of StudentHistory to moveRepo
+type historyRepo struct {
+	*moveRepo
+
+	history []enrollment.HistoryRow
+	asked   uuid.UUID
+}
+
+func (r *historyRepo) StudentHistory(_ context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error) {
+	r.asked = studentID
+	_ = classID
+
+	return r.history, r.err
+}
+
+func TestStudentHistoryShowsWhatTheChildDidInTheClassesItLeft(t *testing.T) {
+	base := newMoveRepo()
+	started := time.Date(2026, 7, 13, 0, 0, 0, 0, time.UTC)
+	ended := started.AddDate(0, 3, 0)
+	note := "Suka menggambar"
+	repo := &historyRepo{moveRepo: base, history: []enrollment.HistoryRow{{
+		PreviousRow: enrollment.PreviousRow{
+			ClassID: uuid.New(), ClassName: "Kelas Melati", GradeLevel: "Class A", SchoolName: "TK Pertiwi", AcademicYear: "2026/2027",
+			ActivatedAt: started, EndedAt: ended, FinalPoints: 120, FinalSeason: 45, FinalRank: 3, FinalScans: 17,
+		},
+		Breakdown: []enrollment.ScanTotals{
+			{TrashType: constants.TrashOrganik, Scans: 10, Points: 100}, {TrashType: constants.TrashAnorganik, Scans: 7, Points: 20},
+			{TrashType: constants.TrashB3},
+		},
+		Moods:          []enrollment.MoodRow{{MoodType: constants.MoodSenang, ConfidenceScore: 0.9, Notes: &note, RecordedAt: started.Add(time.Hour)}},
+		MoodsTruncated: true,
+	}}}
+	childID := uuid.New()
+
+	res, err := NewGuruUseCase(repo, &deletedKeys{}, nil).StudentHistory(context.Background(), uuid.New(), base.class.ID, childID)
+	require.NoError(t, err)
+	require.Equal(t, childID, repo.asked)
+	require.Len(t, res.PreviousClasses, 1)
+
+	got := res.PreviousClasses[0]
+	require.Equal(t, "Kelas Melati", got.ClassName)
+	require.Equal(t, 120, got.TotalPoints)
+	require.Equal(t, 17, got.TotalScans)
+	require.True(t, got.MoodsTruncated)
+	require.Len(t, got.Breakdown, 3)
+	require.Equal(t, constants.TrashB3, got.Breakdown[2].TrashType)
+	require.Len(t, got.Moods, 1)
+	require.Equal(t, constants.MoodLabels[constants.MoodSenang], got.Moods[0].Label)
+	require.Equal(t, note, *got.Moods[0].Notes)
+}
+
+func TestStudentHistoryIsEmptyForAChildThatNeverMovedAndGuardsTheClass(t *testing.T) {
+	ctx := context.Background()
+	base := newMoveRepo()
+
+	res, err := NewGuruUseCase(&historyRepo{moveRepo: base}, &deletedKeys{}, nil).StudentHistory(ctx, uuid.New(), base.class.ID, uuid.New())
+	require.NoError(t, err)
+	require.NotNil(t, res.PreviousClasses)
+	require.Empty(t, res.PreviousClasses)
+
+	none := newMoveRepo()
+	none.class = nil
+
+	_, err = NewGuruUseCase(&historyRepo{moveRepo: none}, &deletedKeys{}, nil).StudentHistory(ctx, uuid.New(), uuid.New(), uuid.New())
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	missing := newMoveRepo()
+	missing.err = apperror.ErrStudentNotFound
+
+	_, err = NewGuruUseCase(&historyRepo{moveRepo: missing}, &deletedKeys{}, nil).StudentHistory(ctx, uuid.New(), missing.class.ID, uuid.New())
+	require.ErrorIs(t, err, apperror.ErrStudentNotFound)
+
+	broken := newMoveRepo()
+	broken.err = errors.New("connection reset")
+
+	_, err = NewGuruUseCase(&historyRepo{moveRepo: broken}, &deletedKeys{}, nil).StudentHistory(ctx, uuid.New(), broken.class.ID, uuid.New())
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, "INTERNAL_ERROR", appErr.Code)
+}

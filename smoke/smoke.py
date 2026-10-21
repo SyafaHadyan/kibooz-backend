@@ -406,6 +406,10 @@ check("the child is in the new class with nothing", s == 200 and dig(js, "data",
 expect("the child cannot ask for the class it is in", call("POST", move, wm["token"], {"classCode": gm["code"]}), 409, "ALREADY_IN_CLASS")
 s, js = call("GET", f"/wali/children/{wm['student']}/previous-classes", wm["token"])
 check("the child has the old class as a previous class", s == 200 and [c.get("classId") for c in dig(js, "data", "classes") or []] == [g1["class"]], f"{s} {js}")
+s, js = call("GET", f"/guru/classes/{gm['class']}/students/{wm['student']}/history", gm["token"])
+check("the new teacher reads the history of the child", s == 200 and [c.get("classId") for c in dig(js, "data", "previousClasses") or []] == [g1["class"]] and len(dig(js, "data", "previousClasses", 0, "breakdown") or []) == 3, f"{s} {js}")
+expect("the old teacher no longer has the child", call("GET", f"/guru/classes/{g1['class']}/students/{wm['student']}/history", g1["token"]), 404, "STUDENT_NOT_FOUND")
+expect("a parent cannot read the history route", call("GET", f"/guru/classes/{gm['class']}/students/{wm['student']}/history", wm["token"]), 403, "AUTH_FORBIDDEN")
 expect("previous classes of the child of another parent", call("GET", f"/wali/children/{w2['student']}/previous-classes", wm["token"]), 404, "STUDENT_NOT_FOUND")
 
 # ---------- classes ----------

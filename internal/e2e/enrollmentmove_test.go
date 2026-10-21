@@ -163,6 +163,11 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		claimScan(t, parent.Token, childID, "ORGANIK")
 		claimScan(t, parent.Token, childID, "ANORGANIK")
 
+		oldMood := call(t, http.MethodPost, "/api/v1/guru/mood/log", teacherA.Token, map[string]any{
+			"studentId": childID, "moodType": "SENANG", "confidenceScore": 0.9, "notes": "Suka menggambar",
+		})
+		require.Equal(t, http.StatusCreated, oldMood.Status, "body %v", oldMood.Body)
+
 		before := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
 		require.EqualValues(t, 25, before.data("pointsSummary", "totalPoints"))
 		require.EqualValues(t, 1, before.data("pointsSummary", "classRank"))
@@ -243,6 +248,56 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.NotEmpty(t, dig(classes[0], "startedAt"))
 		require.NotEmpty(t, dig(classes[0], "endedAt"))
 
+		history := func(teacher account, class string, student string) result {
+			return call(t, http.MethodGet, "/api/v1/guru/classes/"+class+"/students/"+student+"/history", teacher.Token, nil)
+		}
+
+		newMood := call(t, http.MethodPost, "/api/v1/guru/mood/log", teacherB.Token, map[string]any{
+			"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8, "notes": "Hari pertama di kelas baru",
+		})
+		require.Equal(t, http.StatusCreated, newMood.Status, "body %v", newMood.Body)
+
+		seen := history(teacherB, classB, childID)
+		require.Equal(t, http.StatusOK, seen.Status, "body %v", seen.Body)
+
+		earlier, ok := seen.data("previousClasses").([]any)
+		require.True(t, ok)
+		require.Len(t, earlier, 1)
+		require.Equal(t, classA, dig(earlier[0], "classId"))
+		require.EqualValues(t, 25, dig(earlier[0], "totalPoints"))
+
+		breakdown, ok := dig(earlier[0], "breakdown").([]any)
+		require.True(t, ok)
+		require.Len(t, breakdown, 3)
+		require.Equal(t, "ORGANIK", dig(breakdown[0], "trashType"))
+		require.EqualValues(t, 1, dig(breakdown[0], "scans"))
+		require.EqualValues(t, 10, dig(breakdown[0], "points"))
+		require.EqualValues(t, 15, dig(breakdown[1], "points"))
+		require.EqualValues(t, 0, dig(breakdown[2], "scans"))
+
+		moods, ok := dig(earlier[0], "moods").([]any)
+		require.True(t, ok)
+		require.Len(t, moods, 1, "only the mood of the old class, not the one that the new teacher wrote")
+		require.Equal(t, "SENANG", dig(moods[0], "moodType"))
+		require.Equal(t, "Suka menggambar", dig(moods[0], "notes"))
+		require.Equal(t, false, dig(earlier[0], "moodsTruncated"))
+
+		// the teacher of the old class no longer has the child, and nobody else has a say
+		history(teacherA, classA, childID).requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+		history(teacherA, classB, childID).requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
+		history(teacherB, classB, uuid.NewString()).requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+		history(teacherB, classB, "not-a-uuid").requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		history(teacherB, "not-a-uuid", childID).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		history(parent, classB, childID).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
+
+		// a child that never moved has nothing to show
+		stayed := history(teacherA, classA, stayID)
+		require.Equal(t, http.StatusOK, stayed.Status, "body %v", stayed.Body)
+
+		none, ok := stayed.data("previousClasses").([]any)
+		require.True(t, ok)
+		require.Empty(t, none)
+
 		// a scan in the new class counts there and only there
 		claimScan(t, parent.Token, childID, "ORGANIK")
 
@@ -253,7 +308,6 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		board := pointsByName(t, call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classB+"&period=today", teacherB.Token, nil))
 		require.EqualValues(t, 10, board["Anak Pindah"], "only the scan made in this class is in the board of the day")
 
-		require.NotZero(t, stayID)
 	})
 
 	t.Run("deleting the child later saves only the scans of the class it was in", func(t *testing.T) {

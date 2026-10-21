@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 )
 
 // MoveRequestInput asks for a child to move to the class that owns classCode
@@ -56,4 +58,26 @@ type PreviousClass struct {
 
 type PreviousClassList struct {
 	Classes []PreviousClass `json:"classes"`
+}
+
+// HistoryClass is a class that a child left, as a teacher of its new class reads it. It adds what the child collected per category and
+// the moods with the notes that the teachers of that class wrote. At most the newest 100 moods come back for a class.
+type HistoryClass struct {
+	PreviousClass
+	Breakdown      []TrashTypeStat `json:"breakdown"`
+	Moods          []HistoryMood   `json:"moods"`
+	MoodsTruncated bool            `json:"moodsTruncated"`
+}
+
+// HistoryMood is a mood that a teacher of an earlier class recorded
+type HistoryMood struct {
+	MoodType        constants.Mood `json:"moodType"`
+	Label           string         `json:"label"`
+	ConfidenceScore float32        `json:"confidenceScore"`
+	Notes           *string        `json:"notes"`
+	RecordedAt      time.Time      `json:"recordedAt"`
+}
+
+type StudentHistory struct {
+	PreviousClasses []HistoryClass `json:"previousClasses"`
 }

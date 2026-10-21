@@ -82,6 +82,9 @@ type GuruDBItf interface {
 	ListMoveRequests(ctx context.Context, classID uuid.UUID) ([]enrollment.ClassRow, error)
 	// AcceptMove moves the child of a request that waits into the class and returns the class that the child left
 	AcceptMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) (uuid.UUID, error)
+	// StudentHistory returns what a child that is in the class did in the classes it left, and apperror.ErrStudentNotFound when the
+	// child is not in the class
+	StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error)
 	// RejectMove turns down a request that waits for the class
 	RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error
 	FindGuruByUserID(ctx context.Context, userID uuid.UUID) (*GuruRow, error)
@@ -734,4 +737,8 @@ func (r *GuruDB) AcceptMove(ctx context.Context, classID uuid.UUID, requestID uu
 
 func (r *GuruDB) RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error {
 	return enrollment.Reject(r.db.WithContext(ctx), classID, requestID, guruID)
+}
+
+func (r *GuruDB) StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error) {
+	return enrollment.History(r.db.WithContext(ctx), classID, studentID)
 }

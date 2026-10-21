@@ -396,3 +396,101 @@ func listEnded(tx *gorm.DB, studentID uuid.UUID) ([]PreviousRow, error) {
 
 	return rows, err
 }
+
+// maxHistoryMoods bounds the moods that come back for one previous class, the newest first
+const maxHistoryMoods = 100
+
+// trashOrder is the order of the categories in a breakdown, the same as in the stats of a child
+var trashOrder = []constants.TrashType{constants.TrashOrganik, constants.TrashAnorganik, constants.TrashB3}
+
+// ScanTotals is what a child collected in one trash category
+type ScanTotals struct {
+	TrashType constants.TrashType
+	Scans     int
+	Points    int
+}
+
+// MoodRow is a mood that a teacher of an earlier class recorded
+type MoodRow struct {
+	MoodType        constants.Mood
+	ConfidenceScore float32
+	Notes           *string
+	RecordedAt      time.Time
+}
+
+// HistoryRow is a previous class of a child with the scans and the moods that the child had in it
+type HistoryRow struct {
+	PreviousRow
+	Breakdown      []ScanTotals
+	Moods          []MoodRow
+	MoodsTruncated bool
+}
+
+// History returns what a child that is in the class now did in the classes it left, for a teacher of the class. It is read only. It
+// holds the scans per category and the moods with the notes of the teachers of those classes, and nothing about any other child or
+// about the forum and the chat of the old classes.
+func History(tx *gorm.DB, classID uuid.UUID, studentID uuid.UUID) ([]HistoryRow, error) {
+	var present int64
+
+	err := tx.Model(&entity.Student{}).Where("id = ? AND class_id = ?", studentID, classID).Count(&present).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if present == 0 {
+		return nil, apperror.ErrStudentNotFound
+	}
+
+	previous, err := listEnded(tx, studentID)
+	if err != nil {
+		return nil, err
+	}
+
+	rows := make([]HistoryRow, 0, len(previous))
+
+	for i := range previous {
+		row := HistoryRow{PreviousRow: previous[i], Breakdown: make([]ScanTotals, 0, len(trashOrder))}
+
+		for _, trashType := range trashOrder {
+			totals := ScanTotals{TrashType: trashType}
+
+			err = tx.Model(&entity.TrashScan{}).
+				Select("COUNT(*) AS scans, COALESCE(SUM(points_awarded), 0) AS points").
+				Where("student_id = ? AND trash_type = ? AND scanned_at >= ? AND scanned_at < ?",
+					studentID, trashType, previous[i].ActivatedAt, previous[i].EndedAt).
+				Scan(&totals).Error
+			if err != nil {
+				return nil, err
+			}
+
+			row.Breakdown = append(row.Breakdown, totals)
+		}
+
+		// one more than the limit tells whether the list was cut
+		var logs []entity.MoodLog
+
+		err = tx.Where("student_id = ? AND recorded_at >= ? AND recorded_at < ?", studentID, previous[i].ActivatedAt, previous[i].EndedAt).
+			Order("recorded_at DESC, id DESC").
+			Limit(maxHistoryMoods + 1).
+			Find(&logs).Error
+		if err != nil {
+			return nil, err
+		}
+
+		if len(logs) > maxHistoryMoods {
+			row.MoodsTruncated = true
+			logs = logs[:maxHistoryMoods]
+		}
+
+		row.Moods = make([]MoodRow, 0, len(logs))
+		for j := range logs {
+			row.Moods = append(row.Moods, MoodRow{
+				MoodType: logs[j].MoodType, ConfidenceScore: logs[j].ConfidenceScore, Notes: logs[j].Notes, RecordedAt: logs[j].RecordedAt,
+			})
+		}
+
+		rows = append(rows, row)
+	}
+
+	return rows, nil
+}
