@@ -33,8 +33,8 @@ func Remove(tx *gorm.DB, studentID uuid.UUID, scope Scope, fileKey filecleanup.K
 		return uuid.Nil, false, err
 	}
 
-	// a move may have taken the child to another class while the request waited for the lock, and then the new class is the one
-	// that is renumbered, a scope that names a class lets the child through only where it still is
+	// a move may have taken the child to another class while the request waited for the lock, and then the caller starts again, a
+	// scope that names a class lets the child through only where it still is
 	classes = classes[:0]
 
 	err = scope(tx.Model(&entity.Student{}).Where("id = ?", studentID)).Pluck("class_id", &classes).Error
@@ -43,12 +43,7 @@ func Remove(tx *gorm.DB, studentID uuid.UUID, scope Scope, fileKey filecleanup.K
 	}
 
 	if classes[0] != classID {
-		classID = classes[0]
-
-		err = ranking.Lock(tx, classID)
-		if err != nil {
-			return uuid.Nil, false, err
-		}
+		return uuid.Nil, false, ranking.ErrMoved
 	}
 
 	child := scope(tx.Model(&entity.Student{}).Where("id = ?", studentID))

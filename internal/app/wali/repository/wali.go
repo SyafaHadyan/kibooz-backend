@@ -327,53 +327,67 @@ func (r *WaliDB) UpdateStudent(
 		found   bool
 	)
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		classID, found = uuid.Nil, false
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			classID, found = uuid.Nil, false
 
-		var classes []uuid.UUID
+			var classes []uuid.UUID
 
-		err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &classes).Error
-		if err != nil || len(classes) == 0 {
-			return err
-		}
+			err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &classes).Error
+			if err != nil || len(classes) == 0 {
+				return err
+			}
 
-		// the class lock comes before the change, because a new name moves the child in the ranking and the semester
-		// rollover copies the names under the same lock
-		err = ranking.Lock(tx, classes[0])
-		if err != nil {
-			return err
-		}
-
-		fields := map[string]any{}
-		if update.SetName {
-			fields["full_name"] = update.FullName
-		}
-
-		if update.SetNISN {
-			fields["nisn"] = update.NISN
-		}
-
-		changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
-		if changed.Error != nil || changed.RowsAffected == 0 {
-			return changed.Error
-		}
-
-		if update.SetName {
-			err = tx.Exec("UPDATE leaderboard_history SET student_name = ? WHERE student_id = ?", update.FullName, studentID).Error
+			// the class lock comes before the change, because a new name moves the child in the ranking and the semester
+			// rollover copies the names under the same lock
+			err = ranking.Lock(tx, classes[0])
 			if err != nil {
 				return err
 			}
 
-			err = ranking.Recompute(tx, classes[0])
-			if err != nil {
+			// a move may have taken the child to another class while this waited for the lock, then it starts again
+			var current []uuid.UUID
+
+			err = tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &current).Error
+			if err != nil || len(current) == 0 {
 				return err
 			}
-		}
 
-		classID, found = classes[0], true
+			if current[0] != classes[0] {
+				return ranking.ErrMoved
+			}
 
-		return nil
+			fields := map[string]any{}
+			if update.SetName {
+				fields["full_name"] = update.FullName
+			}
+
+			if update.SetNISN {
+				fields["nisn"] = update.NISN
+			}
+
+			changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
+			if changed.Error != nil || changed.RowsAffected == 0 {
+				return changed.Error
+			}
+
+			if update.SetName {
+				err = tx.Exec("UPDATE leaderboard_history SET student_name = ? WHERE student_id = ?", update.FullName, studentID).Error
+				if err != nil {
+					return err
+				}
+
+				err = ranking.Recompute(tx, classes[0])
+				if err != nil {
+					return err
+				}
+			}
+
+			classID, found = classes[0], true
+
+			return nil
+		})
 	})
 
 	return classID, found, mapNISNTaken(err)
@@ -385,17 +399,19 @@ func (r *WaliDB) RemoveStudent(ctx context.Context, waliID uuid.UUID, studentID 
 		removed bool
 	)
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		classID, removed = uuid.Nil, false
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			classID, removed = uuid.Nil, false
 
-		var err error
+			var err error
 
-		classID, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
-			return rows.Where("wali_id = ?", waliID)
-		}, r.fileKey)
+			classID, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
+				return rows.Where("wali_id = ?", waliID)
+			}, r.fileKey)
 
-		return err
+			return err
+		})
 	})
 
 	return classID, removed, err

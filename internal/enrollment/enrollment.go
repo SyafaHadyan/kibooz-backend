@@ -205,6 +205,19 @@ func Reject(tx *gorm.DB, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUI
 // in the old class is saved on the enrollment that ends. The ranking locks of both classes are taken in the order of their ids, so
 // two moves in opposite directions cannot wait for each other.
 func Accept(tx *gorm.DB, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) (uuid.UUID, error) {
+	// The row of the teacher comes first, which is the order that a teacher who leaves takes the locks in, and the request is decided
+	// in the name of this row. A teacher that was deleted just before cannot decide.
+	var guruRows []uuid.UUID
+
+	err := tx.Raw("SELECT id FROM gurus WHERE id = ? AND deleted_at IS NULL FOR KEY SHARE", guruID).Scan(&guruRows).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if len(guruRows) == 0 {
+		return uuid.Nil, apperror.ErrClassNotFound
+	}
+
 	// the teachers lock of the class serializes the move with a teacher who leaves, with a change of joining and with an archive
 	archived, err := classteam.LockLive(tx, classID)
 	if err != nil {
@@ -213,6 +226,18 @@ func Accept(tx *gorm.DB, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUI
 
 	if archived {
 		return uuid.Nil, apperror.ErrMoveNotFound
+	}
+
+	// a teacher that was removed from the class while this waited for the lock does not decide for it any more
+	var teaching int64
+
+	err = tx.Table("class_teachers").Where("class_id = ? AND guru_id = ?", classID, guruID).Count(&teaching).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if teaching == 0 {
+		return uuid.Nil, apperror.ErrClassNotFound
 	}
 
 	var waiting entity.Enrollment

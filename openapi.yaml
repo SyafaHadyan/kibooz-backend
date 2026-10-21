@@ -484,7 +484,7 @@ paths:
         but a move needs a teacher of the new class to accept it, and nothing changes until then. A child has at most one request
         that waits, and the parent can withdraw it with `DELETE /wali/children/{studentId}/move-requests/{requestId}`. A request
         is rejected by itself when the new class closes joining or is archived. When a teacher accepts, the child starts from
-        zero in the new class, which means no points, no semester points, rank 1 or the place its first points earn, and no scans.
+        zero in the new class, which means no points, no semester points and no scans, and the place in the ranking that zero points and its name give.
         What the child had in the old class is saved. A request that names a class code has a budget of its own, counted for this
         route and shared by every caller, so it can answer `429` while many codes are being tried.
       parameters:

@@ -641,17 +641,19 @@ func (r *GuruDB) RemoveTeacher(ctx context.Context, classID uuid.UUID, actor uui
 func (r *GuruDB) RemoveStudent(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error) {
 	removed := false
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		removed = false
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			removed = false
 
-		var err error
+			var err error
 
-		_, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
-			return rows.Where("class_id = ?", classID)
-		}, r.fileKey)
+			_, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
+				return rows.Where("class_id = ?", classID)
+			}, r.fileKey)
 
-		return err
+			return err
+		})
 	})
 
 	return removed, err

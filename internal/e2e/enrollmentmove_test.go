@@ -177,7 +177,7 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.Equal(t, classB, after.data("student", "classId"))
 		require.EqualValues(t, 0, after.data("pointsSummary", "totalPoints"))
 		require.EqualValues(t, 0, after.data("pointsSummary", "seasonPoints"))
-		require.EqualValues(t, 1, after.data("pointsSummary", "classRank"))
+		require.EqualValues(t, 2, after.data("pointsSummary", "classRank"), "with no points the other child of the class comes first by name")
 		require.EqualValues(t, 0, after.data("pointsSummary", "organicCount"))
 
 		stats := call(t, http.MethodGet, "/api/v1/trash/stats?studentId="+childID, parent.Token, nil)

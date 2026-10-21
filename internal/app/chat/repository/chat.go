@@ -126,7 +126,8 @@ const memberClasses = `mem AS (
 			JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
 			WHERE g.user_id = @user
 		UNION ALL
-		SELECT s.class_id, s.created_at AS joined_at FROM students AS s
+		SELECT s.class_id, COALESCE((SELECT e.activated_at FROM enrollments AS e WHERE e.student_id = s.id AND e.status = 'active'), s.created_at) AS joined_at
+			FROM students AS s
 			JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
 			WHERE s.deleted_at IS NULL AND w.user_id = @user
 	) AS t GROUP BY t.class_id
@@ -380,7 +381,8 @@ func (r *ChatDB) ClassMembersJoinedBy(ctx context.Context, classID uuid.UUID, at
 					JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
 					WHERE ct.class_id = @class
 				UNION ALL
-				SELECT w.user_id, s.created_at AS joined_at FROM students AS s
+				SELECT w.user_id, COALESCE((SELECT e.activated_at FROM enrollments AS e WHERE e.student_id = s.id AND e.status = 'active'), s.created_at) AS joined_at
+					FROM students AS s
 					JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
 					WHERE s.class_id = @class AND s.deleted_at IS NULL
 			) AS member

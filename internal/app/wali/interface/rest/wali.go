@@ -35,7 +35,7 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	group.Delete("/children/:studentId", handler.DeleteChild)
 	// the class code is the secret between a stranger and a class, so naming one is limited for every caller of this route
 	group.Post("/children", idempotent, classCodeLimiter, handler.AddChild)
-	// a move names a class code as well, so it shares the limit of the route above
+	// a move names a class code as well, so it has a limit of its own, counted per route like the one above
 	group.Post("/children/:studentId/move-requests", idempotent, classCodeLimiter, handler.RequestMove)
 	group.Get("/children/:studentId/move-requests", handler.MoveRequests)
 	group.Delete("/children/:studentId/move-requests/:requestId", handler.CancelMove)
