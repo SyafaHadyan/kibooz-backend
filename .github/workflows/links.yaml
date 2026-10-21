@@ -33,6 +33,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: >-
-            --no-progress --max-retries 2 --exclude-loopback --exclude 'example\.(com|org|net)' --accept '200..=299,429'
+            --no-progress --include-fragments --max-retries 2 --exclude-loopback --exclude 'example\.(com|org|net)' --accept '200..=299,429'
             './*.md' './docs/**/*.md'
           fail: true
