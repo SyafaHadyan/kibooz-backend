@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.17.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.16.0...v0.17.0) (2026-10-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **env:** rename VIDEO_MAX_MB and S3_BUCKET_NAME and refuse the old names ([#273](https://github.com/SyafaHadyan/kibooz-backend/issues/273))
+* **env:** rename VIDEO_MAX_MB and S3_BUCKET_NAME and refuse the old names
+
+### Bug Fixes
+
+* **auth:** keep a used refresh token until its session reaches its longest lifetime ([616b710](https://github.com/SyafaHadyan/kibooz-backend/commit/616b710fffa530a8f0b4288c11128ce7316b9be9))
+* **auth:** keep a used refresh token until its session reaches its longest lifetime ([#276](https://github.com/SyafaHadyan/kibooz-backend/issues/276)) ([abf93c9](https://github.com/SyafaHadyan/kibooz-backend/commit/abf93c9527c8cf055406f227c0e6d717e214c4ad))
+* **chat:** send a new room message only to the members who had joined when it was sent ([13110db](https://github.com/SyafaHadyan/kibooz-backend/commit/13110db13628ffbfea05c86c1e8db28b22915c6e))
+* **chat:** send a new room message only to the members who had joined when it was sent ([#275](https://github.com/SyafaHadyan/kibooz-backend/issues/275)) ([d2c7b15](https://github.com/SyafaHadyan/kibooz-backend/commit/d2c7b1530e47de02d9fb642be12aa6e45a3dfd25))
+* **guru:** check the teacher who rotates the join code again once the class lock is held ([9fbadef](https://github.com/SyafaHadyan/kibooz-backend/commit/9fbadef279077959a931953410695e2149fb539e))
+* **guru:** check the teacher who rotates the join code again once the class lock is held ([#274](https://github.com/SyafaHadyan/kibooz-backend/issues/274)) ([f5d68d4](https://github.com/SyafaHadyan/kibooz-backend/commit/f5d68d4bd74ad1308686f10c743d276df2b43afd))
+* **guru:** require an active teacher account in the recheck of adding a teacher ([c51e043](https://github.com/SyafaHadyan/kibooz-backend/commit/c51e043c3002b6d0b57edd153d7d385aec51c276))
+* **guru:** require an active teacher account in the recheck of adding a teacher ([#278](https://github.com/SyafaHadyan/kibooz-backend/issues/278)) ([6a3538d](https://github.com/SyafaHadyan/kibooz-backend/commit/6a3538dd4e8f98e13aa775e460b9318bfcbf45a5))
+* **guru:** require an active teacher account in the recheck of the join code rotation ([c3672c3](https://github.com/SyafaHadyan/kibooz-backend/commit/c3672c3b6f54bf3f9098c8f0f70621e3cc3ad883))
+
+
+### Code Refactoring
+
+* **env:** rename VIDEO_MAX_MB and S3_BUCKET_NAME and refuse the old names ([f06faf1](https://github.com/SyafaHadyan/kibooz-backend/commit/f06faf1a206731b0200e1476f83c4274512912f7))
+* **env:** rename VIDEO_MAX_MB and S3_BUCKET_NAME and refuse the old names ([#273](https://github.com/SyafaHadyan/kibooz-backend/issues/273)) ([f3a8c0f](https://github.com/SyafaHadyan/kibooz-backend/commit/f3a8c0f6cd4bc89ec07f54a22d9d9618a701baf0))
+
 ## [0.16.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.15.0...v0.16.0) (2026-10-21)
 
 
