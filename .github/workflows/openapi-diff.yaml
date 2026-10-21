@@ -8,16 +8,22 @@ name: OpenAPI diff
 on:
   pull_request:
     branches: [main]
+    # edited makes a new title run the check again, because the title decides whether a breaking change is allowed
+    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: openapi-diff-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # An edit of the body right after a push must not cancel the run of the push, because a cancelled run of a required check
+  # still counts as unmet
+  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   breaking:
     name: OpenAPI breaking changes
+    # An edit of the body or the labels changes nothing that this reads, only a new title or a new commit does
+    if: github.event.action != 'edited' || github.event.changes.title != null
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -52,7 +58,7 @@ jobs:
           run_oasdiff() {
             docker run --rm -v "$RUNNER_TEMP/base:/base:ro" -v "$PWD:/repo:ro" "$image" "$@"
           }
-          echo "Every change, for the record"
+          echo "Every change that touches a client, for the record"
           run_oasdiff changelog /base/openapi.yaml /repo/openapi.yaml
           echo
           if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
