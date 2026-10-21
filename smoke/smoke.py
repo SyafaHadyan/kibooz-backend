@@ -404,6 +404,9 @@ expect("the teacher accepts", call("POST", f"/guru/classes/{gm['class']}/move-re
 s, js = call("GET", "/wali/dashboard", wm["token"])
 check("the child is in the new class with nothing", s == 200 and dig(js, "data", "student", "classId") == gm["class"] and dig(js, "data", "pointsSummary", "totalPoints") == 0, f"{s} {js}")
 expect("the child cannot ask for the class it is in", call("POST", move, wm["token"], {"classCode": gm["code"]}), 409, "ALREADY_IN_CLASS")
+s, js = call("GET", f"/wali/children/{wm['student']}/previous-classes", wm["token"])
+check("the child has the old class as a previous class", s == 200 and [c.get("classId") for c in dig(js, "data", "classes") or []] == [g1["class"]], f"{s} {js}")
+expect("previous classes of the child of another parent", call("GET", f"/wali/children/{w2['student']}/previous-classes", wm["token"]), 404, "STUDENT_NOT_FOUND")
 
 # ---------- classes ----------
 s, js = call("GET", "/guru/classes", g1["token"])

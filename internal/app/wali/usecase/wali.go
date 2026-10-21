@@ -52,6 +52,8 @@ type WaliUseCaseItf interface {
 	CancelMove(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error
 	// MoveRequests lists the requests of a child of the caller that wait or were rejected
 	MoveRequests(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.MoveRequestList, error)
+	// PreviousClasses lists the classes that a child of the caller left, with what the child had in each
+	PreviousClasses(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.PreviousClassList, error)
 }
 
 // MaxChildren is the largest number of children one parent account can hold
@@ -649,6 +651,38 @@ func moveRequest(row *enrollment.ParentRow) dto.MoveRequest {
 	if row.DecidedAt != nil {
 		decided := row.DecidedAt.UTC()
 		res.DecidedAt = &decided
+	}
+
+	return res
+}
+
+func (u *WaliUseCase) PreviousClasses(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.PreviousClassList, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.PreviousClassList{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.PreviousClassList{}, apperror.ErrProfileNotFound
+	}
+
+	rows, err := u.repo.PreviousClasses(ctx, wali.ID, studentID)
+	if err != nil {
+		return dto.PreviousClassList{}, appOrInternal(err)
+	}
+
+	return previousClasses(rows), nil
+}
+
+func previousClasses(rows []enrollment.PreviousRow) dto.PreviousClassList {
+	res := dto.PreviousClassList{Classes: make([]dto.PreviousClass, 0, len(rows))}
+
+	for i := range rows {
+		res.Classes = append(res.Classes, dto.PreviousClass{
+			ClassID: rows[i].ClassID, ClassName: rows[i].ClassName, GradeLevel: rows[i].GradeLevel, SchoolName: rows[i].SchoolName,
+			AcademicYear: rows[i].AcademicYear, StartedAt: rows[i].ActivatedAt.UTC(), EndedAt: rows[i].EndedAt.UTC(),
+			TotalPoints: rows[i].FinalPoints, SeasonPoints: rows[i].FinalSeason, ClassRank: rows[i].FinalRank, TotalScans: rows[i].FinalScans,
+		})
 	}
 
 	return res

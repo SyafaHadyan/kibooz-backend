@@ -38,3 +38,22 @@ type ClassMoveRequest struct {
 type ClassMoveRequestList struct {
 	Requests []ClassMoveRequest `json:"requests"`
 }
+
+// PreviousClass is a class that a child was in before its current one, with what the child had in it when it left
+type PreviousClass struct {
+	ClassID      uuid.UUID `json:"classId"`
+	ClassName    string    `json:"className"`
+	GradeLevel   string    `json:"gradeLevel"`
+	SchoolName   string    `json:"schoolName"`
+	AcademicYear string    `json:"academicYear"`
+	StartedAt    time.Time `json:"startedAt"`
+	EndedAt      time.Time `json:"endedAt"`
+	TotalPoints  int       `json:"totalPoints"`
+	SeasonPoints int       `json:"seasonPoints"`
+	ClassRank    int       `json:"classRank"`
+	TotalScans   int       `json:"totalScans"`
+}
+
+type PreviousClassList struct {
+	Classes []PreviousClass `json:"classes"`
+}

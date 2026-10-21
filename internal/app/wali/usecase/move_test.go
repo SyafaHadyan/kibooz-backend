@@ -121,3 +121,52 @@ func TestMoveRoutesHideTheFailureOfTheParentLookup(t *testing.T) {
 	_, err = useCase.MoveRequests(ctx, uuid.New(), uuid.New())
 	requireAppError(t, err, apperror.Internal(repo.waliErr))
 }
+
+func TestPreviousClassesShowWhatTheChildHadWhenItLeft(t *testing.T) {
+	repo := parentRepo()
+	childID, classID := uuid.New(), uuid.New()
+	started := time.Date(2026, 7, 13, 0, 0, 0, 0, time.FixedZone("WIB", 7*3600))
+	ended := started.AddDate(0, 3, 0)
+	repo.previous = []enrollment.PreviousRow{{
+		ID: uuid.New(), ClassID: classID, ClassName: "Kelas Melati", GradeLevel: "Class A", SchoolName: "TK Pertiwi", AcademicYear: "2026/2027",
+		ActivatedAt: started, EndedAt: ended, FinalPoints: 120, FinalSeason: 45, FinalRank: 3, FinalScans: 17,
+	}}
+
+	res, err := newUseCase(repo, &fakeCache{}).PreviousClasses(context.Background(), uuid.New(), childID)
+	require.NoError(t, err)
+
+	require.Equal(t, childID, repo.moveChild)
+	require.Equal(t, repo.wali.ID, repo.moveParent)
+	require.Equal(t, []dto.PreviousClass{{
+		ClassID: classID, ClassName: "Kelas Melati", GradeLevel: "Class A", SchoolName: "TK Pertiwi", AcademicYear: "2026/2027",
+		StartedAt: started.UTC(), EndedAt: ended.UTC(), TotalPoints: 120, SeasonPoints: 45, ClassRank: 3, TotalScans: 17,
+	}}, res.Classes)
+
+	repo.previous = nil
+
+	empty, err := newUseCase(repo, &fakeCache{}).PreviousClasses(context.Background(), uuid.New(), childID)
+	require.NoError(t, err)
+	require.NotNil(t, empty.Classes, "a child that never moved gets [] and not null")
+	require.Empty(t, empty.Classes)
+}
+
+func TestPreviousClassesKeepTheAnswersOfTheRulesAndHideOtherErrors(t *testing.T) {
+	ctx := context.Background()
+
+	repo := parentRepo()
+	repo.moveErr = apperror.ErrStudentNotFound
+
+	_, err := newUseCase(repo, &fakeCache{}).PreviousClasses(ctx, uuid.New(), uuid.New())
+	requireAppError(t, err, apperror.ErrStudentNotFound)
+
+	repo.moveErr = errors.New("connection reset")
+
+	_, err = newUseCase(repo, &fakeCache{}).PreviousClasses(ctx, uuid.New(), uuid.New())
+	requireAppError(t, err, apperror.Internal(repo.moveErr))
+
+	_, err = newUseCase(&fakeRepo{}, &fakeCache{}).PreviousClasses(ctx, uuid.New(), uuid.New())
+	requireAppError(t, err, apperror.ErrProfileNotFound)
+
+	_, err = newUseCase(&fakeRepo{waliErr: errors.New("connection reset")}, &fakeCache{}).PreviousClasses(ctx, uuid.New(), uuid.New())
+	requireAppError(t, err, apperror.Internal(errors.New("connection reset")))
+}

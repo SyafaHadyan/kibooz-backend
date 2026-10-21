@@ -51,6 +51,7 @@ type fakeRepo struct {
 
 	moveRow    enrollment.ParentRow
 	moveRows   []enrollment.ParentRow
+	previous   []enrollment.PreviousRow
 	moveErr    error
 	moveCode   string
 	moveChild  uuid.UUID
@@ -68,6 +69,12 @@ func (f *fakeRepo) CancelMove(_ context.Context, waliID uuid.UUID, studentID uui
 	f.moveParent, f.moveChild, f.moveCancel = waliID, studentID, requestID
 
 	return f.moveErr
+}
+
+func (f *fakeRepo) PreviousClasses(_ context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.PreviousRow, error) {
+	f.moveParent, f.moveChild = waliID, studentID
+
+	return f.previous, f.moveErr
 }
 
 func (f *fakeRepo) ListMoves(_ context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error) {

@@ -38,6 +38,7 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	// a move names a class code as well, so it has a limit of its own, counted per route like the one above
 	group.Post("/children/:studentId/move-requests", idempotent, classCodeLimiter, handler.RequestMove)
 	group.Get("/children/:studentId/move-requests", handler.MoveRequests)
+	group.Get("/children/:studentId/previous-classes", handler.PreviousClasses)
 	group.Delete("/children/:studentId/move-requests/:requestId", handler.CancelMove)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
@@ -248,4 +249,18 @@ func (h *WaliHandler) CancelMove(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Move request cancelled", nil)
+}
+
+func (h *WaliHandler) PreviousClasses(c fiber.Ctx) error {
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.PreviousClasses(c.Context(), middleware.UserIDFrom(c), studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
 }
