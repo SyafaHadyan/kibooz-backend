@@ -2411,7 +2411,7 @@ components:
       in: query
       description: |
         Limits the answer to the calendar day, week or month that contains now, in the school timezone (Asia/Jakarta). The day starts
-        at 00:00, the week on Monday at 00:00 and the month on the 1st at 00:00. Without it the leaderboard shows the semester that
+        at 00:00, the week on Monday at 00:00 and the month on its first day at 00:00. Without it the leaderboard shows the semester that
         is under way and the trash stats count all time.
       schema:
         type: string

@@ -200,7 +200,7 @@ func (r *TrashDB) ListClassStudentsBetween(ctx context.Context, classID uuid.UUI
 		Joins("LEFT JOIN trash_scans AS t ON t.student_id = s.id AND t.scanned_at >= ? AND t.scanned_at < ?", from, to).
 		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
 		Group("s.id").
-		Order("season_points DESC, s.full_name ASC, s.id ASC").
+		Order("COALESCE(SUM(t.points_awarded), 0) DESC, s.full_name ASC, s.id ASC").
 		Scan(&students).Error
 
 	return students, err

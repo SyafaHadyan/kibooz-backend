@@ -62,7 +62,7 @@ A message with a file has `media` with the `kind` (`photo` or `video`), `content
 
 ## Leaderboard and stats by period
 
-`GET /api/v1/leaderboard` ranks the class by the points of the semester that is under way. For the today, week and month tabs add `period=today`, `period=week` or `period=month`. The day starts at 00:00, the week on Monday at 00:00 and the month on the 1st at 00:00, all in the school timezone (Asia/Jakarta), so a tab resets at the same moment for everyone. Every child of the class is listed, and a child without a scan in the period has zero points. Without `period` the answer is the same as before, and any other value answers `400` with `VALIDATION_ERROR`.
+`GET /api/v1/leaderboard` ranks the class by the points of the semester that is under way. For the today, week and month tabs add `period=today`, `period=week` or `period=month`. The day starts at 00:00, the week on Monday at 00:00 and the month on its first day at 00:00, all in the school timezone (Asia/Jakarta), so a tab resets at the same moment for everyone. Every child of the class is listed, and a child without a scan in the period has zero points. Without `period` the answer is the same as before, and any other value answers `400` with `VALIDATION_ERROR`.
 
 `GET /api/v1/trash/stats` takes the same `period`. Then `breakdown` and `totalScans` only count the scans of that period, `periodPoints` holds their points and `period` repeats the name. The totals of the child (`totalPoints`, `seasonPoints` and `classRank`) always stay the same, and without `period` the answer has neither `period` nor `periodPoints`.
 
