@@ -115,6 +115,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 - [Decision records](docs/adr/README.md) explain why PostgreSQL decides and Redis helps, how idempotency keys work, why only merge commits are used and why only the release App creates tags.
 - [Privacy](docs/privacy.md) covers which personal data is kept, who can read it, how long it stays and what deleting an account does.
 - [Testing](docs/testing.md) covers the test suites, coverage, fuzzing, the k6 performance tests and the ZAP scans.
+- [Pentest target](docs/pentest.md) explains how to start a throwaway stack on the private Tailscale network and attack it by hand.
 - [CI/CD](docs/ci-cd.md) covers the workflows, the required checks and how releases are made.
 - [Releasing](docs/releasing.md) covers how a version is chosen, what to check before the release pull request is merged, what the merge does and what to do afterwards.
 - [Operations](docs/operations.md) covers deploying a version, migrations, background jobs, logs, what to check when something is wrong and how to roll back.
