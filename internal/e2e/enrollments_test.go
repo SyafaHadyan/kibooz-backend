@@ -82,8 +82,7 @@ func TestEveryChildStartsWithOneActiveEnrollmentInItsClass(t *testing.T) {
 		for statement, constraint := range map[string]string{
 			"INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'active')":                                      "enrollments_activated_check",
 			"INSERT INTO enrollments (student_id, class_id, status, activated_at, ended_at) VALUES (?, ?, 'ended', now(), now())": "enrollments_ended_check",
-			"INSERT INTO enrollments (student_id, class_id, status, final_points, final_season_points, final_rank, final_scans, ended_at) " +
-				"VALUES (?, ?, 'pending', 1, 1, 1, 1, now())": "enrollments_final_only_when_ended_check",
+			"INSERT INTO enrollments (student_id, class_id, status, final_points) VALUES (?, ?, 'pending', 1)": "enrollments_final_only_when_ended_check",
 			"INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'maybe')": "enrollments_status_check",
 		} {
 			require.ErrorContains(t, testDB.Exec(statement, secondID, other).Error, constraint)
