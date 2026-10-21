@@ -1,5 +1,8 @@
 name: Docker
 
+# Never add workflow_call here. A workflow that calls this one would get signatures with the identity of this file on main, and the
+# Docker Hub mirror and the checks in the docs accept that identity.
+
 on:
   push:
     branches: [main]
@@ -58,6 +61,10 @@ jobs:
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # A pull request build runs on a merge commit that GitHub makes, so without this the sha tag names that commit and
+          # not the commit of the branch. The Docker Hub mirror finds the image by the commit of the branch.
+          DOCKER_METADATA_PR_HEAD_SHA: "true"
         with:
           images: |
             ${{ env.GHCR_IMAGE }}
