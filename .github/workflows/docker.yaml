@@ -58,6 +58,10 @@ jobs:
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          # A pull request build runs on a merge commit that GitHub makes, so without this the sha tag names that commit and
+          # not the commit of the branch. The Docker Hub mirror finds the image by the commit of the branch.
+          DOCKER_METADATA_PR_HEAD_SHA: "true"
         with:
           images: |
             ${{ env.GHCR_IMAGE }}
