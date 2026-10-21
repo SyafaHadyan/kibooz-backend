@@ -73,7 +73,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
 | `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the three photo uploads (the avatar, the trash photo and the photo of a chat message) can use, and `CHAT_PHOTO_MAX_MB` has to stay below it. Every other request is limited to 64 KB |
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |
-| `VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload and how long the signed upload address works |
+| `CLASS_VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload for a class, and how long the signed upload address works for the videos of a class and of the chat |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
 | `MOOD_BATCH_LIMITER_MAX` | `30` | Requests per user and window for `POST /guru/mood/log/batch`, on top of `USER_LIMITER_MAX`, at least 1 |
@@ -93,7 +93,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |
 | `CHAT_MAX_SOCKETS`, `CHAT_MAX_SOCKETS_PER_USER` | `1000`, `5` | How many chat sockets one API copy holds and how many one account keeps open, see [Chat socket](docs/websocket.md) |
 | `S3_PRIVATE_BUCKET_NAME`, `CHAT_PHOTO_MAX_MB`, `CHAT_VIDEO_MAX_MB`, `CHAT_MEDIA_URL_SECONDS` | empty, `4`, `25`, `3600` | The private bucket of the chat photos and videos, which uses the account and keys of `S3_*` and is never public, the largest photo and video, and how long a signed read address works. Chat media is off while the bucket name is empty, and the bucket needs the same lifecycle rule on `pending/` |
-| `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_URL` has to serve the objects publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
+| `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_BUCKET_NAME` is the bucket that `S3_PUBLIC_URL` serves publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
 | `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
 | `IDEMPOTENCY_TTL_HOURS` | `168` | How long an `Idempotency-Key` is remembered, at least 1. A repeat inside this time gets the first response again instead of doing the work twice |

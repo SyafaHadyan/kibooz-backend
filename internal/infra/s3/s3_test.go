@@ -35,7 +35,7 @@ func storageFor(t *testing.T, status int) (s3.StorageItf, func() []request) {
 	t.Cleanup(server.Close)
 
 	storage, err := s3.New(&env.Env{
-		S3Endpoint: server.URL, S3Region: "us-east-1", S3BucketName: "bucket",
+		S3Endpoint: server.URL, S3Region: "us-east-1", S3PublicBucketName: "bucket",
 		S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
 	})
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestStat(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			storage, err := s3.New(&env.Env{
-				S3Endpoint: server.URL, S3Region: "us-east-1", S3BucketName: "bucket",
+				S3Endpoint: server.URL, S3Region: "us-east-1", S3PublicBucketName: "bucket",
 				S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
 			})
 			require.NoError(t, err)
@@ -206,7 +206,7 @@ func TestCopy(t *testing.T) {
 			t.Cleanup(server.Close)
 
 			storage, err := s3.New(&env.Env{
-				S3Endpoint: server.URL, S3Region: "us-east-1", S3BucketName: "bucket",
+				S3Endpoint: server.URL, S3Region: "us-east-1", S3PublicBucketName: "bucket",
 				S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
 			})
 			require.NoError(t, err)
@@ -236,7 +236,7 @@ func privateStorage(t *testing.T) (s3.StorageItf, *env.Env) {
 	t.Helper()
 
 	cfg := &env.Env{
-		S3Endpoint: "https://r2.example.test", S3Region: "us-east-1", S3BucketName: "bucket", S3PrivateBucketName: "private-bucket",
+		S3Endpoint: "https://r2.example.test", S3Region: "us-east-1", S3PublicBucketName: "bucket", S3PrivateBucketName: "private-bucket",
 		S3AccessKeyID: "key", S3AccessKeySecret: "secret", S3PublicURL: "https://cdn.example.com",
 	}
 
@@ -268,7 +268,7 @@ func TestThePrivateStorageSignsReadsInItsOwnBucketAndHasNoPublicAddress(t *testi
 }
 
 func TestThePrivateStorageIsOffWithoutABucketOfItsOwn(t *testing.T) {
-	storage, err := s3.NewPrivate(&env.Env{S3Endpoint: "https://r2.example.test", S3BucketName: "bucket"})
+	storage, err := s3.NewPrivate(&env.Env{S3Endpoint: "https://r2.example.test", S3PublicBucketName: "bucket"})
 	require.NoError(t, err)
 	require.False(t, storage.Enabled())
 

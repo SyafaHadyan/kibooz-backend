@@ -395,7 +395,7 @@ func (u *ClassroomUseCase) CreateVideoUpload(
 		return dto.VideoUpload{}, err
 	}
 
-	maxBytes := int64(u.cfg.VideoMaxMB) * bytesPerMB
+	maxBytes := int64(u.cfg.ClassVideoMaxMB) * bytesPerMB
 	if req.SizeBytes > maxBytes {
 		return dto.VideoUpload{}, apperror.Validation(map[string]string{
 			"sizeBytes": fmt.Sprintf("must be at most %d bytes", maxBytes),
@@ -474,7 +474,7 @@ func (u *ClassroomUseCase) checkUploadedVideo(ctx context.Context, classID uuid.
 		return nil, apperror.Validation(map[string]string{"videoUrl": "has no uploaded file yet"})
 	}
 
-	if _, accepted := videoTypes[object.ContentType]; !accepted || object.Size > int64(u.cfg.VideoMaxMB)*bytesPerMB {
+	if _, accepted := videoTypes[object.ContentType]; !accepted || object.Size > int64(u.cfg.ClassVideoMaxMB)*bytesPerMB {
 		return nil, apperror.Validation(map[string]string{"videoUrl": "is not an accepted video file"})
 	}
 

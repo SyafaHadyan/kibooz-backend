@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +21,7 @@ type Env struct {
 	AppTimezone              string `env:"APP_TIMEZONE" envDefault:"Asia/Jakarta"`
 	BodyLimitMB              int    `env:"BODY_LIMIT_MB" envDefault:"8"`
 	RequestTimeoutSeconds    int    `env:"REQUEST_TIMEOUT_SECONDS" envDefault:"10"`
-	VideoMaxMB               int    `env:"VIDEO_MAX_MB" envDefault:"100"`
+	ClassVideoMaxMB          int    `env:"CLASS_VIDEO_MAX_MB" envDefault:"100"`
 	VideoUploadURLSeconds    int    `env:"VIDEO_UPLOAD_URL_SECONDS" envDefault:"900"`
 	UserLimiterMax           int    `env:"USER_LIMITER_MAX" envDefault:"120"`
 	LimiterExpirationSeconds int    `env:"LIMITER_EXPIRATION_SECONDS" envDefault:"60"`
@@ -54,7 +56,7 @@ type Env struct {
 	S3Endpoint              string `env:"S3_ENDPOINT"`
 	S3AccountID             string `env:"S3_ACCOUNT_ID"`
 	S3Region                string `env:"S3_REGION" envDefault:"auto"`
-	S3BucketName            string `env:"S3_BUCKET_NAME"`
+	S3PublicBucketName      string `env:"S3_PUBLIC_BUCKET_NAME"`
 	S3AccessKeyID           string `env:"S3_ACCESS_KEY_ID"`
 	S3AccessKeySecret       string `env:"S3_ACCESS_KEY_SECRET"`
 	S3PublicURL             string `env:"S3_PUBLIC_URL"`
@@ -96,6 +98,11 @@ func New() (*Env, error) {
 		return nil, fmt.Errorf("load .env file: %w", err)
 	}
 
+	err = refuseRenamed(os.LookupEnv)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := new(Env)
 
 	err = env.Parse(cfg)
@@ -109,6 +116,32 @@ func New() (*Env, error) {
 	}
 
 	return cfg, nil
+}
+
+// renamedSettings are the settings that changed their name, from the old name to the new one. The old name is not read any more,
+// so a file that still holds it would run with the default of the new one without a word. It is refused at start instead.
+var renamedSettings = map[string]string{
+	"VIDEO_MAX_MB":   "CLASS_VIDEO_MAX_MB",
+	"S3_BUCKET_NAME": "S3_PUBLIC_BUCKET_NAME",
+}
+
+// refuseRenamed fails when a setting of the old name is still set, and names the one that replaces it
+func refuseRenamed(lookup func(string) (string, bool)) error {
+	var found []string
+
+	for oldName, newName := range renamedSettings {
+		if _, set := lookup(oldName); set {
+			found = append(found, fmt.Sprintf("%s was renamed to %s", oldName, newName))
+		}
+	}
+
+	if len(found) == 0 {
+		return nil
+	}
+
+	sort.Strings(found)
+
+	return fmt.Errorf("rename these settings, the old names are not read any more: %s", strings.Join(found, ", "))
 }
 
 // placeholderSecretPrefix starts the sample JWT secret of .env.example, which anyone can read in the repository
@@ -148,8 +181,8 @@ func (e *Env) validate() error {
 	}
 
 	// the chat media would be served to anyone from the public bucket, so the two names must differ
-	if e.S3PrivateBucketName != "" && e.S3PrivateBucketName == e.S3BucketName {
-		return errors.New("S3_PRIVATE_BUCKET_NAME must not be the public bucket S3_BUCKET_NAME")
+	if e.S3PrivateBucketName != "" && e.S3PrivateBucketName == e.S3PublicBucketName {
+		return errors.New("S3_PRIVATE_BUCKET_NAME must not be the public bucket S3_PUBLIC_BUCKET_NAME")
 	}
 
 	if len(e.SemesterStartMonths) == 0 {
@@ -170,7 +203,7 @@ func (e *Env) validate() error {
 		min   int
 	}{
 		{"BODY_LIMIT_MB", e.BodyLimitMB, 1},
-		{"VIDEO_MAX_MB", e.VideoMaxMB, 1},
+		{"CLASS_VIDEO_MAX_MB", e.ClassVideoMaxMB, 1},
 		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
 		{"CHAT_PHOTO_MAX_MB", e.ChatPhotoMaxMB, 1},
 		{"CHAT_VIDEO_MAX_MB", e.ChatVideoMaxMB, 1},
@@ -255,6 +288,6 @@ func (e *Env) PrivateStorageEnabled() bool {
 
 // StorageEnabled reports whether object storage is fully configured
 func (e *Env) StorageEnabled() bool {
-	return e.S3BucketName != "" && e.S3AccessKeyID != "" && e.S3AccessKeySecret != "" &&
+	return e.S3PublicBucketName != "" && e.S3AccessKeyID != "" && e.S3AccessKeySecret != "" &&
 		e.S3PublicURL != "" && (e.S3Endpoint != "" || e.S3AccountID != "")
 }
