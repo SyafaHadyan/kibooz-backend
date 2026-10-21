@@ -451,16 +451,25 @@ func History(tx *gorm.DB, classID uuid.UUID, studentID uuid.UUID) ([]HistoryRow,
 	for i := range previous {
 		row := HistoryRow{PreviousRow: previous[i], Breakdown: make([]ScanTotals, 0, len(trashOrder))}
 
+		// one query for the three categories, filled into their fixed order, a category without a scan stays at zero
+		var found []ScanTotals
+
+		err = tx.Model(&entity.TrashScan{}).
+			Select("trash_type, COUNT(*) AS scans, COALESCE(SUM(points_awarded), 0) AS points").
+			Where("student_id = ? AND scanned_at >= ? AND scanned_at < ?", studentID, previous[i].ActivatedAt, previous[i].EndedAt).
+			Group("trash_type").
+			Scan(&found).Error
+		if err != nil {
+			return nil, err
+		}
+
 		for _, trashType := range trashOrder {
 			totals := ScanTotals{TrashType: trashType}
 
-			err = tx.Model(&entity.TrashScan{}).
-				Select("COUNT(*) AS scans, COALESCE(SUM(points_awarded), 0) AS points").
-				Where("student_id = ? AND trash_type = ? AND scanned_at >= ? AND scanned_at < ?",
-					studentID, trashType, previous[i].ActivatedAt, previous[i].EndedAt).
-				Scan(&totals).Error
-			if err != nil {
-				return nil, err
+			for _, item := range found {
+				if item.TrashType == trashType {
+					totals = item
+				}
 			}
 
 			row.Breakdown = append(row.Breakdown, totals)

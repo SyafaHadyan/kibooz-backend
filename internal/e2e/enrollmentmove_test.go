@@ -180,6 +180,10 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 
 		requestID := res.data("id").(string)
 
+		// while the request waits the child is still in the old class, so the new teacher reads nothing about it
+		call(t, http.MethodGet, "/api/v1/guru/classes/"+classB+"/students/"+childID+"/history", teacherB.Token, nil).
+			requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+
 		require.Equal(t, http.StatusOK, decide(teacherB.Token, classB, requestID, "accept").Status)
 		decide(teacherB.Token, classB, requestID, "accept").requireError(t, http.StatusNotFound, "MOVE_REQUEST_NOT_FOUND")
 

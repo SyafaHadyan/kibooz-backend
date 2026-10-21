@@ -987,7 +987,7 @@ paths:
       description: |
         For a child that is in the class now and moved here from other classes, shows what it had in each of them, the latest first.
         Each earlier class has the dates, the points, the rank and the scans that the child had when it left, the scans per category,
-        and the moods that the teachers of that class recorded with their notes, the newest 100 and `moodsTruncated` when there were
+        and the moods with their notes that were dated inside the time the child was in that class, the newest 100 and `moodsTruncated` when there were
         more. It is read only and only for a child that already moved into the class, so a request that waits shows nothing. It does
         not show anything about other children or about the forum, the videos or the chat of the old class. A child that never moved
         has an empty list. The teachers of the old class cannot read the child any more. See the privacy page for what this means.

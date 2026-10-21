@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -740,5 +741,16 @@ func (r *GuruDB) RejectMove(ctx context.Context, classID uuid.UUID, requestID uu
 }
 
 func (r *GuruDB) StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error) {
-	return enrollment.History(r.db.WithContext(ctx), classID, studentID)
+	var rows []enrollment.HistoryRow
+
+	// one snapshot for every read, so a child that moves out while the answer is built is either all in it or not in it at all
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+
+		rows, err = enrollment.History(tx, classID, studentID)
+
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+
+	return rows, err
 }

@@ -162,11 +162,11 @@ type historyRepo struct {
 
 	history []enrollment.HistoryRow
 	asked   uuid.UUID
+	inClass uuid.UUID
 }
 
 func (r *historyRepo) StudentHistory(_ context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error) {
-	r.asked = studentID
-	_ = classID
+	r.asked, r.inClass = studentID, classID
 
 	return r.history, r.err
 }
@@ -193,6 +193,7 @@ func TestStudentHistoryShowsWhatTheChildDidInTheClassesItLeft(t *testing.T) {
 	res, err := NewGuruUseCase(repo, &deletedKeys{}, nil).StudentHistory(context.Background(), uuid.New(), base.class.ID, childID)
 	require.NoError(t, err)
 	require.Equal(t, childID, repo.asked)
+	require.Equal(t, base.class.ID, repo.inClass, "the history is read in the class that the teacher teaches")
 	require.Len(t, res.PreviousClasses, 1)
 
 	got := res.PreviousClasses[0]
