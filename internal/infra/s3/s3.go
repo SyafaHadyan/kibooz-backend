@@ -89,7 +89,7 @@ func New(cfg *env.Env) (StorageItf, error) {
 		return Disabled{}, nil
 	}
 
-	return open(cfg, cfg.S3BucketName, strings.TrimRight(cfg.S3PublicURL, "/"), "public, max-age=31536000, immutable")
+	return open(cfg, cfg.S3PublicBucketName, strings.TrimRight(cfg.S3PublicURL, "/"), "public, max-age=31536000, immutable")
 }
 
 // NewPrivate returns the storage of the private bucket of the chat media, which has no public address and is read through

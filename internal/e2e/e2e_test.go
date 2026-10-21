@@ -179,7 +179,7 @@ func app(t *testing.T) *fiber.App {
 			"JWT_SECRET_KEY":         uuid.NewString() + uuid.NewString(),
 			"S3_ENDPOINT":            startMockS3().URL,
 			"S3_REGION":              "us-east-1",
-			"S3_BUCKET_NAME":         testBucket,
+			"S3_PUBLIC_BUCKET_NAME":  testBucket,
 			"S3_ACCESS_KEY_ID":       "test",
 			"S3_ACCESS_KEY_SECRET":   "test",
 			"S3_PUBLIC_URL":          testPublicURL,

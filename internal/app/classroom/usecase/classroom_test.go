@@ -144,7 +144,7 @@ func TestCheckUploadedVideo(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			u := &ClassroomUseCase{storage: tt.bucket, cfg: &env.Env{VideoMaxMB: 100}}
+			u := &ClassroomUseCase{storage: tt.bucket, cfg: &env.Env{ClassVideoMaxMB: 100}}
 
 			object, err := u.checkUploadedVideo(context.Background(), classID, tt.url)
 
@@ -612,7 +612,7 @@ func TestVideoFileLock(t *testing.T) {
 		return &ClassroomUseCase{
 			repo:    repo,
 			storage: orderedBucket{bucket: bucket{objects: files}, events: events},
-			cfg:     &env.Env{VideoMaxMB: 100},
+			cfg:     &env.Env{ClassVideoMaxMB: 100},
 			now:     time.Now,
 		}
 	}
@@ -752,7 +752,7 @@ func TestAddStagedVideo(t *testing.T) {
 		return &ClassroomUseCase{
 			repo:    lockRepo{events: events, teacher: uuid.New(), createErr: createErr, remaining: existing},
 			storage: orderedBucket{bucket: bucket{objects: files}, events: events, deleted: deleted, copyErr: copyErr},
-			cfg:     &env.Env{VideoMaxMB: 100},
+			cfg:     &env.Env{ClassVideoMaxMB: 100},
 			now:     time.Now,
 		}
 	}
