@@ -192,12 +192,12 @@ func (r *UserDB) SoftDeleteAccount(
 		var current int64
 
 		err = tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
-		if err != nil {
-			return err
+		if err == nil && current == 0 {
+			err = apperror.ErrPasswordIncorrect
 		}
 
-		if current == 0 {
-			return apperror.ErrPasswordIncorrect
+		if err != nil {
+			return err
 		}
 
 		// refresh tokens have no soft delete, removing them ends every session. This comes before the rest because it
