@@ -405,7 +405,7 @@ func (r *WaliDB) AddChild(
 
 		// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
 		// while the class is being archived
-		err = classteam.LockOpen(tx, class.ID)
+		err = classteam.LockOpen(tx, class.ID, joinCode)
 		if err != nil {
 			return err
 		}

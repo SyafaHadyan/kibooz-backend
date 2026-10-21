@@ -561,12 +561,12 @@ func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uu
 func (u *GuruUseCase) AddTeacher(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddTeacherRequest,
 ) (dto.Teacher, error) {
-	_, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.Teacher{}, err
 	}
 
-	added, err := u.repo.AddTeacher(ctx, class.ID, strings.ToLower(strings.TrimSpace(req.Email)))
+	added, err := u.repo.AddTeacher(ctx, class.ID, guru.ID, strings.ToLower(strings.TrimSpace(req.Email)))
 	if err != nil {
 		var appErr *apperror.Error
 		if errors.As(err, &appErr) {
