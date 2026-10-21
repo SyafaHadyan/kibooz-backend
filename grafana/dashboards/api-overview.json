@@ -98,7 +98,7 @@
     {
       "type": "stat",
       "title": "API copies up",
-      "description": "How many copies of the API were scraped successfully at the last scrape",
+      "description": "How many copies of the API are up now, whatever the host and instance filters say. The alert fires below 2 for 5 minutes",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -115,7 +115,7 @@
               },
               {
                 "color": "green",
-                "value": 1
+                "value": 2
               }
             ]
           }
@@ -138,7 +138,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(up{host=~\"$host\", instance=~\"$instance\", service=\"kibooz-api\"})"
+          "expr": "sum(up{service=\"kibooz-api\"} == 1) or vector(0)"
         }
       ],
       "id": 1,
