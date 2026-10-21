@@ -108,3 +108,16 @@ func TestCancelMoveForwardsTheRequestOfTheParent(t *testing.T) {
 	require.Equal(t, childID, repo.moveChild)
 	require.Equal(t, repo.wali.ID, repo.moveParent)
 }
+
+func TestMoveRoutesHideTheFailureOfTheParentLookup(t *testing.T) {
+	ctx := context.Background()
+	repo := &fakeRepo{waliErr: errors.New("connection reset")}
+	useCase := newUseCase(repo, &fakeCache{})
+
+	_, err := useCase.RequestMove(ctx, uuid.New(), uuid.New(), dto.MoveRequestInput{ClassCode: "ABCD"})
+	requireAppError(t, err, apperror.Internal(repo.waliErr))
+	requireAppError(t, useCase.CancelMove(ctx, uuid.New(), uuid.New(), uuid.New()), apperror.Internal(repo.waliErr))
+
+	_, err = useCase.MoveRequests(ctx, uuid.New(), uuid.New())
+	requireAppError(t, err, apperror.Internal(repo.waliErr))
+}

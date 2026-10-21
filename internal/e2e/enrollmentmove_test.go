@@ -6,6 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 )
 
 func claimScan(t *testing.T, token string, studentID string, trashType string) {
@@ -251,5 +256,191 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.Len(t, ended, 1)
 		require.Equal(t, 10, *ended[0].FinalPoints)
 		require.Equal(t, 1, *ended[0].FinalScans, "the two scans of the first class are not counted again")
+	})
+}
+
+func TestMoveRoutesRefuseBadIdsStrangersAndClassesThatCannotTakeAChild(t *testing.T) {
+	teacher := registerGuru(t, "Dandelion")
+	_, joinCode := classOf(t, teacher)
+	parent, childID := registerWali(t, joinCode, "Anak Ditolak")
+	stranger, strangerChild := registerWali(t, joinCode, "Anak Orang Asing")
+
+	someID := uuid.NewString()
+
+	t.Run("an id that is not a UUID is a validation error", func(t *testing.T) {
+		call(t, http.MethodGet, "/api/v1/wali/children/not-a-uuid/move-requests", parent.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodDelete, "/api/v1/wali/children/not-a-uuid/move-requests/"+someID, parent.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodDelete, "/api/v1/wali/children/"+childID+"/move-requests/not-a-uuid", parent.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, "/api/v1/guru/classes/not-a-uuid/move-requests", teacher.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, "/api/v1/guru/classes/not-a-uuid/move-requests/"+someID+"/reject", teacher.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("a parent cannot read the requests of another parent's child", func(t *testing.T) {
+		call(t, http.MethodGet, "/api/v1/wali/children/"+childID+"/move-requests", stranger.Token, nil).
+			requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
+	})
+
+	t.Run("a class without an active teacher takes no request", func(t *testing.T) {
+		orphan := registerGuru(t, "Edelweiss Kosong")
+		orphanClass, orphanCode := classOf(t, orphan)
+
+		require.NoError(t, testDB.Exec("UPDATE gurus SET deleted_at = now() WHERE id IN (SELECT guru_id FROM class_teachers WHERE class_id = ?::uuid)", orphanClass).Error)
+
+		requestMove(t, parent.Token, childID, orphanCode).requireError(t, http.StatusConflict, "CLASS_NO_ACTIVE_TEACHER")
+	})
+
+	t.Run("a full class takes no request and accepts no move", func(t *testing.T) {
+		fullTeacher := registerGuru(t, "Flamboyan Penuh")
+		fullClass, fullCode := classOf(t, fullTeacher)
+		holder, _ := registerWali(t, fullCode, "Anak Pertama Penuh")
+
+		// the request is made while there is room
+		res := requestMove(t, parent.Token, childID, fullCode)
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		var waliID string
+
+		require.NoError(t, testDB.Raw(
+			"SELECT w.id FROM walis w JOIN users u ON u.id = w.user_id WHERE u.email = ?", holder.Email,
+		).Scan(&waliID).Error)
+
+		// the children are written straight to the table, which opens their enrollments through the trigger
+		require.NoError(t, testDB.Exec(
+			`INSERT INTO students (id, wali_id, class_id, nisn, full_name)
+			SELECT gen_random_uuid(), ?::uuid, ?::uuid, 'mv' || substr(md5(random()::text || n::text), 1, 20), 'Anak Massal ' || n
+			FROM generate_series(1, ?) AS n`,
+			waliID, fullClass, constants.MaxChildrenPerClass-1,
+		).Error)
+
+		// the class filled up since, so a new request and the accept of the old one are both refused
+		requestMove(t, stranger.Token, strangerChild, fullCode).requireError(t, http.StatusConflict, "CLASS_FULL")
+		call(t, http.MethodPost, "/api/v1/guru/classes/"+fullClass+"/move-requests/"+res.data("id").(string)+"/accept", fullTeacher.Token, nil).
+			requireError(t, http.StatusConflict, "CLASS_FULL")
+	})
+}
+
+func TestAChildCanMoveBackAndForthBetweenTwoClasses(t *testing.T) {
+	teacherA := registerGuru(t, "Gardenia")
+	classA, codeA := classOf(t, teacherA)
+	teacherB := registerGuru(t, "Hortensia Dua")
+	classB, codeB := classOf(t, teacherB)
+	parent, childID := registerWali(t, codeA, "Anak Bolak Balik")
+
+	move := func(teacher account, classID string, code string) {
+		res := requestMove(t, parent.Token, childID, code)
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		accepted := call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/move-requests/"+res.data("id").(string)+"/accept", teacher.Token, nil)
+		require.Equal(t, http.StatusOK, accepted.Status, "body %v", accepted.Body)
+	}
+
+	move(teacherB, classB, codeB)
+	move(teacherA, classA, codeA)
+
+	dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
+	require.Equal(t, classA, dashboard.data("student", "classId"))
+
+	rows := enrollmentsOf(t, childID)
+	require.Len(t, rows, 3, "the first class, the second class and the first class again")
+
+	statuses := map[string]int{}
+	for _, row := range rows {
+		statuses[row.Status]++
+	}
+
+	require.Equal(t, map[string]int{"ended": 2, "active": 1}, statuses)
+}
+
+// TestEnrollmentRulesHoldWhenCalledDirectly reaches the refusals of Accept that the routes only meet when two requests race, such as
+// a class that was archived, a child that was deleted or a teacher who left between the check of the route and the move
+func TestEnrollmentRulesHoldWhenCalledDirectly(t *testing.T) {
+	teacherA := registerGuru(t, "Iris")
+	classA, codeA := classOf(t, teacherA)
+	teacherB := registerGuru(t, "Jasmine Dua")
+	classB, _ := classOf(t, teacherB)
+	_, childID := registerWali(t, codeA, "Anak Langsung")
+
+	var guruB, guruA string
+
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", teacherB.Email).Scan(&guruB).Error)
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", teacherA.Email).Scan(&guruA).Error)
+
+	accept := func(classID string, requestID string, guruID string) error {
+		return testDB.Transaction(func(tx *gorm.DB) error {
+			_, err := enrollment.Accept(tx, uuid.MustParse(classID), uuid.MustParse(requestID), uuid.MustParse(guruID))
+
+			return err
+		})
+	}
+
+	// the trigger only reacts to an update of the class, so a request written afterwards waits in a class that is closed already
+	insertPending := func(studentID string, classID string) string {
+		id := uuid.NewString()
+		require.NoError(t, testDB.Exec(
+			"INSERT INTO enrollments (id, student_id, class_id, status) VALUES (?::uuid, ?::uuid, ?::uuid, 'pending')", id, studentID, classID,
+		).Error)
+
+		return id
+	}
+
+	removePending := func(id string) {
+		require.NoError(t, testDB.Exec("DELETE FROM enrollments WHERE id = ?::uuid", id).Error)
+	}
+
+	requireCode := func(err error, want *apperror.Error) {
+		var got *apperror.Error
+
+		require.ErrorAs(t, err, &got)
+		require.Equal(t, want.Code, got.Code)
+	}
+
+	t.Run("a teacher that does not exist or does not teach the class cannot decide", func(t *testing.T) {
+		id := insertPending(childID, classB)
+		defer removePending(id)
+
+		requireCode(accept(classB, id, uuid.NewString()), apperror.ErrClassNotFound)
+		requireCode(accept(classB, id, guruA), apperror.ErrClassNotFound)
+	})
+
+	t.Run("a request that is gone, or that names another class, is not found", func(t *testing.T) {
+		requireCode(accept(classB, uuid.NewString(), guruB), apperror.ErrMoveNotFound)
+
+		id := insertPending(childID, classB)
+		defer removePending(id)
+
+		requireCode(accept(classA, id, guruA), apperror.ErrMoveNotFound)
+	})
+
+	t.Run("a child that was deleted cannot move", func(t *testing.T) {
+		_, goneID := registerWali(t, codeA, "Anak Sudah Pergi")
+
+		require.NoError(t, testDB.Exec("UPDATE students SET deleted_at = now() WHERE id = ?::uuid", goneID).Error)
+		// the trigger of the deletion drops the requests that waited, so this one is a leftover of a race
+		id := insertPending(goneID, classB)
+
+		requireCode(accept(classB, id, guruB), apperror.ErrMoveNotFound)
+	})
+
+	t.Run("a child cannot move into the class it is in", func(t *testing.T) {
+		id := insertPending(childID, classA)
+		defer removePending(id)
+
+		requireCode(accept(classA, id, guruA), apperror.ErrAlreadyInClass)
+	})
+
+	t.Run("an archived class decides nothing", func(t *testing.T) {
+		id := insertPending(childID, classB)
+		defer removePending(id)
+
+		require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?::uuid", classB).Error)
+		// the update above rejected the request that waited, so it waits again here
+		require.NoError(t, testDB.Exec("UPDATE enrollments SET status = 'pending', decided_at = NULL WHERE id = ?::uuid", id).Error)
+
+		requireCode(accept(classB, id, guruB), apperror.ErrMoveNotFound)
 	})
 }

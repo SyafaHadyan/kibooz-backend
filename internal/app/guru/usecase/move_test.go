@@ -143,3 +143,15 @@ func TestMoveRequestsListsTheRequestsThatWait(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, empty.Requests)
 }
+
+func TestMoveRequestsHideTheFailureOfTheList(t *testing.T) {
+	repo := newMoveRepo()
+	repo.err = errors.New("connection reset")
+
+	_, err := NewGuruUseCase(repo, &deletedKeys{}, nil).MoveRequests(context.Background(), uuid.New(), repo.class.ID)
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, "INTERNAL_ERROR", appErr.Code)
+}
