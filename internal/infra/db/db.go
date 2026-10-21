@@ -113,31 +113,21 @@ func NewHealth(cfg *env.Env) (*sql.DB, error) {
 // healthPingTimeout bounds the first use of the health connection at start-up
 const healthPingTimeout = 5 * time.Second
 
-// newMigrator opens the embedded migrations on a connection
-func newMigrator(sqlDB *sql.DB) (*migrate.Migrate, error) {
+// Migrate applies every pending migration and is safe to call on each startup
+func Migrate(sqlDB *sql.DB) error {
 	source, err := iofs.New(migrationFiles, "migrations")
 	if err != nil {
-		return nil, fmt.Errorf("load migrations: %w", err)
+		return fmt.Errorf("load migrations: %w", err)
 	}
 
 	driver, err := migratepgx.WithInstance(sqlDB, &migratepgx.Config{})
 	if err != nil {
-		return nil, fmt.Errorf("create migration driver: %w", err)
+		return fmt.Errorf("create migration driver: %w", err)
 	}
 
 	migrator, err := migrate.NewWithInstance("iofs", source, "pgx5", driver)
 	if err != nil {
-		return nil, fmt.Errorf("create migrator: %w", err)
-	}
-
-	return migrator, nil
-}
-
-// Migrate applies every pending migration and is safe to call on each startup
-func Migrate(sqlDB *sql.DB) error {
-	migrator, err := newMigrator(sqlDB)
-	if err != nil {
-		return err
+		return fmt.Errorf("create migrator: %w", err)
 	}
 
 	err = migrator.Up()

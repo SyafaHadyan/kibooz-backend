@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/stretchr/testify/require"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -121,7 +124,13 @@ func TestMigrationsRollBackAndApplyAgain(t *testing.T) {
 	first := shape(t, sqlDB)
 	require.NotEmpty(t, first)
 
-	migrator, err := newMigrator(sqlDB)
+	source, err := iofs.New(migrationFiles, "migrations")
+	require.NoError(t, err)
+
+	driver, err := migratepgx.WithInstance(sqlDB, &migratepgx.Config{})
+	require.NoError(t, err)
+
+	migrator, err := migrate.NewWithInstance("iofs", source, "pgx5", driver)
 	require.NoError(t, err)
 
 	require.NoError(t, migrator.Down(), "running every migration down")
