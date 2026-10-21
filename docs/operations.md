@@ -51,6 +51,9 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 | `IDEMPOTENCY_TTL_HOURS` | How long a retried request gets the first answer again. Lowering it shortens the window in which an offline app can retry safely |
 | `SENTRY_DSN`, `SENTRY_EVENTS_PER_MINUTE` | Error reports leave only when the DSN is set. The cap is the most reports in a minute, and the log says `error reports are being dropped by the cap` when a storm passes it. A DSN that cannot be read is logged and leaves the reports off, it never stops the API. A compose file that lists its settings one by one needs these lines too |
 | `S3_*` | Uploads stay off until all of them are set. The bucket needs a lifecycle rule that expires `pending/` after one day and never `videos/` |
+| `S3_PRIVATE_BUCKET_NAME` | The bucket of the chat photos and videos. It must not be the public bucket, which the server refuses at start, and the key of `S3_*` has to cover it. It needs a lifecycle rule that expires `pending/` after one day and never `chat/`, and chat media stays off while the name is empty. `/healthz` writes a probe object to it as well, so a private bucket that refuses writes shows as `degraded` |
+| `FIREBASE_CREDENTIALS_FILE` | The path of the service account key inside the container. Mount the file read only, for example `./secrets/firebase.json:/run/secrets/firebase.json:ro` in a compose override, and set the path to `/run/secrets/firebase.json`. Create the file on the host first, because Docker makes a folder of a mount whose source is missing. The key never goes into the repository, the image or a chat. A path that cannot be read, or a file that is not a service account key, is logged as `push notifications are off because the Firebase key cannot be used` and the API starts without pushes. `push notifications are on` says it works |
+| `CHAT_MAX_SOCKETS`, `CHAT_MAX_SOCKETS_PER_USER` | How many chat sockets one API copy holds, 1000 by default, and how many one account keeps open, 5 by default. A socket takes a few tens of KiB, so keep the first below what the memory cap leaves after the normal load, and watch `kibooz_chat_sockets`. The reverse proxy has to pass the WebSocket upgrade and keep an idle connection for more than 60 seconds, see [Chat socket](websocket.md#reverse-proxy) |
 
 ## Background work
 
@@ -73,6 +76,11 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `kibooz_http_request_duration_seconds` | `method`, `route` | A histogram of the time to answer |
 | `kibooz_http_requests_in_flight` | none | Requests that are running now |
 | `kibooz_rate_limited_total` | `route` | Requests that a rate limiter refused with `429 RATE_LIMITED` |
+| `kibooz_chat_sockets` | none | Chat sockets that are open on this copy, which stays below `CHAT_MAX_SOCKETS` |
+| `kibooz_chat_events_delivered_total` | `type` | Events written to the chat sockets of this copy, by type |
+| `kibooz_chat_sockets_dropped_total` | `reason` | Sockets that the server closed, because a socket was `slow` to read or was `replaced` by a newer one of the account |
+| `kibooz_chat_sockets_refused_total` | none | Sockets that were turned away because the copy was full or shutting down |
+| `kibooz_push_messages_total` | `result` | Wake-up pushes, by `sent`, `failed`, `unregistered` (a token that Firebase dropped, which is deleted) and `dropped` (the queue was full or the server was stopping) |
 | `kibooz_password_hash_busy_total` | none | Requests that got `429 RATE_LIMITED` because every password hashing slot was taken, which means the server needs more CPU or a higher `PASSWORD_HASH_CONCURRENCY` |
 | `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `keepalive_database` and `keepalive_redis` |
 | `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, or of the moment the job started when it has not succeeded yet, so an alert can fire when a job has not succeeded for too long. A job that is switched off, such as the file cleanup without a bucket or the keepalive with `KEEPALIVE_SECONDS=0`, has no series |

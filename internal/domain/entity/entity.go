@@ -147,12 +147,15 @@ type ForumPost struct {
 	EditedAt *time.Time
 }
 
-// ChatConversation is the direct conversation of two accounts, UserLowID is always the smaller of the two ids
+// ChatConversation is a direct conversation of two accounts or the room of a class. A direct one has UserLowID, which is always
+// the smaller of the two ids, and UserHighID. A class room has ClassID and no pair.
 type ChatConversation struct {
-	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
-	UserLowID  uuid.UUID `gorm:"type:uuid;not null"`
-	UserHighID uuid.UUID `gorm:"type:uuid;not null"`
-	CreatedAt  time.Time `gorm:"autoCreateTime:false;not null"`
+	ID         uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	Kind       string     `gorm:"size:10;not null"`
+	UserLowID  *uuid.UUID `gorm:"type:uuid"`
+	UserHighID *uuid.UUID `gorm:"type:uuid"`
+	ClassID    *uuid.UUID `gorm:"type:uuid"`
+	CreatedAt  time.Time  `gorm:"autoCreateTime:false;not null"`
 }
 
 // ChatMessage is one message of a conversation. The id only grows and is the cursor of the conversation. A deleted message
@@ -164,4 +167,19 @@ type ChatMessage struct {
 	Body           string    `gorm:"not null"`
 	CreatedAt      time.Time `gorm:"autoCreateTime:false;not null"`
 	DeletedAt      *time.Time
+	// the media columns are all set for a message with a photo or a video, and all nil for one without
+	MediaKey  *string
+	MediaKind *string
+	MediaType *string
+	MediaSize *int64
+}
+
+// PushToken is the address that Firebase gave one installed app. A token belongs to one account at a time.
+type PushToken struct {
+	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
+	UserID    uuid.UUID `gorm:"type:uuid;not null"`
+	Token     string    `gorm:"not null"`
+	Platform  string    `gorm:"size:10;not null"`
+	CreatedAt time.Time `gorm:"autoCreateTime:false;not null"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime:false;not null"`
 }

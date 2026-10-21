@@ -58,6 +58,16 @@ type Env struct {
 	S3AccessKeyID           string `env:"S3_ACCESS_KEY_ID"`
 	S3AccessKeySecret       string `env:"S3_ACCESS_KEY_SECRET"`
 	S3PublicURL             string `env:"S3_PUBLIC_URL"`
+	// S3PrivateBucketName is the bucket of the chat media, which is never public. Empty switches chat media off.
+	S3PrivateBucketName string `env:"S3_PRIVATE_BUCKET_NAME"`
+	ChatPhotoMaxMB      int    `env:"CHAT_PHOTO_MAX_MB" envDefault:"4"`
+	ChatVideoMaxMB      int    `env:"CHAT_VIDEO_MAX_MB" envDefault:"25"`
+	ChatMediaURLSeconds int    `env:"CHAT_MEDIA_URL_SECONDS" envDefault:"3600"`
+	// ChatMaxSockets is how many chat sockets one API copy holds, and ChatMaxSocketsPerUser how many one account keeps open
+	// FirebaseCredentialsFile is the key file of the Firebase service account. Empty switches the push notifications off.
+	FirebaseCredentialsFile string `env:"FIREBASE_CREDENTIALS_FILE"`
+	ChatMaxSockets          int    `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
+	ChatMaxSocketsPerUser   int    `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
 	PointsOrganik           int    `env:"POINTS_ORGANIK" envDefault:"10"`
 	PointsAnorganik         int    `env:"POINTS_ANORGANIK" envDefault:"15"`
 	PointsB3                int    `env:"POINTS_B3" envDefault:"0"`
@@ -131,6 +141,17 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// a photo travels in a multipart body, and Fiber refuses a body over BODY_LIMIT_MB before the handler runs. So the largest photo
+	// has to be below the limit of the body, with room for the framing of the form, or a photo that is allowed would get a 413.
+	if e.ChatPhotoMaxMB >= e.BodyLimitMB {
+		return fmt.Errorf("CHAT_PHOTO_MAX_MB is %d and has to be smaller than BODY_LIMIT_MB, which is %d", e.ChatPhotoMaxMB, e.BodyLimitMB)
+	}
+
+	// the chat media would be served to anyone from the public bucket, so the two names must differ
+	if e.S3PrivateBucketName != "" && e.S3PrivateBucketName == e.S3BucketName {
+		return errors.New("S3_PRIVATE_BUCKET_NAME must not be the public bucket S3_BUCKET_NAME")
+	}
+
 	if len(e.SemesterStartMonths) == 0 {
 		return errors.New("SEMESTER_START_MONTHS needs at least one month")
 	}
@@ -151,6 +172,13 @@ func (e *Env) validate() error {
 		{"BODY_LIMIT_MB", e.BodyLimitMB, 1},
 		{"VIDEO_MAX_MB", e.VideoMaxMB, 1},
 		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
+		{"CHAT_PHOTO_MAX_MB", e.ChatPhotoMaxMB, 1},
+		{"CHAT_VIDEO_MAX_MB", e.ChatVideoMaxMB, 1},
+		// a read address that is over when it is issued shows nobody a photo
+		{"CHAT_MEDIA_URL_SECONDS", e.ChatMediaURLSeconds, 1},
+		// a limit of 0 would let a flood of sockets use up the memory of the copy, which is what the limits are for
+		{"CHAT_MAX_SOCKETS", e.ChatMaxSockets, 1},
+		{"CHAT_MAX_SOCKETS_PER_USER", e.ChatMaxSocketsPerUser, 1},
 		{"USER_LIMITER_MAX", e.UserLimiterMax, 1},
 		{"AUTH_LIMITER_MAX", e.AuthLimiterMax, 1},
 		{"CLASS_CODE_LIMITER_MAX", e.ClassCodeLimiterMax, 1},
@@ -217,6 +245,12 @@ func (e *Env) Location() *time.Location {
 	}
 
 	return loc
+}
+
+// PrivateStorageEnabled reports whether the private bucket of the chat media can be used. It shares the account and the keys of
+// the public bucket, so it needs the same settings and a bucket name of its own.
+func (e *Env) PrivateStorageEnabled() bool {
+	return e.StorageEnabled() && e.S3PrivateBucketName != ""
 }
 
 // StorageEnabled reports whether object storage is fully configured

@@ -40,30 +40,49 @@ type ChatContactList struct {
 	PageInfo
 }
 
+// StartChatRequest names the person to talk to, or the class whose room to open. Exactly one of the two is set.
 type StartChatRequest struct {
-	UserID uuid.UUID `json:"userId" validate:"required"`
+	UserID  *uuid.UUID `json:"userId"`
+	ClassID *uuid.UUID `json:"classId"`
 }
 
-// ChatMessage is a message of a conversation. A deleted message has an empty body and Deleted set.
+// ChatMedia is the photo or video of a message. URL is a signed address that works until ExpiresAt, so the app caches the file by
+// the id of the message and asks for the list again when the address is over.
+type ChatMedia struct {
+	Kind        string    `json:"kind"`
+	ContentType string    `json:"contentType"`
+	SizeBytes   int64     `json:"sizeBytes"`
+	URL         string    `json:"url"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+// ChatMessage is a message of a conversation. A deleted message has an empty body and Deleted set. Sender is the person who
+// wrote it, which is how a class room shows who spoke, and a deleted account shows as Deleted account. Media is nil for a
+// message without a photo or a video, and for a deleted one.
 type ChatMessage struct {
-	ID             int64     `json:"id"`
-	ConversationID uuid.UUID `json:"conversationId"`
-	SenderID       uuid.UUID `json:"senderId"`
-	Body           string    `json:"body"`
-	Deleted        bool      `json:"deleted"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             int64      `json:"id"`
+	ConversationID uuid.UUID  `json:"conversationId"`
+	SenderID       uuid.UUID  `json:"senderId"`
+	Sender         ChatPerson `json:"sender"`
+	Body           string     `json:"body"`
+	Media          *ChatMedia `json:"media"`
+	Deleted        bool       `json:"deleted"`
+	CreatedAt      time.Time  `json:"createdAt"`
 }
 
-// ChatConversation is a conversation as the signed in account sees it. CanSend is false when the two no longer share a class
-// or the other account was deleted, and the history stays readable.
+// ChatConversation is a conversation as the signed in account sees it. Kind is direct, with Peer set, or class, with Class set.
+// CanSend is false when a direct pair no longer shares a class, the other account was deleted or the class is archived, and the
+// history stays readable. PeerLastReadID is 0 for a class room, which has no single other side.
 type ChatConversation struct {
-	ID             uuid.UUID    `json:"id"`
-	Peer           ChatPerson   `json:"peer"`
-	LastMessage    *ChatMessage `json:"lastMessage"`
-	UnreadCount    int          `json:"unreadCount"`
-	PeerLastReadID int64        `json:"peerLastReadMessageId"`
-	CanSend        bool         `json:"canSend"`
-	CreatedAt      time.Time    `json:"createdAt"`
+	ID             uuid.UUID         `json:"id"`
+	Kind           string            `json:"kind"`
+	Peer           *ChatPerson       `json:"peer"`
+	Class          *ChatContactClass `json:"class"`
+	LastMessage    *ChatMessage      `json:"lastMessage"`
+	UnreadCount    int               `json:"unreadCount"`
+	PeerLastReadID int64             `json:"peerLastReadMessageId"`
+	CanSend        bool              `json:"canSend"`
+	CreatedAt      time.Time         `json:"createdAt"`
 }
 
 type ChatConversationList struct {
@@ -71,8 +90,32 @@ type ChatConversationList struct {
 	PageInfo
 }
 
+// SendChatMessageRequest has the text, the media or both. MediaKey is the key that an upload returned for this conversation.
 type SendChatMessageRequest struct {
-	Body string `json:"body" validate:"required,max=4000"`
+	Body     string `json:"body" validate:"max=4000"`
+	MediaKey string `json:"mediaKey" validate:"max=300"`
+}
+
+// ChatPhotoUpload is a photo that was stored and waits for the message that carries it
+type ChatPhotoUpload struct {
+	MediaKey    string `json:"mediaKey"`
+	Kind        string `json:"kind"`
+	ContentType string `json:"contentType"`
+	SizeBytes   int64  `json:"sizeBytes"`
+}
+
+type ChatVideoUploadRequest struct {
+	ContentType string `json:"contentType" validate:"required,oneof=video/mp4 video/webm"`
+	SizeBytes   int64  `json:"sizeBytes" validate:"required,gte=1"`
+}
+
+// ChatVideoUpload tells the app where to send the video, and the key to send with the message afterwards
+type ChatVideoUpload struct {
+	UploadURL string            `json:"uploadUrl"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers"`
+	MediaKey  string            `json:"mediaKey"`
+	ExpiresAt time.Time         `json:"expiresAt"`
 }
 
 // ChatMessageList is a window of a conversation in the order the messages were sent. HasMore tells whether there are more

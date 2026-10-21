@@ -218,6 +218,21 @@ func (r *Redis) Available() bool {
 	return until == 0 || time.Now().UnixNano() >= until
 }
 
+// Publish sends the payload to the subscribers of a channel. It goes through the same breaker as every other call, so an outage
+// of Redis costs no network time while it lasts.
+func (r *Redis) Publish(ctx context.Context, channel string, payload []byte) error {
+	if err := r.allow(); err != nil {
+		return err
+	}
+
+	return r.record(ctx, r.Client.Publish(ctx, r.key(channel), payload).Err())
+}
+
+// Subscribe returns a subscription to a channel. Its Channel reconnects and subscribes again by itself when the connection drops.
+func (r *Redis) Subscribe(ctx context.Context, channel string) *redis.PubSub {
+	return r.Client.Subscribe(ctx, r.key(channel))
+}
+
 func (r *Redis) Set(ctx context.Context, key string, value string, ttl time.Duration) error {
 	if err := r.allow(); err != nil {
 		return err

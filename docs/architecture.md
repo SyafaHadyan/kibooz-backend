@@ -9,7 +9,7 @@ Kibooz Backend is one Go program that serves a JSON REST API under `/api/v1`. It
 | API server | Fiber v3 HTTP server that handles routing, security headers, rate limits and errors |
 | PostgreSQL | The only authority for users, sessions, classes, students, moods, scans and points. GORM with the pgx driver talks to it |
 | Redis | Optional, and it can be a local container or a hosted instance that several API instances and other applications share. It holds the shared rate limit counters, a short memory of consumed refresh tokens and the leaderboard cache. `REDIS_KEY_PREFIX` keeps its keys apart from those of other applications |
-| Object storage | Optional S3 compatible bucket for avatars and trash photos, which upload through the API, and class videos, which go straight to the bucket through a signed address. Uploads are off when it is not configured. Class videos wait under `pending/` until a teacher adds them, so the bucket needs a lifecycle rule that expires `pending/` after one day |
+| Object storage | Optional S3 compatible bucket for avatars and trash photos, which upload through the API, and class videos, which go straight to the bucket through a signed address. Uploads are off when it is not configured. Class videos wait under `pending/` until a teacher adds them, so the bucket needs a lifecycle rule that expires `pending/` after one day. A second bucket, `S3_PRIVATE_BUCKET_NAME`, holds the chat photos and videos. It is never public, the API signs a short-lived read address for each member, and it follows the same `pending/` rule. Chat photos upload through the API, so their metadata can be removed, and chat videos go straight to the bucket |
 | Migrations | SQL files embedded in the binary and applied with golang-migrate when the server starts |
 
 Redis and the bucket can be missing or down without stopping the API, as described in the [design notes](design.md#redis-is-optional).
@@ -22,7 +22,7 @@ Every feature is a folder under `internal/app` with the same three layers, so a 
 2. `usecase` holds the business rules, such as the daily claim limit and who may see which student.
 3. `repository` is the only code that talks to the database.
 
-The features are `auth` for registration, login and tokens, `user` for the profile and avatar, `guru` for the teacher side, `wali` for the parent side, `classroom` for the learning videos and the forum of a class, `chat` for the conversations between a teacher and a parent and `trash` for photo scans and points. Shared code lives next to them.
+The features are `auth` for registration, login and tokens, `user` for the profile and avatar, `guru` for the teacher side, `wali` for the parent side, `classroom` for the learning videos and the forum of a class, `chat` for the conversations between a teacher and a parent and the room of each class, `push` for the tokens of the installed apps and `trash` for photo scans and points. Shared code lives next to them.
 
 | Folder | Purpose |
 |:---|:---|

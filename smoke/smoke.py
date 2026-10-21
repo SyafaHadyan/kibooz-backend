@@ -10,8 +10,10 @@ Settings come from the environment
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
   SMOKE_STORAGE          off for a stack that has no bucket. The upload checks then expect STORAGE_UNAVAILABLE instead
+  SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
+                         bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
-import atexit, base64, json, os, random, secrets, subprocess, sys, time, uuid
+import atexit, base64, json, os, random, secrets, socket, ssl, subprocess, sys, time, uuid
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 
@@ -25,6 +27,7 @@ RUN = time.strftime("%m%d%H%M%S")
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
+CHAT_MEDIA_ON = os.environ.get("SMOKE_CHAT_MEDIA", "off") == "on"
 # The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
 # http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
 URL = urlsplit(BASE)
@@ -81,6 +84,64 @@ def curl(method, url, headers, data=None, timeout=60):
     out = subprocess.run(cmd, input=data, capture_output=True, check=False).stdout.decode(errors="replace")
     text, _, code = out.rpartition("\n")
     return int(code or 0), text
+
+
+class Socket:
+    """A minimal WebSocket client over the standard library, enough to read the text frames of the chat socket. The handshake goes
+    through the same proxy as the app, so it also proves that the proxy passes the upgrade."""
+
+    def __init__(self, token):
+        port = URL.port or (443 if URL.scheme == "https" else 80)
+        raw = socket.create_connection((URL.hostname, port), timeout=15)
+        self.sock = ssl.create_default_context().wrap_socket(raw, server_hostname=URL.hostname) if URL.scheme == "https" else raw
+        self.sock.settimeout(15)
+        key = base64.b64encode(os.urandom(16)).decode()
+        self.sock.sendall((
+            f"GET /api/v1/chat/ws HTTP/1.1\r\nHost: {URL.netloc}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {token}\r\n\r\n").encode())
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+        head, _, self.buffer = data.partition(b"\r\n\r\n")
+        parts = head.split(b" ")
+        self.status = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
+    def _read(self, count):
+        while len(self.buffer) < count:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise ConnectionError("the socket closed")
+            self.buffer += chunk
+        taken, self.buffer = self.buffer[:count], self.buffer[count:]
+        return taken
+
+    def frame(self):
+        """The next text frame as JSON, skipping pings, or None when the socket closes or nothing arrives in time"""
+        try:
+            while True:
+                first, second = self._read(2)
+                length = second & 0x7F
+                if length == 126:
+                    length = int.from_bytes(self._read(2), "big")
+                elif length == 127:
+                    length = int.from_bytes(self._read(8), "big")
+                payload = self._read(length)
+                opcode = first & 0x0F
+                if opcode == 0x1:
+                    return json.loads(payload)
+                if opcode == 0x8:
+                    return None
+        except (OSError, ConnectionError, ValueError):
+            return None
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
 
 
 def call(method, path, token=None, body=None, raw=None, ctype=None, base=API, timeout=60):
@@ -598,6 +659,78 @@ expect("another parent cannot read it", call("GET", f"/chat/conversations/{conv}
 expect("only the sender deletes a message", call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", wc1["token"]), 403, "AUTH_FORBIDDEN")
 s, js = call("DELETE", f"/chat/conversations/{conv}/messages/{reply_message}", gc["token"])
 check("the sender deletes a message", s == 200 and dig(js, "data", "deleted") is True and dig(js, "data", "body") == "", f"{s} {js}")
+
+# the live socket, through the proxy and across the API copies
+live = Socket(wc1["token"])
+ready = live.frame() if live.status == 101 else None
+check("the chat socket upgrades", live.status == 101 and (ready or {}).get("type") == "ready", f"{live.status} {ready}")
+s, js = call("POST", f"/chat/conversations/{conv}/messages", gc["token"], {"body": "Heard on the socket"})
+pushed = live.frame()
+check("a message is pushed to the open socket", s == 201 and (pushed or {}).get("type") == "message"
+      and dig(pushed, "message", "body") == "Heard on the socket" and pushed.get("conversationId") == conv, f"{s} {pushed}")
+live.close()
+bare = Socket("not-a-token")
+check("the socket refuses a bad token", bare.status == 401, str(bare.status))
+bare.close()
+
+# push tokens
+push_token = "smoke-" + RUN + "-" + secrets.token_hex(24)
+expect("a push token is saved", call("POST", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+expect("saving it again changes nothing", call("POST", "/push/tokens", wc1["token"], {"token": push_token, "platform": "android"}), 200)
+expect("a short push token is refused", call("POST", "/push/tokens", wc1["token"], {"token": "short"}), 400, "VALIDATION_ERROR")
+expect("another account cannot remove it, and nothing breaks", call("DELETE", "/push/tokens", wc2["token"], {"token": push_token}), 200)
+expect("the push token is removed", call("DELETE", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+expect("removing it twice is safe", call("DELETE", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+
+# photos and videos in the private bucket
+chat_path = f"/chat/conversations/{conv}"
+chat_boundary = "----smoke" + uuid.uuid4().hex
+chat_form = (f"--{chat_boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n").encode() + PNG + f"\r\n--{chat_boundary}--\r\n".encode()
+s, js = call("POST", chat_path + "/media/photo", wc1["token"], raw=chat_form, ctype="multipart/form-data; boundary=" + chat_boundary)
+if CHAT_MEDIA_ON:
+    photo_key = dig(js, "data", "mediaKey")
+    check("chat photo upload", s == 200 and photo_key and "/pending/chat/" in "/" + photo_key and dig(js, "data", "contentType") == "image/png", f"{s} {js}")
+    s, js, _ = call_key("POST", chat_path + "/messages", wc1["token"], str(uuid.uuid4()), {"mediaKey": photo_key})
+    photo_message = dig(js, "data", "id")
+    photo_address = dig(js, "data", "media", "url") or ""
+    check("a message carries the photo", s == 201 and photo_message and dig(js, "data", "media", "kind") == "photo" and photo_address.startswith("https://"), f"{s} {js}")
+    ps, _ = curl("GET", photo_address, {})
+    check("the signed address reads the photo", ps == 200, str(ps))
+    check("the private bucket has no public address for it", curl("GET", photo_address.split("?")[0], {})[0] in (400, 401, 403), photo_address.split("?")[0])
+    s, up = call("POST", chat_path + "/media/video-upload", wc1["token"], {"contentType": "video/mp4", "sizeBytes": 64})
+    video_key = dig(up, "data", "mediaKey")
+    check("chat video upload address", s == 200 and video_key and dig(up, "data", "uploadUrl"), f"{s} {up}")
+    expect("the video cannot be sent before it arrives", call("POST", chat_path + "/messages", wc1["token"], {"mediaKey": video_key}), 400, "VALIDATION_ERROR")
+    vs, _ = curl("PUT", dig(up, "data", "uploadUrl") or "", dig(up, "data", "headers") or {}, b"\0" * 64)
+    check("the video arrives in the bucket", vs == 200, str(vs))
+    s, js = call("POST", chat_path + "/messages", wc1["token"], {"body": "A short video", "mediaKey": video_key})
+    check("a message carries the video", s == 201 and dig(js, "data", "media", "kind") == "video" and dig(js, "data", "body") == "A short video", f"{s} {js}")
+    expect("another parent cannot use the key", call("POST", chat_path + "/messages", gc["token"], {"mediaKey": photo_key}), 400, "VALIDATION_ERROR")
+    s, js = call("DELETE", chat_path + f"/messages/{photo_message}", wc1["token"])
+    check("deleting the message drops its photo", s == 200 and dig(js, "data", "media") is None and dig(js, "data", "deleted") is True, f"{s} {js}")
+else:
+    check("chat photo upload without a private bucket", s == 503 and js.get("errorCode") == "STORAGE_UNAVAILABLE", f"{s} {js}")
+    expect("chat video upload without a private bucket", call("POST", chat_path + "/media/video-upload", wc1["token"], {"contentType": "video/mp4", "sizeBytes": 64}), 503, "STORAGE_UNAVAILABLE")
+
+# the room of the class, where the teacher and both parents talk together
+s, js = call("POST", "/chat/conversations", gc["token"], {"classId": gc["class"]})
+room = dig(js, "data", "id")
+check("teacher opens the room of the class", s == 201 and room and dig(js, "data", "kind") == "class" and dig(js, "data", "peer") is None
+      and dig(js, "data", "class", "id") == gc["class"], f"{s} {js}")
+s, js = call("POST", "/chat/conversations", wc2["token"], {"classId": gc["class"]})
+check("a parent reaches the same room", s == 200 and dig(js, "data", "id") == room, f"{s} {js}")
+expect("a teacher of another class cannot open the room", call("POST", "/chat/conversations", g2["token"], {"classId": gc["class"]}), 403, "CHAT_CONTACT_NOT_ALLOWED")
+expect("a person and a class together are refused", call("POST", "/chat/conversations", gc["token"], {"classId": gc["class"], "userId": wc1_id}), 400, "VALIDATION_ERROR")
+s, js = call("POST", f"/chat/conversations/{room}/messages", wc2["token"], {"body": "Hello from the other parent"})
+room_message = dig(js, "data", "id")
+room_sender = dig(js, "data", "senderId")
+check("a parent writes in the room", s == 201 and room_message and room_sender and dig(js, "data", "sender", "role") == "WALI"
+      and dig(js, "data", "sender", "id") == room_sender, f"{s} {js}")
+s, js = call("GET", f"/chat/conversations/{room}/messages?after=0", wc1["token"])
+check("the other parent reads it with its sender", s == 200 and [m.get("id") for m in dig(js, "data", "messages") or []] == [room_message]
+      and dig(js, "data", "messages", 0, "senderId") == room_sender and dig(js, "data", "messages", 0, "sender", "id") == room_sender
+      and dig(js, "data", "messages", 0, "sender", "fullName") == "Smoke Wali wc2", f"{s} {js}")
+expect("a teacher of another class cannot read the room", call("GET", f"/chat/conversations/{room}/messages", g2["token"]), 404, "CHAT_CONVERSATION_NOT_FOUND")
 
 # ---------- 0.9.0 teachers, owner, leaving ----------
 tb = f"/guru/classes/{cid}/teachers"

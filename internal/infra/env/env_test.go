@@ -18,6 +18,11 @@ func valid() *Env {
 		PasswordHashWaitMilliseconds: 1000,
 		SemesterStartMonths:          []int{1, 7},
 		SentryEventsPerMinute:        30,
+		ChatPhotoMaxMB:               4,
+		ChatVideoMaxMB:               25,
+		ChatMediaURLSeconds:          3600,
+		ChatMaxSockets:               1000,
+		ChatMaxSocketsPerUser:        5,
 
 		RequestTimeoutSeconds: 10,
 
@@ -298,4 +303,49 @@ func TestTheErrorReportsAreOffByDefaultAndCapped(t *testing.T) {
 	require.Equal(t, "production", cfg.SentryEnvironment)
 	require.Empty(t, cfg.SentryServerName)
 	require.Equal(t, 30, cfg.SentryEventsPerMinute)
+}
+
+func TestChatMediaSettingsNeedAPositiveValueAndABucketOfTheirOwn(t *testing.T) {
+	for name, set := range map[string]func(*Env){
+		"CHAT_PHOTO_MAX_MB":         func(e *Env) { e.ChatPhotoMaxMB = 0 },
+		"CHAT_VIDEO_MAX_MB":         func(e *Env) { e.ChatVideoMaxMB = 0 },
+		"CHAT_MEDIA_URL_SECONDS":    func(e *Env) { e.ChatMediaURLSeconds = 0 },
+		"CHAT_MAX_SOCKETS":          func(e *Env) { e.ChatMaxSockets = 0 },
+		"CHAT_MAX_SOCKETS_PER_USER": func(e *Env) { e.ChatMaxSocketsPerUser = 0 },
+	} {
+		cfg := valid()
+		set(cfg)
+
+		require.ErrorContains(t, cfg.validate(), name)
+	}
+
+	cfg := valid()
+	cfg.S3BucketName, cfg.S3PrivateBucketName = "kibooz-production-media", "kibooz-production-media"
+	require.ErrorContains(t, cfg.validate(), "S3_PRIVATE_BUCKET_NAME")
+
+	cfg.S3PrivateBucketName = "kibooz-production-private"
+	require.NoError(t, cfg.validate())
+}
+
+func TestThePrivateBucketNeedsTheSharedStorageSettingsToo(t *testing.T) {
+	cfg := valid()
+	cfg.S3PrivateBucketName = "kibooz-production-private"
+	require.False(t, cfg.PrivateStorageEnabled(), "the account and the keys are missing")
+
+	cfg.S3BucketName, cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "kibooz-production-media", "id", "secret"
+	cfg.S3PublicURL, cfg.S3AccountID = "https://media.example.test", "account"
+	require.True(t, cfg.PrivateStorageEnabled())
+
+	cfg.S3PrivateBucketName = ""
+	require.False(t, cfg.PrivateStorageEnabled())
+}
+
+func TestAChatPhotoLimitThatDoesNotFitInTheBodyLimitIsRejected(t *testing.T) {
+	cfg := valid()
+	cfg.ChatPhotoMaxMB, cfg.BodyLimitMB = 8, 8
+
+	require.ErrorContains(t, cfg.validate(), "CHAT_PHOTO_MAX_MB")
+
+	cfg.ChatPhotoMaxMB = 7
+	require.NoError(t, cfg.validate())
 }

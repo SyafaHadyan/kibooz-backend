@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -23,6 +24,9 @@ import (
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
+	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
+	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
+	pushusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/push/usecase"
 	trashhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/interface/rest"
 	trashrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
 	trashusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/usecase"
@@ -32,6 +36,7 @@ import (
 	walihandler "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/interface/rest"
 	walirepository "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/repository"
 	waliusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
+	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
@@ -46,6 +51,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"gorm.io/gorm"
@@ -62,6 +68,8 @@ type Bootstrap struct {
 	stopSeason    func()
 	stopKeys      func()
 	stopReports   func()
+	stopLive      func()
+	stopPush      func()
 	metrics       *metrics.Listener
 	healthDB      *sql.DB
 }
@@ -101,6 +109,15 @@ func Start(version string) (*Bootstrap, error) {
 		log.Println("object storage is not configured, uploads are disabled")
 	}
 
+	privateStorage, err := s3.NewPrivate(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if !privateStorage.Enabled() {
+		log.Println("the private bucket is not configured, chat photos and videos are disabled")
+	}
+
 	jwtService := jwt.New(cfg)
 	// the metrics middleware runs inside the access log and ahead of every check and route, so each request is measured,
 	// the ones that the body checks refuse too, and a refusal is counted by its route
@@ -117,9 +134,15 @@ func Start(version string) (*Bootstrap, error) {
 	)
 	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey), keys.Handler())
 
+	// every bucket that is on is probed, so a private bucket that refuses writes shows in /healthz as well
 	var pingStorage pinger
 	if storage.Enabled() {
-		pingStorage = newStorageProbe(storage).Ping
+		probed := []s3.StorageItf{storage}
+		if privateStorage.Enabled() {
+			probed = append(probed, privateStorage)
+		}
+
+		pingStorage = newStorageProbe(probed...).Ping
 	}
 
 	// a connection of its own, so the health check does not queue behind the requests that use the pool
@@ -148,7 +171,67 @@ func Start(version string) (*Bootstrap, error) {
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
 		classroomrepository.NewClassroomDB(database), storage, cfg,
 	))
-	chathandler.NewChatHandler(app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database)))
+	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
+	hub := chatlive.NewHub(chatlive.Config{
+		MaxSockets: cfg.ChatMaxSockets, MaxPerUser: cfg.ChatMaxSocketsPerUser, Bus: chatlive.NewRedisBus(cache),
+	})
+
+	for _, collector := range hub.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register chat socket metrics: %w", err)
+		}
+	}
+
+	liveCtx, cancelLive := context.WithCancel(context.Background())
+
+	var live sync.WaitGroup
+
+	live.Go(func() { hub.Run(liveCtx) })
+
+	stopLive := func() {
+		// the sockets get a going away frame and the apps connect to another copy, then the subscription ends
+		hub.Shutdown()
+		cancelLive()
+		live.Wait()
+	}
+
+	pushRepository := pushrepository.NewPushDB(database)
+
+	pushhandler.NewPushHandler(app.Router, mw, pushusecase.NewPushUseCase(pushRepository))
+
+	// a closed app is woken through Firebase when a key is set. A key that cannot be used leaves the pushes off and the API running,
+	// because a notification is a shortcut and never a reason to stay down.
+	var (
+		pusher   chatusecase.Pusher
+		stopPush = func() {}
+	)
+
+	if cfg.FirebaseCredentialsFile != "" {
+		sender, pushErr := push.NewFCM(cfg.FirebaseCredentialsFile)
+		if pushErr != nil {
+			log.Printf("push notifications are off because the Firebase key cannot be used %v", pushErr)
+		} else {
+			dispatcher := push.NewDispatcher(pushRepository, sender)
+
+			for _, collector := range dispatcher.Collectors() {
+				err = stats.Registry().Register(collector)
+				if err != nil {
+					return nil, fmt.Errorf("register push metrics: %w", err)
+				}
+			}
+
+			dispatcher.Start()
+
+			pusher, stopPush = dispatcher, dispatcher.Stop
+
+			log.Println("push notifications are on")
+		}
+	}
+
+	chathandler.NewChatHandler(
+		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub, pusher), hub, cfg,
+	)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
 		userrepository.NewUserDB(database), storage, cache, hasher,
 	))
@@ -189,7 +272,8 @@ func Start(version string) (*Bootstrap, error) {
 
 	stopCleanup := func() {}
 	if storage.Enabled() {
-		stopCleanup = filecleanup.New(database, storage).Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
+		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
+			Observe(stats.Job("file_cleanup")).Start(filecleanup.Interval)
 	}
 
 	// the reports start last, so that a failure while the API starts is only logged, and they stop last, so that the errors of the
@@ -201,12 +285,14 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
 // Close stops the keepalive, then releases the database and Redis connections
 func (b *Bootstrap) Close() {
+	b.stopLive()
+	b.stopPush()
 	b.stopKeepalive()
 	b.stopCleanup()
 	b.stopSeason()

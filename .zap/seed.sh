@@ -87,6 +87,11 @@ conversation_id="$(pick "$conversation" '.data.id')"
 message="$(post_as "/chat/conversations/$conversation_id/messages" "$guru_session" '{"body": "ZAP chat message"}')"
 message_id="$(pick "$message" '.data.id')"
 
+# the room of the class, with one message in it
+room="$(post_as /chat/conversations "$guru_session" "$(jq -n --arg c "$class" '{classId: $c}')")"
+room_id="$(pick "$room" '.data.id')"
+post_as "/chat/conversations/$room_id/messages" "$guru_session" '{"body": "ZAP room message"}' > /dev/null
+
 # a second class, so that replacing its join code never takes the code that the parent registration above relies on
 other="$(post_as /guru/classes "$guru_session" '{"name": "zap two", "gradeLevel": "Class Y"}')"
 other_id="$(pick "$other" '.data.id')"
@@ -116,7 +121,7 @@ photo="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUl
 extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg c "$class" --arg v "$video_id" \
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" --arg pw "$pw_token" --arg lt "$leaver_token" \
-  --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" \
+  --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" --arg ri "$room_id" \
   --arg mi "$message_id" --arg tu "$teacher_user" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
@@ -154,6 +159,19 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {userId: $tu}},
   {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {userId: "not-a-uuid"}},
   {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $wt, body: {classId: $c}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $gt, body: {classId: "not-a-uuid"}},
+  {method: "POST", path: "/api/v1/chat/conversations", token: $pw, body: {classId: $c}},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ri + "/messages"), token: $wt},
+  {method: "GET", path: ("/api/v1/chat/conversations/" + $ri + "/messages"), token: $pw},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ri + "/messages"), token: $wt, body: {body: "ZAP room reply"}},
+  {method: "POST", path: "/api/v1/push/tokens", token: $wt, body: {token: ("zap-token-" + $x + "-aaaaaaaaaaaaaaaa")}},
+  {method: "POST", path: "/api/v1/push/tokens", token: $gt, body: {token: "short"}},
+  {method: "DELETE", path: "/api/v1/push/tokens", token: $wt, body: {token: ("zap-token-" + $x + "-aaaaaaaaaaaaaaaa")}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/media/video-upload"), token: $wt, body: {contentType: "video/mp4", sizeBytes: 1000}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/media/video-upload"), token: $wt, body: {contentType: "text/html", sizeBytes: -1}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $wt, body: {mediaKey: "pending/chat/x/y/z.png"}},
+  {method: "POST", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $wt, body: {mediaKey: "../../etc/passwd"}},
   {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages"), token: $wt},
   {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages?after=0&limit=10"), token: $gt},
   {method: "GET", path: ("/api/v1/chat/conversations/" + $ci + "/messages?before=" + $mi + "&limit=10"), token: $wt},

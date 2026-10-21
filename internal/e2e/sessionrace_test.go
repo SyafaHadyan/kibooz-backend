@@ -15,6 +15,7 @@ import (
 
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 )
@@ -190,7 +191,7 @@ func TestDeletingAnAccountDuringARefreshRemovesEveryToken(t *testing.T) {
 
 	repo := userrepository.NewUserDB(testDB)
 	done := startWhileRefreshing(t, func(ctx context.Context) error {
-		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru, successor.Email, noFiles)
+		_, err := repo.SoftDeleteAccount(ctx, uuid.MustParse(userID), constants.RoleGuru, passwordHashOf(t, userID), successor.Email, noFiles)
 
 		return err
 	})
@@ -430,7 +431,7 @@ func TestDeletingAnAccountEndsTheSessionOfASignInThatWasUnderWay(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		_, err := repo.SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
+		_, err := repo.SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, passwordHashOf(t, userID), "", noFiles)
 		done <- err
 	}()
 
@@ -490,7 +491,7 @@ func TestEndingASessionFailsWhenTheTokensCannotBeLockedAndChangesNothing(t *test
 
 	t.Run("deleting the account", func(t *testing.T) {
 		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(
-			context.Background(), uuid.MustParse(userID), constants.RoleGuru, registerGuru(t, "Successor Lock Timeout").Email, noFiles,
+			context.Background(), uuid.MustParse(userID), constants.RoleGuru, passwordHashOf(t, userID), registerGuru(t, "Successor Lock Timeout").Email, noFiles,
 		)
 		require.Error(t, err)
 
@@ -538,7 +539,7 @@ func TestAChangeFailsWhenTheUserRowCannotBeLockedAndChangesNothing(t *testing.T)
 	})
 
 	t.Run("deleting the account", func(t *testing.T) {
-		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, "", noFiles)
+		_, err := userrepository.NewUserDB(db).SoftDeleteAccount(context.Background(), uuid.MustParse(userID), constants.RoleGuru, passwordHashOf(t, userID), "", noFiles)
 		requireLockTimeout(t, err)
 
 		var active int64
@@ -554,4 +555,39 @@ func TestLoggingOutWithATokenNobodyKnowsChangesNothing(t *testing.T) {
 
 	require.NoError(t, authrepository.NewAuthDB(testDB).DeleteRefreshToken(context.Background(), refreshHash(uuid.NewString())))
 	require.EqualValues(t, 1, tokensWhere(t, "family_id", family))
+}
+
+// passwordHashOf is the stored hash of an account, which a deletion has to be bound to
+func passwordHashOf(t *testing.T, userID string) string {
+	t.Helper()
+
+	var hash string
+
+	require.NoError(t, testDB.Raw("SELECT password_hash FROM users WHERE id = ?", userID).Scan(&hash).Error)
+
+	return hash
+}
+
+// A password that was checked before the transaction must still be the password inside it, so a change that committed in
+// between cannot confirm the deletion.
+func TestDeleteAccountRefusesAHashThatWasReplaced(t *testing.T) {
+	guru := registerGuru(t, "Stale Hash Class")
+
+	var userID string
+
+	require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", guru.Email).Scan(&userID).Error)
+
+	checked := passwordHashOf(t, userID)
+
+	require.NoError(t, testDB.Exec("UPDATE users SET password_hash = ? WHERE id = ?", checked+"x", userID).Error)
+
+	_, err := userrepository.NewUserDB(testDB).SoftDeleteAccount(
+		context.Background(), uuid.MustParse(userID), constants.RoleGuru, checked, "", noFiles,
+	)
+	require.ErrorIs(t, err, apperror.ErrPasswordIncorrect)
+
+	var deleted int64
+
+	require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NOT NULL", userID).Scan(&deleted).Error)
+	require.Zero(t, deleted)
 }

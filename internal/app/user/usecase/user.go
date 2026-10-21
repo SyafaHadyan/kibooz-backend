@@ -194,7 +194,7 @@ func (u *UserUseCase) DeleteAccount(
 	}
 
 	// a refusal such as SUCCESSOR_REQUIRED is an answer for the caller, anything else is a failure
-	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, strings.ToLower(strings.TrimSpace(req.SuccessorEmail)), u.fileKey)
+	deleted, err := u.repo.SoftDeleteAccount(ctx, userID, role, user.PasswordHash, strings.ToLower(strings.TrimSpace(req.SuccessorEmail)), u.fileKey)
 	if err != nil {
 		var refusal *apperror.Error
 		if errors.As(err, &refusal) {

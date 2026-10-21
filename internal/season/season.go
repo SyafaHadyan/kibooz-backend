@@ -157,14 +157,16 @@ func (j *Job) startSemester(tx *gorm.DB, ended string) ([]uuid.UUID, error) {
 	err = tx.Exec(
 		"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
 			"SELECT class_id, id, full_name, ?, season_points, rank_position FROM students "+
-			"WHERE deleted_at IS NULL AND season_points > 0",
-		ended,
+			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id IN ?",
+		ended, classIDs,
 	).Error
 	if err != nil {
 		return nil, err
 	}
 
-	err = tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0").Error
+	// only the classes that were locked, because a class that was created after the list was read has claims that nothing
+	// here waits for, and its ranking is not recomputed below
+	err = tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0 AND class_id IN ?", classIDs).Error
 	if err != nil {
 		return nil, err
 	}

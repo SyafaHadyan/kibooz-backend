@@ -39,9 +39,27 @@ const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPh
 var testPassword = "Pw-" + strings.ReplaceAll(uuid.NewString(), "-", "") + "!"
 
 const (
-	testBucket    = "kibooz-test"
-	testPublicURL = "https://cdn.example.test"
+	testBucket        = "kibooz-test"
+	testPrivateBucket = "kibooz-test-private"
+	testPublicURL     = "https://cdn.example.test"
+
+	// privateKeyPrefix marks the keys of the private bucket in the mock, which keeps both buckets in one list
+	privateKeyPrefix = "private:"
 )
+
+// keyInMock turns an object path or a copy source into the key that the mock stores it under. A key of the private bucket gets
+// privateKeyPrefix, so uploaded("private:chat/") lists the files of the chat media and nothing else.
+func keyInMock(path string) string {
+	if key, found := strings.CutPrefix(path, "/"+testPrivateBucket+"/"); found {
+		return privateKeyPrefix + key
+	}
+
+	if key, found := strings.CutPrefix(path, testPrivateBucket+"/"); found {
+		return privateKeyPrefix + key
+	}
+
+	return strings.TrimPrefix(strings.TrimPrefix(path, "/"+testBucket+"/"), testBucket+"/")
+}
 
 var (
 	once    sync.Once
@@ -66,7 +84,7 @@ func startMockS3() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		size, _ := io.Copy(io.Discard, r.Body)
 
-		key := strings.TrimPrefix(r.URL.Path, "/"+testBucket+"/")
+		key := keyInMock(r.URL.Path)
 
 		switch r.Method {
 		case http.MethodPut:
@@ -75,7 +93,8 @@ func startMockS3() *httptest.Server {
 
 			// a copy names its source in a header and sends no body
 			if source := r.Header.Get("X-Amz-Copy-Source"); source != "" {
-				sourceKey, _ := url.PathUnescape(strings.TrimPrefix(source, testBucket+"/"))
+				unescaped, _ := url.PathUnescape(source)
+				sourceKey := keyInMock(unescaped)
 
 				original, found := storedObjects[sourceKey]
 				if !found {
@@ -133,6 +152,15 @@ func uploaded(prefix string) []string {
 	return matches
 }
 
+// forgetUploaded removes a file from the mock bucket the way the cleanup sweep would
+func forgetUploaded(key string) {
+	storedMu.Lock()
+	defer storedMu.Unlock()
+
+	storedKeys = slices.DeleteFunc(storedKeys, func(stored string) bool { return stored == key })
+	delete(storedObjects, key)
+}
+
 func app(t *testing.T) *fiber.App {
 	t.Helper()
 
@@ -155,6 +183,7 @@ func app(t *testing.T) *fiber.App {
 			"S3_ACCESS_KEY_ID":       "test",
 			"S3_ACCESS_KEY_SECRET":   "test",
 			"S3_PUBLIC_URL":          testPublicURL,
+			"S3_PRIVATE_BUCKET_NAME": testPrivateBucket,
 		}
 
 		for key, value := range defaults {
@@ -789,6 +818,13 @@ func TestConcurrentClaimsNeverExceedDailyLimit(t *testing.T) {
 func upload(t *testing.T, token string, fields map[string]string, filename string, content []byte) result {
 	t.Helper()
 
+	return uploadTo(t, "/api/v1/users/avatar", token, fields, filename, content)
+}
+
+// uploadTo sends a multipart form with an optional file called file to the path
+func uploadTo(t *testing.T, path string, token string, fields map[string]string, filename string, content []byte) result {
+	t.Helper()
+
 	var body bytes.Buffer
 
 	writer := multipart.NewWriter(&body)
@@ -813,7 +849,7 @@ func upload(t *testing.T, token string, fields map[string]string, filename strin
 
 	payload := bytes.Clone(body.Bytes())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/users/avatar", bytes.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
 	keepBody(req, payload)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+token)
