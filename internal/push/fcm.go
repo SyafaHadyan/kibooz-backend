@@ -168,11 +168,9 @@ func (f *FCM) Send(ctx context.Context, message Message) error {
 
 	_ = json.Unmarshal(raw, &failure)
 
-	// a token that FCM does not know any more is not a failure of ours, and neither is one that is malformed
-	if res.StatusCode == http.StatusNotFound || failure.Error.Status == "NOT_FOUND" {
-		return ErrUnregistered
-	}
-
+	// Only the UNREGISTERED code proves that a token is dead, and the dispatcher deletes it on that word. A bare 404 can come
+	// from a wrong project in the key file, a wrong endpoint or a proxy, and then every token is still good. Neither does a
+	// malformed token or a payload that Firebase refuses delete anything.
 	for _, detail := range failure.Error.Details {
 		if detail.ErrorCode == "UNREGISTERED" {
 			return ErrUnregistered

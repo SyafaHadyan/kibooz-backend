@@ -158,8 +158,14 @@ func TestATokenThatFirebaseDoesNotKnowIsReportedAsUnregistered(t *testing.T) {
 	google.status, google.body = http.StatusBadRequest, `{"error":{"status":"INVALID_ARGUMENT","details":[{"errorCode":"UNREGISTERED"}]}}`
 	require.ErrorIs(t, client.Send(context.Background(), Message{Token: "gone"}), ErrUnregistered)
 
-	google.status, google.body = http.StatusNotFound, ``
-	require.ErrorIs(t, client.Send(context.Background(), Message{Token: "gone"}), ErrUnregistered)
+	// a 404 without the code can be a wrong project or endpoint, which must never delete a good token
+	for _, body := range []string{``, `{"error":{"code":404,"status":"NOT_FOUND","message":"Requested entity was not found."}}`} {
+		google.status, google.body = http.StatusNotFound, body
+
+		err := client.Send(context.Background(), Message{Token: "fine"})
+		require.Error(t, err)
+		require.NotErrorIs(t, err, ErrUnregistered)
+	}
 }
 
 func TestAnotherFailureIsAnErrorAndKeepsTheToken(t *testing.T) {
