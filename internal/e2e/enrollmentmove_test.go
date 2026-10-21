@@ -3,6 +3,7 @@ package e2e
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -255,6 +256,16 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		history := func(teacher account, class string, student string) result {
 			return call(t, http.MethodGet, "/api/v1/guru/classes/"+class+"/students/"+student+"/history", teacher.Token, nil)
 		}
+
+		// a mood dated before the child joined this class would land in the history of the old class, so it is refused
+		early := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+
+		call(t, http.MethodPost, "/api/v1/guru/mood/log", teacherB.Token, map[string]any{
+			"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8, "notes": "Dicatat mundur", "recordedAt": early,
+		}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, "/api/v1/guru/mood/log/batch", teacherB.Token, map[string]any{
+			"classId": classB, "recordedAt": early, "entries": []map[string]any{{"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8}},
+		}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 
 		newMood := call(t, http.MethodPost, "/api/v1/guru/mood/log", teacherB.Token, map[string]any{
 			"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8, "notes": "Hari pertama di kelas baru",

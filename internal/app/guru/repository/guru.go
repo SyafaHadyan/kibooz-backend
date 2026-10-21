@@ -269,6 +269,28 @@ func (r *GuruDB) CreateMoodLogs(
 			return err
 		}
 
+		// A mood is told apart from the moods of an earlier class by its date, so a child that moved cannot get a mood that is dated
+		// before it joined its class. A child that never moved has no earlier class, and its moods may be dated as before.
+		var joined []struct {
+			StudentID   uuid.UUID
+			ActivatedAt time.Time
+		}
+
+		err = tx.Raw(`SELECT e.student_id, e.activated_at FROM enrollments AS e
+			WHERE e.student_id IN ? AND e.status = 'active'
+				AND EXISTS (SELECT 1 FROM enrollments AS p WHERE p.student_id = e.student_id AND p.status = 'ended')`, studentIDs).Scan(&joined).Error
+		if err != nil {
+			return err
+		}
+
+		for i := range moodLogs {
+			for _, row := range joined {
+				if row.StudentID == moodLogs[i].StudentID && moodLogs[i].RecordedAt.Before(row.ActivatedAt) {
+					return apperror.Validation(map[string]string{"recordedAt": "is before the child joined its class"})
+				}
+			}
+		}
+
 		var counts []struct {
 			StudentID uuid.UUID
 			Total     int

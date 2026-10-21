@@ -661,7 +661,9 @@ paths:
         Only the latest mood of a child per local day counts in the dashboards and charts. A log that the app queued while
         the device was offline sends `recordedAt` with the time the mood was seen, so replaying it later does not take the
         place of a newer mood. The time cannot be in the future and cannot be older than 7 days. A time less than 5
-        minutes ahead of the server clock counts as now.
+        minutes ahead of the server clock counts as now. A child that moved to this class from another one cannot get a
+        mood dated before the move, which answers `400` with `VALIDATION_ERROR` and the field `recordedAt`, because the history
+        of the earlier class is made of the moods dated inside its time.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -711,7 +713,8 @@ paths:
         teacher has to teach the class, every child has to be in it, and a child can appear only once. Only the latest mood of a
         child per local day counts in the dashboards and charts, so a later batch supersedes earlier entries. Unlike the single
         log, the `source` defaults to `AI_CAMERA`. A batch that was queued offline sends one top level `recordedAt` with the time
-        the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood.
+        the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood. A child that moved to the class cannot get a mood dated before the move, and
+        that answers `400` with `VALIDATION_ERROR` for the whole batch.
         This route has a rate limit of its own, `MOOD_BATCH_LIMITER_MAX` requests (30 by default) per `LIMITER_EXPIRATION_SECONDS` (60 seconds by default) for each user, on top of the limit of every signed-in route.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"

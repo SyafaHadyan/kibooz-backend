@@ -186,7 +186,7 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 
 	full, err := u.repo.CreateMoodLogs(ctx, student.ClassID, []entity.MoodLog{*moodLog}, u.moodDay(recordedAt))
 	if err != nil {
-		return dto.LogMoodResponse{}, apperror.Internal(err)
+		return dto.LogMoodResponse{}, appOrInternal(err)
 	}
 
 	if len(full) > 0 {
@@ -330,7 +330,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 
 	full, err := u.repo.CreateMoodLogs(ctx, class.ID, moodLogs, u.moodDay(recordedAt))
 	if err != nil {
-		return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+		return dto.LogMoodBatchResponse{}, appOrInternal(err)
 	}
 
 	if len(full) > 0 {
