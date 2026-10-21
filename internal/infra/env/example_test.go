@@ -18,7 +18,7 @@ var composeOnly = map[string]bool{
 }
 
 // sampleValues are the required settings, which show a sample value in the example and have no default to compare with
-var sampleValues = map[string]bool{"DB_PASSWORD": true, "JWT_SECRET_KEY": true}
+var sampleValues = map[string]bool{"DB_NAME": true, "DB_USERNAME": true, "DB_PASSWORD": true, "JWT_SECRET_KEY": true}
 
 var exampleLine = regexp.MustCompile(`^(#\s*)?([A-Z][A-Z0-9_]+)=(.*)$`)
 
@@ -70,9 +70,16 @@ func TestExampleFileListsEverySetting(t *testing.T) {
 		setting, listed := example[name]
 		require.True(t, listed, "%s is read by the API and has no line in .env.example, not even a commented one", name)
 
+		// a line with a default shows that default, on or off, and a line that is on without a default stays empty so that copying
+		// the file cannot switch a feature on with a made up value. An optional line may show an example value after its #.
 		fallback, hasDefault := fields.Field(index).Tag.Lookup("envDefault")
-		if hasDefault && !setting.commented && !sampleValues[name] {
-			require.Equal(t, fallback, setting.value, "%s is on in .env.example with another value than its default", name)
+
+		switch {
+		case sampleValues[name]:
+		case hasDefault:
+			require.Equal(t, fallback, setting.value, "%s has another value in .env.example than its default", name)
+		case !setting.commented:
+			require.Empty(t, setting.value, "%s has no default in the API, so its line in .env.example must be empty or commented", name)
 		}
 	}
 
