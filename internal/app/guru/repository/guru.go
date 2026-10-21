@@ -390,7 +390,11 @@ func (r *GuruDB) RotateJoinCode(ctx context.Context, classID uuid.UUID) (string,
 	var code string
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var err error
+		// a join that is under way finishes first, and one that waits finds the old code gone
+		err := classteam.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
 
 		code, err = classcode.Replace(tx, classID)
 
