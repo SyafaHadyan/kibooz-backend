@@ -502,7 +502,11 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, actorGuruID 
 		// same lock, so the actor is checked again here, and one who was removed meanwhile must not bring a teacher in.
 		var stillTeaching int64
 
-		err = tx.Model(&entity.ClassTeacher{}).Where("class_id = ? AND guru_id = ?", classID, actorGuruID).Count(&stillTeaching).Error
+		// a teacher who deleted the account may keep a row of the class for the handover, so the account has to be active too
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ? AND ct.guru_id = ?", classID, actorGuruID).
+			Count(&stillTeaching).Error
 		if err != nil {
 			return err
 		}
