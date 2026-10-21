@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 
 	"github.com/google/uuid"
@@ -174,72 +175,75 @@ func (r *UserDB) SoftDeleteAccount(
 ) (DeletedAccount, error) {
 	var deleted DeletedAccount
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		deleted = DeletedAccount{}
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			deleted = DeletedAccount{}
 
-		var urls []string
+			var urls []string
 
-		// The user row comes first, so a sign in that is under way finishes before the sessions are ended and one that
-		// starts later finds the account gone. A password change takes the locks in the same order.
-		err := sessions.LockUser(tx, userID)
-		if err != nil {
-			return err
-		}
-
-		// The password was checked before this transaction, so it only counts while it is still the password of the account.
-		// A change that committed in between, or a deletion that came first, ends the request without deleting anything.
-		var current int64
-
-		err = tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
-		if err == nil && current == 0 {
-			err = apperror.ErrPasswordIncorrect
-		}
-
-		if err != nil {
-			return err
-		}
-
-		// refresh tokens have no soft delete, removing them ends every session. This comes before the rest because it
-		// waits for a refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
-		err = sessions.EndUser(tx, userID)
-		if err != nil {
-			return err
-		}
-
-		// a phone that stays signed in on a deleted account must not be woken for it, and the tokens are personal data of the account
-		err = tx.Exec("DELETE FROM push_tokens WHERE user_id = ?", userID).Error
-		if err != nil {
-			return err
-		}
-
-		switch role {
-		case constants.RoleWali:
-			deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)
-		case constants.RoleGuru:
-			// every class goes on with another teacher before the account is hidden, or the deletion is refused
-			err = classteam.Leave(tx, userID, successorEmail)
-			if err == nil {
-				err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
+			// The user row comes first, so a sign in that is under way finishes before the sessions are ended and one that
+			// starts later finds the account gone. A password change takes the locks in the same order.
+			err := sessions.LockUser(tx, userID)
+			if err != nil {
+				return err
 			}
-		}
 
-		if err != nil {
-			return err
-		}
+			// The password was checked before this transaction, so it only counts while it is still the password of the account.
+			// A change that committed in between, or a deletion that came first, ends the request without deleting anything.
+			var current int64
 
-		err = filecleanup.TakeAddresses(&urls, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
-		if err == nil {
-			err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
-		}
+			err = tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
+			if err == nil && current == 0 {
+				err = apperror.ErrPasswordIncorrect
+			}
 
-		if err != nil {
-			return err
-		}
+			if err != nil {
+				return err
+			}
 
-		deleted.FileKeys = filecleanup.KeysOf(urls, fileKey)
+			// refresh tokens have no soft delete, removing them ends every session. This comes before the rest because it
+			// waits for a refresh that is under way, and nothing it waits for may hold a lock that the rest of the deletion needs.
+			err = sessions.EndUser(tx, userID)
+			if err != nil {
+				return err
+			}
 
-		return filecleanup.Queue(tx, deleted.FileKeys)
+			// a phone that stays signed in on a deleted account must not be woken for it, and the tokens are personal data of the account
+			err = tx.Exec("DELETE FROM push_tokens WHERE user_id = ?", userID).Error
+			if err != nil {
+				return err
+			}
+
+			switch role {
+			case constants.RoleWali:
+				deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)
+			case constants.RoleGuru:
+				// every class goes on with another teacher before the account is hidden, or the deletion is refused
+				err = classteam.Leave(tx, userID, successorEmail)
+				if err == nil {
+					err = tx.Where("user_id = ?", userID).Delete(&entity.Guru{}).Error
+				}
+			}
+
+			if err != nil {
+				return err
+			}
+
+			err = filecleanup.TakeAddresses(&urls, tx.Model(&entity.User{}).Where("id = ?", userID), "avatar_url")
+			if err == nil {
+				err = tx.Where("id = ?", userID).Delete(&entity.User{}).Error
+			}
+
+			if err != nil {
+				return err
+			}
+
+			deleted.FileKeys = filecleanup.KeysOf(urls, fileKey)
+
+			return filecleanup.Queue(tx, deleted.FileKeys)
+
+		})
 	})
 	if err != nil {
 		return DeletedAccount{}, err
@@ -280,6 +284,20 @@ func softDeleteWali(tx *gorm.DB, userID uuid.UUID, files *[]string) ([]uuid.UUID
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// a move may have taken a child to another class while this waited for the locks, then the deletion starts again
+	var current []uuid.UUID
+
+	err = tx.Model(&entity.Student{}).Where("wali_id = ?", wali.ID).Distinct().Pluck("class_id", &current).Error
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(current, func(i, j int) bool { return current[i].String() < current[j].String() })
+
+	if !slices.Equal(classIDs, current) {
+		return nil, ranking.ErrMoved
 	}
 
 	children := tx.Unscoped().Model(&entity.Student{}).Select("id").Where("wali_id = ?", wali.ID)

@@ -32,5 +32,5 @@ A move is an enrollment, a record that says that a child asks to be, is, or was 
 
 - Whether the history of the old class is visible to the new teacher from the first request or only after the move is accepted. The safer reading is only after acceptance.
 - Whether a parent is told by push when a request is decided, which reuses the wake-up push of ADR 0013.
-- What happens to a pending request when the new class is archived or its joining is closed.
+- Settled while building the move routes. A request that waits is rejected by itself when the new class is archived or closes joining, through a trigger on `classes`, and the parent sees it as rejected and can ask again. A child has at most one request that waits, and a teacher of the new class decides it.
 - Whether the previous classes of a child are shown to the parent as well, which the decision does not say.

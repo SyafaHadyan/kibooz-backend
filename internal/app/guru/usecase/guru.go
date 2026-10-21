@@ -45,6 +45,12 @@ type GuruUseCaseItf interface {
 	SetJoining(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest) (dto.JoiningResponse, error)
 	// RemoveStudent lets a teacher of the class take a child out of it, which hides the child like a deleted account does
 	RemoveStudent(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) error
+	// MoveRequests lists the requests to move a child into the class that wait for a teacher
+	MoveRequests(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassMoveRequestList, error)
+	// AcceptMove moves the child of a request into the class, where it starts from zero, and clears the leaderboards of both classes
+	AcceptMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error
+	// RejectMove turns down a request to move a child into the class
+	RejectMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error
 	// Teachers lists the teachers of a class the caller teaches
 	Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error)
 	// AddTeacher lets a teacher of the class add another registered teacher by email, who then sees the whole class
@@ -806,4 +812,67 @@ func optionalText(value string) *string {
 	}
 
 	return &value
+}
+
+func (u *GuruUseCase) MoveRequests(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassMoveRequestList, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.ClassMoveRequestList{}, err
+	}
+
+	rows, err := u.repo.ListMoveRequests(ctx, class.ID)
+	if err != nil {
+		return dto.ClassMoveRequestList{}, apperror.Internal(err)
+	}
+
+	res := dto.ClassMoveRequestList{Requests: make([]dto.ClassMoveRequest, 0, len(rows))}
+	for i := range rows {
+		res.Requests = append(res.Requests, dto.ClassMoveRequest{
+			ID: rows[i].ID, StudentID: rows[i].StudentID, StudentName: rows[i].StudentName, RequestedAt: rows[i].RequestedAt.UTC(),
+		})
+	}
+
+	return res, nil
+}
+
+func (u *GuruUseCase) AcceptMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return err
+	}
+
+	left, err := u.repo.AcceptMove(ctx, class.ID, requestID, guru.ID)
+	if err != nil {
+		return appOrInternal(err)
+	}
+
+	// both classes changed their ranking, and the cache is optional because entries also expire by themselves
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+left.String())
+
+	return nil
+}
+
+func (u *GuruUseCase) RejectMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return err
+	}
+
+	err = u.repo.RejectMove(ctx, class.ID, requestID, guru.ID)
+	if err != nil {
+		return appOrInternal(err)
+	}
+
+	return nil
+}
+
+// appOrInternal keeps an error that already has an API answer and hides any other one behind a 500
+func appOrInternal(err error) error {
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return err
+	}
+
+	return apperror.Internal(err)
 }

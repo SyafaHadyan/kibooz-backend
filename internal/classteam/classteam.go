@@ -254,6 +254,25 @@ func SetJoining(tx *gorm.DB, classID uuid.UUID, open bool) error {
 	return tx.Model(&entity.Class{}).Where("id = ?", classID).Update("join_open", open).Error
 }
 
+// CheckTeacher refuses a class whose teachers were all deleted, which keeps its code but must not take in children
+func CheckTeacher(tx *gorm.DB, classID uuid.UUID) error {
+	var teachers int64
+
+	err := tx.Table("class_teachers AS ct").
+		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+		Where("ct.class_id = ?", classID).
+		Count(&teachers).Error
+	if err != nil {
+		return err
+	}
+
+	if teachers == 0 {
+		return apperror.ErrClassNoTeacher
+	}
+
+	return nil
+}
+
 // CheckRoom refuses a new child when the class already holds max active children. The caller holds LockOpen, so every child
 // that joins goes through this count one after the other.
 func CheckRoom(tx *gorm.DB, classID uuid.UUID, max int) error {
