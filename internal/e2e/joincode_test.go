@@ -1,12 +1,16 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 )
 
 func TestRotateJoinCode(t *testing.T) {
@@ -72,4 +76,24 @@ func TestRotateJoinCode(t *testing.T) {
 		dashboard := call(t, http.MethodGet, "/api/v1/guru/dashboard?classId="+otherClassID, otherGuru.Token, nil)
 		require.Equal(t, otherCode, dashboard.data("classOverview", "joinCode"))
 	})
+}
+
+// A teacher who was removed while the request waited for the class lock must not replace the code or read the new one, so
+// the teacher is checked again once the lock is held
+func TestRotateJoinCodeRefusesATeacherWhoNoLongerTeachesTheClass(t *testing.T) {
+	owner := registerGuru(t, "Rotate Owner")
+	removed := registerGuru(t, "Rotate Removed")
+	classID, code := classOf(t, owner)
+
+	var removedGuru string
+
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", removed.Email).Scan(&removedGuru).Error)
+
+	_, err := repository.NewGuruDB(testDB, nil).RotateJoinCode(context.Background(), uuid.MustParse(classID), uuid.MustParse(removedGuru))
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	var current string
+
+	require.NoError(t, testDB.Raw("SELECT join_code FROM classes WHERE id = ?", classID).Scan(&current).Error)
+	require.Equal(t, code, current, "the code was not replaced")
 }

@@ -485,13 +485,18 @@ func (u *GuruUseCase) Class(ctx context.Context, userID uuid.UUID, classID uuid.
 }
 
 func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error) {
-	_, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.JoinCodeResponse{}, err
 	}
 
-	code, err := u.repo.RotateJoinCode(ctx, class.ID)
+	code, err := u.repo.RotateJoinCode(ctx, class.ID, guru.ID)
 	if err != nil {
+		var appErr *apperror.Error
+		if errors.As(err, &appErr) {
+			return dto.JoinCodeResponse{}, err
+		}
+
 		return dto.JoinCodeResponse{}, apperror.Internal(err)
 	}
 
