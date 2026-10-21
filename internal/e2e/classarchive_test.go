@@ -274,3 +274,23 @@ func TestAddTeacherRefusesAnActorWhoNoLongerTeachesTheClass(t *testing.T) {
 	require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM class_teachers WHERE class_id = ? AND guru_id <> (SELECT g.id FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?)", classID, owner.Email).Scan(&linked).Error)
 	require.Zero(t, linked, "the candidate was not attached")
 }
+
+// A teacher who deleted the account can keep a row of the class during the handover, and that row must not let the request through
+func TestAddTeacherRefusesAnActorWhoseAccountWasDeleted(t *testing.T) {
+	owner := registerGuru(t, "Add Deleted Owner")
+	candidate := registerGuru(t, "Add Deleted Candidate")
+	classID, _ := classOf(t, owner)
+
+	var ownerGuru string
+
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", owner.Email).Scan(&ownerGuru).Error)
+	require.NoError(t, testDB.Exec("UPDATE gurus SET deleted_at = now() WHERE id = ?", ownerGuru).Error)
+
+	_, err := repository.NewGuruDB(testDB, nil).AddTeacher(context.Background(), uuid.MustParse(classID), uuid.MustParse(ownerGuru), candidate.Email)
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	var linked int64
+
+	require.NoError(t, testDB.Raw("SELECT COUNT(*) FROM class_teachers ct JOIN gurus g ON g.id = ct.guru_id JOIN users u ON u.id = g.user_id WHERE ct.class_id = ? AND u.email = ?", classID, candidate.Email).Scan(&linked).Error)
+	require.Zero(t, linked, "the candidate was not attached")
+}

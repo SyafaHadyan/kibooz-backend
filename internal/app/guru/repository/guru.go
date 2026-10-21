@@ -98,8 +98,10 @@ type GuruDBItf interface {
 	CountClassContent(ctx context.Context, classID uuid.UUID) (videos int, threads int, err error)
 	// CreateClass stores the class under a new join code and makes the guru its teacher
 	CreateClass(ctx context.Context, guruID uuid.UUID, class *entity.Class) error
-	// RotateJoinCode gives the class a new join code and returns it, the old code stops working at once
-	RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error)
+	// RotateJoinCode gives the class a new join code on behalf of actorGuruID and returns it, the old code stops working at once.
+	// The actor has to still teach the class once the lock is held, and otherwise it returns apperror.ErrClassNotFound, so a
+	// teacher who was removed while the request waited does not get the new code.
+	RotateJoinCode(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) (string, error)
 	// SetJoining opens or closes the class for new children, and waits for a child who is joining right now
 	SetJoining(ctx context.Context, classID uuid.UUID, open bool) error
 	// ListTeachers returns the active teachers of the class, the one who joined first at the top
@@ -386,12 +388,29 @@ func (r *GuruDB) CreateClass(ctx context.Context, guruID uuid.UUID, class *entit
 }
 
 // classQuery selects the classes of a teacher together with the number of children that are still active
-func (r *GuruDB) RotateJoinCode(ctx context.Context, classID uuid.UUID) (string, error) {
+func (r *GuruDB) RotateJoinCode(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) (string, error) {
 	var code string
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// a join that is under way finishes first, and one that waits finds the old code gone
 		err := classteam.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		// A removal commits under this lock, so the teacher is checked again here. One who was removed meanwhile must neither
+		// replace the code that the removal made nor read the new one.
+		var stillTeaching int64
+
+		// a teacher who deleted the account may keep a row of the class for the handover, so the account has to be active too
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ? AND ct.guru_id = ?", classID, actorGuruID).
+			Count(&stillTeaching).Error
+		if err == nil && stillTeaching == 0 {
+			err = apperror.ErrClassNotFound
+		}
+
 		if err != nil {
 			return err
 		}
@@ -502,7 +521,11 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, actorGuruID 
 		// same lock, so the actor is checked again here, and one who was removed meanwhile must not bring a teacher in.
 		var stillTeaching int64
 
-		err = tx.Model(&entity.ClassTeacher{}).Where("class_id = ? AND guru_id = ?", classID, actorGuruID).Count(&stillTeaching).Error
+		// a teacher who deleted the account may keep a row of the class for the handover, so the account has to be active too
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ? AND ct.guru_id = ?", classID, actorGuruID).
+			Count(&stillTeaching).Error
 		if err != nil {
 			return err
 		}

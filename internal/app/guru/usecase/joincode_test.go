@@ -23,6 +23,7 @@ type codeRepo struct {
 	classErr  error
 	rotateErr error
 	rotated   uuid.UUID
+	rotatedBy uuid.UUID
 }
 
 func (r *codeRepo) FindGuruByUserID(context.Context, uuid.UUID) (*repository.GuruRow, error) {
@@ -33,8 +34,8 @@ func (r *codeRepo) FindTaughtClass(context.Context, uuid.UUID, *uuid.UUID) (*ent
 	return r.class, r.classErr
 }
 
-func (r *codeRepo) RotateJoinCode(_ context.Context, classID uuid.UUID) (string, error) {
-	r.rotated = classID
+func (r *codeRepo) RotateJoinCode(_ context.Context, classID uuid.UUID, actorGuruID uuid.UUID) (string, error) {
+	r.rotated, r.rotatedBy = classID, actorGuruID
 
 	return "NEWCODE", r.rotateErr
 }
@@ -47,13 +48,23 @@ func rotate(repo *codeRepo) error {
 
 func TestRotateJoinCodeReplacesTheCodeOfTheResolvedClass(t *testing.T) {
 	class := &entity.Class{ID: uuid.New()}
-	repo := &codeRepo{guru: &repository.GuruRow{}, class: class}
+	repo := &codeRepo{guru: &repository.GuruRow{Guru: entity.Guru{ID: uuid.New()}}, class: class}
 
 	got, err := NewGuruUseCase(repo, nil, nil).RotateJoinCode(context.Background(), uuid.New(), class.ID)
 
 	require.NoError(t, err)
 	require.Equal(t, "NEWCODE", got.JoinCode)
 	require.Equal(t, class.ID, repo.rotated)
+	require.Equal(t, repo.guru.ID, repo.rotatedBy, "the repository is told who rotates, so it can check them under the lock")
+}
+
+func TestRotateJoinCodeLetsARefusalOfTheRepositoryThrough(t *testing.T) {
+	class := &entity.Class{ID: uuid.New()}
+	repo := &codeRepo{guru: &repository.GuruRow{}, class: class, rotateErr: apperror.ErrClassNotFound}
+
+	_, err := NewGuruUseCase(repo, nil, nil).RotateJoinCode(context.Background(), uuid.New(), class.ID)
+
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
 }
 
 func TestRotateJoinCodeRefusesWhatItCannotResolve(t *testing.T) {
