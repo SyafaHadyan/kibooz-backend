@@ -2,7 +2,8 @@ name: Smoke stack
 
 # Runs the same script as the Smoke workflow, but against a throwaway stack that is built from the pull request, so the
 # routes of a branch are exercised end to end before they are merged. The Smoke workflow tests the deployed API after a deploy.
-# The stack has no bucket, so the script runs with SMOKE_STORAGE=off and expects STORAGE_UNAVAILABLE for the upload checks.
+# The stack has a throwaway S3 compatible server with a public and a private bucket, see compose.storage.yml, so the upload
+# checks, the signed addresses and the chat photos and videos run for real.
 on:
   pull_request:
     branches: [main]
@@ -33,7 +34,7 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
-      # The limits stay at their defaults, as in production, so the script also shows that its own traffic fits in them
+      # The limits stay at their defaults, as in production, except the allowance of a signed in user, see below
       - name: Create the environment file
         run: |
           {
@@ -44,11 +45,77 @@ jobs:
             echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
             echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
             echo "KEEPALIVE_SECONDS=0"
+            # The script finishes sooner against a storage server on the same machine than against Cloudflare R2, and how much
+            # sooner depends on the runner, so the allowance of a user has room to spare here. The production run keeps the default
+            # of 120 a minute, which is where it shows that the traffic of the script fits
+            echo "USER_LIMITER_MAX=1000"
             echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"
+            echo "S3_ENDPOINT=https://storage:7070"
+            echo "S3_REGION=us-east-1"
+            echo "S3_ACCESS_KEY_ID=$(openssl rand -hex 10)"
+            echo "S3_ACCESS_KEY_SECRET=$(openssl rand -hex 20)"
+            echo "S3_PUBLIC_BUCKET_NAME=kibooz-public"
+            echo "S3_PUBLIC_URL=https://storage:7070/kibooz-public"
+            echo "S3_PRIVATE_BUCKET_NAME=kibooz-private"
           } > .env
 
+      # The signed addresses name the server as storage, which the containers know by its service name. The runner reaches the
+      # same name through curl, which is told where it is, and not through /etc/hosts, because Docker would then answer the
+      # containers with the address of the runner as well. The API and the script have to trust the certificate of the server.
+      - name: Create the certificate of the storage server
+        run: |
+          mkdir -p ci-certs/server ci-certs/trust ci-curl
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=storage" -addext "subjectAltName=DNS:storage" \
+            -keyout ci-certs/server/storage.key -out ci-certs/server/storage.crt
+          cp ci-certs/server/storage.crt ci-certs/trust/storage.crt
+          chmod -R a+rX ci-certs
+          chmod 644 ci-certs/server/storage.key
+          echo 'resolve = "storage:7070:127.0.0.1"' > ci-curl/.curlrc
+
+      # The buckets have to exist before the API starts, because its first storage check runs at start-up and the result is kept
+      # for a while, so a bucket that is made afterwards would still show as down
+      - name: Start the storage server
+        run: |
+          # the image is the only one of the stack that the Google mirror may not have, so a pull that Docker Hub refuses is tried again
+          for attempt in 1 2 3 4; do
+            if docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml pull storage; then
+              break
+            fi
+            if [ "$attempt" = "4" ]; then
+              echo "The storage image could not be pulled" >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d storage
+
+      - name: Create the buckets
+        run: |
+          set -euo pipefail
+          set -a
+          . ./.env
+          set +a
+          empty="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          for bucket in "$S3_PUBLIC_BUCKET_NAME" "$S3_PRIVATE_BUCKET_NAME"; do
+            for attempt in 1 2 3 4 5 6 7 8 9 10; do
+              # 409 means that an earlier attempt made the bucket and its answer was lost
+              code="$(curl -sS -o /dev/null -w '%{http_code}' -X PUT "https://storage:7070/${bucket}" \
+                --cacert ci-certs/trust/storage.crt --resolve storage:7070:127.0.0.1 \
+                --aws-sigv4 "aws:amz:${S3_REGION}:s3" --user "${S3_ACCESS_KEY_ID}:${S3_ACCESS_KEY_SECRET}" \
+                -H "x-amz-content-sha256: ${empty}" || true)"
+              if [ "$code" = "200" ] || [ "$code" = "409" ]; then
+                break
+              fi
+              if [ "$attempt" = "10" ]; then
+                echo "The bucket ${bucket} could not be created, the last answer was ${code}" >&2
+                exit 1
+              fi
+              sleep 3
+            done
+          done
+
       - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d --build --wait --wait-timeout 240
 
       # The keeper teacher is registered by the script on its first run, and the password only lives in this job
       - name: Run the smoke test
@@ -59,12 +126,14 @@ jobs:
         env:
           BASE_URL: http://127.0.0.1:8080
           SMOKE_KEEPER_EMAIL: kibooz-smoke-keeper-ci@example.com
-          SMOKE_STORAGE: "off"
+          SMOKE_CHAT_MEDIA: "on"
+          CURL_CA_BUNDLE: ${{ github.workspace }}/ci-certs/trust/storage.crt
+          CURL_HOME: ${{ github.workspace }}/ci-curl
 
       - name: Collect container logs
         if: ${{ failure() }}
-        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml logs --no-color --tail 200
 
       - name: Stop the stack
         if: ${{ always() }}
-        run: docker compose -f compose.yml -f compose.ci.yml down -v
+        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml down -v
