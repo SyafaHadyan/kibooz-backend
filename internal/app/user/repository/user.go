@@ -191,6 +191,12 @@ func (r *UserDB) SoftDeleteAccount(
 			return err
 		}
 
+		// a phone that stays signed in on a deleted account must not be woken for it, and the tokens are personal data of the account
+		err = tx.Exec("DELETE FROM push_tokens WHERE user_id = ?", userID).Error
+		if err != nil {
+			return err
+		}
+
 		switch role {
 		case constants.RoleWali:
 			deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)

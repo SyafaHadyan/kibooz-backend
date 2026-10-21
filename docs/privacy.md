@@ -15,6 +15,7 @@ This page describes, from the code, which personal data Kibooz Backend keeps, wh
 | A child, by a parent | The guidance that the parent applied and the parent's notes | `guidance_applications` |
 | A class | Its name, grade, school, join code and the teachers | `classes` and `class_teachers` |
 | A teacher or a parent | Forum threads and replies, and the videos that a teacher added | `forum_posts` and `learning_videos` |
+| A teacher or a parent, with the app installed | The push token that Firebase gave the app, and the platform | `push_tokens`, removed when the account is deleted |
 | A teacher or a parent, in the chat | Each message with its text, an optional photo or video, its sender and time, and how far each person has read | `chat_conversations`, `chat_messages` and `chat_reads`, and the files in the private bucket |
 | A session | A SHA-256 hash of each refresh token, never the token | `refresh_tokens` |
 
