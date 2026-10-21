@@ -87,7 +87,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `LEADERBOARD_CACHE_SECONDS` | `300` | Leaderboard cache lifetime, it is also cleared whenever the ranking changes |
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
 | `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
-| `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `60`, `30` | Token lifetimes |
+| `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `15`, `30` | Token lifetimes |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |

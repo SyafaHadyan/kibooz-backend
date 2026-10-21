@@ -19,7 +19,7 @@ The app and the PRD are in Indonesian, and the API keeps a few of those words in
 
 ## Questions
 
-**Why does my access token stop working after an hour?** An access token lives for `JWT_ACCESS_EXPIRED_MINUTES`, 60 by default. The app trades its refresh token for a new pair, and each refresh token works once. See the [client guide](client-guide.md).
+**Why does my access token stop working after 15 minutes?** An access token lives for `JWT_ACCESS_EXPIRED_MINUTES`, 15 by default. The app trades its refresh token for a new pair, and each refresh token works once. See the [client guide](client-guide.md).
 
 **Why am I asked to sign in again after a few months even though I use the app every day?** A session ends `JWT_SESSION_MAX_DAYS` after the sign in, 90 by default, however often it is refreshed.
 

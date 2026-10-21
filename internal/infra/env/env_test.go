@@ -29,7 +29,7 @@ func valid() *Env {
 		AppPort: 8080, DBPort: 5432, RedisPort: 6379,
 		BodyLimitMB: 8, ClassVideoMaxMB: 100, VideoUploadURLSeconds: 900,
 		UserLimiterMax: 120, AuthLimiterMax: 10, ClassCodeLimiterMax: 60, MoodBatchLimiterMax: 30, LimiterExpirationSeconds: 60,
-		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 60, JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90,
+		LeaderboardCacheSeconds: 300, JWTAccessExpiredMinutes: 15, JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90,
 	}
 }
 
