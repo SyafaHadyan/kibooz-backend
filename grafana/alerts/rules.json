@@ -97,7 +97,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "Fewer than 2 copies of the API are reporting up. A container stopped or was removed, or Alloy stopped on the host, so check the containers and Alloy on sora. The number of copies up is on the API overview dashboard"
+      "summary": "Fewer than 2 copies of the API are reporting up. A container stopped or was removed, or Alloy stopped on a host, so check the containers and Alloy on each host. The number of copies up is on the API overview dashboard"
     },
     "data": [
       {
