@@ -59,6 +59,16 @@ func (t TrashType) Valid() bool {
 	return t == TrashOrganik || t == TrashAnorganik || t == TrashB3
 }
 
+// EnrollmentStatus says where an enrollment of a child in a class stands, see docs/adr/0014-class-enrollments.md
+type EnrollmentStatus string
+
+const (
+	EnrollmentPending  EnrollmentStatus = "pending"
+	EnrollmentActive   EnrollmentStatus = "active"
+	EnrollmentEnded    EnrollmentStatus = "ended"
+	EnrollmentRejected EnrollmentStatus = "rejected"
+)
+
 // Period is a calendar window of the school timezone that the leaderboard and the trash stats can be limited to. An empty
 // period means the default view, the running semester for the leaderboard and all time for the stats.
 type Period string
