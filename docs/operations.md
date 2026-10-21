@@ -30,6 +30,8 @@ A hosted PostgreSQL, Redis or bucket can replace the bundled ones by pointing `D
    The body has `status` `ok` and the `version` of the release. `degraded` means Redis is down or the bucket refuses writes, and the API still serves. `down` comes with a `503` and means the database does not answer.
 5. Run the manual `Smoke` workflow from the Actions tab with `expected_version` set to the new version. It registers throwaway accounts, replays the main routes and removes the accounts again, see [CI/CD](ci-cd.md).
 
+A host that runs two copies of the API behind the proxy can update them one at a time with `scripts/rolling-update.sh`, so one copy always answers. Copy it next to the `compose.yml` of the host and run `./rolling-update.sh 0.17.1`. It checks that the tag exists on Docker Hub, sets `IMAGE_TAG`, pulls the image, recreates the first copy with no dependencies and polls its `/healthz` until the status is `ok`, every check is `ok` and the version is the one asked for. Only then does it update the next copy. When a copy does not become healthy within two minutes it stops, leaves the other copy on the old version and prints the command that goes back. It never rolls back by itself, because the new version may already have applied a migration. The service names and ports default to `api-1` on 8000 and `api-2` on 8001, and the `COPIES`, `COMPOSE_DIR`, `ENV_FILE`, `TIMEOUT` and `DRY_RUN` variables change them, see the comment at the top of the script.
+
 A restart stops accepting new requests and gives running ones 10 seconds to finish. Clients that lose a request in that window repeat it, and the routes that create something accept an `Idempotency-Key` so a repeat is safe.
 
 ## Migrations
