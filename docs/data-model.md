@@ -12,7 +12,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set when nobody teaches it and it has no active child. `join_open` is false while its teachers do not want new children |
 | `class_teachers` | A teacher of a class. A class can have several teachers, and `is_owner` marks the one who owns it |
 | `students` | A child, with a parent, a class, a NISN, the points of all semesters (`current_points`), the points of the running semester (`season_points`) and the rank |
-| `enrollments` | A child in a class, asked for, current or over, with a status of `pending`, `active`, `ended` or `rejected`. Every child has one active enrollment, and the points, rank and scans it had are saved on it when it ends. See [ADR 0014](adr/0014-class-enrollments.md) |
+| `enrollments` | A child in a class, asked for, current or over, with a status of `pending`, `active`, `ended` or `rejected`. Every child that is not deleted has one active enrollment, and a deleted child has an ended one. The points, rank and scans it had are saved on it when it ends. See [ADR 0014](adr/0014-class-enrollments.md) |
 | `mood_logs` | One mood that a teacher recorded for a child, with the mood, a confidence score, the source, notes and the time it was seen |
 | `trash_scans` | One verified trash sorting claim, with the category, the points awarded and the photo |
 | `guidance_applications` | A parent who applied a piece of emotional guidance to a child, with their notes |

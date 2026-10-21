@@ -79,15 +79,14 @@ func TestEveryChildStartsWithOneActiveEnrollmentInItsClass(t *testing.T) {
 	t.Run("the shape of a row is checked", func(t *testing.T) {
 		other, _ := classOf(t, registerGuru(t, "Edelweis"))
 
-		for name, statement := range map[string]string{
-			"an active row needs a start": "INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'active')",
-			"an ended row needs its saved numbers": "INSERT INTO enrollments (student_id, class_id, status, activated_at, ended_at) " +
-				"VALUES (?, ?, 'ended', now(), now())",
-			"a pending row cannot carry saved numbers": "INSERT INTO enrollments (student_id, class_id, status, final_points, " +
-				"final_season_points, final_rank, final_scans, ended_at) VALUES (?, ?, 'pending', 1, 1, 1, 1, now())",
-			"an unknown status": "INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'maybe')",
+		for statement, constraint := range map[string]string{
+			"INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'active')":                                      "enrollments_activated_check",
+			"INSERT INTO enrollments (student_id, class_id, status, activated_at, ended_at) VALUES (?, ?, 'ended', now(), now())": "enrollments_ended_check",
+			"INSERT INTO enrollments (student_id, class_id, status, final_points, final_season_points, final_rank, final_scans, ended_at) " +
+				"VALUES (?, ?, 'pending', 1, 1, 1, 1, now())": "enrollments_final_only_when_ended_check",
+			"INSERT INTO enrollments (student_id, class_id, status) VALUES (?, ?, 'maybe')": "enrollments_status_check",
 		} {
-			require.Error(t, testDB.Exec(statement, secondID, other).Error, name)
+			require.ErrorContains(t, testDB.Exec(statement, secondID, other).Error, constraint)
 		}
 	})
 }
@@ -161,7 +160,12 @@ func TestTheMigrationFillsTheEnrollmentsOfExistingChildren(t *testing.T) {
 	require.Equal(t, http.StatusOK, call(t, http.MethodDelete, "/api/v1/wali/children/"+goneID, goneParent.Token, nil).Status)
 
 	require.NoError(t, testDB.Exec("DELETE FROM enrollments WHERE student_id IN (?, ?)", liveID, goneID).Error)
-	require.NoError(t, testDB.Exec(backfill).Error)
+	// the plain connection pool sends the script as it is, while the GORM handle prepares a statement and refuses two of them in one
+	sqlDB, err := testDB.DB()
+	require.NoError(t, err)
+
+	_, err = sqlDB.ExecContext(t.Context(), backfill)
+	require.NoError(t, err)
 
 	live := enrollmentsOf(t, liveID)
 	require.Len(t, live, 1)
@@ -177,7 +181,8 @@ func TestTheMigrationFillsTheEnrollmentsOfExistingChildren(t *testing.T) {
 	require.Equal(t, 2, *gone[0].FinalRank)
 	require.Zero(t, *gone[0].FinalScans)
 
-	require.NoError(t, testDB.Exec(backfill).Error, "a second run changes nothing")
+	_, err = sqlDB.ExecContext(t.Context(), backfill)
+	require.NoError(t, err, "a second run changes nothing")
 	require.Len(t, enrollmentsOf(t, liveID), 1)
 	require.Len(t, enrollmentsOf(t, goneID), 1)
 
