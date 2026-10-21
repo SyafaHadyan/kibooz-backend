@@ -1,0 +1,37 @@
+# Used with compose.yml and compose.ci.yml by the Smoke stack workflow. It adds a throwaway S3 compatible server, so the upload
+# routes of a pull request run against a real bucket and not against STORAGE_UNAVAILABLE. Versity Gateway checks the signature
+# of every request, including the signed upload and read addresses, so a wrong header or a missing signature fails here as it
+# would on Cloudflare R2. It keeps the buckets as directories in a volume that `docker compose down -v` removes.
+# The API and the smoke script only accept https addresses for uploads, so the server uses a certificate that the workflow makes
+# for the name storage and that lasts one day. The API trusts it through SSL_CERT_FILE, which makes it the only certificate that the
+# API trusts in this stack, and the script through CURL_CA_BUNDLE. Only the certificate reaches the API, the key stays in the storage
+# container. Neither bucket is readable without a signature here, because Versity Gateway makes every bucket private.
+# The workflow creates the certificate and the two buckets and puts the generated keys into .env, see docs/testing.md.
+services:
+  api:
+    environment:
+      SSL_CERT_FILE: /certs/storage.crt
+    volumes:
+      - ./ci-certs/trust:/certs:ro
+
+  storage:
+    image: versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7
+    command: ["--port", ":7070", "--cert", "/certs/storage.crt", "--key", "/certs/storage.key", "posix", "/data"]
+    environment:
+      ROOT_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in .env}
+      ROOT_SECRET_KEY: ${S3_ACCESS_KEY_SECRET:?set S3_ACCESS_KEY_SECRET in .env}
+    networks:
+      - internal
+    ports:
+      - "127.0.0.1:7070:7070"
+    volumes:
+      - storage-data:/data
+      - ./ci-certs/server:/certs:ro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+volumes:
+  storage-data:
