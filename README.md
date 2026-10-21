@@ -135,7 +135,7 @@ internal/middleware/      authentication and role checks
 internal/e2e/             end to end tests
 ```
 
-Modules are `auth`, `wali`, `guru`, `classroom` (learning videos and the class forum), `chat` (conversations of a teacher and a parent, and the room of each class), `trash` (claims and leaderboard) and `user` (avatars).
+Modules are `auth`, `wali`, `guru`, `classroom` (learning videos and the class forum), `chat` (conversations of a teacher and a parent, and the room of each class), `push` (the tokens of the installed apps), `trash` (claims and leaderboard) and `user` (avatars).
 
 ## Contributing and security
 
