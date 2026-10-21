@@ -38,6 +38,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Put("/classes/:classId/joining", handler.SetJoining)
 	group.Delete("/classes/:classId/students/:studentId", handler.RemoveStudent)
+	group.Get("/classes/:classId/students/:studentId/history", handler.StudentHistory)
 	group.Get("/classes/:classId/move-requests", handler.MoveRequests)
 	group.Post("/classes/:classId/move-requests/:requestId/accept", handler.AcceptMove)
 	group.Post("/classes/:classId/move-requests/:requestId/reject", handler.RejectMove)
@@ -385,4 +386,23 @@ func moveParams(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
 	}
 
 	return classID, requestID, nil
+}
+
+func (h *GuruHandler) StudentHistory(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.StudentHistory(c.Context(), middleware.UserIDFrom(c), classID, studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
 }
