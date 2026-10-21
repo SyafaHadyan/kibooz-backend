@@ -97,3 +97,22 @@ func TestRotateJoinCodeRefusesATeacherWhoNoLongerTeachesTheClass(t *testing.T) {
 	require.NoError(t, testDB.Raw("SELECT join_code FROM classes WHERE id = ?", classID).Scan(&current).Error)
 	require.Equal(t, code, current, "the code was not replaced")
 }
+
+// A teacher who deleted the account can keep a row of the class during the handover, and that row must not let the request through
+func TestRotateJoinCodeRefusesATeacherWhoseAccountWasDeleted(t *testing.T) {
+	owner := registerGuru(t, "Rotate Deleted Owner")
+	classID, code := classOf(t, owner)
+
+	var ownerGuru string
+
+	require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", owner.Email).Scan(&ownerGuru).Error)
+	require.NoError(t, testDB.Exec("UPDATE gurus SET deleted_at = now() WHERE id = ?", ownerGuru).Error)
+
+	_, err := repository.NewGuruDB(testDB, nil).RotateJoinCode(context.Background(), uuid.MustParse(classID), uuid.MustParse(ownerGuru))
+	require.ErrorIs(t, err, apperror.ErrClassNotFound)
+
+	var current string
+
+	require.NoError(t, testDB.Raw("SELECT join_code FROM classes WHERE id = ?", classID).Scan(&current).Error)
+	require.Equal(t, code, current, "the code was not replaced")
+}
