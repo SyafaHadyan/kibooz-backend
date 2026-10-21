@@ -90,7 +90,7 @@ message_id="$(pick "$message" '.data.id')"
 # the room of the class, with one message in it
 room="$(post_as /chat/conversations "$guru_session" "$(jq -n --arg c "$class" '{classId: $c}')")"
 room_id="$(pick "$room" '.data.id')"
-post_as "/chat/conversations/$room_id/messages" "$guru_session" '{"body": "ZAP room message"}' > /dev/null
+post_as "/chat/conversations/$room_id/messages" "$guru_session" '{"body": "ZAP room message"}' >/dev/null
 
 # a second class, so that replacing its join code never takes the code that the parent registration above relies on
 other="$(post_as /guru/classes "$guru_session" '{"name": "zap two", "gradeLevel": "Class Y"}')"

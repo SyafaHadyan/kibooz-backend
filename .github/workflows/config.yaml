@@ -79,6 +79,35 @@ jobs:
         run: |
           docker run --rm -i "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh hadolint)")" < Dockerfile
 
+  shell:
+    name: Shell lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # every file that git tracks with the .sh ending, the settings are in .shellcheckrc and .editorconfig
+      - name: ShellCheck
+        run: |
+          mapfile -d '' files < <(git ls-files -z '*.sh')
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh shellcheck)")" "${files[@]}"
+
+      - name: Check the format with shfmt
+        run: |
+          mapfile -d '' files < <(git ls-files -z '*.sh')
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh shfmt)")" -d "${files[@]}"
+
   openapi:
     name: OpenAPI lint
     runs-on: ubuntu-latest
