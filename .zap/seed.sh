@@ -107,9 +107,17 @@ leaver="$(post /auth/register "$(jq -n --arg e "zap.leaver.$suffix@example.com" 
   '{email: $e, password: $p, fullName: "ZAP Leaver", role: "GURU", class: {name: "zap leaver"}}')")"
 leaver_token="$(pick "$leaver" '.data.token')"
 leaver_code="$(pick "$(get /guru/dashboard "$leaver_token")" '.data.classOverview.joinCode')"
-leaver_class="$(pick "$(get /guru/dashboard "$leaver_token")" '.data.classOverview.classId')"
 
-# move_child adds a child to the class of the first teacher and asks for it to move into the class of the leaver. It sets moved_child
+# a teacher and a class of their own take the children that move, because a class with a child would not be archived when the leaver
+# above deletes the account without a successor
+target="$(post /auth/register "$(jq -n --arg e "zap.target.$suffix@example.com" --arg p "$pass" \
+  '{email: $e, password: $p, fullName: "ZAP Target", role: "GURU", class: {name: "zap target"}}')")"
+target_token="$(pick "$target" '.data.token')"
+target_dashboard="$(get /guru/dashboard "$target_token")"
+target_code="$(pick "$target_dashboard" '.data.classOverview.joinCode')"
+target_class="$(pick "$target_dashboard" '.data.classOverview.classId')"
+
+# move_child adds a child to the class of the first teacher and asks for it to move into the class of the target teacher. It sets moved_child
 # and moved_request, so that the scan can accept one request, reject one and withdraw one, and read both lists. The values are set in
 # the shell itself and not in a subshell, so a response that lacks an id stops the script.
 move_child() {
@@ -117,7 +125,7 @@ move_child() {
   child="$(post_as /wali/children "$wali_session" "$(jq -n --arg c "$code" --arg n "$1" --arg f "$2" \
     '{classCode: $c, student: {nisn: $n, fullName: $f}}')")"
   moved_child="$(pick "$child" '.data.id')"
-  request="$(post_as "/wali/children/$moved_child/move-requests" "$wali_session" "$(jq -n --arg c "$leaver_code" '{classCode: $c}')")"
+  request="$(post_as "/wali/children/$moved_child/move-requests" "$wali_session" "$(jq -n --arg c "$target_code" '{classCode: $c}')")"
   moved_request="$(pick "$request" '.data.id')"
 }
 
@@ -145,7 +153,7 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   --arg t "$thread_id" --arg r "$reply_id" --arg o "$other_id" --arg code "$code" --arg gr "$guru_refresh" --arg wr "$wali_refresh" \
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" --arg pw "$pw_token" --arg lt "$leaver_token" \
   --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" --arg ri "$room_id" \
-  --arg mi "$message_id" --arg tu "$teacher_user" --arg lk "$leaver_class" --arg ac "$accept_child" --arg ar "$accept_request" \
+  --arg mi "$message_id" --arg tu "$teacher_user" --arg lk "$target_class" --arg mt "$target_token" --arg mc "$target_code" --arg ac "$accept_child" --arg ar "$accept_request" \
   --arg rc "$reject_child" --arg rr "$reject_request" --arg cc "$cancel_child" --arg cr "$cancel_request" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
@@ -233,25 +241,25 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: ("/api/v1/wali/children/" + $s + "/move-requests"), token: $wt, body: {classCode: $code}},
   {method: "POST", path: ("/api/v1/wali/children/" + $s + "/move-requests"), token: $wt, body: {classCode: "ZZZZ9999"}},
   {method: "POST", path: ("/api/v1/wali/children/" + $s + "/move-requests"), token: $wt, body: {}},
-  {method: "POST", path: ("/api/v1/wali/children/" + $s + "/move-requests"), token: $gt, body: {classCode: $lc}},
+  {method: "POST", path: ("/api/v1/wali/children/" + $s + "/move-requests"), token: $gt, body: {classCode: $mc}},
   {method: "DELETE", path: ("/api/v1/wali/children/" + $cc + "/move-requests/" + $cr), token: $gt},
   {method: "DELETE", path: ("/api/v1/wali/children/" + $cc + "/move-requests/" + $cr), token: $wt},
   {method: "DELETE", path: ("/api/v1/wali/children/" + $cc + "/move-requests/" + $cr), token: $wt},
   {method: "DELETE", path: ("/api/v1/wali/children/" + $cc + "/move-requests/not-a-uuid"), token: $wt},
-  {method: "GET", path: ("/api/v1/guru/classes/" + $lk + "/move-requests"), token: $lt},
+  {method: "GET", path: ("/api/v1/guru/classes/" + $lk + "/move-requests"), token: $mt},
   {method: "GET", path: ("/api/v1/guru/classes/" + $lk + "/move-requests"), token: $gt},
   {method: "GET", path: ("/api/v1/guru/classes/" + $lk + "/move-requests"), token: $wt},
-  {method: "GET", path: "/api/v1/guru/classes/not-a-uuid/move-requests", token: $lt},
+  {method: "GET", path: "/api/v1/guru/classes/not-a-uuid/move-requests", token: $mt},
   {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $gt},
   {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $wt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $lt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $lt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/not-a-uuid/reject"), token: $lt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $mt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $rr + "/reject"), token: $mt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/not-a-uuid/reject"), token: $mt},
   {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $wt},
   {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $gt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $lt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $lt},
-  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/00000000-0000-4000-8000-000000000000/accept"), token: $lt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $mt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/" + $ar + "/accept"), token: $mt},
+  {method: "POST", path: ("/api/v1/guru/classes/" + $lk + "/move-requests/00000000-0000-4000-8000-000000000000/accept"), token: $mt},
   {method: "GET", path: ("/api/v1/wali/children/" + $ac + "/previous-classes"), token: $wt},
   {method: "GET", path: ("/api/v1/wali/children/" + $rc + "/previous-classes"), token: $wt},
   {method: "GET", path: ("/api/v1/wali/children/" + $ac + "/previous-classes"), token: $gt},
