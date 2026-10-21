@@ -21,6 +21,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The Docker Hub token is a secret of the docker-hub environment, which only main and version tags can use
+    environment: docker-hub
     permissions:
       packages: write
       id-token: write
