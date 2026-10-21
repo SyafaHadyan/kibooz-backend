@@ -104,9 +104,11 @@ type GuruDBItf interface {
 	SetJoining(ctx context.Context, classID uuid.UUID, open bool) error
 	// ListTeachers returns the active teachers of the class, the one who joined first at the top
 	ListTeachers(ctx context.Context, classID uuid.UUID) ([]TeacherRow, error)
-	// AddTeacher makes the active teacher account with the email a teacher of the class. It returns nil when no such
-	// account exists and apperror.ErrTeacherInClass when the account already teaches the class.
-	AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error)
+	// AddTeacher makes the active teacher account with the email a teacher of the class, on behalf of actorGuruID. It returns
+	// nil when no such account exists and apperror.ErrTeacherInClass when the account already teaches the class. The actor
+	// has to still teach the class once the lock is held, and otherwise it returns apperror.ErrClassNotFound, so a
+	// teacher who was removed while the request waited cannot add themselves again.
+	AddTeacher(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID, email string) (*TeacherRow, error)
 	// RemoveTeacher takes target off the class on behalf of actor. The owner can remove anyone and any teacher can remove
 	// themselves, and the owner who goes hands the class to the teacher who joined next. It returns
 	// apperror.ErrTeacherNotInClass, apperror.ErrNotClassOwner or apperror.ErrLastTeacher when the change is refused.
@@ -449,7 +451,7 @@ func lockGuru(tx *gorm.DB, guruID uuid.UUID) error {
 	return nil
 }
 
-func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string) (*TeacherRow, error) {
+func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID, email string) (*TeacherRow, error) {
 	var added *TeacherRow
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -489,6 +491,19 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, email string
 		}
 
 		if archived {
+			return apperror.ErrClassNotFound
+		}
+
+		// The request checked that the actor teaches the class before it waited for this lock. A removal commits under the
+		// same lock, so the actor is checked again here, and one who was removed meanwhile must not bring a teacher in.
+		var stillTeaching int64
+
+		err = tx.Model(&entity.ClassTeacher{}).Where("class_id = ? AND guru_id = ?", classID, actorGuruID).Count(&stillTeaching).Error
+		if err != nil {
+			return err
+		}
+
+		if stillTeaching == 0 {
 			return apperror.ErrClassNotFound
 		}
 

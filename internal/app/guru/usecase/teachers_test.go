@@ -30,6 +30,7 @@ type teacherRepo struct {
 	addErr     error
 	addedEmail string
 	addedClass uuid.UUID
+	addedActor uuid.UUID
 }
 
 func (r *teacherRepo) FindGuruByUserID(context.Context, uuid.UUID) (*repository.GuruRow, error) {
@@ -44,14 +45,14 @@ func (r *teacherRepo) ListTeachers(context.Context, uuid.UUID) ([]repository.Tea
 	return r.teachers, r.listErr
 }
 
-func (r *teacherRepo) AddTeacher(_ context.Context, classID uuid.UUID, email string) (*repository.TeacherRow, error) {
-	r.addedClass, r.addedEmail = classID, email
+func (r *teacherRepo) AddTeacher(_ context.Context, classID uuid.UUID, actorGuruID uuid.UUID, email string) (*repository.TeacherRow, error) {
+	r.addedClass, r.addedActor, r.addedEmail = classID, actorGuruID, email
 
 	return r.added, r.addErr
 }
 
 func teachingRepo() *teacherRepo {
-	return &teacherRepo{guru: &repository.GuruRow{}, class: &entity.Class{ID: uuid.New()}}
+	return &teacherRepo{guru: &repository.GuruRow{Guru: entity.Guru{ID: uuid.New()}}, class: &entity.Class{ID: uuid.New()}}
 }
 
 func requireCode(t *testing.T, err error, want *apperror.Error) {
@@ -114,6 +115,7 @@ func TestAddTeacherNormalizesTheEmailAndReturnsTheTeacher(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "budi@example.com", repo.addedEmail)
 	require.Equal(t, repo.class.ID, repo.addedClass)
+	require.Equal(t, repo.guru.ID, repo.addedActor, "the repository is told who adds, so it can check them under the lock")
 	require.Equal(t, row.ID, res.ID)
 	require.Equal(t, "Budi", res.FullName)
 }
