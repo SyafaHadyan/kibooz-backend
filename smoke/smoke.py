@@ -673,6 +673,15 @@ bare = Socket("not-a-token")
 check("the socket refuses a bad token", bare.status == 401, str(bare.status))
 bare.close()
 
+# push tokens
+push_token = "smoke-" + RUN + "-" + secrets.token_hex(24)
+expect("a push token is saved", call("POST", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+expect("saving it again changes nothing", call("POST", "/push/tokens", wc1["token"], {"token": push_token, "platform": "android"}), 200)
+expect("a short push token is refused", call("POST", "/push/tokens", wc1["token"], {"token": "short"}), 400, "VALIDATION_ERROR")
+expect("another account cannot remove it, and nothing breaks", call("DELETE", "/push/tokens", wc2["token"], {"token": push_token}), 200)
+expect("the push token is removed", call("DELETE", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+expect("removing it twice is safe", call("DELETE", "/push/tokens", wc1["token"], {"token": push_token}), 200)
+
 # photos and videos in the private bucket
 chat_path = f"/chat/conversations/{conv}"
 chat_boundary = "----smoke" + uuid.uuid4().hex

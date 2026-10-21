@@ -111,3 +111,6 @@ The API never limits by network address, so a whole classroom on one network doe
 
 A request that cannot connect, or that gets `502`, `503` or `504` without a JSON body, comes from the network or the proxy and not from the API. Treat it like a `429` without a `Retry-After` header above, and retry with a growing wait. A `500` with `INTERNAL_ERROR` means the server broke, so retry a creating request only with the same `Idempotency-Key`. The [status page](https://status.syafahadyan.com/) shows whether the API or the documentation site has an open incident, so an "unavailable" screen in the app can link to it.
 
+## Push tokens
+
+An app that wants to be woken when a chat message arrives while it is closed registers the token that Firebase gave it. Call `POST /push/tokens` with `{"token": "..."}` after sign in and whenever Firebase hands out a new token, and `DELETE /push/tokens` with the same body before sign out, so a phone is not woken for an account that left it. A token belongs to one account at a time, so a phone that signs in as somebody else moves it. Sending the same token again changes nothing, and an account keeps its 10 newest tokens. Both routes are for the roles `GURU` and `WALI`, and they work whether or not the server is set up to send pushes, so registering early is safe.
