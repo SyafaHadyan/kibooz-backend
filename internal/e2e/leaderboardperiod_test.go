@@ -72,6 +72,13 @@ func TestLeaderboardAndTrashStatsCanBeLimitedToAPeriod(t *testing.T) {
 	claim(amelia.Token, ameliaID, "ORGANIK")
 	claim(farhan.Token, farhanID, "ORGANIK")
 
+	// the scans below are dated before the children were registered, and the stats only count the scans made since a child joined its
+	// class, so the children join the class 60 days ago
+	require.NoError(t, testDB.Exec(
+		"UPDATE enrollments SET activated_at = now() - interval '60 days' WHERE student_id IN (?::uuid, ?::uuid, ?::uuid, ?::uuid, ?::uuid)",
+		ameliaID, farhanID, zedID, goneID, otherID,
+	).Error)
+
 	// the scans below are written straight into the table, so they never touch the points of the semester board
 	insert := func(studentID string, trashType string, points int, when string) {
 		require.NoError(t, testDB.Exec(

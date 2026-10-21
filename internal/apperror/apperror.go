@@ -131,3 +131,10 @@ var (
 	)
 	ErrChatSocketsFull = New(http.StatusServiceUnavailable, "CHAT_SOCKETS_FULL", "The server cannot take another chat connection right now")
 )
+
+// errors of the move of a child to another class, in a block of their own for the same reason
+var (
+	ErrAlreadyInClass = New(http.StatusConflict, "ALREADY_IN_CLASS", "This child is already in that class")
+	ErrMovePending    = New(http.StatusConflict, "MOVE_REQUEST_PENDING", "This child already has a request that waits for a teacher")
+	ErrMoveNotFound   = New(http.StatusNotFound, "MOVE_REQUEST_NOT_FOUND", "Move request not found")
+)

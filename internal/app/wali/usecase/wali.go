@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
@@ -45,6 +46,12 @@ type WaliUseCaseItf interface {
 	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
 	// With a period only the scans of that day, week or month are counted in the breakdown and the totals
 	TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID, period constants.Period) (dto.TrashStatsResponse, error)
+	// RequestMove asks for a child of the caller to move to the class that owns the class code, a teacher of that class decides
+	RequestMove(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.MoveRequestInput) (dto.MoveRequest, error)
+	// CancelMove withdraws a request of the caller that no teacher has decided yet
+	CancelMove(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error
+	// MoveRequests lists the requests of a child of the caller that wait or were rejected
+	MoveRequests(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.MoveRequestList, error)
 }
 
 // MaxChildren is the largest number of children one parent account can hold
@@ -560,4 +567,89 @@ func (u *WaliUseCase) resolveStudent(ctx context.Context, userID uuid.UUID, stud
 	}
 
 	return student, nil
+}
+
+func (u *WaliUseCase) RequestMove(
+	ctx context.Context, userID uuid.UUID, studentID uuid.UUID, req dto.MoveRequestInput,
+) (dto.MoveRequest, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.MoveRequest{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.MoveRequest{}, apperror.ErrProfileNotFound
+	}
+
+	row, err := u.repo.RequestMove(ctx, wali.ID, studentID, strings.ToUpper(strings.TrimSpace(req.ClassCode)))
+	if err != nil {
+		return dto.MoveRequest{}, appOrInternal(err)
+	}
+
+	return moveRequest(&row), nil
+}
+
+func (u *WaliUseCase) CancelMove(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return apperror.ErrProfileNotFound
+	}
+
+	err = u.repo.CancelMove(ctx, wali.ID, studentID, requestID)
+	if err != nil {
+		return appOrInternal(err)
+	}
+
+	return nil
+}
+
+func (u *WaliUseCase) MoveRequests(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.MoveRequestList, error) {
+	wali, err := u.repo.FindWaliByUserID(ctx, userID)
+	if err != nil {
+		return dto.MoveRequestList{}, apperror.Internal(err)
+	}
+
+	if wali == nil {
+		return dto.MoveRequestList{}, apperror.ErrProfileNotFound
+	}
+
+	rows, err := u.repo.ListMoves(ctx, wali.ID, studentID)
+	if err != nil {
+		return dto.MoveRequestList{}, appOrInternal(err)
+	}
+
+	res := dto.MoveRequestList{Requests: make([]dto.MoveRequest, 0, len(rows))}
+	for i := range rows {
+		res.Requests = append(res.Requests, moveRequest(&rows[i]))
+	}
+
+	return res, nil
+}
+
+// appOrInternal keeps an error that already has an API answer and hides any other one behind a 500
+func appOrInternal(err error) error {
+	var appErr *apperror.Error
+	if errors.As(err, &appErr) {
+		return err
+	}
+
+	return apperror.Internal(err)
+}
+
+func moveRequest(row *enrollment.ParentRow) dto.MoveRequest {
+	res := dto.MoveRequest{
+		ID: row.ID, StudentID: row.StudentID, ClassID: row.ClassID, ClassName: row.ClassName,
+		Status: string(row.Status), RequestedAt: row.RequestedAt.UTC(),
+	}
+
+	if row.DecidedAt != nil {
+		decided := row.DecidedAt.UTC()
+		res.DecidedAt = &decided
+	}
+
+	return res
 }

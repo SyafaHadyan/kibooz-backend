@@ -16,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
@@ -95,6 +96,12 @@ type WaliDBItf interface {
 	// AddChild stores student as one more child of the wali inside the class that owns joinCode. It refuses a code that
 	// nobody has, a class without an active teacher, and a parent who already has maxChildren children.
 	AddChild(ctx context.Context, waliID uuid.UUID, joinCode string, student *entity.Student, maxChildren int) (classID uuid.UUID, err error)
+	// RequestMove asks for a child of the wali to move to the class that owns joinCode, see package enrollment for what it refuses
+	RequestMove(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, joinCode string) (enrollment.ParentRow, error)
+	// CancelMove withdraws a request that no teacher has decided yet, and answers apperror.ErrMoveNotFound when there is none
+	CancelMove(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error
+	// ListMoves returns the requests of a child that wait or were rejected, the newest first
+	ListMoves(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error)
 }
 
 type WaliDB struct {
@@ -166,6 +173,10 @@ func (r *WaliDB) LatestMood(ctx context.Context, studentID uuid.UUID, from time.
 	return &logs[0], nil
 }
 
+// sinceJoined keeps the scans that a child made in the class it is in now. A child that moved starts from zero in the new class, and
+// what it scanned before is saved on the enrollment that ended.
+const sinceJoined = "scanned_at >= COALESCE((SELECT activated_at FROM enrollments WHERE student_id = ? AND status = 'active'), '-infinity'::timestamptz)"
+
 func (r *WaliDB) CountTrashByType(ctx context.Context, studentID uuid.UUID) (map[constants.TrashType]int, error) {
 	type row struct {
 		TrashType constants.TrashType
@@ -178,6 +189,7 @@ func (r *WaliDB) CountTrashByType(ctx context.Context, studentID uuid.UUID) (map
 		Model(&entity.TrashScan{}).
 		Select("trash_type, COUNT(*) AS total").
 		Where("student_id = ?", studentID).
+		Where(sinceJoined, studentID).
 		Group("trash_type").
 		Scan(&rows).Error
 	if err != nil {
@@ -219,7 +231,8 @@ func (r *WaliDB) sumTrash(ctx context.Context, studentID uuid.UUID, window *[2]t
 	query := r.db.WithContext(ctx).
 		Model(&entity.TrashScan{}).
 		Select("trash_type, COUNT(*) AS scans, COALESCE(SUM(points_awarded), 0) AS points").
-		Where("student_id = ?", studentID)
+		Where("student_id = ?", studentID).
+		Where(sinceJoined, studentID)
 
 	if window != nil {
 		query = query.Where("scanned_at >= ? AND scanned_at < ?", window[0], window[1])
@@ -314,53 +327,67 @@ func (r *WaliDB) UpdateStudent(
 		found   bool
 	)
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		classID, found = uuid.Nil, false
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			classID, found = uuid.Nil, false
 
-		var classes []uuid.UUID
+			var classes []uuid.UUID
 
-		err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &classes).Error
-		if err != nil || len(classes) == 0 {
-			return err
-		}
+			err := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &classes).Error
+			if err != nil || len(classes) == 0 {
+				return err
+			}
 
-		// the class lock comes before the change, because a new name moves the child in the ranking and the semester
-		// rollover copies the names under the same lock
-		err = ranking.Lock(tx, classes[0])
-		if err != nil {
-			return err
-		}
-
-		fields := map[string]any{}
-		if update.SetName {
-			fields["full_name"] = update.FullName
-		}
-
-		if update.SetNISN {
-			fields["nisn"] = update.NISN
-		}
-
-		changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
-		if changed.Error != nil || changed.RowsAffected == 0 {
-			return changed.Error
-		}
-
-		if update.SetName {
-			err = tx.Exec("UPDATE leaderboard_history SET student_name = ? WHERE student_id = ?", update.FullName, studentID).Error
+			// the class lock comes before the change, because a new name moves the child in the ranking and the semester
+			// rollover copies the names under the same lock
+			err = ranking.Lock(tx, classes[0])
 			if err != nil {
 				return err
 			}
 
-			err = ranking.Recompute(tx, classes[0])
-			if err != nil {
+			// a move may have taken the child to another class while this waited for the lock, then it starts again
+			var current []uuid.UUID
+
+			err = tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("class_id", &current).Error
+			if err != nil || len(current) == 0 {
 				return err
 			}
-		}
 
-		classID, found = classes[0], true
+			if current[0] != classes[0] {
+				return ranking.ErrMoved
+			}
 
-		return nil
+			fields := map[string]any{}
+			if update.SetName {
+				fields["full_name"] = update.FullName
+			}
+
+			if update.SetNISN {
+				fields["nisn"] = update.NISN
+			}
+
+			changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
+			if changed.Error != nil || changed.RowsAffected == 0 {
+				return changed.Error
+			}
+
+			if update.SetName {
+				err = tx.Exec("UPDATE leaderboard_history SET student_name = ? WHERE student_id = ?", update.FullName, studentID).Error
+				if err != nil {
+					return err
+				}
+
+				err = ranking.Recompute(tx, classes[0])
+				if err != nil {
+					return err
+				}
+			}
+
+			classID, found = classes[0], true
+
+			return nil
+		})
 	})
 
 	return classID, found, mapNISNTaken(err)
@@ -372,17 +399,19 @@ func (r *WaliDB) RemoveStudent(ctx context.Context, waliID uuid.UUID, studentID 
 		removed bool
 	)
 
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		classID, removed = uuid.Nil, false
+	err := ranking.Retry(func() error {
+		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// a retried transaction starts from nothing
+			classID, removed = uuid.Nil, false
 
-		var err error
+			var err error
 
-		classID, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
-			return rows.Where("wali_id = ?", waliID)
-		}, r.fileKey)
+			classID, removed, err = childremoval.Remove(tx, studentID, func(rows *gorm.DB) *gorm.DB {
+				return rows.Where("wali_id = ?", waliID)
+			}, r.fileKey)
 
-		return err
+			return err
+		})
 	})
 
 	return classID, removed, err
@@ -496,4 +525,28 @@ func mapNISNTaken(err error) error {
 	}
 
 	return err
+}
+
+func (r *WaliDB) RequestMove(
+	ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, joinCode string,
+) (enrollment.ParentRow, error) {
+	var row enrollment.ParentRow
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+
+		row, err = enrollment.Request(tx, waliID, studentID, joinCode)
+
+		return err
+	})
+
+	return row, err
+}
+
+func (r *WaliDB) CancelMove(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, requestID uuid.UUID) error {
+	return enrollment.Cancel(r.db.WithContext(ctx), waliID, studentID, requestID)
+}
+
+func (r *WaliDB) ListMoves(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error) {
+	return enrollment.ListForChild(r.db.WithContext(ctx), waliID, studentID)
 }

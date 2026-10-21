@@ -137,8 +137,9 @@ func (r *TrashDB) Claim(
 			return err
 		}
 
+		// the class is part of the match, so a child that moved while this request waited for the lock is not credited in the new class
 		update := tx.Model(&entity.Student{}).
-			Where("id = ?", scan.StudentID).
+			Where("id = ? AND class_id = ?", scan.StudentID, classID).
 			UpdateColumns(map[string]any{
 				"current_points": gorm.Expr("current_points + ?", scan.PointsAwarded),
 				"season_points":  gorm.Expr("season_points + ?", scan.PointsAwarded),
@@ -197,7 +198,9 @@ func (r *TrashDB) ListClassStudentsBetween(ctx context.Context, classID uuid.UUI
 	err := r.db.WithContext(ctx).
 		Table("students AS s").
 		Select("s.id, s.full_name, s.avatar_url, COALESCE(SUM(t.points_awarded), 0) AS season_points").
-		Joins("LEFT JOIN trash_scans AS t ON t.student_id = s.id AND t.scanned_at >= ? AND t.scanned_at < ?", from, to).
+		Joins("LEFT JOIN enrollments AS e ON e.student_id = s.id AND e.status = 'active'").
+		Joins("LEFT JOIN trash_scans AS t ON t.student_id = s.id AND t.scanned_at >= ? AND t.scanned_at < ? "+
+			"AND t.scanned_at >= COALESCE(e.activated_at, '-infinity'::timestamptz)", from, to).
 		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
 		Group("s.id").
 		Order("COALESCE(SUM(t.points_awarded), 0) DESC, s.full_name ASC, s.id ASC").

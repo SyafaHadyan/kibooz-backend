@@ -32,8 +32,10 @@ The `message` is English text for people and can be reworded, so an app branches
 | `NIP_ALREADY_REGISTERED` | 409 | An active teacher has this NIP | Ask the teacher to check the number |
 | `NISN_ALREADY_REGISTERED` | 409 | An active child has this NISN, at registration, when a parent adds a child or when a parent changes the NISN of a child | Ask the parent to check the number |
 | `CHILD_LIMIT_REACHED` | 409 | The parent already has 10 children | Tell the parent that no more children can be added |
-| `CLASS_JOINING_CLOSED` | 409 | The teachers of the class closed it for new children, so the join code does not work at registration or when a parent adds a child | Tell the parent to ask the teacher to open the class again |
-| `CLASS_FULL` | 409 | The class already has 60 active children, so it cannot take another one at registration or when a parent adds a child | Tell the parent to contact the teacher |
+| `CLASS_JOINING_CLOSED` | 409 | The teachers of the class closed it for new children, so the join code does not work at registration, when a parent adds a child or when a parent asks for a move | Tell the parent to ask the teacher to open the class again |
+| `CLASS_FULL` | 409 | The class already has 60 active children, so it cannot take another one at registration, when a parent adds a child, when a parent asks for a move or when a teacher accepts one | Tell the parent to contact the teacher |
+| `ALREADY_IN_CLASS` | 409 | The child is already in the class whose code was sent in a move request | Tell the parent that the child is in that class |
+| `MOVE_REQUEST_PENDING` | 409 | The child already has a move request that waits for a teacher | Show the request that waits, and offer to withdraw it |
 | `CLASS_LIMIT_REACHED` | 409 | The teacher already teaches 20 classes that are not archived. The same answer comes when the teacher who is being added to a class is at 20 | Tell the teacher that no more classes can be created or joined |
 | `MOOD_LOG_LIMIT_REACHED` | 409 | The child already has 20 mood logs on that local day. On a batch, `details` names the entries of the children who have no room left and nothing is saved | Tell the teacher which children to skip, and do not retry the same entries until the next day |
 
@@ -60,6 +62,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 |:---|:---|:---|:---|
 | `NO_CHILD_REGISTERED` | 404 | The parent has no child, because every child was deleted, so there is no default child for the dashboard or the trash statistics | Show the screen that adds a child with a class code |
 | `STUDENT_NOT_FOUND` | 404 | The child does not exist, or the signed in user may not see it | Refresh the list of children |
+| `MOVE_REQUEST_NOT_FOUND` | 404 | The move request does not exist, was withdrawn, was already decided or rejected by a class that closed joining, or belongs to another class or parent | Refresh the list of requests |
 | `PROFILE_NOT_FOUND` | 404 | The profile of the account does not exist, for example after it was deleted | Sign the user out |
 | `GUIDANCE_NOT_FOUND` | 404 | The guidance does not exist | Refresh the guidance list |
 | `FORUM_POST_NOT_FOUND` | 404 | The thread or reply does not exist, or was deleted | Refresh the thread or its replies |

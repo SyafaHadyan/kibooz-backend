@@ -2,6 +2,8 @@
 package ranking
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -29,4 +31,23 @@ func Recompute(tx *gorm.DB, classID uuid.UUID) error {
 	}
 
 	return tx.Exec(recomputeSQL, classID).Error
+}
+
+// ErrMoved says that a child moved to another class while the request waited for the lock of its old class. The transaction has
+// to start again from the top, because taking the lock of the new class now, with the old one held, could wait for a move that
+// holds the new one and wants the old one.
+var ErrMoved = errors.New("the child moved to another class")
+
+// Retry runs a transaction again, three times at most, while it ends with ErrMoved
+func Retry(run func() error) error {
+	var err error
+
+	for range 3 {
+		err = run()
+		if !errors.Is(err, ErrMoved) {
+			return err
+		}
+	}
+
+	return err
 }
