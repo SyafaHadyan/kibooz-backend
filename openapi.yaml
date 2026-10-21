@@ -2829,7 +2829,7 @@ components:
       properties:
         token:
           type: string
-          description: The access token, valid for 60 minutes by default
+          description: The access token, valid for 15 minutes by default
         refreshToken:
           type: string
           description: Single use, valid for 30 days by default
