@@ -18,10 +18,10 @@
 # old version working, because both versions run on the same database for a short while.
 #
 # Going back. When the version is older than the one that runs now, the script warns that this is only safe while no migration ran
-# since that version, and asks GitHub which migration files the newer versions added. When there are some it stops, because the old
-# image cannot start on the newer schema. Restore the database or apply the down files first, see docs/operations.md, and then run
+# since that version, and lists the migration files of both versions on GitHub. When the newer one has files that the older one lacks, or GitHub cannot
+# answer, it stops, because the old image cannot start on the newer schema. Restore the database or apply the down files first, see docs/operations.md, and then run
 # it again with MIGRATIONS_HANDLED=1. When there are none, or GitHub cannot be asked, it asks you to type the version to go on, or
-# to set ROLLBACK_OK to it when there is no terminal.
+# to set ROLLBACK_OK to it when there is no terminal. GITHUB_TOKEN, when set, is sent with the GitHub requests to lift the limit.
 #
 # Settings, all optional, given as environment variables
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
@@ -30,8 +30,9 @@
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy to become healthy, default 120
 #   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
+#   GITHUB_TOKEN  optional token for the migration check, the anonymous limit is 60 requests an hour for each address
 #   ROLLBACK_OK   the version that you confirm to go back to when there is no terminal
-#   MIGRATIONS_HANDLED  1 when the database is ready for the older version, after a restore or the down files
+#   MIGRATIONS_HANDLED  1 when the database is ready for the older version, after a restore, the down files or a check by hand
 #   DRY_RUN       1, true or yes prints the steps and changes nothing, but it still checks the services
 set -euo pipefail
 
@@ -130,43 +131,63 @@ else
   docker pull "$image:$version" || die "$image:$version could not be pulled, so nothing was changed. The tag may not exist or Docker Hub refused the pull"
 fi
 
+# migration_names prints the up files of the migrations folder at one tag, and fails when GitHub does not give a list. Listing the
+# folder of both tags, and not the compare answer, avoids the cut at 300 files and renamed files
+migration_names() {
+  local auth=() body
+  [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  body="$(curl -fsSL --max-time 15 ${auth[@]+"${auth[@]}"} "https://api.github.com/repos/${repo}/contents/internal/infra/db/migrations?ref=v$1")" || return 1
+  jq -er 'if type == "array" then [.[] | select(.name | test("[.]up[.]sql$")) | .name] | sort | .[] else error("not a list") end' <<<"$body"
+}
+
 # the version that runs now, taken from the first copy and, when it does not answer, from the env file
 running="$(curl -sS --max-time 5 "http://localhost:${ports[0]}/healthz" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
 semver='^[0-9]+\.[0-9]+\.[0-9]+$'
 [[ "$running" =~ $semver ]] || running="$previous"
 [[ "$running" =~ $semver ]] || running=""
 
-if [ -n "$running" ] && [ "$running" != "$version" ] &&
+if [ -z "$running" ]; then
+  echo "The version that runs now is unknown (IMAGE_TAG is ${previous:-not set}), so this script cannot tell whether $version is a step back." >&2
+  echo "If it is, read Roll back in docs/operations.md first, because an older image cannot start on a newer schema." >&2
+elif [ "$running" != "$version" ] &&
   [ "$(printf '%s\n%s\n' "$version" "$running" | sort -V | head -n 1)" = "$version" ]; then
   echo
   echo "WARNING. This goes back from $running to $version." >&2
   echo "It is only safe while no migration ran since $version, because an older image cannot start on a newer schema." >&2
   echo "Take a dump of the database first, see Roll back in docs/operations.md." >&2
 
-  if added="$(curl -fsS --max-time 15 "https://api.github.com/repos/${repo}/compare/v${version}...v${running}" 2>/dev/null |
-    jq -r '.files[]? | select(.status == "added" and (.filename | test("^internal/infra/db/migrations/.*[.]up[.]sql$"))) | .filename | split("/") | last')"; then
+  if old_list="$(migration_names "$version")" && new_list="$(migration_names "$running")"; then
+    added="$(comm -13 <(echo "$old_list") <(echo "$new_list"))"
     if [ -n "$added" ]; then
       echo "These migrations were added after $version and may have run on this database" >&2
       while IFS= read -r name; do
         echo "  $name" >&2
       done <<<"$added"
-      if [ "$dry_run" = "1" ]; then
-        echo "DRY RUN a real run stops here until MIGRATIONS_HANDLED=1 is set"
-      elif [ "${MIGRATIONS_HANDLED:-0}" != "1" ]; then
-        die "Restore the database from a backup or apply the down files of these migrations, then run this again with MIGRATIONS_HANDLED=1. Nothing was changed"
-      fi
+      blocked="the migrations above may have run"
     else
-      echo "GitHub shows no migration between $version and $running, so the older image should start" >&2
+      echo "The migrations folder of $version and of $running holds the same files, so the older image should start" >&2
+      blocked=""
     fi
   else
-    echo "GitHub could not be asked about migrations, so assume that one may exist" >&2
+    echo "GitHub could not list the migrations of $version and $running, so one may exist" >&2
+    blocked="the migrations could not be checked"
+  fi
+
+  if [ -n "$blocked" ]; then
+    echo "To check by hand, compare the number in schema_migrations with the newest file of $version, for example" >&2
+    echo "  docker compose exec db sh -c 'psql -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\" -c \"select version, dirty from schema_migrations\"'" >&2
+    if [ "$dry_run" = "1" ]; then
+      echo "DRY RUN a real run stops here until MIGRATIONS_HANDLED=1 is set"
+    elif [ "${MIGRATIONS_HANDLED:-0}" != "1" ]; then
+      die "Stopped because $blocked. Restore the database from a backup, apply the down files, or confirm that the database is not past the newest migration of $version, then run this again with MIGRATIONS_HANDLED=1. Nothing was changed"
+    fi
   fi
 
   if [ "$dry_run" = "1" ]; then
     echo "DRY RUN a real run asks you to type $version to confirm"
-  elif [ "${ROLLBACK_OK:-}" != "$version" ]; then
+  elif confirmed="${ROLLBACK_OK:-}" && [ "${confirmed#v}" != "$version" ]; then
     [ -t 0 ] || die "Set ROLLBACK_OK=$version to go back without a terminal. Nothing was changed"
-    read -r -p "Type $version to go back to it, anything else cancels: " answer
+    read -r -p "Type $version to go back to it, anything else cancels: " answer || die "Cancelled, nothing was changed"
     [ "$answer" = "$version" ] || die "Cancelled, nothing was changed"
   fi
 elif [ "$running" = "$version" ]; then
@@ -191,7 +212,7 @@ run compose pull "${services[@]}"
 # go_back prints how to return to the version that ran before, when that version is known
 go_back() {
   if [[ "$previous" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "To go back to $previous, run COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" $script $previous" >&2
+    echo "To go back to $previous, run ROLLBACK_OK=$previous COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" $script $previous, which warns and checks the migrations first. It stops when a migration may have run, and then MIGRATIONS_HANDLED=1 is needed after you restored the database or checked it" >&2
   else
     echo "The tag before was ${previous:-not set}, so set IMAGE_TAG back by hand and run docker compose up -d --no-deps for each updated copy" >&2
   fi
