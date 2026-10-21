@@ -32,6 +32,7 @@ jobs:
     timeout-minutes: 15
     environment: docker-hub
     permissions:
+      contents: read
       packages: read
       pull-requests: read
     env:
