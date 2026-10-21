@@ -1,6 +1,6 @@
 // The chat socket under load. Parents hold a socket open and the teacher sends a message to the room of the class every second, so
-// the run shows how long a message takes to reach a socket and whether the sockets stay open. It is started by hand or with the
-// nightly run through the Performance workflow, and it is not part of the checks of a pull request. The limits are placeholders
+// the run shows how long a message takes to reach a socket and whether the sockets stay open. It is started by hand through the
+// Performance workflow, and it is not part of the checks of a pull request or of the nightly run. The limits are placeholders
 // to calibrate on the first runs.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -14,11 +14,14 @@ const socketsClosedEarly = new Counter('chat_sockets_closed_early');
 
 export const options = {
   scenarios: {
-    listeners: { executor: 'constant-vus', exec: 'listener', vus: 15, duration: '60s' },
-    sender: { executor: 'constant-vus', exec: 'sender', vus: 1, duration: '50s', startTime: '8s' },
+    // each listener is one socket for the whole run, and the sender writes while every socket is up
+    listeners: { executor: 'per-vu-iterations', exec: 'listener', vus: 15, iterations: 1, maxDuration: '90s' },
+    sender: { executor: 'constant-vus', exec: 'sender', vus: 1, duration: '40s', startTime: '8s' },
   },
   thresholds: {
     checks: ['rate>0.99'],
+    // 40 messages go to 15 sockets, so a run that delivers nothing or loses most frames must fail instead of passing on an empty trend
+    chat_message_frames: ['count>=500'],
     chat_delivery_ms: ['p(95)<1000'],
     chat_sockets_closed_early: ['count==0'],
     'http_req_duration{endpoint:chat_send}': ['p(95)<400'],
@@ -40,7 +43,7 @@ export function setup() {
   return { ...data, room: json(opened).data.id };
 }
 
-// listener is a parent whose app is open, so a socket stays up for 25 seconds and every message frame is timed
+// listener is a parent whose app is open, so a socket stays up for 55 seconds and every message frame is timed
 export function listener(data) {
   const me = data.parents[(__VU - 1) % data.parents.length];
   const url = `${api.replace(/^http/, 'ws')}/chat/ws`;
@@ -60,7 +63,11 @@ export function listener(data) {
 
     if (frame.type === 'message' && frame.message && String(frame.message.body).startsWith('k6:')) {
       framesSeen.add(1);
-      deliveryMs.add(Date.now() - Number(String(frame.message.body).slice(3)));
+      const sentAt = Number(String(frame.message.body).slice(3));
+
+      if (Number.isFinite(sentAt)) {
+        deliveryMs.add(Date.now() - sentAt);
+      }
     }
   });
 
@@ -74,7 +81,7 @@ export function listener(data) {
     check(null, { 'the socket said ready': () => ready });
     closing = true;
     ws.close();
-  }, 25000);
+  }, 55000);
 }
 
 // sender is the teacher who writes to the class once a second
