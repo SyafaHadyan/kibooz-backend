@@ -140,9 +140,17 @@ migration_names() {
   jq -er 'if type == "array" then [.[] | select(.name | test("[.]up[.]sql$")) | .name] | sort | .[] else error("not a list") end' <<<"$body"
 }
 
-# the version that runs now, taken from the first copy and, when it does not answer, from the env file
-running="$(curl -sS --max-time 5 "http://localhost:${ports[0]}/healthz" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+# the version that runs now is the newest one that any copy reports, because after an update that stopped half way the copies run
+# different versions. When no copy answers it is the tag of the env file
 semver='^[0-9]+\.[0-9]+\.[0-9]+$'
+running=""
+for port in "${ports[@]}"; do
+  seen="$(curl -sS --max-time 5 "http://localhost:${port}/healthz" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+  [[ "$seen" =~ $semver ]] || continue
+  if [ -z "$running" ] || [ "$(printf '%s\n%s\n' "$seen" "$running" | sort -V | tail -n 1)" = "$seen" ]; then
+    running="$seen"
+  fi
+done
 [[ "$running" =~ $semver ]] || running="$previous"
 [[ "$running" =~ $semver ]] || running=""
 
