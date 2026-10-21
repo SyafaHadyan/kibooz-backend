@@ -84,6 +84,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | k6 performance test | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
 | Actionlint, Zizmor, Hadolint and OpenAPI lint | GitHub Actions |
+| OpenAPI breaking changes | GitHub Actions |
 | Vale prose lint | GitHub Actions |
 | Conventional commits | GitHub Actions |
 | Smoke test on a throwaway stack | GitHub Actions |
