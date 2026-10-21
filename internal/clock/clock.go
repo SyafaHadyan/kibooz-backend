@@ -1,7 +1,23 @@
 // Package clock computes calendar boundaries in the school timezone
 package clock
 
-import "time"
+import (
+	"time"
+
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+)
+
+// PeriodBounds returns the start of the local day, week or month of a period that contains t and the start of the next one
+func PeriodBounds(period constants.Period, t time.Time, loc *time.Location) (time.Time, time.Time) {
+	switch period {
+	case constants.PeriodWeek:
+		return WeekBounds(t, loc)
+	case constants.PeriodMonth:
+		return MonthBounds(t, loc)
+	default:
+		return DayBounds(t, loc)
+	}
+}
 
 // DayBounds returns the start of the local day containing t and the start of the next one
 func DayBounds(t time.Time, loc *time.Location) (time.Time, time.Time) {

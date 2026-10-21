@@ -60,6 +60,12 @@ A message with a file has `media` with the `kind` (`photo` or `video`), `content
 
 **Live delivery.** The app opens one socket, `GET /chat/ws`, and the server pushes new messages, deleted messages, read marks and typing hints, as described in [Chat socket](websocket.md). The socket is a shortcut and not the source of truth. When it closes, connect again. After the new socket sends its `ready` frame, and when the app comes back from the background, ask for `after` the highest id of each open conversation and refresh the list of conversations. An app that cannot hold a socket can poll the same way every few seconds.
 
+## Leaderboard and stats by period
+
+`GET /api/v1/leaderboard` ranks the class by the points of the semester that is under way. For the today, week and month tabs add `period=today`, `period=week` or `period=month`. The day starts at 00:00, the week on Monday at 00:00 and the month on its first day at 00:00, all in the school timezone (Asia/Jakarta), so a tab resets at the same moment for everyone. Every child of the class is listed, and a child without a scan in the period has zero points. Without `period` the answer is the same as before, and any other value answers `400` with `VALIDATION_ERROR`.
+
+`GET /api/v1/trash/stats` takes the same `period`. Then `breakdown` and `totalScans` only count the scans of that period, `periodPoints` holds their points and `period` repeats the name. The totals of the child (`totalPoints`, `seasonPoints` and `classRank`) always stay the same, and without `period` the answer has neither `period` nor `periodPoints`.
+
 ## Edit a profile
 
 A parent changes the profile with `PATCH /api/v1/wali/profile`, which takes any of `fullName`, `phoneNumber`, `whatsappNumber` and `address` and answers with the new details, the same object as `guardian` in `GET /api/v1/wali/child/{studentId}`. A teacher changes the profile with `PUT /api/v1/guru/profile`, which takes any of `fullName`, `phoneNumber` and `address`. In both a field that is missing stays as it is, and an empty text clears a phone number, a WhatsApp number or an address. The name cannot be empty and the email cannot be changed. The NIP of a teacher is fixed. A phone or WhatsApp number is digits with an optional leading plus and spaces, dashes or brackets between them, 6 to 30 characters, and anything else gets `400` with `VALIDATION_ERROR` and the field name in `details`. The photo is changed with `POST /api/v1/users/avatar`.

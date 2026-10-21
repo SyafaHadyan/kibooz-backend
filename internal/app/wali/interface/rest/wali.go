@@ -165,7 +165,12 @@ func (h *WaliHandler) TrashStats(c fiber.Ctx) error {
 		return err
 	}
 
-	res, err := h.useCase.TrashStats(c.Context(), middleware.UserIDFrom(c), studentID)
+	period, ok := constants.ParsePeriod(c.Query("period"))
+	if !ok {
+		return apperror.Validation(map[string]string{"period": "must be today, week or month"})
+	}
+
+	res, err := h.useCase.TrashStats(c.Context(), middleware.UserIDFrom(c), studentID, period)
 	if err != nil {
 		return err
 	}

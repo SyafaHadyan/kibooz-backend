@@ -43,7 +43,8 @@ type WaliUseCaseItf interface {
 	// Child shows the registered details of one child of the caller
 	Child(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.ChildProfile, error)
 	// TrashStats shows what a child collected per trash category, for the oldest child when studentID is nil
-	TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error)
+	// With a period only the scans of that day, week or month are counted in the breakdown and the totals
+	TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID, period constants.Period) (dto.TrashStatsResponse, error)
 }
 
 // MaxChildren is the largest number of children one parent account can hold
@@ -292,13 +293,23 @@ func optionalText(value string) *string {
 	return &value
 }
 
-func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.TrashStatsResponse, error) {
+func (u *WaliUseCase) TrashStats(
+	ctx context.Context, userID uuid.UUID, studentID *uuid.UUID, period constants.Period,
+) (dto.TrashStatsResponse, error) {
 	student, err := u.resolveStudent(ctx, userID, studentID)
 	if err != nil {
 		return dto.TrashStatsResponse{}, err
 	}
 
-	totals, err := u.repo.SumTrashByType(ctx, student.ID)
+	var totals map[constants.TrashType]repository.TrashTotals
+
+	if period == "" {
+		totals, err = u.repo.SumTrashByType(ctx, student.ID)
+	} else {
+		windowFrom, windowTo := clock.PeriodBounds(period, u.now(), u.cfg.Location())
+		totals, err = u.repo.SumTrashByTypeBetween(ctx, student.ID, windowFrom, windowTo)
+	}
+
 	if err != nil {
 		return dto.TrashStatsResponse{}, apperror.Internal(err)
 	}
@@ -321,11 +332,19 @@ func (u *WaliUseCase) TrashStats(ctx context.Context, userID uuid.UUID, studentI
 		RemainingDailyScans: max(u.cfg.TrashDailyLimit-today, 0),
 	}
 
+	periodPoints := 0
+
 	for _, trashType := range trashTypes {
 		item := totals[trashType]
 
 		res.Breakdown = append(res.Breakdown, dto.TrashTypeStat{TrashType: trashType, Scans: item.Scans, Points: item.Points})
 		res.TotalScans += item.Scans
+		periodPoints += item.Points
+	}
+
+	if period != "" {
+		res.Period = string(period)
+		res.PeriodPoints = &periodPoints
 	}
 
 	return res, nil

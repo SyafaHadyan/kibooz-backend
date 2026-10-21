@@ -71,6 +71,12 @@ func (f *fakeRepo) SumTrashByType(context.Context, uuid.UUID) (map[constants.Tra
 	return nil, nil
 }
 
+func (f *fakeRepo) SumTrashByTypeBetween(
+	context.Context, uuid.UUID, time.Time, time.Time,
+) (map[constants.TrashType]repository.TrashTotals, error) {
+	return nil, nil
+}
+
 func (f *fakeRepo) CountScans(context.Context, uuid.UUID, time.Time, time.Time) (int, error) {
 	return 0, nil
 }

@@ -74,6 +74,8 @@ type WaliDBItf interface {
 	CountTrashByType(ctx context.Context, studentID uuid.UUID) (map[constants.TrashType]int, error)
 	// SumTrashByType returns the scans and points of a child per trash category
 	SumTrashByType(ctx context.Context, studentID uuid.UUID) (map[constants.TrashType]TrashTotals, error)
+	// SumTrashByTypeBetween is SumTrashByType for the scans in a window
+	SumTrashByTypeBetween(ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time) (map[constants.TrashType]TrashTotals, error)
 	CountScans(ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time) (int, error)
 	// FindGuardian returns nil when the account or the parent profile does not exist
 	FindGuardian(ctx context.Context, userID uuid.UUID) (*GuardianRow, error)
@@ -195,6 +197,17 @@ func (r *WaliDB) CreateGuidanceApplication(ctx context.Context, application *ent
 }
 
 func (r *WaliDB) SumTrashByType(ctx context.Context, studentID uuid.UUID) (map[constants.TrashType]TrashTotals, error) {
+	return r.sumTrash(ctx, studentID, nil)
+}
+
+func (r *WaliDB) SumTrashByTypeBetween(
+	ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time,
+) (map[constants.TrashType]TrashTotals, error) {
+	return r.sumTrash(ctx, studentID, &[2]time.Time{from, to})
+}
+
+// sumTrash adds up the scans of a child per category, over all time or inside a window of [from, to)
+func (r *WaliDB) sumTrash(ctx context.Context, studentID uuid.UUID, window *[2]time.Time) (map[constants.TrashType]TrashTotals, error) {
 	type row struct {
 		TrashType constants.TrashType
 		Scans     int
@@ -203,10 +216,16 @@ func (r *WaliDB) SumTrashByType(ctx context.Context, studentID uuid.UUID) (map[c
 
 	var rows []row
 
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Model(&entity.TrashScan{}).
 		Select("trash_type, COUNT(*) AS scans, COALESCE(SUM(points_awarded), 0) AS points").
-		Where("student_id = ?", studentID).
+		Where("student_id = ?", studentID)
+
+	if window != nil {
+		query = query.Where("scanned_at >= ? AND scanned_at < ?", window[0], window[1])
+	}
+
+	err := query.
 		Group("trash_type").
 		Scan(&rows).Error
 	if err != nil {
