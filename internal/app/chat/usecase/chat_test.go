@@ -91,6 +91,11 @@ func (f *fakeRepo) ClassMemberIDs(context.Context, uuid.UUID) ([]uuid.UUID, erro
 func (f *fakeRepo) ClassMembersJoinedBy(_ context.Context, _ uuid.UUID, at time.Time) ([]uuid.UUID, error) {
 	f.joinedBy = at
 
+	// a test that does not care about the join time gets every member
+	if f.joined == nil {
+		return f.members, nil
+	}
+
 	return f.joined, nil
 }
 
@@ -1195,4 +1200,26 @@ func TestADeletedMessageOfARoomIsOnlyAnnouncedToTheMembersWhoHadJoined(t *testin
 
 	require.Equal(t, [][]uuid.UUID{{me, early}}, notifier.recipients, "the member who joined later hears nothing")
 	require.Equal(t, sent, repo.joinedBy, "the cut is the time the message was sent")
+}
+
+func TestANewMessageOfARoomOnlyReachesTheMembersWhoHadJoined(t *testing.T) {
+	classID, me, early, late := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	room := &entity.ChatConversation{ID: uuid.New(), Kind: constants.ChatKindClass, ClassID: &classID}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{room.ID: room},
+		memberships:   map[uuid.UUID]*repository.ClassMembership{classID: {Since: time.Now().Add(-time.Hour)}},
+		members:       []uuid.UUID{me, early, late},
+		joined:        []uuid.UUID{me, early},
+	}
+	useCase := newUseCase(repo)
+	notifier := withNotifier(useCase)
+	pusher := &fakePusher{}
+	useCase.pusher = pusher
+
+	res, err := useCase.SendMessage(context.Background(), me, room.ID, dto.SendChatMessageRequest{Body: "hello class"})
+	require.NoError(t, err)
+
+	require.Equal(t, [][]uuid.UUID{{me, early}}, notifier.recipients, "the member who joined meanwhile hears nothing live")
+	require.Equal(t, [][]uuid.UUID{{early}}, pusher.recipients, "and is not woken either, and the sender needs no wake-up")
+	require.Equal(t, res.CreatedAt, repo.joinedBy, "the cut is the time the message was stored")
 }

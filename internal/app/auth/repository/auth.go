@@ -36,7 +36,7 @@ type AuthDBItf interface {
 	) (classID uuid.UUID, err error)
 	// CreateRefreshToken stores the first token of a session after a sign in. verifiedHash is the password hash that the
 	// sign in checked, and a user whose hash is another one by now, or who is gone, gets ErrCredentialsChanged and no session.
-	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string) error
+	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration) error
 	// RotateRefreshToken uses a valid token and stores its replacement in the same session atomically. The row of the
 	// used token stays, so a replay can be recognized. A token that is unknown, expired or used a moment ago is only
 	// refused, and one that was used earlier ends its whole session.
@@ -64,9 +64,6 @@ type Rotation struct {
 	Reused bool
 	UserID uuid.UUID
 }
-
-// usedRetention is how long the row of a used token stays to recognize a replay
-const usedRetention = 7 * 24 * time.Hour
 
 type AuthDB struct {
 	db *gorm.DB
@@ -244,7 +241,9 @@ func mapUniqueViolation(err error) error {
 // ErrCredentialsChanged means that the password of the user changed, or the account was deleted, after it was checked
 var ErrCredentialsChanged = errors.New("credentials changed")
 
-func (r *AuthDB) CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string) error {
+func (r *AuthDB) CreateRefreshToken(
+	ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration,
+) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A password change ends the sessions and then updates the hash, and checking a password takes longer than that,
 		// so a sign in that was checked against the old hash could store its session after the change. Reading the hash
@@ -269,7 +268,7 @@ func (r *AuthDB) CreateRefreshToken(ctx context.Context, token *entity.RefreshTo
 			return err
 		}
 
-		return purgeExpiredTokens(tx, token.UserID, token.CreatedAt)
+		return purgeExpiredTokens(tx, token.UserID, token.CreatedAt, sessionMax)
 	})
 }
 
@@ -352,7 +351,7 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 		return nil, err
 	}
 
-	return &found, purgeExpiredTokens(tx, found.ID, now)
+	return &found, purgeExpiredTokens(tx, found.ID, now, policy.SessionMax)
 }
 
 // endReusedSession ends the session of a token that was used before and is shown again. A token that is unknown,
@@ -382,16 +381,17 @@ func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error
 }
 
 // purgeExpiredTokens keeps the table small without a background job by cleaning one user at a time. It removes the
-// expired tokens that were never used and the used ones that are too old to recognize a replay. A used token stays for
-// the whole retention even when it has expired, because showing it again must still end the session.
+// expired tokens that were never used and the used ones whose session has reached its longest lifetime, because such a
+// session cannot be refreshed any more and a replay of its tokens has nothing left to end. A used token of a session that is
+// still alive stays even when it has expired, because showing it again, however late, must still end the session.
 //
 // A row that another transaction has locked is left for the next time. The cleanup runs while the refresh that called it
 // holds the lock of the token it used, so waiting here could close a circle with a deletion that holds the lock of an
 // expired token and waits for that refresh. See package sessions.
-func purgeExpiredTokens(tx *gorm.DB, userID uuid.UUID, now time.Time) error {
+func purgeExpiredTokens(tx *gorm.DB, userID uuid.UUID, now time.Time, sessionMax time.Duration) error {
 	return tx.Exec(
 		"DELETE FROM refresh_tokens WHERE id IN (SELECT id FROM refresh_tokens WHERE user_id = ? AND "+
-			"((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND used_at <= ?)) FOR UPDATE SKIP LOCKED)",
-		userID, now, now.Add(-usedRetention),
+			"((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND session_started_at <= ?)) FOR UPDATE SKIP LOCKED)",
+		userID, now, now.Add(-sessionMax),
 	).Error
 }
