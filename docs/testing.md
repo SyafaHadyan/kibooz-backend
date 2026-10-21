@@ -24,7 +24,7 @@ The code that takes untrusted input has fuzz tests, namely the check of uploaded
 go test ./internal/imageutil/ -run '^$' -fuzz FuzzDecodeBase64 -fuzztime 30s
 ```
 
-The `Fuzz` workflow does the same for all four targets every Saturday, three minutes each, and can be started by hand with another `fuzztime`. When a target crashes, it uploads the input as an artifact, and that file goes into `testdata/fuzz` of the package so a normal `go test` replays it from then on.
+The `Fuzz` workflow does the same for all four targets every Saturday, three minutes each, and can be started by hand with another `fuzztime`. When a target crashes, it uploads the input as an artifact, and that file goes into `testdata/fuzz/<FuzzTargetName>/` of its package, for example `internal/imageutil/testdata/fuzz/FuzzInspect/<file>`, so a normal `go test` replays it from then on.
 
 ## Performance tests
 
