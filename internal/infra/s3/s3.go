@@ -151,7 +151,7 @@ func (s *Storage) Upload(ctx context.Context, objectKey string, contentType stri
 		CacheControl: aws.String("public, max-age=31536000, immutable"),
 	})
 	if err != nil {
-		return "", apperror.ErrStorageFailed.WithErr(err)
+		return "", storageFailure(err)
 	}
 
 	return s.publicURL + "/" + objectKey, nil
@@ -177,6 +177,7 @@ func (s *Storage) PresignUpload(
 		ContentLength: aws.Int64(size),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
+		// signing is done in this process and never waits for the bucket, so it cannot run out of time
 		return "", apperror.ErrStorageFailed.WithErr(err)
 	}
 
@@ -189,6 +190,7 @@ func (s *Storage) PresignRead(ctx context.Context, objectKey string, ttl time.Du
 		Key:    aws.String(objectKey),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
+		// signing is done in this process and never waits for the bucket, so it cannot run out of time
 		return "", apperror.ErrStorageFailed.WithErr(err)
 	}
 
@@ -209,7 +211,7 @@ func (s *Storage) Stat(ctx context.Context, objectKey string) (*Object, error) {
 			return nil, nil
 		}
 
-		return nil, apperror.ErrStorageFailed.WithErr(err)
+		return nil, storageFailure(err)
 	}
 
 	return &Object{Size: aws.ToInt64(head.ContentLength), ContentType: aws.ToString(head.ContentType)}, nil
@@ -228,7 +230,7 @@ func (s *Storage) Copy(ctx context.Context, sourceKey string, objectKey string, 
 		CacheControl:      aws.String(s.cacheControl),
 	})
 	if err != nil {
-		return apperror.ErrStorageFailed.WithErr(err)
+		return storageFailure(err)
 	}
 
 	return nil
@@ -253,7 +255,7 @@ func (s *Storage) Delete(ctx context.Context, objectKey string) error {
 		Key:    aws.String(objectKey),
 	})
 	if err != nil {
-		return apperror.ErrStorageFailed.WithErr(err)
+		return storageFailure(err)
 	}
 
 	return nil
@@ -296,4 +298,15 @@ func (Disabled) Copy(context.Context, string, string, string) error {
 
 func (Disabled) Delete(context.Context, string) error {
 	return apperror.ErrStorageDisabled
+}
+
+// storageFailure is the error of a storage call that failed. A call that ran out of time or was cancelled is a slow bucket and
+// answers like any request that ran out of time, which is a 503 that Sentry does not need to hear about, and any other
+// failure is a 502.
+func storageFailure(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return apperror.Internal(err)
+	}
+
+	return apperror.ErrStorageFailed.WithErr(err)
 }

@@ -1,7 +1,10 @@
 package fiber_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -300,4 +303,29 @@ func TestTheMetricsCountARequestThatABodyCheckRefuses(t *testing.T) {
 	require.EqualValues(t, 1, refused(t, stats, "413"), "the refused body is counted, though it never reached its route")
 	require.EqualValues(t, 1, refused(t, stats, "415"))
 	require.Zero(t, refused(t, stats, "200"))
+}
+
+// A request that ran out of time is a server that is too slow and not a bug, so it answers 503 and asks the app to wait, which
+// also keeps it out of Sentry. The wrapped error is what a database driver returns for a deadline.
+func TestARequestThatRanOutOfTimeAnswers503WithARetryAfter(t *testing.T) {
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: 10, BodyLimitMB: 1}, nil)
+	server.Router.Get("/slow", func(gofiber.Ctx) error {
+		return apperror.Internal(fmt.Errorf("query: %w", context.DeadlineExceeded))
+	})
+	server.Router.Get("/broken", func(gofiber.Ctx) error { return apperror.Internal(errors.New("a bug")) })
+
+	res := get(t, server.Fiber, "/api/v1/slow", nil)
+
+	require.Equal(t, http.StatusServiceUnavailable, res.StatusCode)
+	require.Equal(t, "1", res.Header.Get("Retry-After"))
+
+	var body map[string]any
+
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+	require.Equal(t, "SERVER_TIMEOUT", body["errorCode"])
+
+	res = get(t, server.Fiber, "/api/v1/broken", nil)
+
+	require.Equal(t, http.StatusInternalServerError, res.StatusCode, "any other failure is still a 500")
+	require.Empty(t, res.Header.Get("Retry-After"))
 }

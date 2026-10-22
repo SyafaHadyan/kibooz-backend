@@ -68,7 +68,8 @@ func TestAStalledRequestIsCancelledWhenTheTimeIsUp(t *testing.T) {
 
 	status, _ := fetch(t, deadlineServer(1), "/api/v1/stall")
 
-	require.Equal(t, http.StatusInternalServerError, status)
+	// a request that ran out of time is a server that is too slow, so it answers 503 and not a 500 that goes to Sentry
+	require.Equal(t, http.StatusServiceUnavailable, status)
 	require.Less(t, time.Since(started), 4*time.Second, "the handler waited for its own timer and not for the deadline")
 }
 
