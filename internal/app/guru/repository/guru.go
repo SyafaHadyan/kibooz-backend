@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -83,6 +84,14 @@ type GuruDBItf interface {
 	ListMoveRequests(ctx context.Context, classID uuid.UUID) ([]enrollment.ClassRow, error)
 	// AcceptMove moves the child of a request that waits into the class and returns the class that the child left
 	AcceptMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) (uuid.UUID, error)
+	// ArchiveClass archives the class for its owner, which makes it read only. It answers apperror.ErrNotClassOwner for a teacher who is
+	// not the owner, apperror.ErrClassNotFound for one who no longer teaches the class and apperror.ErrClassArchived for a class that is
+	// archived already. Requests to move into the class that wait are rejected by the database.
+	ArchiveClass(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) error
+	// RestoreClass makes an archived class writable again for any of its teachers and gives it a new join code, which it returns. It
+	// answers apperror.ErrClassNotArchived, apperror.ErrClassNotFound and apperror.ErrClassLimitReached when the teacher already teaches the
+	// largest number of classes that are not archived.
+	RestoreClass(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) (string, error)
 	// StudentHistory returns what a child that is in the class did in the classes it left, and apperror.ErrStudentNotFound when the
 	// child is not in the class
 	StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error)
@@ -766,6 +775,114 @@ func (r *GuruDB) AcceptMove(ctx context.Context, classID uuid.UUID, requestID uu
 
 func (r *GuruDB) RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error {
 	return enrollment.Reject(r.db.WithContext(ctx), classID, requestID, guruID)
+}
+
+func (r *GuruDB) ArchiveClass(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the teachers lock comes first, the ranking lock second, the order that a join takes them in. A mood log or a scan that holds
+		// the ranking lock finishes before the archive, and one that waits finds the class archived.
+		archived, err := classteam.LockLive(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		// the owner is checked under the lock, because a change of owner or a removal commits under it
+		var owners []bool
+
+		err = tx.Table("class_teachers AS ct").
+			Select("ct.is_owner").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ? AND ct.guru_id = ?", classID, actorGuruID).
+			Scan(&owners).Error
+		if err != nil {
+			return err
+		}
+
+		if len(owners) == 0 {
+			return apperror.ErrClassNotFound
+		}
+
+		if !owners[0] {
+			return apperror.ErrNotClassOwner
+		}
+
+		if archived {
+			return apperror.ErrClassArchived
+		}
+
+		// a teacher who is refused above never waits for the ranking lock, so a non owner cannot stall the class by asking again
+		err = ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		return tx.Exec("UPDATE classes SET archived_at = now() WHERE id = ? AND archived_at IS NULL", classID).Error
+	})
+}
+
+func (r *GuruDB) RestoreClass(ctx context.Context, classID uuid.UUID, actorGuruID uuid.UUID) (string, error) {
+	var code string
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		code = ""
+
+		// every teacher of the class gets a class back, so each of them is counted and not only the caller. The rows stay locked in the
+		// order of the ids, so teachers who restore two classes at once are counted one after the other, and they come before the
+		// teachers lock as they do when a teacher is added
+		var guruIDs []uuid.UUID
+
+		err := tx.Raw(`SELECT g.id FROM gurus AS g
+			WHERE g.deleted_at IS NULL AND g.id IN (SELECT ct.guru_id FROM class_teachers AS ct WHERE ct.class_id = ?)
+			ORDER BY g.id FOR UPDATE OF g`, classID).Scan(&guruIDs).Error
+		if err != nil {
+			return err
+		}
+
+		if !slices.Contains(guruIDs, actorGuruID) {
+			return apperror.ErrClassNotFound
+		}
+
+		archived, err := classteam.LockLive(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		var teaching int64
+
+		err = tx.Table("class_teachers AS ct").
+			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+			Where("ct.class_id = ? AND ct.guru_id = ?", classID, actorGuruID).
+			Count(&teaching).Error
+		if err != nil {
+			return err
+		}
+
+		if teaching == 0 {
+			return apperror.ErrClassNotFound
+		}
+
+		if !archived {
+			return apperror.ErrClassNotArchived
+		}
+
+		for _, id := range guruIDs {
+			err = classteam.CheckClassRoom(tx, id, constants.MaxClassesPerTeacher)
+			if err != nil {
+				return err
+			}
+		}
+
+		// the old code may have been shared widely while the class was closed, so the class comes back with a new one
+		code, err = classcode.Replace(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		return tx.Exec("UPDATE classes SET archived_at = NULL WHERE id = ?", classID).Error
+	})
+
+	return code, err
 }
 
 func (r *GuruDB) StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error) {

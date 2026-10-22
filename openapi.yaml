@@ -917,6 +917,94 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/archive:
+    post:
+      tags: [Teacher]
+      operationId: archiveClass
+      summary: Archive a class
+      description: |
+        Only the owner of the class can archive it, whatever number of children it has. An archived class is read only. Nothing can be
+        written into it, which covers mood logs, scans, forum posts and replies, videos, the join code, the joining switch, taking a
+        child out, and the teachers and the owner, and every such change answers `409` with `CLASS_ARCHIVED`. Everyone can still read
+        it, the leaderboard stays frozen and the semester change still ends the semester for it. Its join code stops working for parents, and a request to
+        move a child into it that waits is rejected. A child can still be moved out with a move request, and a parent can still rename
+        or delete their own child. The class stays in the list of its teachers with `archivedAt`, and any of its teachers can restore it
+        with `POST /guru/classes/{classId}/restore`. The answer is the class as the list shows it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The class is archived
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: The signed in teacher is not the owner of the class (`CLASS_OWNER_REQUIRED`), or the account is not a teacher (`AUTH_FORBIDDEN`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class is archived already (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/restore:
+    post:
+      tags: [Teacher]
+      operationId: restoreClass
+      summary: Restore an archived class
+      description: |
+        Any teacher of the class can make an archived class writable again. The class gets a new join code, because the old one may have
+        been shared widely while the class was closed, so the answer holds the code to hand out. The joining switch stays as it was. A
+        restored class counts toward the 20 classes that a teacher can teach, and the restore is refused with `CLASS_LIMIT_REACHED`
+        when any teacher of the class, and not only the caller, already teaches 20 classes that are not archived. The new code is
+        in the answer only, so a call that is repeated after it succeeded gets `CLASS_NOT_ARCHIVED` and the code is read from
+        `GET /guru/classes/{classId}` then. The requests to move a child into the class that were rejected
+        when it was archived do not come back, and the parents can ask again. The answer is the class as the list shows it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+      responses:
+        "200":
+          description: The class is writable again
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class is not archived (`CLASS_NOT_ARCHIVED`), or the teacher already teaches 20 classes that are not archived (`CLASS_LIMIT_REACHED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}/joining:
     put:
       tags: [Teacher]
@@ -2653,8 +2741,8 @@ paths:
         A teacher who is the only teacher of a class that still has children has to send `successorEmail`. The successor
         is added to every class that nobody else teaches and becomes its owner, so a class with children never loses its
         last teacher. Without a `successorEmail`, a class that nobody else teaches and that has no active child is
-        archived instead. Its join code then answers `CLASS_CODE_NOT_FOUND` and nobody can restore the class through the
-        API. The classes that other teachers also teach stay with them, and when the account owned such a class the
+        archived instead. Its join code then answers `CLASS_CODE_NOT_FOUND` and nobody is left to restore the class
+        through the API. The classes that other teachers also teach stay with them, and when the account owned such a class the
         teacher who joined next becomes the owner. The deletion changes nothing when it is refused.
       requestBody:
         required: true

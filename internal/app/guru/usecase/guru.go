@@ -49,6 +49,10 @@ type GuruUseCaseItf interface {
 	MoveRequests(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassMoveRequestList, error)
 	// AcceptMove moves the child of a request into the class, where it starts from zero, and clears the leaderboards of both classes
 	AcceptMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error
+	// ArchiveClass archives a class of the caller, who has to be its owner, which makes the class read only
+	ArchiveClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error)
+	// RestoreClass makes an archived class of the caller writable again, with a new join code
+	RestoreClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error)
 	// StudentHistory shows what a child of the class did in the classes it left, read only
 	StudentHistory(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) (dto.StudentHistory, error)
 	// RejectMove turns down a request to move a child into the class
@@ -904,6 +908,53 @@ func appOrInternal(err error) error {
 	}
 
 	return apperror.Internal(err)
+}
+
+func (u *GuruUseCase) ArchiveClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error) {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.ClassSummary{}, err
+	}
+
+	err = u.repo.ArchiveClass(ctx, class.ID, guru.ID)
+	if err != nil {
+		return dto.ClassSummary{}, appOrInternal(err)
+	}
+
+	// the points of the class are frozen from now on, and the leaderboard is read from the cache
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
+
+	return u.classSummaryOf(ctx, guru.ID, class.ID)
+}
+
+func (u *GuruUseCase) RestoreClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error) {
+	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.ClassSummary{}, err
+	}
+
+	_, err = u.repo.RestoreClass(ctx, class.ID, guru.ID)
+	if err != nil {
+		return dto.ClassSummary{}, appOrInternal(err)
+	}
+
+	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
+
+	return u.classSummaryOf(ctx, guru.ID, class.ID)
+}
+
+// classSummaryOf reads the class again after a change, so the answer holds the new join code and the archive time
+func (u *GuruUseCase) classSummaryOf(ctx context.Context, guruID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error) {
+	row, err := u.repo.FindClassRow(ctx, guruID, classID)
+	if err != nil {
+		return dto.ClassSummary{}, apperror.Internal(err)
+	}
+
+	if row == nil {
+		return dto.ClassSummary{}, apperror.ErrClassNotFound
+	}
+
+	return classSummary(row), nil
 }
 
 func (u *GuruUseCase) StudentHistory(

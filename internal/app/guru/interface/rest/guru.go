@@ -37,6 +37,8 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Get("/classes/:classId", handler.Class)
 	group.Post("/classes/:classId/join-code", handler.RotateJoinCode)
 	group.Put("/classes/:classId/joining", handler.SetJoining)
+	group.Post("/classes/:classId/archive", handler.ArchiveClass)
+	group.Post("/classes/:classId/restore", handler.RestoreClass)
 	group.Delete("/classes/:classId/students/:studentId", handler.RemoveStudent)
 	group.Get("/classes/:classId/students/:studentId/history", handler.StudentHistory)
 	group.Get("/classes/:classId/move-requests", handler.MoveRequests)
@@ -405,4 +407,32 @@ func (h *GuruHandler) StudentHistory(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *GuruHandler) ArchiveClass(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.ArchiveClass(c.Context(), middleware.UserIDFrom(c), classID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Class archived", res)
+}
+
+func (h *GuruHandler) RestoreClass(c fiber.Ctx) error {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	res, err := h.useCase.RestoreClass(c.Context(), middleware.UserIDFrom(c), classID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Class restored", res)
 }
