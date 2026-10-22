@@ -37,7 +37,7 @@ Passwords are never stored in clear text or logged. The server holds the hash on
 | Data | Kept for |
 |:---|:---|
 | Account, child, mood, scan, guidance, forum, chat and video rows | Until the project owner removes them from the database. Nothing in the code removes them on a timer |
-| Refresh tokens | Until they expire or the session ends. A used token stays while its session lives and goes at a later sign in or refresh of that user once the session has reached `JWT_SESSION_MAX_DAYS`, 90 days by default, so that a replay can be recognized however late it comes |
+| Refresh tokens | Until they expire or the session ends. A used token stays while its session lives and goes once the session has reached `JWT_SESSION_MAX_DAYS`, 90 days by default, at a later sign in or refresh of that user or at the hourly purge of every account, so that a replay can be recognized however late it comes |
 | Remembered `Idempotency-Key` rows, which hold the response of the request | `IDEMPOTENCY_TTL_HOURS`, 7 days by default, and an hourly job removes the older ones |
 | A deleted chat message | The row stays with an empty body, so the text is gone and a placeholder is left in the conversation. Its photo or video is queued for removal from the private bucket in the same step and is deleted within minutes |
 | Chat photos and videos | In the private bucket until the message is deleted by its author. A file that was uploaded and never sent is removed after one day by the lifecycle rule on `pending/`. A message stays after its sender deletes the account, and so does its file, because the other people of the conversation still need the history |
