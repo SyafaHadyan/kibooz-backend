@@ -215,4 +215,35 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", classID).Scan(&label).Error)
 		require.Equal(t, "2031-01", label)
 	})
+
+	t.Run("a standing that was saved already is skipped and the class still moves on", func(t *testing.T) {
+		// as if a second save of the same semester came after the first one, the key of the class, the child and the semester is taken
+		require.NoError(t, tx.Exec(
+			"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
+				"VALUES (?::uuid, ?::uuid, 'Bunga Citra', '2031-01', 99, 1)",
+			otherClassID, bungaID,
+		).Error)
+		require.NoError(t, tx.Exec("UPDATE students SET season_points = 6 WHERE id = ?::uuid", bungaID).Error)
+
+		clock = time.Date(2031, 7, 3, 9, 0, 0, 0, time.UTC)
+
+		reset, err := job.Run(context.Background())
+		require.NoError(t, err, "a row that is there already does not fail the reset")
+		require.True(t, reset)
+
+		var rows, points, seasonPoints int
+		require.NoError(t, tx.Raw(
+			"SELECT COUNT(*), COALESCE(MAX(points), 0) FROM leaderboard_history WHERE class_id = ?::uuid AND student_id = ?::uuid AND season_label = '2031-01'",
+			otherClassID, bungaID,
+		).Row().Scan(&rows, &points))
+		require.Equal(t, 1, rows)
+		require.Equal(t, 99, points, "the row that was saved first stays")
+
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", bungaID).Scan(&seasonPoints).Error)
+		require.Zero(t, seasonPoints)
+
+		var label string
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", otherClassID).Scan(&label).Error)
+		require.Equal(t, "2031-07", label, "the class is in the new semester")
+	})
 }

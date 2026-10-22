@@ -42,7 +42,7 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 
 - Files are append only. A schema change is a new numbered file and never an edit of an old one, because other databases have already applied the old one. A test fails when a number is missing or used twice.
 - Every migration has an up and a down file.
-- A migration that fails halfway leaves the database marked dirty, and the next start stops with `Dirty database version`. Fix the cause, repair the data by hand if needed, and clear the mark with `migrate force <version>` from the golang-migrate command line before starting again.
+- A migration that fails halfway leaves the database marked dirty, and the next start stops with `Dirty database version`. Fix the cause, repair the data by hand if needed, and clear the mark with `migrate force <version>` from the golang-migrate command line before starting again. A migration file runs as one statement batch, so a failure rolls the whole file back and the version to force is the one before it, for example `migrate force 23` after a failure of migration 24, and forcing the failed version itself would skip the file.
 
 ## Settings that need care
 
