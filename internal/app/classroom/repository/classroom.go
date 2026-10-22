@@ -396,7 +396,10 @@ func (r *ClassroomDB) ListGuidanceReports(ctx context.Context, classID uuid.UUID
 	query := r.db.WithContext(ctx).
 		Table("guidance_applications AS g").
 		Joins("JOIN students AS s ON s.id = g.student_id").
-		Where("s.class_id = ? AND s.deleted_at IS NULL", classID)
+		// only what a parent applied since the child joined this class, so a teacher who gets a child by a move does not read the
+		// notes that the parent wrote while the child was in another class
+		Joins("JOIN enrollments AS e ON e.student_id = s.id AND e.class_id = s.class_id AND e.status = 'active'").
+		Where("s.class_id = ? AND s.deleted_at IS NULL AND g.applied_at >= e.activated_at", classID)
 
 	var total int64
 
