@@ -429,7 +429,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "The file cleanup or the idempotency purge of the copy {{ $labels.instance }} on {{ $labels.host }} has not succeeded for 3 hours"
+      "summary": "The file cleanup, the idempotency purge or the refresh token purge of the copy {{ $labels.instance }} on {{ $labels.host }} has not succeeded for 3 hours"
     },
     "data": [
       {
@@ -441,7 +441,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max by (host, instance) (time() - kibooz_job_last_success_timestamp_seconds{job=~\"file_cleanup|idempotency_purge\"})",
+          "expr": "max by (host, instance) (time() - kibooz_job_last_success_timestamp_seconds{job=~\"file_cleanup|idempotency_purge|refresh_token_purge\"})",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
