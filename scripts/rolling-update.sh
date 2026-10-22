@@ -9,7 +9,8 @@
 # connection does not stop it half way.
 #
 # What it does, in this order. It checks that the services exist, pulls the image of the version, which also proves that the tag
-# exists, and only then sets IMAGE_TAG in the env file. Then for each copy in order it pulls through compose, recreates the one
+# exists, and only then sets IMAGE_TAG in the env file. It pulls through compose once for all copies, and when that fails it puts the env file back as it was
+# and stops before any copy is touched, and so does an interrupt before the first copy. Then for each copy in order it recreates the one
 # copy with no dependencies, and polls /healthz of that copy until the answer is status ok, every check ok or disabled, and the
 # version that was asked for, twice in a row. It goes on to the next copy only when the one before is healthy. When a copy does not
 # become healthy it stops, says which copies are already new and which are still old, and prints the command that goes back.
@@ -109,9 +110,35 @@ healthy() {
 previous="$(sed -n 's/^IMAGE_TAG=//p' "$env_file" | tail -1 | tr -d "\r\"'")"
 changed=0
 updated=()
+# 1 from the moment the first copy is recreated, because from then on a copy may run the new version
+copy_started=0
+# the env file as it is now, byte for byte. The x keeps the newlines at the end, and it is cut off again
+env_original="$(
+  cat "$env_file"
+  printf x
+)"
+env_original="${env_original%x}"
+
+# restore_tag puts the env file back as it was, for a step that fails before any copy is touched. Without it the env file would
+# name a version that no copy runs, and a later docker compose up -d would recreate every copy on it at once. The whole file
+# is written back and not edited, so no tag with a special character can break it and nothing is left behind
+restore_tag() {
+  [ "$changed" = "1" ] || return 0
+
+  if printf '%s' "$env_original" >"$env_file"; then
+    changed=0
+    return 0
+  fi
+
+  echo "IMAGE_TAG in $env_file could not be put back, set it to ${previous:-not set} by hand before anything runs docker compose up -d" >&2
+  return 1
+}
 
 on_signal() {
   echo >&2
+  if [ "$copy_started" = "0" ]; then
+    restore_tag || true
+  fi
   echo "Interrupted. IMAGE_TAG in $env_file is $([ "$changed" = "1" ] && echo "$version" || echo "${previous:-not set}"), copies updated so far ${updated[*]:-none}." >&2
   echo "Check the copies with docker compose ps and run the update again when they are fine." >&2
   exit 130
@@ -215,7 +242,10 @@ else
 fi
 
 echo "Pulling through compose"
-run compose pull "${services[@]}"
+if ! run compose pull "${services[@]}"; then
+  restore_tag || die "The pull through compose failed and IMAGE_TAG in $env_file could not be put back, see above. No copy was touched"
+  die "The pull through compose failed, for example because Docker Hub limited it. IMAGE_TAG in $env_file is ${previous:-not set} again and no copy was touched, so run the update again later"
+fi
 
 # go_back prints how to return to the version that ran before, when that version is known
 go_back() {
@@ -231,7 +261,14 @@ for index in "${!services[@]}"; do
   port="${ports[$index]}"
   echo
   echo "Updating $service on port $port"
-  run compose up -d --no-deps "$service"
+  copy_started=1
+  if ! run compose up -d --no-deps "$service"; then
+    echo "docker compose up failed for $service, so it may be stopped, and it was not checked" >&2
+    echo "Copies already on $version are ${updated[*]:-none} and the ones still on the old version are ${services[*]:$((index + 1))}" >&2
+    echo "IMAGE_TAG in $env_file names $version, so do not run docker compose up -d before the copies are checked, because it would recreate every copy on $version" >&2
+    go_back
+    exit 1
+  fi
 
   if [ "$dry_run" = "1" ]; then
     continue
@@ -253,6 +290,7 @@ for index in "${!services[@]}"; do
         rest="${services[*]:$((index + 1))}"
         echo "Copies already on $version are ${updated[*]:-none} and the ones still on the old version are ${rest:-none}. $service itself is on $version and not healthy" >&2
         echo "Read the logs with docker compose logs --tail 100 $service. A migration of $version may already have run, so read the changelog before going back" >&2
+        echo "IMAGE_TAG in $env_file names $version, so do not run docker compose up -d before the copies are checked, because it would recreate every copy on $version" >&2
         go_back
         exit 1
       fi
