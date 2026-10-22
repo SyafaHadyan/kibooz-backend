@@ -148,3 +148,42 @@ func TestAConfiguredNumberOfSlotsIsKept(t *testing.T) {
 
 	require.Equal(t, 3, cap(hasher.slots))
 }
+
+func TestNewHashesWithTheConfiguredCost(t *testing.T) {
+	tests := map[string]struct {
+		configured int
+		want       int
+	}{
+		"the default":                {configured: 10, want: 10},
+		"a lower cost for tests":     {configured: bcrypt.MinCost, want: bcrypt.MinCost},
+		"a config that has no cost":  {configured: 0, want: bcrypt.DefaultCost},
+		"a cost that bcrypt refuses": {configured: 2, want: bcrypt.DefaultCost},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			hasher := New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10, PasswordHashCost: tc.configured})
+
+			hash, err := hasher.Hash(t.Context(), "a-password-for-the-test")
+			require.NoError(t, err)
+
+			cost, err := bcrypt.Cost([]byte(hash))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, cost)
+		})
+	}
+}
+
+func TestTheDummyHashHasTheCostOfTheConfiguredHashes(t *testing.T) {
+	hasher := New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10, PasswordHashCost: bcrypt.MinCost})
+
+	cost, err := bcrypt.Cost([]byte(hasher.DummyHash()))
+	require.NoError(t, err)
+	require.Equal(t, bcrypt.MinCost, cost)
+
+	matches, err := hasher.Matches(t.Context(), hasher.DummyHash(), "not-the-dummy-password")
+	require.NoError(t, err)
+	require.False(t, matches, "no real password matches the dummy hash")
+
+	require.Equal(t, hasher.DummyHash(), hasher.DummyHash(), "the hash is made once")
+}

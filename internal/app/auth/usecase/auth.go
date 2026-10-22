@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
@@ -40,9 +39,6 @@ const (
 	// cleanupTimeout is how long taking the used flag off a token may last, on a context of its own
 	cleanupTimeout = 2 * time.Second
 )
-
-// dummyHash lets login spend the same time for unknown emails as for known ones
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("kibooz-dummy-password"), bcrypt.DefaultCost)
 
 type AuthUseCaseItf interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error)
@@ -224,7 +220,7 @@ func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.Auth
 
 	if user == nil {
 		// the same work as for a wrong password, so the answer does not tell whether the email exists
-		_, err = u.hasher.Matches(ctx, string(dummyHash), req.Password)
+		_, err = u.hasher.Matches(ctx, u.hasher.DummyHash(), req.Password)
 		if err != nil {
 			return dto.AuthResponse{}, apperror.As(err)
 		}

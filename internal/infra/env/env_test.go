@@ -16,6 +16,7 @@ func valid() *Env {
 		DeviceTokenTTLDays:           90,
 		IdempotencyTTLHours:          168,
 		PasswordHashWaitMilliseconds: 1000,
+		PasswordHashCost:             10,
 		SemesterStartMonths:          []int{1, 7},
 		SentryEventsPerMinute:        30,
 		ChatPhotoMaxMB:               4,
@@ -189,6 +190,22 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		change(cfg)
 
 		require.ErrorContains(t, cfg.validate(), name)
+	}
+}
+
+func TestThePasswordHashCostHasToBeInTheRangeOfBcrypt(t *testing.T) {
+	for _, cost := range []int{3, 15, 0, -1} {
+		cfg := valid()
+		cfg.PasswordHashCost = cost
+
+		require.ErrorContains(t, cfg.validate(), "PASSWORD_HASH_COST", "cost %d", cost)
+	}
+
+	for _, cost := range []int{4, 10, 14} {
+		cfg := valid()
+		cfg.PasswordHashCost = cost
+
+		require.NoError(t, cfg.validate(), "cost %d", cost)
 	}
 }
 

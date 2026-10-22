@@ -10,6 +10,8 @@ The end to end suite drives the real HTTP stack against PostgreSQL and Redis, wi
 E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... go test ./... -race -count=1
 ```
 
+The suite sets `PASSWORD_HASH_COST` to 4, the lowest cost of bcrypt, because it signs up hundreds of accounts and bcrypt at the default cost under the race detector was nearly all of its running time. The unit tests of `internal/infra/passwords` still check that the default cost is 10. The CI step runs `go test` with `-timeout 15m`, so a hung test ends with a dump of the goroutines before the job limit of 20 minutes cuts it off.
+
 Every response that suite sees is also checked against `openapi.yaml`, so a field, status code or error that the code changes without the spec fails the build. An object in a response also fails the check when it carries a field that the spec does not list, so a handler cannot start returning an internal field unnoticed. `TestSpecMatchesRoutes` fails when an endpoint exists in only one of the code and the spec. When the whole end to end suite passes, a final check also fails the run if a documented operation never had a single response checked, or if a documented success response was never seen, because such an operation would be documented without anything to keep it true. That check is skipped for a filtered run with `-run` or `-skip` and when `E2E_ENABLED` is not set. All of these run inside the required `Unit and end to end tests` job, so there is no extra CI job.
 
 Run the linter with `golangci-lint run` (configuration in `.golangci.yml`).
