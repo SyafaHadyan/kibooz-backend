@@ -115,7 +115,7 @@ const (
 	// MaxChildrenPerClass is the most active children of one class, counted when a child joins
 	MaxChildrenPerClass = 60
 
-	// JSONBodyMaxBytes is the largest body of any request except the two uploads, whose bodies are photos. The largest real
+	// JSONBodyMaxBytes is the largest body of any request except the three photo uploads (the avatar, the trash photo and the photo of a chat message). The largest real
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024
 
