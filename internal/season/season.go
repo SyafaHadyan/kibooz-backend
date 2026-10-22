@@ -142,6 +142,8 @@ func (season) TableName() string { return "leaderboard_seasons" }
 func (j *Job) startSemester(tx *gorm.DB, ended string) ([]uuid.UUID, error) {
 	var classIDs []uuid.UUID
 
+	// An archived class is in too. Its points cannot change, but the semester ends for it as for every class, so its standings are saved
+	// and a class that is restored later starts from the semester that is under way.
 	err := tx.Raw("SELECT id FROM classes ORDER BY id").Scan(&classIDs).Error
 	if err != nil {
 		return nil, err

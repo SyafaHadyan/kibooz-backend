@@ -180,7 +180,8 @@ func (r *GuruDB) FindTaughtClass(ctx context.Context, guruID uuid.UUID, classID 
 
 	var classes []entity.Class
 
-	err := query.Order("c.created_at ASC, c.id ASC").Limit(1).Scan(&classes).Error
+	// without an id the oldest class that is not archived comes first, and an archived one only when nothing else is left
+	err := query.Order("(c.archived_at IS NOT NULL) ASC, c.created_at ASC, c.id ASC").Limit(1).Scan(&classes).Error
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +266,11 @@ func (r *GuruDB) CreateMoodLogs(
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// the lock makes the count and the insert one step, so two requests cannot both pass the limit
 		err := ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		err = classteam.CheckWritable(tx, classID)
 		if err != nil {
 			return err
 		}

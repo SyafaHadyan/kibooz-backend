@@ -278,10 +278,11 @@ func TestUnusedFileKey(t *testing.T) {
 type forumRepo struct {
 	repository.ClassroomDBItf
 
-	teacher *uuid.UUID
-	parent  bool
-	post    *repository.PostRow
-	gone    bool
+	teacher  *uuid.UUID
+	parent   bool
+	post     *repository.PostRow
+	gone     bool
+	archived bool
 }
 
 func (r *forumRepo) TeacherOfClass(context.Context, uuid.UUID, uuid.UUID) (*uuid.UUID, error) {
@@ -905,3 +906,9 @@ func TestAReplyToAThreadThatIsDeletedMeanwhileIsNotFound(t *testing.T) {
 		require.Equal(t, "INTERNAL_ERROR", appErr.Code)
 	})
 }
+
+func (r countingRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { return false, nil }
+
+func (r *forumRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { return r.archived, nil }
+
+func (r lockRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { return false, nil }

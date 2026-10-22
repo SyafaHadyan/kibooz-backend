@@ -157,6 +157,19 @@ func leaveClass(tx *gorm.DB, classID uuid.UUID, guruID uuid.UUID, successorEmail
 	}
 
 	if successorEmail == "" {
+		// an archived class is read only, so nobody needs to take it over without a name, and it stays archived. A successor that
+		// is named still gets the class, children or none.
+		var archived bool
+
+		err = tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+		if err != nil {
+			return err
+		}
+
+		if archived {
+			return nil
+		}
+
 		return archiveEmpty(tx, classID)
 	}
 
@@ -252,6 +265,23 @@ func SetJoining(tx *gorm.DB, classID uuid.UUID, open bool) error {
 	}
 
 	return tx.Model(&entity.Class{}).Where("id = ?", classID).Update("join_open", open).Error
+}
+
+// CheckWritable refuses a write into a class that is archived, because an archived class is read only. It reads the committed state, so
+// a write that races with the archive itself can still get through at that moment.
+func CheckWritable(tx *gorm.DB, classID uuid.UUID) error {
+	var archived bool
+
+	err := tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+	if err != nil {
+		return err
+	}
+
+	if archived {
+		return apperror.ErrClassArchived
+	}
+
+	return nil
 }
 
 // CheckTeacher refuses a class whose teachers were all deleted, which keeps its code but must not take in children

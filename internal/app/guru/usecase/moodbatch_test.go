@@ -308,6 +308,34 @@ func TestLogMoodBatchHidesAStorageFailure(t *testing.T) {
 	require.Empty(t, res.Logs)
 }
 
+// teachingAll lets a teacher log a mood for any child, which is what a single log asks the store first
+type teachingAll struct{ *batchRepo }
+
+func (teachingAll) TeachesClass(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
+	return true, nil
+}
+
+func TestLogMoodKeepsTheAnswerOfARuleFromTheStore(t *testing.T) {
+	for _, rule := range []*apperror.Error{apperror.ErrClassArchived, apperror.ErrMoodLimitReached} {
+		repo := batching()
+		repo.createErr = rule
+		student := repo.enroll()
+
+		_, err := batchUseCase(repo, time.Now()).LogMoodBatch(context.Background(), uuid.New(), dto.LogMoodBatchRequest{
+			ClassID: repo.class.ID,
+			Entries: []dto.LogMoodBatchEntry{aiEntry(student, constants.MoodSenang, 0.9)},
+		})
+		require.ErrorIs(t, err, rule, "a batch")
+
+		single := &GuruUseCase{
+			repo: teachingAll{repo}, cfg: &env.Env{AppTimezone: "Asia/Jakarta"}, now: time.Now,
+		}
+
+		_, err = single.LogMood(context.Background(), uuid.New(), dto.LogMoodRequest{StudentID: student, MoodType: constants.MoodSenang})
+		require.ErrorIs(t, err, rule, "a single log")
+	}
+}
+
 func TestRecordedAtOf(t *testing.T) {
 	now := time.Date(2026, 3, 4, 8, 30, 15, 123456789, time.UTC)
 	useCase := &GuruUseCase{now: func() time.Time { return now }}
