@@ -3436,7 +3436,9 @@ components:
           format: password
           minLength: 8
           maxLength: 72
-          description: At most 72 bytes, which is the limit of bcrypt
+          description: >-
+            At most 72 bytes, which is the limit of bcrypt, and not on the list of common passwords (`400` with `VALIDATION_ERROR` on
+            this field).
         fullName:
           type: string
           minLength: 2
@@ -3489,6 +3491,7 @@ components:
           type: string
           format: password
           maxLength: 72
+          description: A login only checks the password against the account, and never applies the rule of the common passwords
         role:
           $ref: "#/components/schemas/Role"
         deviceToken:
@@ -4104,7 +4107,9 @@ components:
           format: password
           minLength: 8
           maxLength: 72
-          description: At most 72 bytes, because the hash only reads that much, and different from the current password.
+          description: >-
+            At most 72 bytes, because the hash only reads that much, different from the current password, and not on the list of
+            common passwords (`400` with `VALIDATION_ERROR` on this field).
     PageInfo:
       type: object
       required: [page, limit, total]
