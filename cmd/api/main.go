@@ -20,6 +20,9 @@ import (
 // version is set at build time with -ldflags
 var version = "dev"
 
+// shutdownTimeout is how long the server lets requests that are running finish after a stop signal
+const shutdownTimeout = 15 * time.Second
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck.Run(os.Getenv("APP_PORT")))
@@ -73,7 +76,9 @@ func main() {
 		log.Println("gracefully shutting down")
 	}
 
-	err = app.App.Fiber.ShutdownWithTimeout(10 * time.Second)
+	// a request may use its whole REQUEST_TIMEOUT_SECONDS (10 by default), so the shutdown waits longer than that, and Docker waits
+	// longer still (stop_grace_period of 30 seconds)
+	err = app.App.Fiber.ShutdownWithTimeout(shutdownTimeout)
 	if err != nil {
 		log.Printf("graceful shutdown failed %v", err)
 	}
