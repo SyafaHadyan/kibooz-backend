@@ -56,7 +56,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | `TEACHER_NOT_IN_CLASS` | 404 | The teacher named in the path does not teach this class | Refresh the teacher list |
 | `CLASS_OWNER_REQUIRED` | 403 | Only the owner of the class may remove another teacher or hand the class over | Hide the action from teachers who are not the owner |
 | `LAST_TEACHER` | 409 | The only teacher of a class cannot leave it | Hand the class over or add another teacher first |
-| `SUCCESSOR_REQUIRED` | 409 | The account is the only teacher of a class that has children and no `successorEmail` was sent when deleting it | Ask for the email of another teacher and send it again |
+| `SUCCESSOR_REQUIRED` | 409 | The account is the only teacher of a class that is not archived and has active children, and no `successorEmail` was sent when deleting it | Ask for the email of another teacher and send it again |
 
 ## Data that was not found
 
