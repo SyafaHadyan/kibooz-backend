@@ -72,6 +72,9 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 | Password hashing is saturated | A copy refused more than 5 requests in 10 minutes because every hashing slot was taken |
 | Database pool is nearly full | More than 90 percent of the 25 connections of a copy were in use for 5 minutes |
 | Many requests are rate limited | More than 100 requests were refused by a limiter in 10 minutes |
+| An API copy keeps restarting | A copy started more than once in 30 minutes, which is what a crash loop or an out of memory kill looks like. The "API is down" alert alone can miss it, because a copy that comes back every few minutes is scraped again before 5 minutes pass. It sees a restart only when the copy ran long enough to be scraped, so a loop that dies within a minute is covered by "Fewer than 2 API copies are up" alone. A deploy followed by a rollback within 30 minutes also fires it, on purpose |
+| API memory is close to its limit | The resident memory of a copy was above 300 MiB for 5 minutes. The default limit of a copy is 384 MiB, so this warns before the container is killed. Set a different threshold in the rule when `API_MEMORY_LIMIT` is not the default |
+| Push wake-ups are failing or dropped | A copy could not send or had to drop more than 5 chat wake-up pushes in 10 minutes. A copy that tries fewer than 6 in that time stays quiet even when every one fails |
 
 The rules marked "of a copy" raise one alert for each copy, and the message names the copy and its host. The others look at the service as a whole. A job that runs but has not succeeded yet counts from the moment the API started, so one that never succeeds fires after the time in the table. A job that is switched off, such as the file cleanup when the bucket is not configured, has no series and no alert.
 
