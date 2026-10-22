@@ -135,7 +135,7 @@ The free plan only looks at the status code. `/healthz` answers `503` when the d
 | `/healthz` answers `503` | The `kibooz-db` container and its health check. The API cannot serve without the database |
 | Metrics stop arriving or `kibooz_job_last_success_timestamp_seconds` is old | That the API runs and that `METRICS_ADDRESS` is set and reachable from the scraper on the private network. A job that fails logs its own reason, see the lines in the logs section |
 | `/healthz` says `degraded` | `redis` down means rate limits fall back to one process and the leaderboard is read from the database. `storage` down means the credentials or the bucket changed, and uploads will fail |
-| The API container restarts in a loop | `docker compose logs api` shows the reason. A setting out of range, a missing required variable and a dirty migration all stop the start with a message |
+| The API container restarts in a loop | `docker compose logs api` shows the reason. A setting out of range, a missing required variable and a dirty migration all stop the start with a message, and so does a database that does not answer, which the API gives up on after 10 seconds. A start that waits longer than that is waiting for the migration lock of another copy, which has no limit |
 | Many `429` answers | The per user limit is `USER_LIMITER_MAX` per `LIMITER_EXPIRATION_SECONDS`. Login and registration are limited per email or device, see the [design notes](design.md) |
 | Uploads fail with `STORAGE_UNAVAILABLE` | `S3_*` is not fully set |
 | A video upload works but the video disappears | The `pending/` lifecycle rule is missing its prefix and also expires `videos/`. Fix the rule, the files that expired are gone |

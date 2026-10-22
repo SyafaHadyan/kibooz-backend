@@ -35,11 +35,16 @@ func dsnValue(value string) string {
 // migrations run on the same connections and an index build may take longer than any request.
 const idleInTransactionTimeout = 30 * time.Second
 
+// connectTimeout is how long a connection to PostgreSQL may take to open. Without it a host that drops packets keeps the start of
+// the API waiting for the timeout of the operating system, about two minutes, and every pool connection that is opened later waits
+// the same way. It is a whole number of seconds, which is the unit of the setting.
+const connectTimeout = 10 * time.Second
+
 func buildDSN(cfg *env.Env) string {
 	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC idle_in_transaction_session_timeout=%d",
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=UTC connect_timeout=%d idle_in_transaction_session_timeout=%d",
 		dsnValue(cfg.DBHost), cfg.DBPort, dsnValue(cfg.DBUsername), dsnValue(cfg.DBPassword),
-		dsnValue(cfg.DBName), dsnValue(cfg.DBSSLMode), idleInTransactionTimeout.Milliseconds(),
+		dsnValue(cfg.DBName), dsnValue(cfg.DBSSLMode), int(connectTimeout.Seconds()), idleInTransactionTimeout.Milliseconds(),
 	)
 }
 
@@ -75,7 +80,12 @@ func New(cfg *env.Env) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(5)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
-	err = sqlDB.Ping()
+	// the connection that gorm opened above has its own limit, and this one bounds the answer of a database that accepts the connection
+	// and then does not reply
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	err = sqlDB.PingContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
