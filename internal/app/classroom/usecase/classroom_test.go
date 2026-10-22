@@ -896,7 +896,7 @@ func TestAReplyToAThreadThatIsDeletedMeanwhileIsNotFound(t *testing.T) {
 	require.ErrorIs(t, err, apperror.ErrForumPostNotFound)
 
 	t.Run("any other failure is still an internal error", func(t *testing.T) {
-		u := &ClassroomUseCase{repo: storingRepo{createErr: context.DeadlineExceeded}}
+		u := &ClassroomUseCase{repo: storingRepo{createErr: errors.New("connection reset by peer")}}
 
 		_, err := u.store(context.Background(), reply)
 

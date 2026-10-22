@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
@@ -274,4 +275,32 @@ func TestThePrivateStorageIsOffWithoutABucketOfItsOwn(t *testing.T) {
 
 	_, err = storage.PresignRead(context.Background(), "chat/a/b.jpg", time.Hour)
 	require.Error(t, err)
+}
+
+func TestUploadReportsABadGatewayWhenTheBucketRefuses(t *testing.T) {
+	storage, _ := storageFor(t, http.StatusForbidden)
+
+	_, err := storage.Upload(context.Background(), "avatars/abc/def.png", "image/png", []byte("data"))
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, http.StatusBadGateway, appErr.Status)
+	require.Equal(t, "STORAGE_ERROR", appErr.Code)
+}
+
+// a slow bucket is a server that ran out of time, and it must not be sent to Sentry as a failure of the storage
+func TestUploadReportsAServerTimeoutWhenTheDeadlinePasses(t *testing.T) {
+	storage, _ := storageFor(t, http.StatusNoContent)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	_, err := storage.Upload(ctx, "avatars/abc/def.png", "image/png", []byte("data"))
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, http.StatusServiceUnavailable, appErr.Status)
+	require.Equal(t, "SERVER_TIMEOUT", appErr.Code)
 }

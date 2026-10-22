@@ -3,6 +3,7 @@ package fiber_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -71,6 +72,7 @@ func reportingServer(t *testing.T) (*gofiber.App, *reportRecorder) {
 	server.Fiber.Get("/missing", func(gofiber.Ctx) error { return apperror.ErrChatConversationNotFound })
 	server.Fiber.Get("/storage", func(gofiber.Ctx) error { return apperror.ErrStorageDisabled })
 	server.Fiber.Get("/gateway", func(gofiber.Ctx) error { return apperror.ErrStorageFailed })
+	server.Fiber.Get("/timeout", func(gofiber.Ctx) error { return fmt.Errorf("query: %w", context.DeadlineExceeded) })
 
 	return server.Fiber, rec
 }
@@ -132,4 +134,14 @@ func TestAnAnswerThatTheAPIChoseIsNotReported(t *testing.T) {
 
 	require.Equal(t, http.StatusBadGateway, hit(t, app, "/gateway"))
 	require.Equal(t, 1, rec.count(), "a failure of the storage is a failure of the server")
+}
+
+func TestARequestThatRanOutOfTimeIsNotReportedButAnyOtherFailureIs(t *testing.T) {
+	app, rec := reportingServer(t)
+
+	require.Equal(t, http.StatusServiceUnavailable, hit(t, app, "/timeout"))
+	require.Zero(t, rec.count(), "an overload would use up the events of Sentry, and the metrics and the alerts see it")
+
+	require.Equal(t, http.StatusInternalServerError, hit(t, app, "/plain"))
+	require.Equal(t, 1, rec.count(), "a failure that is not a timeout is still sent")
 }

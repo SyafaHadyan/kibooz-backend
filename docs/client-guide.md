@@ -129,7 +129,7 @@ The API never limits by network address, so a whole classroom on one network doe
 
 ## When the API is down
 
-A request that cannot connect, or that gets `502`, `503` or `504` without a JSON body, comes from the network or the proxy and not from the API. Treat it like a `429` without a `Retry-After` header above, and retry with a growing wait. A `500` with `INTERNAL_ERROR` means the server broke, so retry a creating request only with the same `Idempotency-Key`. The [status page](https://status.syafahadyan.com/) shows whether the API or the documentation site has an open incident, so an "unavailable" screen in the app can link to it.
+A request that cannot connect, or that gets `502`, `503` or `504` without a JSON body, comes from the network or the proxy and not from the API. Treat it like a `429` without a `Retry-After` header above, and retry with a growing wait. A `500` with `INTERNAL_ERROR` means the server broke, so retry a creating request only with the same `Idempotency-Key`. A `503` with `SERVER_TIMEOUT` and a `Retry-After` header means the server was too slow or was stopping, so wait that many seconds, add a random pause so that every app does not retry in the same moment, and retry a creating request only with the same `Idempotency-Key`. The [status page](https://status.syafahadyan.com/) shows whether the API or the documentation site has an open incident, so an "unavailable" screen in the app can link to it.
 
 ## Push tokens
 
