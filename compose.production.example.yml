@@ -10,7 +10,9 @@
 #   - PostgreSQL is not in this file. It runs as its own stack on the host and the copies join its network
 #   - the image tag is always written down (IMAGE_TAG), because the update script changes it and `latest` would hide what runs
 #
-# Copy it to compose.yml on the host, copy .env.example to .env and fill it in, and create the network of the database stack first.
+# Copy it to compose.yml on the host and copy .env.example to .env. In .env set IMAGE_TAG to the version to run (the file has no default
+# on purpose), DB_HOST to the name of the PostgreSQL container on the network of the database stack, which has to exist before this
+# file starts, and the other values that .env.example asks for.
 
 x-logging: &default-logging
   driver: json-file
@@ -25,19 +27,15 @@ x-api: &api
   stop_grace_period: 30s
   env_file: .env
   environment:
-    DB_HOST: ${DB_HOST}
-    DB_PORT: ${DB_PORT:-5432}
     REDIS_ADDRESS: redis
     REDIS_PORT: 6379
     GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
-    # how many passwords one copy hashes at once. A copy has half a CPU, so 1 is the honest number, and the default of
-    # one for each CPU of the host would be too many
-    PASSWORD_HASH_CONCURRENCY: ${PASSWORD_HASH_CONCURRENCY:-1}
     METRICS_ADDRESS: ":9100"
-  volumes:
-    # the key of the Firebase service account for the push wake ups, mounted read only. Leave the push settings out of .env
-    # and remove this line when push is not used
-    - ./secrets/firebase.json:/run/secrets/firebase.json:ro
+  # For the push wake ups, mount the key of the Firebase service account read only and set FIREBASE_CREDENTIALS_FILE in .env to
+  # /run/secrets/firebase.json. Create the file first, because Docker makes a directory of that name when it is missing, and make it
+  # readable by the user of the container (65532), for example with chmod 0644.
+  # volumes:
+  #   - ./secrets/firebase.json:/run/secrets/firebase.json:ro
   depends_on:
     redis:
       condition: service_healthy
