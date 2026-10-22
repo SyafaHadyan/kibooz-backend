@@ -61,6 +61,39 @@ func TestTheRefreshTokenSweepDeletesOnlyTheTokensThatNoLongerMatter(t *testing.T
 	require.EqualValues(t, 1, tokenRows(t, young.RefreshToken), "the used token of a young session stays, because showing it again ends the session")
 	require.EqualValues(t, 1, tokenRows(t, youngNext), "the live token of a young session stays")
 
+	// a used token that has expired, in a session that is still young, has to stay as well, because showing it again must end the session
+	require.NoError(t, testDB.Exec("UPDATE refresh_tokens SET expires_at = now() - interval '1 minute' WHERE token_hash = ?", refreshHash(young.RefreshToken)).Error)
+
+	_, err = sessions.NewSweeper(testDB, maxAge).Sweep(t.Context())
+	require.NoError(t, err)
+	require.EqualValues(t, 1, tokenRows(t, young.RefreshToken), "a used token goes with the end of its session and not with its own expiry")
+
 	again := call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": youngNext})
 	require.Equal(t, http.StatusOK, again.Status, "the young session still refreshes, body %v", again.Body)
+}
+
+// A token that a refresh or a sign out holds is skipped, so the sweep never waits for a lock and cannot join a circle of waits
+func TestTheRefreshTokenSweepSkipsATokenThatIsLockedAndDoesNotWait(t *testing.T) {
+	account := registerGuru(t, "Sweep Kunci")
+	require.NoError(t, testDB.Exec("UPDATE refresh_tokens SET expires_at = now() - interval '1 minute' WHERE token_hash = ?", refreshHash(account.RefreshToken)).Error)
+
+	holder := testDB.Begin()
+	require.NoError(t, holder.Error)
+
+	t.Cleanup(func() { _ = holder.Rollback().Error })
+
+	require.NoError(t, holder.Exec("SELECT id FROM refresh_tokens WHERE token_hash = ? FOR UPDATE", refreshHash(account.RefreshToken)).Error)
+
+	started := time.Now()
+	_, err := sessions.NewSweeper(testDB, 90*24*time.Hour).Sweep(t.Context())
+
+	require.NoError(t, err)
+	require.Less(t, time.Since(started), 5*time.Second, "the sweep did not wait for the lock")
+	require.EqualValues(t, 1, tokenRows(t, account.RefreshToken), "the locked token was left for the next run")
+
+	require.NoError(t, holder.Rollback().Error)
+
+	_, err = sessions.NewSweeper(testDB, 90*24*time.Hour).Sweep(t.Context())
+	require.NoError(t, err)
+	require.Zero(t, tokenRows(t, account.RefreshToken), "the next run takes it")
 }

@@ -63,13 +63,14 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 
 ## Background work
 
-The server runs four jobs by itself, and none of them needs a scheduler outside the process.
+The server runs five jobs by itself, and none of them needs a scheduler outside the process.
 
 | Job | Every | What it does |
 |:---|:---|:---|
 | Semester check | 1 minute | Starts a new semester when the calendar says so, then starts it for every class that has not started it yet, one class at a time, saving its final standings and clearing its leaderboard cache. An instance that stops halfway is continued by the next run of any instance |
 | File cleanup | 10 minutes | Removes bucket files that a deleted account left behind and retries the ones that failed. Only runs when storage is configured |
 | Idempotency purge | 1 hour | Deletes remembered keys older than `IDEMPOTENCY_TTL_HOURS` |
+| Refresh token purge | 1 hour | Deletes, for every account, the refresh tokens that no longer matter, which are the ones that expired unused and the used ones whose session reached `JWT_SESSION_MAX_DAYS`. A token that another request holds is skipped and taken by the next run. The first run does one pass over the whole table, so on a large table count the rows with `SELECT count(*) FROM refresh_tokens` first |
 | Keepalive | `KEEPALIVE_SECONDS` | Sends `SELECT 1` to the database and `PING` to Redis, so hosted instances that pause when idle stay awake |
 
 ## Metrics
