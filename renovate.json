@@ -14,6 +14,9 @@
   "labels": ["dependencies"],
   "assignees": ["SyafaHadyan"],
   "dependencyDashboard": true,
+  "vulnerabilityAlerts": {
+    "semanticCommitType": "fix"
+  },
   "packageRules": [
     {
       "description": "the Go release is raised by hand in go.mod, which the workflows read, so a patch release is a decision and not a bot update",
