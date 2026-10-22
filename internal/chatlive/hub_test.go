@@ -280,3 +280,102 @@ func TestShutdownClosesEverySocketAndTakesNoNewOnes(t *testing.T) {
 	_, err = hub.Register(uuid.New())
 	require.ErrorIs(t, err, ErrFull)
 }
+
+// connected starts two hubs on one bus and registers a socket on the second
+func connected(t *testing.T) (one *Hub, bus *fakeBus, sender uuid.UUID, onTwo *Client) {
+	t.Helper()
+
+	bus = &fakeBus{}
+	one = NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	two := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go one.Run(ctx)
+	go two.Run(ctx)
+
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+
+		return len(bus.handlers) == 2
+	}, time.Second, 5*time.Millisecond)
+
+	sender = uuid.New()
+
+	onTwo, err := two.Register(sender)
+	require.NoError(t, err)
+
+	return one, bus, sender, onTwo
+}
+
+func TestAGapInWhatAnotherCopyPublishedMakesTheSocketsResync(t *testing.T) {
+	one, bus, user, onTwo := connected(t)
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 1})
+	require.EqualValues(t, 1, received(t, onTwo).MessageID)
+
+	// the bus is down for one event, which the other copy never sees
+	bus.mu.Lock()
+	bus.fail = true
+	bus.mu.Unlock()
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 2})
+
+	bus.mu.Lock()
+	bus.fail = false
+	bus.mu.Unlock()
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 3})
+
+	require.Equal(t, EventResync, received(t, onTwo).Type, "the app is told that it missed something before the event that revealed it")
+	require.EqualValues(t, 3, received(t, onTwo).MessageID)
+	nothing(t, onTwo)
+}
+
+func TestNoResyncWhenNothingWasLostAndFirstEnvelopeOfACopyIsNeverALoss(t *testing.T) {
+	one, _, user, onTwo := connected(t)
+
+	for id := int64(1); id <= 3; id++ {
+		one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: id})
+		require.EqualValues(t, id, received(t, onTwo).MessageID)
+	}
+
+	nothing(t, onTwo)
+}
+
+func TestTheNumbersOfOtherCopiesAreForgottenBeyondTheLimit(t *testing.T) {
+	hub := NewHub(Config{})
+
+	for range maxOrigins + 5 {
+		require.False(t, hub.lostBefore(envelope{Origin: uuid.NewString(), Seq: 1}))
+	}
+
+	require.LessOrEqual(t, len(hub.seen), maxOrigins)
+}
+
+func TestAResyncReachesEverySocketAndClosesASlowOne(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+
+	fast, err := hub.Register(uuid.New())
+	require.NoError(t, err)
+
+	slow, err := hub.Register(uuid.New())
+	require.NoError(t, err)
+
+	for range sendBuffer {
+		slow.Send <- []byte("{}")
+	}
+
+	hub.resync()
+
+	require.Equal(t, EventResync, received(t, fast).Type)
+	require.Equal(t, 1, hub.Count(), "the socket that cannot keep up was closed")
+
+	select {
+	case <-slow.Done():
+	default:
+		require.FailNow(t, "the slow socket stayed open")
+	}
+}
