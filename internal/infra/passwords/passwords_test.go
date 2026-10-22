@@ -16,6 +16,8 @@ import (
 func fast(slots int, wait time.Duration) *Hasher {
 	hasher := New(&env.Env{PasswordHashConcurrency: slots, PasswordHashWaitMilliseconds: int(wait.Milliseconds())})
 	hasher.cost = bcrypt.MinCost
+	// the estimate of New is for the default cost, and these tests use the cheapest one
+	hasher.typical.Store(int64(time.Microsecond))
 
 	return hasher
 }
@@ -194,4 +196,67 @@ func TestACostAboveTheLimitOfBcryptFallsBackToTheDefault(t *testing.T) {
 	cost, err := bcrypt.Cost([]byte(hasher.DummyHash()))
 	require.NoError(t, err)
 	require.Equal(t, bcrypt.DefaultCost, cost)
+}
+
+func TestACallerThatCannotGetASlotInTimeIsRefusedAtOnce(t *testing.T) {
+	hasher := fast(1, time.Second)
+	hasher.typical.Store(int64(450 * time.Millisecond))
+
+	release, err := hasher.Acquire(t.Context())
+	require.NoError(t, err)
+
+	// the first two callers fit in the wait of a second (225 and 675 milliseconds), the third needs 1125
+	results := make(chan error, 2)
+
+	for range 2 {
+		go func() {
+			next, err := hasher.Acquire(t.Context())
+			if err == nil {
+				next()
+			}
+
+			results <- err
+		}()
+	}
+
+	require.Eventually(t, func() bool { return hasher.waiters.Load() == 2 }, time.Second, time.Millisecond)
+
+	started := time.Now()
+	_, err = hasher.Acquire(t.Context())
+
+	require.ErrorIs(t, err, apperror.ErrBusy)
+	require.Less(t, time.Since(started), 500*time.Millisecond, "the refusal does not wait for the end of the wait")
+	require.EqualValues(t, 2, hasher.waiters.Load(), "a refused caller leaves the line")
+
+	release()
+
+	for range 2 {
+		// the callers that were in line get the slot one after the other
+		select {
+		case err := <-results:
+			require.NoError(t, err)
+		case <-time.After(2 * time.Second):
+			t.Fatal("a caller in line never got the slot")
+		}
+	}
+}
+
+func TestTheTypicalTimeFollowsTheHashesThatRun(t *testing.T) {
+	hasher := fast(1, time.Second)
+	hasher.typical.Store(int64(800 * time.Millisecond))
+
+	_, err := hasher.Hash(t.Context(), "password")
+	require.NoError(t, err)
+
+	require.Less(t, hasher.typical.Load(), int64(800*time.Millisecond), "a quick hash pulls the estimate down")
+	require.Positive(t, hasher.typical.Load())
+
+	require.False(t, hasher.cannotWaitThatLong(1))
+}
+
+func TestNoCallerIsRefusedEarlyBeforeAnyEstimateExists(t *testing.T) {
+	hasher := fast(1, time.Millisecond)
+	hasher.typical.Store(0)
+
+	require.False(t, hasher.cannotWaitThatLong(1000))
 }

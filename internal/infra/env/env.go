@@ -87,7 +87,8 @@ type Env struct {
 	SentryServerName      string `env:"SENTRY_SERVER_NAME"`
 	SentryEventsPerMinute int    `env:"SENTRY_EVENTS_PER_MINUTE" envDefault:"30"`
 	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
-	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
+	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again, at once when the
+	// line in front of it already needs longer than that.
 	PasswordHashConcurrency int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
 	// PasswordHashCost is the bcrypt cost of new hashes. 10 is the default of bcrypt and the lowest that OWASP accepts. A lower
 	// value is for tests only, and every cost up to 14 is allowed because the time of a hash doubles with each step.
