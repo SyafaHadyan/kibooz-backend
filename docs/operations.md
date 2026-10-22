@@ -42,6 +42,7 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 
 - Files are append only. A schema change is a new numbered file and never an edit of an old one, because other databases have already applied the old one. A test fails when a number is missing or used twice.
 - Every migration has an up and a down file.
+- A stop signal that arrives while the migrations run waits until they have finished and the process then exits without listening, so `docker stop` during a start does not leave the database dirty. If the stop grace period ends first, the process is killed anyway.
 - A migration that fails halfway leaves the database marked dirty, and the next start stops with `Dirty database version`. Fix the cause, repair the data by hand if needed, and clear the mark with `migrate force <version>` from the golang-migrate command line before starting again.
 
 ## Settings that need care

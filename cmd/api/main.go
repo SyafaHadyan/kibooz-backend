@@ -30,6 +30,12 @@ func main() {
 
 	log.Printf("starting kibooz-backend %s", version)
 
+	// before Start, because Start runs the migrations and the default action of SIGTERM ends the process in the middle of one,
+	// which leaves the migration table marked dirty and the next start refused. A signal that arrives meanwhile waits in the
+	// channel until Start has returned. Everything else that Start does is bounded and fails fast.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
 	app, err := bootstrap.Start(version)
 	if err != nil {
 		log.Fatalf("failed to start %v", err)
@@ -37,14 +43,20 @@ func main() {
 
 	defer app.Close()
 
+	// a stop that arrived while it started, and nothing is listening yet that has to be shut down
+	select {
+	case <-quit:
+		log.Println("stopped while starting")
+
+		return
+	default:
+	}
+
 	serverErr := make(chan error, 1)
 
 	go func() {
 		serverErr <- app.App.Fiber.Listen(fmt.Sprintf(":%d", app.Config.AppPort), fiber.ListenConfig{DisableStartupMessage: true})
 	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
 	select {
 	case err := <-serverErr:
