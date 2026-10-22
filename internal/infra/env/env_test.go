@@ -369,6 +369,17 @@ func TestAChatPhotoLimitThatDoesNotFitInTheBodyLimitIsRejected(t *testing.T) {
 	require.NoError(t, cfg.validate())
 }
 
+// The trash photo may be 4 MiB and travels as base64, which is about 5.4 MiB, so a body limit of 5 MB would answer 413 to a photo that the route allows
+func TestABodyLimitBelowTheLargestFixedPhotoIsRejected(t *testing.T) {
+	cfg := valid()
+	cfg.ChatPhotoMaxMB, cfg.BodyLimitMB = 1, 5
+
+	require.ErrorContains(t, cfg.validate(), "BODY_LIMIT_MB")
+
+	cfg.BodyLimitMB = 6
+	require.NoError(t, cfg.validate())
+}
+
 func TestASettingThatWasRenamedIsRefusedWithItsNewName(t *testing.T) {
 	set := func(names ...string) func(string) (string, bool) {
 		return func(name string) (string, bool) {
