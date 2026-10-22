@@ -5,15 +5,20 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
 
+# A run is never cancelled. Editing the body of a pull request right after a push used to start a run in the same group, which
+# cancelled the run of the push, and GitHub keeps a cancelled run of a required check as unmet, so the pull request stayed
+# blocked even though the newer run passed. Every run has a group of its own, and an edit that does not change the title
+# skips the job, because commitlint reads the commits and the commits did not change.
 concurrency:
-  group: commits-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: commits-${{ github.run_id }}
+  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   conventional-commits:
     name: Conventional commits
+    if: github.event.action != 'edited' || github.event.changes.title
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
