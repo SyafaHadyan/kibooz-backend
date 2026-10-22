@@ -29,10 +29,15 @@ type Sweeper struct {
 	db         *gorm.DB
 	sessionMax time.Duration
 	observe    func(error)
+	// batch deletes one batch and returns how many rows went, a field so that a test can run the loop without a database
+	batch func(ctx context.Context) (int64, error)
 }
 
 func NewSweeper(db *gorm.DB, sessionMax time.Duration) *Sweeper {
-	return &Sweeper{db: db, sessionMax: sessionMax}
+	s := &Sweeper{db: db, sessionMax: sessionMax}
+	s.batch = s.deleteBatch
+
+	return s
 }
 
 // Observe sets the function that gets the result of every run, nil for a run that went well, and returns the sweeper
@@ -49,19 +54,14 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	total := 0
 
 	for {
-		res := s.db.WithContext(ctx).Exec(
-			"DELETE FROM refresh_tokens WHERE id IN ("+
-				"SELECT id FROM refresh_tokens WHERE (used_at IS NULL AND expires_at <= now()) OR "+
-				"(used_at IS NOT NULL AND session_started_at <= now() - ? * interval '1 second') LIMIT ? FOR UPDATE SKIP LOCKED)",
-			s.sessionMax.Seconds(), sweepBatch,
-		)
-		if res.Error != nil {
-			return total, res.Error
+		removed, err := s.batch(ctx)
+		if err != nil {
+			return total, err
 		}
 
-		total += int(res.RowsAffected)
+		total += int(removed)
 
-		if res.RowsAffected < sweepBatch {
+		if removed < sweepBatch {
 			return total, nil
 		}
 
@@ -69,6 +69,17 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 			return total, ctx.Err()
 		}
 	}
+}
+
+func (s *Sweeper) deleteBatch(ctx context.Context) (int64, error) {
+	res := s.db.WithContext(ctx).Exec(
+		"DELETE FROM refresh_tokens WHERE id IN ("+
+			"SELECT id FROM refresh_tokens WHERE (used_at IS NULL AND expires_at <= now()) OR "+
+			"(used_at IS NOT NULL AND session_started_at <= now() - ? * interval '1 second') LIMIT ? FOR UPDATE SKIP LOCKED)",
+		s.sessionMax.Seconds(), sweepBatch,
+	)
+
+	return res.RowsAffected, res.Error
 }
 
 // Start sweeps once per interval until the returned stop function is called, which waits for a sweep that is running.
