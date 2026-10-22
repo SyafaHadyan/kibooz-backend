@@ -24,6 +24,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `chat_reads` | How far each person of a conversation has read, the id of the last message |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
 | `leaderboard_seasons` | One row for every semester that has begun |
+| `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |
 | `leaderboard_history` | The final standings of a class for a semester that ended |
 | `file_cleanups` | A bucket file that waits to be removed again after a failed try |
 | `idempotency_keys` | A remembered `Idempotency-Key` with the response of the request |
@@ -55,7 +56,7 @@ A teacher account first hands its classes on. A class that another teacher also 
 
 ## Concurrency
 
-Some rules cannot be written as a constraint. The number of teachers of a class, registering a child with a join code and the archive of an empty class all depend on a count that two requests could read at the same time. They take a PostgreSQL advisory lock named after the class (`teachers:<class id>`) for the length of the transaction, in `internal/classteam`, so only one of them reads and changes the class at a time. The ranking of a class and the files of a video address have their own advisory locks in the same way. The leaderboard reset uses the `leaderboard_seasons` row the same way, so it runs once for a semester whichever instance of the API sees the date first. A password change and an account deletion take the row of the user first, then the refresh tokens, then the rest. A sign in reads that row under a share lock before it stores its session, so a sign in that is under way finishes before the sessions are ended and one that starts later finds the new password or the deleted account. Anything that takes these locks in another order can deadlock with them, and `internal/sessions` explains why.
+Some rules cannot be written as a constraint. The number of teachers of a class, registering a child with a join code and the archive of an empty class all depend on a count that two requests could read at the same time. They take a PostgreSQL advisory lock named after the class (`teachers:<class id>`) for the length of the transaction, in `internal/classteam`, so only one of them reads and changes the class at a time. The ranking of a class and the files of a video address have their own advisory locks in the same way. The leaderboard reset uses the `leaderboard_seasons` row the same way, so a semester is recorded once whichever instance of the API sees the date first, and it takes the ranking lock of one class at a time and reads the label in `class_seasons` again under it, so a class is reset once. A password change and an account deletion take the row of the user first, then the refresh tokens, then the rest. A sign in reads that row under a share lock before it stores its session, so a sign in that is under way finishes before the sessions are ended and one that starts later finds the new password or the deleted account. Anything that takes these locks in another order can deadlock with them, and `internal/sessions` explains why.
 
 ## Changing the schema
 
