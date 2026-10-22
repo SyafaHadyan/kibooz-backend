@@ -22,7 +22,7 @@ info:
     and a `Retry-After` header when a request did not finish within the time the server gives it. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
-    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
+    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the three photo uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
@@ -2779,7 +2779,7 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "409":
           description: >-
-            The account is the only teacher of a class that still has children and no `successorEmail` was sent
+            The account is the only teacher of a class that is not archived and still has active children, and no `successorEmail` was sent
             (`SUCCESSOR_REQUIRED`)
           content:
             application/json:
