@@ -30,7 +30,7 @@ The `Fuzz` workflow does the same for all four targets every Saturday, three min
 
 ## Benchmarks
 
-The hot paths that run on every request or every message have Go benchmarks, in files named `bench_test.go` next to the code. They cover the image check, the base64 decode, the signing and checking of access tokens, the request validation, the common password check and the delivery of one event to 200 chat sockets. Run one package with `go test ./internal/infra/jwt/ -run '^$' -bench . -benchmem`. A benchmark keeps its name and its meaning, because the `Benchmarks` workflow compares the head of main with the commit of a week before it, with `benchstat`, every Wednesday and when started by hand, and shows the comparison in the summary of the run. It never fails the run, because a shared runner is too noisy for that, so a number that moved by a lot is a reason to look and not a verdict.
+The hot paths that run on every request or every message have Go benchmarks, in files named `bench_test.go` next to the code. They cover the image check, the base64 decode, the signing and checking of access tokens, the request validation, the common password check and the delivery of one event to 200 chat sockets. Run one package with `go test ./internal/infra/jwt/ -run '^$' -bench . -benchmem`. A benchmark should keep its name and its meaning, because the `Benchmarks` workflow compares the head of main with the commit of a week before it, with `benchstat`, every Wednesday and when started by hand, and shows the comparison in the summary of the run. It never fails the run, because a shared runner is too noisy for that, so a number that moved by a lot is a reason to look and not a verdict.
 
 ## Performance tests
 

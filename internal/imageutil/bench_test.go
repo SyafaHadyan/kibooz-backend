@@ -8,7 +8,7 @@ import (
 )
 
 // the benchmarks of the repository are the ones that the scheduled Benchmarks workflow compares between two commits, so a
-// benchmark keeps its name and its meaning, see docs/testing.md
+// benchmark should keep its name and its meaning, see docs/testing.md
 
 func BenchmarkInspect(b *testing.B) {
 	b.ReportAllocs()
