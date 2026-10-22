@@ -127,15 +127,17 @@ restore_tag() {
 
   if printf '%s' "$env_original" >"$env_file"; then
     changed=0
-  else
-    echo "IMAGE_TAG in $env_file could not be put back, set it to ${previous:-not set} by hand before anything runs docker compose up -d" >&2
+    return 0
   fi
+
+  echo "IMAGE_TAG in $env_file could not be put back, set it to ${previous:-not set} by hand before anything runs docker compose up -d" >&2
+  return 1
 }
 
 on_signal() {
   echo >&2
   if [ "$copy_started" = "0" ]; then
-    restore_tag
+    restore_tag || true
   fi
   echo "Interrupted. IMAGE_TAG in $env_file is $([ "$changed" = "1" ] && echo "$version" || echo "${previous:-not set}"), copies updated so far ${updated[*]:-none}." >&2
   echo "Check the copies with docker compose ps and run the update again when they are fine." >&2
@@ -241,7 +243,7 @@ fi
 
 echo "Pulling through compose"
 if ! run compose pull "${services[@]}"; then
-  restore_tag
+  restore_tag || die "The pull through compose failed and IMAGE_TAG in $env_file could not be put back, see above. No copy was touched"
   die "The pull through compose failed, for example because Docker Hub limited it. IMAGE_TAG in $env_file is ${previous:-not set} again and no copy was touched, so run the update again later"
 fi
 
