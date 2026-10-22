@@ -267,6 +267,16 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 			"classId": classB, "recordedAt": early, "entries": []map[string]any{{"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8}},
 		}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 
+		// the mood that the old teacher wrote today is not the mood of today in the new class
+		roster := call(t, http.MethodGet, "/api/v1/classes/"+classB+"/students", teacherB.Token, nil)
+		require.Equal(t, http.StatusOK, roster.Status, "body %v", roster.Body)
+
+		for _, row := range roster.data("students").([]any) {
+			if dig(row, "id") == childID {
+				require.Nil(t, dig(row, "todayMood"), "nothing was recorded for the child in this class yet")
+			}
+		}
+
 		newMood := call(t, http.MethodPost, "/api/v1/guru/mood/log", teacherB.Token, map[string]any{
 			"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8, "notes": "Hari pertama di kelas baru",
 		})
