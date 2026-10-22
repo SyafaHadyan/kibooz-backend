@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -785,11 +786,6 @@ func (r *GuruDB) ArchiveClass(ctx context.Context, classID uuid.UUID, actorGuruI
 			return err
 		}
 
-		err = ranking.Lock(tx, classID)
-		if err != nil {
-			return err
-		}
-
 		// the owner is checked under the lock, because a change of owner or a removal commits under it
 		var owners []bool
 
@@ -814,6 +810,12 @@ func (r *GuruDB) ArchiveClass(ctx context.Context, classID uuid.UUID, actorGuruI
 			return apperror.ErrClassArchived
 		}
 
+		// a teacher who is refused above never waits for the ranking lock, so a non owner cannot stall the class by asking again
+		err = ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
 		return tx.Exec("UPDATE classes SET archived_at = now() WHERE id = ? AND archived_at IS NULL", classID).Error
 	})
 }
@@ -825,16 +827,19 @@ func (r *GuruDB) RestoreClass(ctx context.Context, classID uuid.UUID, actorGuruI
 		// a retried transaction starts from nothing
 		code = ""
 
-		// the row of the teacher stays locked, so a teacher who restores two classes at once is counted one after the other, and it
-		// comes before the teachers lock as it does when a teacher is added
+		// every teacher of the class gets a class back, so each of them is counted and not only the caller. The rows stay locked in the
+		// order of the ids, so teachers who restore two classes at once are counted one after the other, and they come before the
+		// teachers lock as they do when a teacher is added
 		var guruIDs []uuid.UUID
 
-		err := tx.Raw("SELECT id FROM gurus WHERE id = ? AND deleted_at IS NULL FOR UPDATE", actorGuruID).Scan(&guruIDs).Error
+		err := tx.Raw(`SELECT g.id FROM gurus AS g
+			WHERE g.deleted_at IS NULL AND g.id IN (SELECT ct.guru_id FROM class_teachers AS ct WHERE ct.class_id = ?)
+			ORDER BY g.id FOR UPDATE OF g`, classID).Scan(&guruIDs).Error
 		if err != nil {
 			return err
 		}
 
-		if len(guruIDs) == 0 {
+		if !slices.Contains(guruIDs, actorGuruID) {
 			return apperror.ErrClassNotFound
 		}
 
@@ -861,9 +866,11 @@ func (r *GuruDB) RestoreClass(ctx context.Context, classID uuid.UUID, actorGuruI
 			return apperror.ErrClassNotArchived
 		}
 
-		err = classteam.CheckClassRoom(tx, actorGuruID, constants.MaxClassesPerTeacher)
-		if err != nil {
-			return err
+		for _, id := range guruIDs {
+			err = classteam.CheckClassRoom(tx, id, constants.MaxClassesPerTeacher)
+			if err != nil {
+				return err
+			}
 		}
 
 		// the old code may have been shared widely while the class was closed, so the class comes back with a new one

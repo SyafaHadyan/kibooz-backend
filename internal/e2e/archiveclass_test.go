@@ -121,3 +121,26 @@ func TestARestoredClassCountsTowardTheLimitOfTwentyClasses(t *testing.T) {
 	call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/restore", teacher.Token, nil).
 		requireError(t, http.StatusConflict, "CLASS_LIMIT_REACHED")
 }
+
+func TestARestoreIsRefusedWhenAnotherTeacherOfTheClassIsAtTheLimit(t *testing.T) {
+	owner := registerGuru(t, "Qinan")
+	classID, _ := classOf(t, owner)
+	partner := registerGuru(t, "Rumput")
+
+	base := "/api/v1/guru/classes/" + classID
+
+	added := call(t, http.MethodPost, base+"/teachers", owner.Token, map[string]any{"email": partner.Email})
+	require.Equal(t, http.StatusCreated, added.Status, "body %v", added.Body)
+
+	archived := call(t, http.MethodPost, base+"/archive", owner.Token, nil)
+	require.Equal(t, http.StatusOK, archived.Status, "body %v", archived.Body)
+
+	// the partner has the class of the registration and 19 more, which are 20 without the archived one
+	for i := 1; i <= 19; i++ {
+		res := call(t, http.MethodPost, "/api/v1/guru/classes", partner.Token, map[string]any{"name": fmt.Sprintf("Kelas Rekan %d", i)})
+		require.Equal(t, http.StatusCreated, res.Status, "class %d body %v", i, res.Body)
+	}
+
+	call(t, http.MethodPost, base+"/restore", owner.Token, nil).requireError(t, http.StatusConflict, "CLASS_LIMIT_REACHED")
+	call(t, http.MethodPost, base+"/restore", partner.Token, nil).requireError(t, http.StatusConflict, "CLASS_LIMIT_REACHED")
+}
