@@ -1,0 +1,89 @@
+name: Benchmarks
+
+# Runs the Go benchmarks (the files named bench_test.go) on the head of main and on the commit from a week ago, and compares the two
+# with benchstat. It only reports in the summary of the run and never fails because of a slower number, because a shared runner is
+# too noisy for a gate. A change of more than a few tens of percent that benchstat marks as significant is worth a look.
+on:
+  schedule:
+    - cron: "37 19 * * 3"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: The commit, branch or tag to compare with, which is the commit from 7 days ago when it is empty
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: bench-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  bench:
+    name: Compare the benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run the benchmarks on both commits
+        env:
+          BASE_INPUT: ${{ inputs.base }}
+          # renovate: datasource=go depName=golang.org/x/perf
+          BENCHSTAT: golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e
+        run: |
+          set -euo pipefail
+
+          base="$BASE_INPUT"
+          if [ -z "$base" ]; then
+            base="$(git rev-list -n 1 --before='7 days ago' HEAD)"
+          fi
+
+          if [ -z "$base" ]; then
+            echo "the repository has no commit that is a week old, nothing to compare with" >&2
+            exit 0
+          fi
+
+          if ! [[ "$base" =~ ^[0-9A-Za-z._/-]+$ ]]; then
+            echo "the base has to be a commit, a branch or a tag name" >&2
+            exit 1
+          fi
+
+          git worktree add --detach "$RUNNER_TEMP/base" "$base"
+
+          # both commits run the benchmark files of the head, so a benchmark that did not exist a week ago still has a number for both
+          # when the code it calls did exist
+          while IFS= read -r file; do
+            if [ -d "$RUNNER_TEMP/base/$(dirname "$file")" ]; then
+              cp "$file" "$RUNNER_TEMP/base/$file"
+            fi
+          done < <(git ls-files '*bench_test.go')
+
+          run() {
+            (cd "$1" && go test -run '^$' -bench . -benchmem -count 8 -timeout 30m ./... 2>&1 | tee "$2")
+          }
+
+          # a package of the base that does not build with the new benchmark file is left out of the comparison, and its error stays in the log
+          run "$RUNNER_TEMP/base" "$RUNNER_TEMP/old.txt" || true
+          run "$PWD" "$RUNNER_TEMP/new.txt"
+
+          {
+            echo "### Benchmarks, $base against $(git rev-parse --short HEAD)"
+            echo
+            echo '```'
+            go run "$BENCHSTAT" "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
