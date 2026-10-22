@@ -229,7 +229,8 @@ func errorHandler(c fiber.Ctx, err error) error {
 }
 
 // report sends a failure of the server to Sentry. An answer that the API chose, a 4xx, is not a failure, and a 503 says that
-// something is not set up, such as the object storage, so neither is sent.
+// the server cannot serve right now, because something is not set up such as the object storage, a request ran out of time or
+// a copy holds all the chat sockets it may, so neither is sent.
 func report(c fiber.Ctx, err error, status int) {
 	if status < http.StatusInternalServerError || status == http.StatusServiceUnavailable {
 		return
