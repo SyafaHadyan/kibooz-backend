@@ -187,3 +187,11 @@ func TestTheDummyHashHasTheCostOfTheConfiguredHashes(t *testing.T) {
 
 	require.Equal(t, hasher.DummyHash(), hasher.DummyHash(), "the hash is made once")
 }
+
+func TestACostAboveTheLimitOfBcryptFallsBackToTheDefault(t *testing.T) {
+	hasher := New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10, PasswordHashCost: bcrypt.MaxCost + 1})
+
+	cost, err := bcrypt.Cost([]byte(hasher.DummyHash()))
+	require.NoError(t, err)
+	require.Equal(t, bcrypt.DefaultCost, cost)
+}
