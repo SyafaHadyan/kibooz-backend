@@ -39,9 +39,6 @@ func tokensOfSession(t *testing.T, token string) int64 {
 }
 
 func TestAUsedRefreshTokenThatIsShownAgainEndsItsSession(t *testing.T) {
-	client := redisClient(t)
-	ctx := t.Context()
-
 	guru := registerGuru(t, "Stolen Token")
 
 	first := refresh(t, guru.RefreshToken)
@@ -49,23 +46,26 @@ func TestAUsedRefreshTokenThatIsShownAgainEndsItsSession(t *testing.T) {
 
 	second := first.data("refreshToken").(string)
 
-	t.Run("a replay a moment later is only refused and the session goes on", func(t *testing.T) {
-		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+	t.Run("a replay a moment later gets a fresh token of the same session", func(t *testing.T) {
+		// a client that lost the answer to its first call retries with the same token
+		retry := refresh(t, guru.RefreshToken)
+		require.Equal(t, http.StatusOK, retry.Status, "body %v", retry.Body)
 
-		// a client that lost the answer to its first call keeps the new token that it gets with the next one
+		sibling := retry.data("refreshToken").(string)
+		require.NotEqual(t, second, sibling)
+		require.Equal(t, familyOf(t, second), familyOf(t, sibling), "the same session")
+
+		// either of the two new tokens carries the session on
 		third := refresh(t, second)
 		require.Equal(t, http.StatusOK, third.Status, "body %v", third.Body)
 
 		second = third.data("refreshToken").(string)
 	})
 
-	t.Run("a replay after the grace period ends the whole session", func(t *testing.T) {
+	t.Run("a replay after the leeway ends the whole session", func(t *testing.T) {
 		ageUse(t, guru.RefreshToken, 2*time.Minute)
 
-		// Redis flags a used token for a minute, and after that the database decides
-		require.NoError(t, client.FlushDB(ctx).Err())
-
-		require.EqualValues(t, 3, tokensOfSession(t, second), "two used tokens and the one in use")
+		require.EqualValues(t, 4, tokensOfSession(t, second), "the old token, the two tokens that answered its calls and the one that follows")
 
 		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 
@@ -83,7 +83,6 @@ func TestAUsedRefreshTokenThatIsShownAgainEndsItsSession(t *testing.T) {
 		other := login.data("refreshToken").(string)
 
 		// the first session is over, and a token of it that is shown again must not reach the new one
-		require.NoError(t, client.FlushDB(ctx).Err())
 		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 
 		require.Equal(t, http.StatusOK, refresh(t, other).Status)
@@ -169,7 +168,6 @@ func TestAUsedTokenIsKeptForReplayDetectionEvenAfterItExpires(t *testing.T) {
 	require.EqualValues(t, 1, kept, "the used token is still there")
 
 	ageUse(t, guru.RefreshToken, 2*time.Minute)
-	require.NoError(t, redisClient(t).FlushDB(t.Context()).Err())
 
 	refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	refresh(t, third.data("refreshToken").(string)).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
@@ -178,8 +176,6 @@ func TestAUsedTokenIsKeptForReplayDetectionEvenAfterItExpires(t *testing.T) {
 // A used token has to be remembered for as long as its session can still be refreshed, and not for a fixed few days, so that
 // a token that was stolen and used long ago still ends the session when its owner shows it
 func TestAUsedRefreshTokenIsRememberedForTheWholeSession(t *testing.T) {
-	ctx := t.Context()
-
 	guru := registerGuru(t, "Late Replay")
 
 	first := refresh(t, guru.RefreshToken)
@@ -189,7 +185,6 @@ func TestAUsedRefreshTokenIsRememberedForTheWholeSession(t *testing.T) {
 
 	// the stolen token was used a month ago, which is longer than the cleanup used to keep it
 	ageUse(t, guru.RefreshToken, 30*24*time.Hour)
-	require.NoError(t, redisClient(t).FlushDB(ctx).Err())
 
 	// the next refresh cleans up the tokens of the account
 	third := refresh(t, second)
