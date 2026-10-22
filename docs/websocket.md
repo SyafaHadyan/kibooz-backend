@@ -24,6 +24,7 @@ Every frame is one JSON text frame with a `type`. The `conversationId` is the co
 | `message.deleted` | A message was deleted, the first time only | `messageId` |
 | `read` | A person read a conversation up to a message. In a private conversation both people hear it, in a class room only the other devices of the reader | `userId` and `lastReadMessageId` |
 | `typing` | The other person of a private conversation started or stopped typing | `userId` and `typing` |
+| `resync` | The server noticed that events may have been lost on their way, for example while Redis was down. It comes before the event that revealed the gap and names no conversation | none |
 
 A `message` frame carries signed addresses for its photo or video, which work until `media.expiresAt`, like the ones of the REST routes.
 
@@ -52,11 +53,15 @@ An account keeps at most 5 sockets (`CHAT_MAX_SOCKETS_PER_USER`). A sixth connec
 
 ## Catching up
 
-After a connection opens, or after the app was in the background, ask `GET /chat/conversations/{conversationId}/messages?after=<highest id you have>` for each open conversation, and refresh `GET /chat/conversations` for the unread counts and the last messages. The ids only grow inside a conversation, so the highest one is the cursor, and nothing is skipped. A deleted message shows up again as a placeholder with `deleted` set, so an app that missed the `message.deleted` frame still shows the right thing once it reloads the window.
+After a connection opens (right after the `ready` frame), after a `resync` frame, and after the app was in the background, ask `GET /chat/conversations/{conversationId}/messages?after=<cursor>` for each open conversation, and refresh `GET /chat/conversations` for the unread counts and the last messages. The ids only grow inside a conversation, but they are not consecutive, so an app cannot tell from the ids of the frames whether it missed one.
+
+Keep the cursor of each conversation from what the REST route returned, and do not move it forward because a `message` frame arrived. Suppose message 5 was lost and message 6 arrived by the socket. If the app then used 6 as the cursor, it would ask for what comes after 6 and never get 5. Show the message of a frame at once, but ask for `after=<cursor>` when the socket opens, when a `resync` arrives and when the app returns to the foreground, and set the cursor to the highest id of the answer. A message that arrives twice, by the socket and by the route, has the same id, so the app shows it once.
+
+A deleted message shows up again as a placeholder with `deleted` set, so an app that missed the `message.deleted` frame still shows the right thing once it reloads the window.
 
 ## How events reach the other copies
 
-The API runs as more than one copy, and a person's socket may be on a different copy than the request that sent the message. Each copy delivers an event to its own sockets and publishes it to a Redis channel, `chat:events`, which the other copies listen to. Redis only makes delivery faster. When it is down, the sockets on the copy that handled the request still hear about it, the others do not, and their apps get the message the next time they ask. The metrics `kibooz_chat_sockets`, `kibooz_chat_events_delivered_total`, `kibooz_chat_sockets_dropped_total` and `kibooz_chat_sockets_refused_total` show how many sockets are open, what was written to them, why the server closed one and how many were turned away.
+The API runs as more than one copy, and a person's socket may be on a different copy than the request that sent the message. Each copy delivers an event to its own sockets and publishes it to a Redis channel, `chat:events`, which the other copies listen to. Redis only makes delivery faster. When it is down, the sockets on the copy that handled the request still hear about it, the others do not, and their apps get the message the next time they ask. Every copy numbers what it publishes, so a copy that sees a number skipped, for example after Redis came back, sends a `resync` frame to all of its sockets, and the apps ask for what they missed without waiting for the next time. The metrics `kibooz_chat_sockets`, `kibooz_chat_events_delivered_total`, `kibooz_chat_sockets_dropped_total` and `kibooz_chat_sockets_refused_total` show how many sockets are open, what was written to them, why the server closed one and how many were turned away.
 
 ## Reverse proxy
 

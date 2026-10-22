@@ -2260,7 +2260,8 @@ paths:
         app that missed events catches up with its cursor.
 
         The server sends text frames of JSON. The first is `{"type":"ready","expiresAt":"..."}`. After that come `message` (a new
-        `ChatMessage`), `message.deleted`, `read` and `typing`, each with the `conversationId`. The only frame the app sends is
+        `ChatMessage`), `message.deleted`, `read` and `typing`, each with the `conversationId`, and `{"type":"resync"}`, which names no
+        conversation and tells the app that events may have been lost, so it asks for what it missed. The only frame the app sends is
         `{"type":"typing","conversationId":"...","typing":true}`, for a private conversation. The server pings every 25 seconds and closes a
         socket that does not answer within 60 seconds. It closes a socket with the code `4001` when the access token ends, and the app
         refreshes the token and connects again. An account keeps at most 5 sockets, and a new one closes the oldest.
