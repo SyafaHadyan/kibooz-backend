@@ -305,28 +305,29 @@ func TestAClassThatFailsIsReportedAndTheOthersAreStarted(t *testing.T) {
 		require.Error(t, err)
 	})
 
-	// the loop runs the check again and again, and two reports mean that the first run has finished with its log line
-	runLoop := func(t *testing.T) []error {
+	// the loop runs once, because it starts with a run and waits an hour for the next. A second run would be cut off in the middle of
+	// a query when the loop is stopped, and a query that is cut off ends the connection of this transaction. The run reports first
+	// and writes its log line right after, so the pause lets the line be written before the loop is stopped.
+	runLoop := func(t *testing.T) error {
 		t.Helper()
 
-		reports := make(chan error, 8)
+		reports := make(chan error, 1)
 		looping := season.New(tx, &recordingCache{}, time.UTC, []int{1, 7}).WithClock(func() time.Time { return clock }).
 			Observe(func(err error) { reports <- err })
 
-		stop := looping.Start(20 * time.Millisecond)
+		stop := looping.Start(time.Hour)
 
-		first := <-reports
-		second := <-reports
+		report := <-reports
+
+		time.Sleep(100 * time.Millisecond)
 
 		stop()
 
-		return []error{first, second}
+		return report
 	}
 
 	t.Run("the loop reports a run that failed", func(t *testing.T) {
-		for _, err := range runLoop(t) {
-			require.Error(t, err)
-		}
+		require.Error(t, runLoop(t))
 	})
 
 	t.Run("the loop reports a run that started classes", func(t *testing.T) {
@@ -334,9 +335,7 @@ func TestAClassThatFailsIsReportedAndTheOthersAreStarted(t *testing.T) {
 
 		clock = time.Date(2041, 2, 10, 9, 0, 0, 0, time.UTC)
 
-		for _, err := range runLoop(t) {
-			require.NoError(t, err)
-		}
+		require.NoError(t, runLoop(t))
 
 		var label string
 		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", failingClass).Scan(&label).Error)
