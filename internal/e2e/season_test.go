@@ -216,3 +216,101 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		require.Equal(t, "2031-01", label)
 	})
 }
+
+func TestAClassThatFailsIsReportedAndTheOthersAreStarted(t *testing.T) {
+	failing := registerGuru(t, "Flamboyan")
+	failingClass, failingCode := classOf(t, failing)
+	_, failingChild := registerWali(t, failingCode, "Anak Gagal")
+
+	working := registerGuru(t, "Gardenia")
+	workingClass, workingCode := classOf(t, working)
+	_, workingChild := registerWali(t, workingCode, "Anak Jalan")
+
+	require.NoError(t, testDB.Exec("UPDATE students SET season_points = 8 WHERE id IN (?::uuid, ?::uuid)", failingChild, workingChild).Error)
+
+	// the job runs inside a transaction that is rolled back, so the failure and the reset of every class stay out of other tests
+	tx := testDB.Begin()
+	require.NoError(t, tx.Error)
+
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+
+	// the save of one class is refused by the database, as a constraint or a broken row would
+	require.NoError(t, tx.Exec(
+		"CREATE FUNCTION refuse_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no history for this class'; END $$",
+	).Error)
+	require.NoError(t, tx.Exec(
+		"CREATE TRIGGER refuse_history BEFORE INSERT ON leaderboard_history FOR EACH ROW "+
+			"WHEN (NEW.class_id = '"+failingClass+"'::uuid) EXECUTE FUNCTION refuse_history()",
+	).Error)
+
+	clock := time.Date(2040, 2, 10, 9, 0, 0, 0, time.UTC)
+	job := season.New(tx, &recordingCache{}, time.UTC, []int{1, 7}).WithClock(func() time.Time { return clock })
+
+	t.Run("the class that fails is named and the others go on", func(t *testing.T) {
+		reset, err := job.Run(context.Background())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), failingClass, "the error names the class")
+		require.True(t, reset, "the class that works was started")
+
+		var points int
+		var label string
+
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", workingChild).Scan(&points).Error)
+		require.Zero(t, points)
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", workingClass).Scan(&label).Error)
+		require.Equal(t, "2040-01", label)
+
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", failingChild).Scan(&points).Error)
+		require.Equal(t, 8, points, "the class that failed keeps everything, its transaction was undone")
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", failingClass).Scan(&label).Error)
+		require.NotEqual(t, "2040-01", label)
+	})
+
+	t.Run("a cancelled run stops with an error", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := job.Run(ctx)
+		require.Error(t, err)
+	})
+
+	// the loop runs the check again and again, and two reports mean that the first run has finished with its log line
+	runLoop := func(t *testing.T) []error {
+		t.Helper()
+
+		reports := make(chan error, 8)
+		looping := season.New(tx, &recordingCache{}, time.UTC, []int{1, 7}).WithClock(func() time.Time { return clock }).
+			Observe(func(err error) { reports <- err })
+
+		stop := looping.Start(20 * time.Millisecond)
+
+		first := <-reports
+		second := <-reports
+
+		stop()
+
+		return []error{first, second}
+	}
+
+	t.Run("the loop reports a run that failed", func(t *testing.T) {
+		for _, err := range runLoop(t) {
+			require.Error(t, err)
+		}
+	})
+
+	t.Run("the loop reports a run that started classes", func(t *testing.T) {
+		require.NoError(t, tx.Exec("DROP TRIGGER refuse_history ON leaderboard_history").Error)
+
+		clock = time.Date(2041, 2, 10, 9, 0, 0, 0, time.UTC)
+
+		for _, err := range runLoop(t) {
+			require.NoError(t, err)
+		}
+
+		var label string
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", failingClass).Scan(&label).Error)
+		require.Equal(t, "2041-01", label)
+	})
+
+	_ = workingChild
+}
