@@ -2,6 +2,7 @@
 package apperror
 
 import (
+	"context"
 	"errors"
 	"net/http"
 )
@@ -50,8 +51,14 @@ func Validation(details map[string]string) *Error {
 	}
 }
 
-// Internal wraps an unexpected failure without leaking details to the client
+// Internal wraps an unexpected failure without leaking details to the client. A request that ran out of time or was cancelled
+// is not a bug of the server, it is a server that is too slow or is stopping, so it answers 503 with Retry-After and does not
+// go to Sentry, where an overload would use up the quota of events in an hour.
 func Internal(err error) *Error {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return ErrServerTimeout.WithErr(err)
+	}
+
 	return &Error{
 		Status:  http.StatusInternalServerError,
 		Code:    "INTERNAL_ERROR",
@@ -105,11 +112,15 @@ var (
 	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
 	ErrBodyTooLarge       = New(http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "The request body exceeds the allowed limit")
 	ErrImageDimensions    = New(http.StatusBadRequest, "IMAGE_DIMENSIONS_TOO_LARGE", "The image may be at most 8192 pixels on a side and 40 megapixels in all")
-	ErrStorageDisabled    = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is not configured")
-	ErrStorageFailed      = New(http.StatusBadGateway, "STORAGE_ERROR", "Failed to store the file")
-	ErrIdempotencyReused  = New(http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED", "This Idempotency-Key was used for a different request")
-	ErrIdempotencyBusy    = New(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "A request with this Idempotency-Key is still running, try again in a moment")
-	ErrRateLimited        = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")
+	// ErrServerTimeout answers a request that did not finish before its deadline, or whose work was cancelled
+	ErrServerTimeout = &Error{
+		Status: http.StatusServiceUnavailable, Code: "SERVER_TIMEOUT", Message: "The server took too long, please try again in a moment", RetryAfterSeconds: 1,
+	}
+	ErrStorageDisabled   = New(http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is not configured")
+	ErrStorageFailed     = New(http.StatusBadGateway, "STORAGE_ERROR", "Failed to store the file")
+	ErrIdempotencyReused = New(http.StatusUnprocessableEntity, "IDEMPOTENCY_KEY_REUSED", "This Idempotency-Key was used for a different request")
+	ErrIdempotencyBusy   = New(http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "A request with this Idempotency-Key is still running, try again in a moment")
+	ErrRateLimited       = New(http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests, please try again later")
 	// ErrBusy answers a request that needed a password hash while every slot of the server was in use. It has the code of a
 	// rate limit, so an app already knows to wait, and it says for how long.
 	ErrBusy = &Error{

@@ -18,7 +18,8 @@ info:
     uploads (the avatar, a trash claim and a chat photo) answer the same when the server is already receiving as many photos as
     it may. A client can send the same request once more after that second.
 
-    Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
+    Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks, or with `503` and `SERVER_TIMEOUT`
+    and a `Retry-After` header when a request did not finish within the time the server gives it. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
     `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
