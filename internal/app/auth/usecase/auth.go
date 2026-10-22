@@ -117,6 +117,22 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		}
 	}
 
+	// an email, a NIP or a NISN that an account already uses is refused before the password hash too. The unique indexes still
+	// decide when two registrations race, so this only saves the hash on the common repeat.
+	nip, nisn := "", ""
+	if req.Role == constants.RoleGuru {
+		nip = strings.TrimSpace(req.NIP)
+	}
+
+	if req.Role == constants.RoleWali && req.Student != nil {
+		nisn = strings.TrimSpace(req.Student.NISN)
+	}
+
+	err := u.repo.RegistrationTaken(ctx, normalizeEmail(req.Email), nip, nisn)
+	if err != nil {
+		return dto.AuthResponse{}, apperror.As(err)
+	}
+
 	hash, err := u.hasher.Hash(ctx, req.Password)
 	if err != nil {
 		// the server is busy hashing, or the request ended

@@ -54,6 +54,10 @@ type fakeRepo struct {
 	classLookups     int
 	lookupErr        error
 	lookedUp         string
+
+	// taken is what the check of the email, the NIP and the NISN answers, and takenChecks keeps what it was asked
+	taken       error
+	takenChecks [][3]string
 }
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
@@ -65,6 +69,12 @@ func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, er
 	f.lookedUp = joinCode
 
 	return !f.unknownClassCode, f.lookupErr
+}
+
+func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string) error {
+	f.takenChecks = append(f.takenChecks, [3]string{email, nip, nisn})
+
+	return f.taken
 }
 
 func (f *fakeRepo) CreateGuru(_ context.Context, _ *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
@@ -576,4 +586,49 @@ func TestATeacherRegistrationLooksUpNoClassCode(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Zero(t, repo.classLookups)
+}
+
+// A registration that is going to be refused for a taken email, NIP or NISN must not spend a password hash first
+func TestATakenEmailNipOrNisnIsRefusedBeforeThePasswordIsHashed(t *testing.T) {
+	for _, taken := range []error{apperror.ErrEmailTaken, apperror.ErrNIPTaken, apperror.ErrNISNTaken} {
+		busy := passwords.New(&env.Env{PasswordHashConcurrency: 1, PasswordHashWaitMilliseconds: 10})
+
+		release, err := busy.Acquire(context.Background())
+		require.NoError(t, err)
+
+		repo := &fakeRepo{taken: taken}
+		useCase := buildWith(t, nil, repo, newFakeCache(), busy)
+
+		_, err = useCase.Register(context.Background(), dto.RegisterRequest{
+			Email: " New@Example.com ", Password: "correct horse", FullName: "New Person", Role: constants.RoleGuru,
+			NIP: " 1980 ", Class: &dto.RegisterClass{Name: "Bunga"},
+		})
+
+		release()
+
+		require.ErrorIs(t, err, taken, "every slot was taken, so a refusal for a busy server would mean that the hash came first")
+		require.Equal(t, [][3]string{{"new@example.com", "1980", ""}}, repo.takenChecks)
+		require.Nil(t, repo.registered)
+	}
+}
+
+func TestAParentRegistrationChecksTheNisnOfTheChild(t *testing.T) {
+	repo := &fakeRepo{}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	_, err := useCase.Register(context.Background(), waliRegistration("ab12cd34"))
+
+	require.NoError(t, err)
+	require.Len(t, repo.takenChecks, 1)
+	require.Empty(t, repo.takenChecks[0][1], "a parent has no NIP")
+}
+
+func TestARegistrationFailsWhenTheTakenCheckCannotRun(t *testing.T) {
+	repo := &fakeRepo{taken: errors.New("db down")}
+	useCase := build(t, nil, repo, newFakeCache())
+
+	_, err := useCase.Register(context.Background(), waliRegistration("ab12cd34"))
+
+	require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	require.Nil(t, repo.registered)
 }

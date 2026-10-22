@@ -27,6 +27,10 @@ type AuthDBItf interface {
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
+	// RegistrationTaken returns the conflict error of the first of the email, the NIP and the NISN that an active account already
+	// uses, and nil when none is. An empty NIP or NISN is not looked up. It lets a registration that cannot succeed be refused
+	// before the password hash, and the unique indexes still decide when two registrations race.
+	RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
 	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
@@ -95,6 +99,37 @@ func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, er
 		Where("join_code = ? AND archived_at IS NULL", joinCode).Limit(1).Count(&found).Error
 
 	return found > 0, err
+}
+
+func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+	checks := []struct {
+		value string
+		query string
+		err   error
+	}{
+		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrEmailTaken},
+		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNIPTaken},
+		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
+	}
+
+	for _, check := range checks {
+		if check.value == "" {
+			continue
+		}
+
+		var found []int
+
+		err := r.db.WithContext(ctx).Raw(check.query, check.value).Scan(&found).Error
+		if err != nil {
+			return err
+		}
+
+		if len(found) > 0 {
+			return check.err
+		}
+	}
+
+	return nil
 }
 
 func (r *AuthDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
