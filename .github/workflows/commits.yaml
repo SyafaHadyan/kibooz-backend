@@ -5,15 +5,22 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
 
+# A run is never cancelled. Editing the body of a pull request right after a push used to start a run in the same group, which
+# cancelled the run of the push, and GitHub keeps a cancelled run of a required check as unmet, so the pull request stayed
+# blocked even though the newer run passed. Every run has a group of its own, and an edit that does not change the title
+# changes neither the title nor the base branch skips the job, because commitlint reads the commits and the commits did not
+# change. The title is read from the pull request when the run starts and not from the event, so a run that was started by a
+# push before a title fix checks the fixed title as well, and so does a rerun.
 concurrency:
-  group: commits-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: commits-${{ github.run_id }}
+  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   conventional-commits:
     name: Conventional commits
+    if: github.event.action != 'edited' || github.event.changes.title || github.event.changes.base
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -42,8 +49,11 @@ jobs:
       # With merge commits the title never reaches main, so commitlint does not see it, and CONTRIBUTING.md asks for the same format
       - name: Pull request title
         env:
-          TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: |
+          TITLE="$(gh pr view "$PULL_REQUEST" --json title --jq .title)"
           pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^ ].*$'
 
           if ! [[ "$TITLE" =~ $pattern ]]; then
