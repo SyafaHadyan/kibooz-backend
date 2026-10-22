@@ -39,6 +39,11 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 	amelia, ameliaID := registerWali(t, joinCode, "Amelia Siti")
 	_, zahraID := registerWali(t, joinCode, "Zahra Putri")
 
+	// a second class, which the tests below treat as one that the semester change has not reached yet
+	other := registerGuru(t, "Kenanga")
+	otherClassID, otherCode := classOf(t, other)
+	_, bungaID := registerWali(t, otherCode, "Bunga Citra")
+
 	// the claim adds to the points of all semesters and to the ones of this semester
 	claim := call(t, http.MethodPost, "/api/v1/trash/scan-claim", amelia.Token, map[string]any{
 		"studentId": ameliaID, "trashType": "ANORGANIK", "confidenceScore": 0.9,
@@ -133,5 +138,55 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		var points int
 		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", ameliaID).Scan(&points).Error)
 		require.Equal(t, 5, points)
+	})
+
+	clock = time.Date(2031, 1, 5, 9, 0, 0, 0, time.UTC)
+
+	t.Run("a class that another instance already started is left alone and the rest are started", func(t *testing.T) {
+		// as if an instance had started the new semester for the first class and then stopped before it reached the others
+		require.NoError(t, tx.Exec("INSERT INTO leaderboard_seasons (label) VALUES ('2031-01')").Error)
+		require.NoError(t, tx.Exec("UPDATE class_seasons SET season_label = '2031-01' WHERE class_id = ?::uuid", classID).Error)
+		require.NoError(t, tx.Exec("UPDATE class_seasons SET season_label = '2030-07' WHERE class_id = ?::uuid", otherClassID).Error)
+		require.NoError(t, tx.Exec("UPDATE students SET season_points = 7 WHERE id = ?::uuid", ameliaID).Error)
+		require.NoError(t, tx.Exec("UPDATE students SET season_points = 11 WHERE id = ?::uuid", bungaID).Error)
+
+		reset, err := job.Run(context.Background())
+		require.NoError(t, err)
+		require.True(t, reset)
+
+		var kept, cleared int
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", ameliaID).Scan(&kept).Error)
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", bungaID).Scan(&cleared).Error)
+		require.Equal(t, 7, kept, "the points of the new semester of a class that was started stay")
+		require.Zero(t, cleared)
+
+		var savedOther, savedFirst int
+		require.NoError(t, tx.Raw(
+			"SELECT COALESCE(SUM(points), 0) FROM leaderboard_history WHERE class_id = ?::uuid AND season_label = '2030-07'", otherClassID,
+		).Scan(&savedOther).Error)
+		require.NoError(t, tx.Raw(
+			"SELECT COUNT(*) FROM leaderboard_history WHERE class_id = ?::uuid AND season_label = '2030-07'", classID,
+		).Scan(&savedFirst).Error)
+		require.Equal(t, 11, savedOther, "saved under the semester that the class was in")
+		require.Zero(t, savedFirst, "nothing is saved a second time for the class that was started")
+
+		reset, err = job.Run(context.Background())
+		require.NoError(t, err)
+		require.False(t, reset, "every class is started now, so a repeated run has nothing left")
+	})
+
+	t.Run("a class that is created after the semester began belongs to it", func(t *testing.T) {
+		var created string
+		require.NoError(t, tx.Raw(
+			"INSERT INTO classes (join_code, name) VALUES ('SEASON' || floor(random() * 1000000)::int, 'Kelas Baru') RETURNING id",
+		).Scan(&created).Error)
+
+		var label string
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", created).Scan(&label).Error)
+		require.Equal(t, "2031-01", label)
+
+		reset, err := job.Run(context.Background())
+		require.NoError(t, err)
+		require.False(t, reset)
 	})
 }

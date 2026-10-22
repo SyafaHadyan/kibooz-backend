@@ -77,20 +77,35 @@ func (j *Job) WithClock(now func() time.Time) *Job {
 	return j
 }
 
-// Run starts a new semester when the calendar says one has begun and no instance has done it yet. The first run on a
-// database only records the semester that is under way, because its points belong to it. It tells whether it reset.
+// batchSize is how many classes one look at the table reads, so the list that a run keeps in memory stays small
+const batchSize = 200
+
+// Run starts a new semester when the calendar says one has begun, and then starts it for every class that has not started it
+// yet. Any instance may do both and the work is split into one short transaction for each class, so an instance that stops
+// halfway loses nothing, and the next run of any instance continues with the classes that are left. It tells whether it reset
+// at least one class. The first run on a database only records the semester that is under way, because the points of every
+// class belong to it.
 func (j *Job) Run(ctx context.Context) (bool, error) {
 	label := Label(j.now(), j.loc, j.startMonths)
 
-	var classIDs []uuid.UUID
+	err := j.record(ctx, label)
+	if err != nil {
+		return false, err
+	}
 
-	reset := false
+	return j.startClasses(ctx, label)
+}
 
-	err := j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// a retried transaction starts from nothing
-		reset = false
-		classIDs = nil
+// season is a row of leaderboard_seasons
+type season struct {
+	Label string `gorm:"primaryKey"`
+}
 
+func (season) TableName() string { return "leaderboard_seasons" }
+
+// record notes that the semester has begun. The one instance whose insert succeeds is the first and any other finds the label taken.
+func (j *Job) record(ctx context.Context, label string) error {
+	return j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var latest []string
 
 		err := tx.Raw("SELECT label FROM leaderboard_seasons ORDER BY started_at DESC, label DESC LIMIT 1").Scan(&latest).Error
@@ -102,85 +117,125 @@ func (j *Job) Run(ctx context.Context) (bool, error) {
 			return nil
 		}
 
-		// the one instance whose insert succeeds does the reset, any other that is late finds the label taken
-		started := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&season{Label: label})
-		if started.Error != nil {
-			return started.Error
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&season{Label: label}).Error
+	})
+}
+
+// startClasses starts the semester for every class that belongs to another one, a batch at a time in the order of the ids. An
+// archived class is in too. Its points cannot change, but the semester ends for it as for every class, so its standings are
+// saved and a class that is restored later starts from the semester that is under way.
+func (j *Job) startClasses(ctx context.Context, label string) (bool, error) {
+	reset := false
+	after := uuid.Nil
+
+	for {
+		var classIDs []uuid.UUID
+
+		err := j.db.WithContext(ctx).Raw(
+			"SELECT c.id FROM classes AS c LEFT JOIN class_seasons AS s ON s.class_id = c.id "+
+				"WHERE s.season_label IS DISTINCT FROM ? AND c.id > ? ORDER BY c.id LIMIT ?",
+			label, after, batchSize,
+		).Scan(&classIDs).Error
+		if err != nil {
+			return reset, err
 		}
 
-		if started.RowsAffected == 0 || len(latest) == 0 {
+		if len(classIDs) == 0 {
+			return reset, nil
+		}
+
+		for _, classID := range classIDs {
+			started, err := j.startClass(ctx, classID, label)
+			if err != nil {
+				return reset, err
+			}
+
+			reset = reset || started
+		}
+
+		after = classIDs[len(classIDs)-1]
+	}
+}
+
+// startClass saves the standings of the semester that the class was in under that label, sets the class back to zero and
+// moves it into the new semester, all in one transaction under the ranking lock of the class, like a trash claim. A claim in the
+// middle of the reset lands wholly before it or wholly after it. The label is read again under the lock, so a class that
+// another instance has started in the meantime is left alone, and its history is never saved twice. A class without a label
+// has no semester behind it yet, so it is only marked.
+func (j *Job) startClass(ctx context.Context, classID uuid.UUID, label string) (bool, error) {
+	started := false
+
+	err := j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		started = false
+
+		err := ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		var current []string
+
+		err = tx.Raw("SELECT COALESCE(season_label, '') FROM class_seasons WHERE class_id = ?", classID).Scan(&current).Error
+		if err != nil {
+			return err
+		}
+
+		ended := ""
+		if len(current) > 0 {
+			ended = current[0]
+		}
+
+		if ended == label {
 			return nil
 		}
 
-		classIDs, err = j.startSemester(tx, latest[0])
-		reset = err == nil
+		if ended != "" {
+			err = j.saveAndClear(tx, classID, ended)
+			if err != nil {
+				return err
+			}
 
-		return err
+			started = true
+		}
+
+		return tx.Exec(
+			"INSERT INTO class_seasons (class_id, season_label) VALUES (?, ?) "+
+				"ON CONFLICT (class_id) DO UPDATE SET season_label = EXCLUDED.season_label",
+			classID, label,
+		).Error
 	})
 	if err != nil {
 		return false, err
 	}
 
 	// the cache is optional, entries also expire by themselves
-	for _, classID := range classIDs {
+	if started {
 		_ = j.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 	}
 
-	return reset, nil
+	return started, nil
 }
 
-// season is a row of leaderboard_seasons
-type season struct {
-	Label string `gorm:"primaryKey"`
-}
-
-func (season) TableName() string { return "leaderboard_seasons" }
-
-// startSemester saves the standings of the semester that ended under its label, sets every class back to zero and
-// returns the classes that were touched. The classes are locked in one fixed order, like a trash claim locks its class, so
-// a claim in the middle of the reset lands wholly before it or wholly after it.
-func (j *Job) startSemester(tx *gorm.DB, ended string) ([]uuid.UUID, error) {
-	var classIDs []uuid.UUID
-
-	// An archived class is in too. Its points cannot change, but the semester ends for it as for every class, so its standings are saved
-	// and a class that is restored later starts from the semester that is under way.
-	err := tx.Raw("SELECT id FROM classes ORDER BY id").Scan(&classIDs).Error
-	if err != nil {
-		return nil, err
-	}
-
-	for _, classID := range classIDs {
-		err = ranking.Lock(tx, classID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	err = tx.Exec(
+// saveAndClear copies the standings of the semester that ended to leaderboard_history, sets the points of the semester back to
+// zero and numbers the class again
+func (j *Job) saveAndClear(tx *gorm.DB, classID uuid.UUID, ended string) error {
+	err := tx.Exec(
 		"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
 			"SELECT class_id, id, full_name, ?, season_points, rank_position FROM students "+
-			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id IN ?",
-		ended, classIDs,
+			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id = ?",
+		ended, classID,
 	).Error
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	// only the classes that were locked, because a class that was created after the list was read has claims that nothing
-	// here waits for, and its ranking is not recomputed below
-	err = tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0 AND class_id IN ?", classIDs).Error
+	err = tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0 AND class_id = ?", classID).Error
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	for _, classID := range classIDs {
-		err = ranking.Recompute(tx, classID)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return classIDs, nil
+	return ranking.Recompute(tx, classID)
 }
 
 // Start looks at the calendar once now and then once per interval until the returned stop function is called, which
@@ -226,6 +281,6 @@ func (j *Job) runAndLog(ctx context.Context) {
 	case err != nil && ctx.Err() == nil:
 		log.Printf("leaderboard semester check failed %v", err)
 	case reset:
-		log.Printf("a new semester began, the leaderboard of every class starts from zero")
+		log.Printf("a new semester began, the classes that were not started yet start from zero")
 	}
 }

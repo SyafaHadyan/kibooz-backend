@@ -65,7 +65,7 @@ The server runs four jobs by itself, and none of them needs a scheduler outside 
 
 | Job | Every | What it does |
 |:---|:---|:---|
-| Semester check | 1 minute | Starts a new semester when the calendar says so, saves the final standings and clears the leaderboard cache |
+| Semester check | 1 minute | Starts a new semester when the calendar says so, then starts it for every class that has not started it yet, one class at a time, saving its final standings and clearing its leaderboard cache. An instance that stops halfway is continued by the next run of any instance |
 | File cleanup | 10 minutes | Removes bucket files that a deleted account left behind and retries the ones that failed. Only runs when storage is configured |
 | Idempotency purge | 1 hour | Deletes remembered keys older than `IDEMPOTENCY_TTL_HOURS` |
 | Keepalive | `KEEPALIVE_SECONDS` | Sends `SELECT 1` to the database and `PING` to Redis, so hosted instances that pause when idle stay awake |
