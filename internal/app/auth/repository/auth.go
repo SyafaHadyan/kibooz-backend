@@ -51,9 +51,9 @@ type AuthDBItf interface {
 type RotationPolicy struct {
 	// SessionMax is the longest a session can last, however often its token is swapped
 	SessionMax time.Duration
-	// ReuseGrace is how long after its use a token can be shown again without being taken for a theft, because a client
-	// that lost the answer retries with the same token
-	ReuseGrace time.Duration
+	// ReuseLeeway is how long after its use a token can be shown again and get a new token of the same session, because a
+	// client that lost the answer retries with the same token. Later it is taken for a theft and the session ends.
+	ReuseLeeway time.Duration
 }
 
 // Rotation is the outcome of swapping a refresh token
@@ -294,7 +294,7 @@ func (r *AuthDB) RotateRefreshToken(
 		}
 
 		if len(used) == 0 {
-			rotation.Reused, rotation.UserID, err = endReusedSession(tx, tokenHash, now, policy.ReuseGrace)
+			rotation.User, rotation.Reused, rotation.UserID, err = answerReuse(tx, tokenHash, now, next, policy)
 
 			return err
 		}
@@ -316,6 +316,7 @@ type sessionRow struct {
 	FamilyID         uuid.UUID
 	SessionStartedAt time.Time
 	UsedAt           *time.Time
+	ExpiresAt        time.Time
 }
 
 // continueSession stores the next token of the session, capped at the longest lifetime of a session. It returns nil
@@ -354,17 +355,28 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 	return &found, purgeExpiredTokens(tx, found.ID, now, policy.SessionMax)
 }
 
-// endReusedSession ends the session of a token that was used before and is shown again. A token that is unknown,
-// expired, or was used within the grace period is only refused.
-func endReusedSession(tx *gorm.DB, tokenHash string, now time.Time, grace time.Duration) (bool, uuid.UUID, error) {
+// answerReuse decides what a token that cannot be used is. A token that is unknown, or expired without a use, is only refused. A
+// token that was used a moment ago, within the leeway, belongs to a client that lost the answer, so it gets a new token of the
+// same session. A token that was used earlier is taken for a theft and its whole session ends.
+func answerReuse(
+	tx *gorm.DB, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy,
+) (*entity.User, bool, uuid.UUID, error) {
 	var seen []sessionRow
 
-	err := tx.Raw("SELECT user_id, family_id, used_at FROM refresh_tokens WHERE token_hash = ?", tokenHash).Scan(&seen).Error
-	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil || now.Sub(*seen[0].UsedAt) <= grace {
-		return false, uuid.Nil, err
+	err := tx.Raw(
+		"SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ?", tokenHash,
+	).Scan(&seen).Error
+	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil {
+		return nil, false, uuid.Nil, err
 	}
 
-	return true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
+	if now.Sub(*seen[0].UsedAt) <= policy.ReuseLeeway && seen[0].ExpiresAt.After(now) {
+		user, err := continueSession(tx, seen[0], now, next, policy)
+
+		return user, false, uuid.Nil, err
+	}
+
+	return nil, true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {

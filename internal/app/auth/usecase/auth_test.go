@@ -196,7 +196,7 @@ func buildWith(t *testing.T, user *entity.User, repo *fakeRepo, cache *fakeCache
 
 	repo.user = user
 
-	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90}, hasher)
+	return usecase.NewAuthUseCase(repo, fakeJWT{}, cache, &env.Env{JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: "a-secret-key-that-is-long-enough-for-the-tests", DeviceTokenTTLDays: 90, RefreshReuseLeewaySeconds: 10}, hasher)
 }
 
 func accountWith(t *testing.T, password string) *entity.User {
@@ -285,12 +285,8 @@ func TestARegistrationIsRefusedWhileEverySlotIsTaken(t *testing.T) {
 }
 
 func TestRefreshCanBeRetriedAfterADatabaseFailure(t *testing.T) {
-	cache := newFakeCache()
 	repo := &fakeRepo{rotateErrs: []error{errors.New("connection reset"), nil}}
-	useCase := build(t, accountWith(t, "password-1234"), repo, cache)
-
-	// Redis remembers a token that was issued earlier
-	cache.keys[constants.RefreshKeyPrefix+hash("old-token")] = "user"
+	useCase := build(t, accountWith(t, "password-1234"), repo, newFakeCache())
 
 	_, err := useCase.Refresh(context.Background(), "old-token")
 	require.Equal(t, http.StatusInternalServerError, apperror.As(err).Status)
@@ -302,46 +298,18 @@ func TestRefreshCanBeRetriedAfterADatabaseFailure(t *testing.T) {
 }
 
 func TestRefreshCanBeRetriedWhenTheClientLostItsConnectionDuringTheSwap(t *testing.T) {
-	cache := newFakeCache()
 	ctx, cancel := context.WithCancel(context.Background())
 	repo := &fakeRepo{rotateErrs: []error{context.Canceled, nil}, cancelOnRotate: cancel}
-	useCase := build(t, accountWith(t, "password-1234"), repo, cache)
-
-	cache.keys[constants.RefreshKeyPrefix+hash("old-token")] = "user"
+	useCase := build(t, accountWith(t, "password-1234"), repo, newFakeCache())
 
 	_, err := useCase.Refresh(ctx, "old-token")
 	require.Error(t, err)
-
-	// the flag was taken off on a context of its own, so the client that comes back is not refused for a minute
-	require.NotEqual(t, "used", cache.keys[constants.RefreshKeyPrefix+hash("old-token")])
 
 	repo.cancelOnRotate = nil
 
 	res, err := useCase.Refresh(context.Background(), "old-token")
 	require.NoError(t, err)
 	require.NotEmpty(t, res.RefreshToken)
-}
-
-func TestRefreshStillRejectsAReplay(t *testing.T) {
-	cache := newFakeCache()
-	repo := &fakeRepo{}
-	useCase := build(t, accountWith(t, "password-1234"), repo, cache)
-
-	cache.keys[constants.RefreshKeyPrefix+hash("old-token")] = "user"
-
-	_, err := useCase.Refresh(context.Background(), "old-token")
-	require.NoError(t, err)
-
-	_, err = useCase.Refresh(context.Background(), "old-token")
-	require.Equal(t, "AUTH_REFRESH_INVALID", apperror.As(err).Code)
-	require.Equal(t, 1, repo.rotateCalls)
-}
-
-// hash mirrors how the use case names a token in the cache
-func hash(raw string) string {
-	sum := sha256.Sum256([]byte(raw))
-
-	return hex.EncodeToString(sum[:])
 }
 
 func deviceTokens() *devicetoken.Tokens {
@@ -467,7 +435,7 @@ func TestRefreshTellsTheRepositoryTheLimitsOfASession(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 90*24*time.Hour, repo.policy.SessionMax)
-	require.Equal(t, time.Minute, repo.policy.ReuseGrace, "the same minute that Redis flags a used token for")
+	require.Equal(t, 10*time.Second, repo.policy.ReuseLeeway, "the leeway of the settings")
 }
 
 func TestRefreshRefusesATokenThatCannotBeUsed(t *testing.T) {

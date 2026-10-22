@@ -31,13 +31,6 @@ const (
 
 	// minFullNameRunes is the shortest name of a person, the same minimum the request validator uses
 	minFullNameRunes = 2
-
-	// usedTTL is how long Redis remembers a consumed token to reject quick replays. A token that is shown again within
-	// that time is only refused, and after it the database decides whether the session was stolen.
-	usedTTL = time.Minute
-
-	// cleanupTimeout is how long taking the used flag off a token may last, on a context of its own
-	cleanupTimeout = 2 * time.Second
 )
 
 type AuthUseCaseItf interface {
@@ -150,8 +143,6 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		return dto.AuthResponse{}, err
 	}
 
-	u.remember(ctx, session)
-
 	res, err := u.buildResponse(user, raw)
 	if err != nil {
 		return dto.AuthResponse{}, err
@@ -263,26 +254,19 @@ func (u *AuthUseCase) withDeviceToken(res dto.AuthResponse, user *entity.User, p
 	return res, nil
 }
 
-// Refresh swaps a refresh token for a new session. Postgres alone decides whether the token is valid,
-// Redis only rejects obvious replays earlier and its absence changes nothing.
+// Refresh swaps a refresh token for a new session. Postgres alone decides whether the token is valid. A token that was used
+// a moment ago, within the leeway, is answered with a new token of the same session, because the client that lost the answer
+// to its first call retries with the old one. Later the same token ends the whole session.
 func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.AuthResponse, error) {
 	hash := hashToken(refreshToken)
-
-	used, err := u.cache.MarkUsed(ctx, refreshKey(hash), usedTTL)
-	if err == nil && used {
-		return dto.AuthResponse{}, apperror.ErrRefreshInvalid
-	}
 
 	raw, next := u.newRefreshToken()
 
 	rotation, err := u.repo.RotateRefreshToken(ctx, hash, u.now(), next, repository.RotationPolicy{
-		SessionMax: time.Duration(u.cfg.JWTSessionMaxDays) * 24 * time.Hour,
-		ReuseGrace: usedTTL,
+		SessionMax:  time.Duration(u.cfg.JWTSessionMaxDays) * 24 * time.Hour,
+		ReuseLeeway: time.Duration(u.cfg.RefreshReuseLeewaySeconds) * time.Second,
 	})
 	if err != nil {
-		// the database did not use the token, so it must not stay flagged and block the client's retry
-		u.forgetUse(ctx, hash)
-
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
 
@@ -294,19 +278,7 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 		return dto.AuthResponse{}, apperror.ErrRefreshInvalid
 	}
 
-	u.remember(ctx, next)
-
 	return u.buildResponse(rotation.User, raw)
-}
-
-// forgetUse takes the used flag off a token that the database did not use. The request is often the reason that the swap
-// failed, because a client that lost its connection cancels it, and a delete on that context would fail too and leave the
-// flag for a whole usedTTL, so the delete runs on a context of its own that only keeps the values of the request.
-func (u *AuthUseCase) forgetUse(ctx context.Context, hash string) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
-	defer cancel()
-
-	_ = u.cache.Del(ctx, refreshKey(hash))
 }
 
 func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string) error {
@@ -316,8 +288,6 @@ func (u *AuthUseCase) Logout(ctx context.Context, refreshToken string) error {
 	if err != nil {
 		return apperror.Internal(err)
 	}
-
-	_ = u.cache.Del(ctx, refreshKey(hash))
 
 	return nil
 }
@@ -334,8 +304,6 @@ func (u *AuthUseCase) issueSession(ctx context.Context, user *entity.User) (dto.
 	if err != nil {
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
-
-	u.remember(ctx, row)
 
 	return u.buildResponse(user, raw)
 }
@@ -375,20 +343,6 @@ func (u *AuthUseCase) newRefreshToken() (string, *entity.RefreshToken) {
 		FamilyID:         uuid.New(),
 		SessionStartedAt: now,
 	}
-}
-
-// remember lets Redis know the token exists so a later replay can be flagged. Failures are ignored on purpose.
-func (u *AuthUseCase) remember(ctx context.Context, token *entity.RefreshToken) {
-	ttl := time.Until(token.ExpiresAt)
-	if ttl <= 0 {
-		return
-	}
-
-	_ = u.cache.Set(ctx, refreshKey(token.TokenHash), token.UserID.String(), ttl)
-}
-
-func refreshKey(hash string) string {
-	return constants.RefreshKeyPrefix + hash
 }
 
 func hashToken(raw string) string {
