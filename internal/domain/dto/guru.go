@@ -115,6 +115,8 @@ type ClassSummary struct {
 	JoinOpen      bool      `json:"joinOpen"`
 	TotalStudents int       `json:"totalStudents"`
 	CreatedAt     time.Time `json:"createdAt"`
+	// ArchivedAt is set while the class is archived, which makes it read only. The class is listed with it until a teacher restores it.
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
 }
 
 // SetJoiningRequest opens or closes a class for new children

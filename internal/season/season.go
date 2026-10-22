@@ -142,7 +142,8 @@ func (season) TableName() string { return "leaderboard_seasons" }
 func (j *Job) startSemester(tx *gorm.DB, ended string) ([]uuid.UUID, error) {
 	var classIDs []uuid.UUID
 
-	err := tx.Raw("SELECT id FROM classes ORDER BY id").Scan(&classIDs).Error
+	// an archived class is frozen, so its points and its standings stay as they were
+	err := tx.Raw("SELECT id FROM classes WHERE archived_at IS NULL ORDER BY id").Scan(&classIDs).Error
 	if err != nil {
 		return nil, err
 	}

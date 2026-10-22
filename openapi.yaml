@@ -693,6 +693,7 @@ paths:
             The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
             `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
             children who have no room left, and nothing of the batch is saved.
+            or the class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -744,6 +745,7 @@ paths:
             The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
             `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
             children who have no room left, and nothing of the batch is saved.
+            or the class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -904,6 +906,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}/joining:
@@ -939,6 +947,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /guru/classes/{classId}/students/{studentId}:
@@ -973,6 +987,12 @@ paths:
           description: |
             The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
             (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -1153,7 +1173,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`), the teacher already teaches 20 classes (`CLASS_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
+          description: The teacher already teaches the class (`TEACHER_ALREADY_IN_CLASS`), the teacher already teaches 20 classes (`CLASS_LIMIT_REACHED`), or a request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`), or the class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -1207,7 +1227,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: The teacher is the only one left in the class (`LAST_TEACHER`)
+          description: The teacher is the only one left in the class (`LAST_TEACHER`), or the class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -1253,6 +1273,12 @@ paths:
           description: |
             The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or the teacher does not teach it
             (`TEACHER_NOT_IN_CLASS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -1365,6 +1391,7 @@ paths:
         staging folder until it is added, and adding copies it to a permanent address. That address is the `videoUrl` of the added video,
         so use it and not the address of the upload. A staged file can be added once, and the permanent address can be added again to
         share the file with another video of the same class, for as long as a video still uses it. The file is deleted with the last video.
+        An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
@@ -1430,6 +1457,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
         "502":
@@ -1472,6 +1505,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
         "502":
@@ -1509,6 +1548,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
     delete:
@@ -1536,6 +1581,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /classes/{classId}/students:
@@ -1620,7 +1671,7 @@ paths:
       tags: [Classroom]
       operationId: createThread
       summary: Start a forum thread
-      description: Open to the teachers of the class and the parents of a child in it.
+      description: Open to the teachers of the class and the parents of a child in it. An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
@@ -1684,7 +1735,7 @@ paths:
       tags: [Classroom]
       operationId: createReply
       summary: Reply to a forum thread
-      description: Open to the teachers of the class and the parents of a child in it. A reply cannot be answered again.
+      description: Open to the teachers of the class and the parents of a child in it. A reply cannot be answered again. An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/ClassPath"
@@ -1750,6 +1801,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
     delete:
@@ -1776,6 +1833,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /classes/{classId}/forum/{postId}/replies/{replyId}:
@@ -1810,6 +1873,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
     delete:
@@ -1837,6 +1906,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /trash/scan-claim:
@@ -1848,6 +1923,7 @@ paths:
         Only for the WALI role. A child can claim a limited number of times per local day. The optional photo has to be a
         JPEG, PNG or WebP image of at most 4 MiB, given as base64 or as a data URI. It is stored as evidence when file storage is
         configured, and a deployment without it checks the photo and then drops it.
+        An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -4590,6 +4666,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        archivedAt:
+          type: string
+          format: date-time
+          description: When the class was archived, missing while it is not. An archived class is read only until a teacher restores it.
     ClassList:
       allOf:
         - $ref: "#/components/schemas/PageInfo"

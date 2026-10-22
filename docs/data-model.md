@@ -9,7 +9,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number and an avatar address |
 | `gurus` | The teacher part of a `GURU` account, with a NIP, a school name and an address |
 | `walis` | The parent part of a `WALI` account, with an address and a WhatsApp number |
-| `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set when nobody teaches it and it has no active child. `join_open` is false while its teachers do not want new children |
+| `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set while the class is archived, which makes it read only, and it is also set when the only teacher of a class without an active child deletes the account. `join_open` is false while its teachers do not want new children |
 | `class_teachers` | A teacher of a class. A class can have several teachers, and `is_owner` marks the one who owns it |
 | `students` | A child, with a parent, a class, a NISN, the points of all semesters (`current_points`), the points of the running semester (`season_points`) and the rank |
 | `enrollments` | A child in a class, asked for, current or over, with a status of `pending`, `active`, `ended` or `rejected`. Every child that is not deleted has one active enrollment, and a deleted child has an ended one. The points, rank and scans it had are saved on it when it ends. See [ADR 0014](adr/0014-class-enrollments.md) |

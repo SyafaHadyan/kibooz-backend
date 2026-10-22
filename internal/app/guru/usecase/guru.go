@@ -444,6 +444,22 @@ func maxTime(a time.Time, b time.Time) time.Time {
 	return b
 }
 
+// resolveWritableClass is resolveClass for a change, which an archived class refuses because it is read only
+func (u *GuruUseCase) resolveWritableClass(
+	ctx context.Context, userID uuid.UUID, classID *uuid.UUID,
+) (*repository.GuruRow, *entity.Class, error) {
+	guru, class, err := u.resolveClass(ctx, userID, classID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if class.ArchivedAt != nil {
+		return nil, nil, apperror.ErrClassArchived
+	}
+
+	return guru, class, nil
+}
+
 func (u *GuruUseCase) ListClasses(ctx context.Context, userID uuid.UUID, page pagination.Params) (dto.ClassList, error) {
 	guru, err := u.findGuru(ctx, userID)
 	if err != nil {
@@ -491,7 +507,7 @@ func (u *GuruUseCase) Class(ctx context.Context, userID uuid.UUID, classID uuid.
 }
 
 func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.JoinCodeResponse, error) {
-	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.JoinCodeResponse{}, err
 	}
@@ -512,7 +528,7 @@ func (u *GuruUseCase) RotateJoinCode(ctx context.Context, userID uuid.UUID, clas
 func (u *GuruUseCase) SetJoining(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest,
 ) (dto.JoiningResponse, error) {
-	_, class, err := u.resolveClass(ctx, userID, &classID)
+	_, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.JoiningResponse{}, err
 	}
@@ -530,7 +546,7 @@ func (u *GuruUseCase) SetJoining(
 }
 
 func (u *GuruUseCase) RemoveStudent(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) error {
-	_, class, err := u.resolveClass(ctx, userID, &classID)
+	_, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return err
 	}
@@ -572,7 +588,7 @@ func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uu
 func (u *GuruUseCase) AddTeacher(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddTeacherRequest,
 ) (dto.Teacher, error) {
-	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.Teacher{}, err
 	}
@@ -595,7 +611,7 @@ func (u *GuruUseCase) AddTeacher(
 }
 
 func (u *GuruUseCase) RemoveTeacher(ctx context.Context, userID uuid.UUID, classID uuid.UUID, teacherID uuid.UUID) error {
-	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return err
 	}
@@ -606,7 +622,7 @@ func (u *GuruUseCase) RemoveTeacher(ctx context.Context, userID uuid.UUID, class
 func (u *GuruUseCase) TransferOwnership(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.TransferOwnershipRequest,
 ) (dto.Teacher, error) {
-	guru, class, err := u.resolveClass(ctx, userID, &classID)
+	guru, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.Teacher{}, err
 	}
@@ -772,7 +788,18 @@ func classSummary(row *repository.ClassRow) dto.ClassSummary {
 		JoinOpen:      row.JoinOpen,
 		TotalStudents: row.TotalStudents,
 		CreatedAt:     row.CreatedAt.UTC(),
+		ArchivedAt:    archivedAt(row.ArchivedAt),
 	}
+}
+
+func archivedAt(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+
+	utc := at.UTC()
+
+	return &utc
 }
 
 func profileResponse(guru *repository.GuruRow) dto.GuruProfile {

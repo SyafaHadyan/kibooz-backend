@@ -111,7 +111,7 @@ func (u *ClassroomUseCase) ListVideos(
 }
 
 func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.AddVideoRequest) (dto.Video, error) {
-	guruID, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	guruID, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return dto.Video{}, err
 	}
@@ -259,7 +259,7 @@ func asAppError(err error) error {
 func (u *ClassroomUseCase) UpdateVideo(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID, req dto.UpdateVideoRequest,
 ) (dto.Video, error) {
-	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return dto.Video{}, err
 	}
@@ -285,7 +285,7 @@ func (u *ClassroomUseCase) UpdateVideo(
 }
 
 func (u *ClassroomUseCase) DeleteVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID) error {
-	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return err
 	}
@@ -390,7 +390,7 @@ func applyVideoChanges(video *entity.LearningVideo, req dto.UpdateVideoRequest) 
 func (u *ClassroomUseCase) CreateVideoUpload(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest,
 ) (dto.VideoUpload, error) {
-	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return dto.VideoUpload{}, err
 	}
@@ -422,7 +422,7 @@ func (u *ClassroomUseCase) CreateVideoUpload(
 }
 
 func (u *ClassroomUseCase) DiscardVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoURL string) error {
-	_, err := u.authorize(ctx, userID, constants.RoleGuru, classID)
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
 	if err != nil {
 		return err
 	}
@@ -520,7 +520,7 @@ func (u *ClassroomUseCase) ListThreads(
 func (u *ClassroomUseCase) CreateThread(
 	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, req dto.CreateThreadRequest,
 ) (dto.ForumThread, error) {
-	_, err := u.authorize(ctx, userID, role, classID)
+	_, err := u.authorizeWrite(ctx, userID, role, classID)
 	if err != nil {
 		return dto.ForumThread{}, err
 	}
@@ -559,7 +559,7 @@ func (u *ClassroomUseCase) CreateThread(
 func (u *ClassroomUseCase) ListReplies(
 	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, page pagination.Params,
 ) (dto.ForumReplyList, error) {
-	err := u.authorizeThread(ctx, userID, role, classID, threadID)
+	err := u.authorizeThread(ctx, userID, role, classID, threadID, false)
 	if err != nil {
 		return dto.ForumReplyList{}, err
 	}
@@ -584,7 +584,7 @@ func (u *ClassroomUseCase) ListReplies(
 func (u *ClassroomUseCase) CreateReply(
 	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, req dto.CreateReplyRequest,
 ) (dto.ForumReply, error) {
-	err := u.authorizeThread(ctx, userID, role, classID, threadID)
+	err := u.authorizeThread(ctx, userID, role, classID, threadID, true)
 	if err != nil {
 		return dto.ForumReply{}, err
 	}
@@ -736,7 +736,7 @@ func (u *ClassroomUseCase) findOwnPost(
 func (u *ClassroomUseCase) findPostInClass(
 	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID *uuid.UUID, postID uuid.UUID,
 ) (*repository.PostRow, *uuid.UUID, error) {
-	guruID, err := u.authorize(ctx, userID, role, classID)
+	guruID, err := u.authorizeWrite(ctx, userID, role, classID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -908,11 +908,37 @@ func (u *ClassroomUseCase) authorize(ctx context.Context, userID uuid.UUID, role
 	}
 }
 
+// authorizeWrite is authorize for a change, which an archived class refuses because it is read only
+func (u *ClassroomUseCase) authorizeWrite(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID) (*uuid.UUID, error) {
+	guruID, err := u.authorize(ctx, userID, role, classID)
+	if err != nil {
+		return nil, err
+	}
+
+	archived, err := u.repo.ClassArchived(ctx, classID)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	if archived {
+		return nil, apperror.ErrClassArchived
+	}
+
+	return guruID, nil
+}
+
 // authorizeThread also confirms that the thread belongs to the class
 func (u *ClassroomUseCase) authorizeThread(
-	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID,
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, write bool,
 ) error {
-	_, err := u.authorize(ctx, userID, role, classID)
+	var err error
+
+	if write {
+		_, err = u.authorizeWrite(ctx, userID, role, classID)
+	} else {
+		_, err = u.authorize(ctx, userID, role, classID)
+	}
+
 	if err != nil {
 		return err
 	}

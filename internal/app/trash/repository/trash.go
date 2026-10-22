@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
@@ -119,6 +120,12 @@ func (r *TrashDB) Claim(
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		err := ranking.Lock(tx, classID)
+		if err != nil {
+			return err
+		}
+
+		// the points of an archived class are frozen, so nothing is scanned into it
+		err = classteam.CheckWritable(tx, classID)
 		if err != nil {
 			return err
 		}

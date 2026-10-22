@@ -79,6 +79,8 @@ type ClassroomDBItf interface {
 	WithVideoFileLock(ctx context.Context, videoURL string, fn func(repo ClassroomDBItf) error) error
 	ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
 	ThreadExists(ctx context.Context, classID uuid.UUID, threadID uuid.UUID) (bool, error)
+	// ClassArchived tells whether a teacher archived the class, which makes it read only
+	ClassArchived(ctx context.Context, classID uuid.UUID) (bool, error)
 	ListReplies(ctx context.Context, threadID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
 	// CreatePost stores a post, and returns ErrParentGone for a reply whose thread was deleted in the meantime
 	CreatePost(ctx context.Context, post *entity.ForumPost) error
@@ -415,4 +417,12 @@ func (r *ClassroomDB) ListGuidanceReports(ctx context.Context, classID uuid.UUID
 	}
 
 	return rows, int(total), nil
+}
+
+func (r *ClassroomDB) ClassArchived(ctx context.Context, classID uuid.UUID) (bool, error) {
+	var archived bool
+
+	err := r.db.WithContext(ctx).Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+
+	return archived, err
 }

@@ -138,3 +138,8 @@ var (
 	ErrMovePending    = New(http.StatusConflict, "MOVE_REQUEST_PENDING", "This child already has a request that waits for a teacher")
 	ErrMoveNotFound   = New(http.StatusNotFound, "MOVE_REQUEST_NOT_FOUND", "Move request not found")
 )
+
+// errors of an archived class, which is read only until a teacher restores it
+var (
+	ErrClassArchived = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
+)
