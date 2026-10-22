@@ -379,3 +379,35 @@ func TestAResyncReachesEverySocketAndClosesASlowOne(t *testing.T) {
 		require.FailNow(t, "the slow socket stayed open")
 	}
 }
+
+func TestALateEnvelopeIsNeitherALossNorAStepBack(t *testing.T) {
+	hub := NewHub(Config{})
+
+	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 1}))
+	require.True(t, hub.lostBefore(envelope{Origin: "a", Seq: 3}), "number 2 never came yet")
+	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 2}), "number 2 arrives late, which is no new loss")
+	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 4}), "the next number follows 3, and 2 did not move the count back")
+	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 4}), "a number that comes twice is no loss either")
+	require.False(t, hub.lostBefore(envelope{Origin: "old", Seq: 0}), "a copy from before the numbers existed sends 0 every time")
+	require.False(t, hub.lostBefore(envelope{Origin: "old", Seq: 0}))
+}
+
+func TestGapsInsideTheWaitCostOneResyncAtTheEnd(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.resyncWait = 60 * time.Millisecond
+
+	client, err := hub.Register(uuid.New())
+	require.NoError(t, err)
+
+	hub.requestResync()
+	require.Equal(t, EventResync, received(t, client).Type, "the first one goes at once")
+
+	for range 5 {
+		hub.requestResync()
+	}
+
+	nothing(t, client)
+
+	require.Equal(t, EventResync, received(t, client).Type, "the gaps that came meanwhile are sent once when the time is over")
+	nothing(t, client)
+}

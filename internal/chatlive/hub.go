@@ -35,6 +35,10 @@ var resyncFrame = []byte(`{"type":"resync"}`)
 // maxOrigins bounds the memory of the sequence numbers that other copies were last seen at, one entry for each start of a copy
 const maxOrigins = 64
 
+// resyncEvery is the shortest time between two resync frames of one process. A bus that flaps would otherwise make every app refetch
+// its conversations again and again, so a gap that is found inside the time is sent once when it is over.
+const resyncEvery = 5 * time.Second
+
 // Event is what a socket is sent, as one JSON text frame. Only the fields of its type are set.
 type Event struct {
 	Type           string    `json:"type"`
@@ -118,6 +122,14 @@ type Hub struct {
 	seenMu    sync.Mutex
 	seen      map[string]uint64
 
+	// lastResync and resyncTimer keep the resync frames apart by resyncEvery, and resyncWait is that time, a field for the tests
+	resyncMu    sync.Mutex
+	lastResync  time.Time
+	resyncTimer *time.Timer
+	resyncWait  time.Duration
+
+	gaps prometheus.Counter
+
 	sockets  prometheus.Gauge
 	events   *prometheus.CounterVec
 	dropped  *prometheus.CounterVec
@@ -130,6 +142,11 @@ func NewHub(cfg Config) *Hub {
 		origin:  uuid.NewString(),
 		clients: map[uuid.UUID]map[*Client]struct{}{},
 		seen:    map[string]uint64{},
+
+		resyncWait: resyncEvery,
+		gaps: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "kibooz", Name: "chat_event_gaps_total", Help: "Gaps found in the events that other copies published.",
+		}),
 		sockets: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "kibooz", Name: "chat_sockets", Help: "Chat sockets that are open on this process.",
 		}),
@@ -156,7 +173,7 @@ func (h *Hub) Collectors() []prometheus.Collector {
 		h.dropped.WithLabelValues(reason)
 	}
 
-	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals}
+	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals, h.gaps}
 }
 
 // Full reports whether the process has no room for another socket, or is shutting down
@@ -302,7 +319,10 @@ func (h *Hub) Run(ctx context.Context) {
 		}
 
 		if h.lostBefore(received) {
-			h.resync()
+			h.gaps.Inc()
+			log.Printf("chat events of another copy are missing before number %d, the sockets are told to resync", received.Seq)
+
+			h.requestResync()
 		}
 
 		h.deliver(received.Recipients, received.Event)
@@ -311,7 +331,9 @@ func (h *Hub) Run(ctx context.Context) {
 
 // lostBefore remembers the number of the envelope and tells whether the ones before it did not all arrive. The first envelope
 // of an origin never counts as a loss, because a socket that this process holds was opened after the copy that sent it started,
-// or it asks for what it missed when it connects.
+// or it asks for what it missed when it connects, and a copy that started while this one could not hear the bus is a blind spot
+// that the next gap makes up for. A number that is not above the last one is a late arrival of an envelope that the publisher
+// numbered before another one but sent after it, and it is neither a loss nor a reason to go back.
 func (h *Hub) lostBefore(received envelope) bool {
 	h.seenMu.Lock()
 	defer h.seenMu.Unlock()
@@ -319,13 +341,48 @@ func (h *Hub) lostBefore(received envelope) bool {
 	last, known := h.seen[received.Origin]
 
 	if !known && len(h.seen) >= maxOrigins {
-		// the copies that were restarted long ago are not coming back, so forgetting them all costs one missed gap at most
-		h.seen = map[string]uint64{}
+		// the copies that were restarted long ago are not coming back, so one entry makes room, and the others stay
+		for origin := range h.seen {
+			delete(h.seen, origin)
+
+			break
+		}
 	}
 
-	h.seen[received.Origin] = received.Seq
+	if received.Seq > last {
+		h.seen[received.Origin] = received.Seq
+	}
 
 	return known && received.Seq > last+1
+}
+
+// requestResync sends a resync to the sockets of this process, at once when the last one was long enough ago, and otherwise
+// once when the time is over, so any number of gaps inside it cost one frame
+func (h *Hub) requestResync() {
+	h.resyncMu.Lock()
+	defer h.resyncMu.Unlock()
+
+	if h.resyncTimer != nil {
+		return
+	}
+
+	wait := h.resyncWait - time.Since(h.lastResync)
+	if wait <= 0 {
+		h.lastResync = time.Now()
+
+		h.resync()
+
+		return
+	}
+
+	h.resyncTimer = time.AfterFunc(wait, func() {
+		h.resyncMu.Lock()
+		h.resyncTimer = nil
+		h.lastResync = time.Now()
+		h.resyncMu.Unlock()
+
+		h.resync()
+	})
 }
 
 // resync tells every socket of this process that events may have been lost. It writes to a full buffer as little as deliver
