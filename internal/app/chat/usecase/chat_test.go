@@ -1088,7 +1088,9 @@ func TestAReadMarkIsPushedToBothOfADirectPairAndOnlyToTheReaderInARoom(t *testin
 func TestTypingGoesToTheOtherPersonOfAnOpenDirectConversationOnly(t *testing.T) {
 	me, other := uuid.New(), uuid.New()
 	conversation, id := conversationOf(me, other)
-	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}, account: &repository.AccountRow{}, shared: true,
+	}
 	useCase := newUseCase(repo)
 	notifier := withNotifier(useCase)
 	ctx := context.Background()
@@ -1104,7 +1106,11 @@ func TestTypingGoesToTheOtherPersonOfAnOpenDirectConversationOnly(t *testing.T) 
 
 	requireAppError(t, useCase.Typing(ctx, uuid.New(), id, true), apperror.ErrChatConversationNotFound)
 
-	repo.views = map[uuid.UUID]*repository.ConversationRow{id: {ID: id, Kind: constants.ChatKindDirect, CanSend: false}}
+	// two people who no longer share a class, and a peer whose account is gone, both close the conversation
+	repo.shared = false
+	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.ErrChatSendingClosed)
+
+	repo.shared, repo.account = true, nil
 	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.ErrChatSendingClosed)
 	require.Len(t, notifier.events, 2, "a closed conversation shows no typing")
 }
