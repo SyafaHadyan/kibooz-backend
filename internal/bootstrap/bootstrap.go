@@ -53,6 +53,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
+	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"gorm.io/gorm"
 )
@@ -67,6 +68,7 @@ type Bootstrap struct {
 	stopCleanup   func()
 	stopSeason    func()
 	stopKeys      func()
+	stopTokens    func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -269,6 +271,8 @@ func Start(version string) (*Bootstrap, error) {
 	stopSeason := season.New(database, cache, cfg.Location(), cfg.SemesterStartMonths).
 		Observe(stats.Job("semester_check")).Start(season.Interval)
 	stopKeys := keys.Observe(stats.Job("idempotency_purge")).Start(idempotency.Interval)
+	stopTokens := sessions.NewSweeper(database, time.Duration(cfg.JWTSessionMaxDays)*24*time.Hour).
+		Observe(stats.Job("refresh_token_purge")).Start(sessions.Interval)
 
 	stopCleanup := func() {}
 	if storage.Enabled() {
@@ -285,7 +289,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -297,6 +301,7 @@ func (b *Bootstrap) Close() {
 	b.stopCleanup()
 	b.stopSeason()
 	b.stopKeys()
+	b.stopTokens()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()

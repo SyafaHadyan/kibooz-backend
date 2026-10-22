@@ -63,13 +63,14 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 
 ## Background work
 
-The server runs four jobs by itself, and none of them needs a scheduler outside the process.
+The server runs five jobs by itself, and none of them needs a scheduler outside the process.
 
 | Job | Every | What it does |
 |:---|:---|:---|
 | Semester check | 1 minute | Starts a new semester when the calendar says so, then starts it for every class that has not started it yet, one class at a time, saving its final standings and clearing its leaderboard cache. An instance that stops halfway is continued by the next run of any instance |
 | File cleanup | 10 minutes | Removes bucket files that a deleted account left behind and retries the ones that failed. Only runs when storage is configured |
 | Idempotency purge | 1 hour | Deletes remembered keys older than `IDEMPOTENCY_TTL_HOURS` |
+| Refresh token purge | 1 hour | Deletes, for every account, the refresh tokens that no longer matter, which are the ones that expired unused and the used ones whose session reached `JWT_SESSION_MAX_DAYS`. A token that another request holds is skipped and taken by the next run. The first run does one pass over the whole table, so on a large table count the rows with `SELECT count(*) FROM refresh_tokens` first |
 | Keepalive | `KEEPALIVE_SECONDS` | Sends `SELECT 1` to the database and `PING` to Redis, so hosted instances that pause when idle stay awake |
 
 ## Metrics
@@ -88,7 +89,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `kibooz_chat_sockets_refused_total` | none | Sockets that were turned away because the copy was full or shutting down |
 | `kibooz_push_messages_total` | `result` | Wake-up pushes, by `sent`, `failed`, `unregistered` (a token that Firebase dropped, which is deleted) and `dropped` (the queue was full or the server was stopping) |
 | `kibooz_password_hash_busy_total` | none | Requests that got `429 RATE_LIMITED` because every password hashing slot was taken, which means the server needs more CPU or a higher `PASSWORD_HASH_CONCURRENCY` |
-| `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `keepalive_database` and `keepalive_redis` |
+| `kibooz_job_runs_total` | `job`, `result` | Runs of a background job, with `result` `success` or `failure`. The jobs are `semester_check`, `file_cleanup`, `idempotency_purge`, `refresh_token_purge`, `keepalive_database` and `keepalive_redis` |
 | `kibooz_job_last_success_timestamp_seconds` | `job` | Unix time of the last successful run, or of the moment the job started when it has not succeeded yet, so an alert can fire when a job has not succeeded for too long. A job that is switched off, such as the file cleanup without a bucket or the keepalive with `KEEPALIVE_SECONDS=0`, has no series |
 | `go_sql_*` | `db_name` | The connection pool of the database, such as open, idle and waited-for connections |
 | `go_*`, `process_*` | none | The Go runtime and the process, such as memory, goroutines and open files |
