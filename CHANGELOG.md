@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.18.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.18.0...v0.18.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **db:** bound the first ping and say what the ten seconds cover ([0e1b24d](https://github.com/SyafaHadyan/kibooz-backend/commit/0e1b24d339d95bc27c5ec68dd6d2d57a70bcf292))
+* **db:** give up on a database that does not answer after ten seconds ([e65d3e0](https://github.com/SyafaHadyan/kibooz-backend/commit/e65d3e0571130a24f27e4ed0fb3b1232210e2e55))
+* **db:** give up on a database that does not answer after ten seconds ([#331](https://github.com/SyafaHadyan/kibooz-backend/issues/331)) ([c4b9762](https://github.com/SyafaHadyan/kibooz-backend/commit/c4b9762c4acc3c379c8726cfd987a852fbe3a878))
+* **main:** end the process at once on a second stop signal while it starts ([55df901](https://github.com/SyafaHadyan/kibooz-backend/commit/55df90187d38f70b6742a5743729552343b1235d))
+* **main:** let the migrations finish when the process is told to stop while it starts ([86633a2](https://github.com/SyafaHadyan/kibooz-backend/commit/86633a2c61755041cc11d592c87ad1de7bab1109))
+* **main:** let the migrations finish when the process is told to stop while it starts ([#326](https://github.com/SyafaHadyan/kibooz-backend/issues/326)) ([9e1c1d1](https://github.com/SyafaHadyan/kibooz-backend/commit/9e1c1d195494ad1b4fa3cf14c328f2e50e6591ea))
+* **season:** ignore an older semester and keep going past a class that fails ([76447f5](https://github.com/SyafaHadyan/kibooz-backend/commit/76447f572bdcdb7bd308707b84c3e5df847a6c28))
+* **season:** lock the history table while the key is added and test the skipped save ([b88cffb](https://github.com/SyafaHadyan/kibooz-backend/commit/b88cffbdd2fcddb74d545fe9972c50938978f585))
+* **season:** make the database refuse a second save of the same standings ([3730407](https://github.com/SyafaHadyan/kibooz-backend/commit/373040705b86c673b89ca121e471dbf95c1df410))
+* **season:** make the database refuse a second save of the same standings ([#330](https://github.com/SyafaHadyan/kibooz-backend/issues/330)) ([f0c0ad6](https://github.com/SyafaHadyan/kibooz-backend/commit/f0c0ad6267eced63082bd3e1750a4427ccb35d55))
+* **season:** reset the leaderboard one class at a time so that it scales and survives a stopped copy ([149d5aa](https://github.com/SyafaHadyan/kibooz-backend/commit/149d5aaf1ef0ce76b7db0ceae5475e14aaa1b495))
+* **season:** reset the leaderboard one class at a time so that it scales and survives a stopped copy ([#328](https://github.com/SyafaHadyan/kibooz-backend/issues/328)) ([9d28e79](https://github.com/SyafaHadyan/kibooz-backend/commit/9d28e794bd684437b3a6c8e0d55980d06ba1d5ff))
+
 ## [0.18.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.17.1...v0.18.0) (2026-10-22)
 
 
