@@ -258,7 +258,8 @@ func (j *Job) saveAndClear(tx *gorm.DB, classID uuid.UUID, ended string) (bool, 
 	saved := tx.Exec(
 		"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
 			"SELECT class_id, id, full_name, ?, season_points, rank_position FROM students "+
-			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id = ?",
+			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id = ? "+
+			"ON CONFLICT (class_id, student_id, season_label) DO NOTHING",
 		ended, classID,
 	)
 	if saved.Error != nil {
