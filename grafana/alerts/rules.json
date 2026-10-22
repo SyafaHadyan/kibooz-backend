@@ -856,7 +856,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max by (host, instance) (changes(process_start_time_seconds[30m]))",
+          "expr": "max by (host, instance) (changes(process_start_time_seconds{service=\"kibooz-api\"}[30m]))",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -927,7 +927,7 @@
       "service": "kibooz-api"
     },
     "annotations": {
-      "summary": "{{ $labels.instance }} on {{ $labels.host }} has used more than 300 MiB of resident memory for 5 minutes. The default limit of a copy is 384 MiB and the container is killed above it, so look at the memory panel of the dependencies and jobs dashboard and at the number of open uploads and sockets"
+      "summary": "{{ $labels.instance }} on {{ $labels.host }} has used more than 300 MiB of resident memory for 5 minutes. The default limit of a copy is 384 MiB and the container is killed above it, so look at the memory and the goroutines panels of the dependencies and jobs dashboard"
     },
     "data": [
       {
@@ -939,7 +939,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "max by (host, instance) (process_resident_memory_bytes)",
+          "expr": "max by (host, instance) (process_resident_memory_bytes{service=\"kibooz-api\"})",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
