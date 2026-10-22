@@ -37,16 +37,16 @@ Passwords are never stored in clear text or logged. The server holds the hash on
 | Data | Kept for |
 |:---|:---|
 | Account, child, mood, scan, guidance, forum, chat and video rows | Until the project owner removes them from the database. Nothing in the code removes them on a timer |
-| Refresh tokens | Until they expire or the session ends. A used token stays for a week so that a replay can be recognized |
+| Refresh tokens | Until they expire or the session ends. A used token stays while its session lives and goes at a later sign in or refresh of that user once the session has reached `JWT_SESSION_MAX_DAYS`, 90 days by default, so that a replay can be recognized however late it comes |
 | Remembered `Idempotency-Key` rows, which hold the response of the request | `IDEMPOTENCY_TTL_HOURS`, 7 days by default, and an hourly job removes the older ones |
 | A deleted chat message | The row stays with an empty body, so the text is gone and a placeholder is left in the conversation. Its photo or video is queued for removal from the private bucket in the same step and is deleted within minutes |
 | Chat photos and videos | In the private bucket until the message is deleted by its author. A file that was uploaded and never sent is removed after one day by the lifecycle rule on `pending/`. A message stays after its sender deletes the account, and so does its file, because the other people of the conversation still need the history |
 | Semester standings in `leaderboard_history` | Without an end. They keep the name of the child as it was when the semester closed |
 | Photos in the bucket | Until the account, or the child that the photo belongs to, is deleted. A video file that was uploaded and never added is removed after one day when the bucket has the lifecycle rule on `pending/` that the [README](../README.md#configuration) asks for |
 | Error reports at Sentry | For the retention of the Sentry plan, which the owner can shorten in the project settings. Nothing in the code deletes them, and deleting an account does not remove them. They hold the id of the account and no name or email |
-| Access log lines | As long as the container logs are kept, at most five files of 10 MB with the bundled Compose file |
+| Access log lines | At most 90 days, which holds as long as the owner keeps the plan of Grafana Cloud at a retention of 90 days or less, and in practice they are shorter. The container logs on the host are at most five files of 10 MB with the bundled Compose file, which is a few hours of requests, and Grafana Cloud keeps the lines that Alloy sends for the retention of its plan, 14 days on the free plan |
 
-The access log holds the time, the client address, the method, the path, the status, the time taken and a request id. With `TRUST_PROXY` off, the address is the one of the reverse proxy.
+The access log holds the time, the client address, the method, the path, the status, the time taken, the size of the answer and a request id, and the route pattern when a route matched. For a failed request it also holds the error code and its message, the names of the fields that failed validation, and for a rate limited one the `Retry-After` value. The path can carry the ids of a class, a child or a conversation. With `TRUST_PROXY` off, the address is the one of the reverse proxy.
 
 ## What deleting an account does
 
@@ -66,9 +66,11 @@ What stays is the other part of the data. The rows are hidden and not erased, so
 | The S3 compatible bucket and its public address | Avatars, trash photos and class videos | The app shows them by address, so the objects are readable by anyone who has the address. The addresses are long random keys, but they are not secret |
 | Cloudflare, as this deployment is set up | The photos that pass through the media host, the documentation, and the logs that Cloudflare keeps | It serves the media and resizes the avatars with its image service |
 | Sentry, in the EU region, when `SENTRY_DSN` is set | An error report for a failure of the server (a 5xx or a panic) with the error text, the stack, the route pattern, the status, the request id, the release, the environment, the host and the id of the account. Emails, tokens and long numbers are replaced in every text, and a request body, a header, a cookie, a query string, an address of a client and a log line are never sent | To tell the owner about a new kind of error, grouped with its stack. The data about children stays out of it by design, see [ADR 0006](adr/0006-sentry-error-reports.md) |
+| Grafana Cloud, in the APAC region, when Alloy runs (the `monitoring` profile of the Compose file) | The metrics of the API and the lines of its container logs and the Redis container log, which hold what the access log holds, including the client address and the ids in the path. Alloy also reads the database container log, which has the slow statements, lock waits and errors of PostgreSQL, so a line can hold the text of a statement | To raise alerts and to look at errors and slow requests. The retention is the one of the plan, 14 days of logs on the free plan |
+| Better Stack, when the uptime monitors are set up | The public answer of `GET /healthz`, which holds the status and the version, and the address of the documentation site | To tell the owner when the service is down, see [Operations](operations.md#uptime-monitoring) |
 | Redis | The shared rate limit counters, which hold only hashed identifiers, the one minute memory of used refresh tokens and the leaderboard cache | A cache, never the source of truth |
 
-The code makes no call to an analytics, advertising or tracking service, and it sends no email. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when `SENTRY_DSN` is set, Sentry.
+The code makes no call to an analytics, advertising or tracking service, and it sends no email. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when they are set up, Sentry (`SENTRY_DSN`), Firebase for the chat wake-up push and Grafana Cloud (Alloy, a separate container).
 
 ## Keeping the data small
 
