@@ -661,7 +661,9 @@ paths:
         Only the latest mood of a child per local day counts in the dashboards and charts. A log that the app queued while
         the device was offline sends `recordedAt` with the time the mood was seen, so replaying it later does not take the
         place of a newer mood. The time cannot be in the future and cannot be older than 7 days. A time less than 5
-        minutes ahead of the server clock counts as now.
+        minutes ahead of the server clock counts as now. A child that moved to this class from another one cannot get a
+        mood dated before the move, which answers `400` with `VALIDATION_ERROR` and the field `recordedAt`, because the history
+        of the earlier class is made of the moods dated inside its time.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -711,7 +713,8 @@ paths:
         teacher has to teach the class, every child has to be in it, and a child can appear only once. Only the latest mood of a
         child per local day counts in the dashboards and charts, so a later batch supersedes earlier entries. Unlike the single
         log, the `source` defaults to `AI_CAMERA`. A batch that was queued offline sends one top level `recordedAt` with the time
-        the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood.
+        the moods were seen, under the same limits as the single log, so a late replay does not supersede a newer mood. A child that moved to the class cannot get a mood dated before the move, and
+        that answers `400` with `VALIDATION_ERROR` for the whole batch.
         This route has a rate limit of its own, `MOOD_BATCH_LIMITER_MAX` requests (30 by default) per `LIMITER_EXPIRATION_SECONDS` (60 seconds by default) for each user, on top of the limit of every signed-in route.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -963,6 +966,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
+            (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/students/{studentId}/history:
+    get:
+      tags: [Teacher]
+      operationId: getClassStudentHistory
+      summary: Read what a child did in the classes it left
+      description: |
+        For a child that is in the class now and moved here from other classes, shows what it had in each of them, the latest first.
+        Each earlier class has the dates, the points, the rank and the scans that the child had when it left, the scans per category,
+        and the moods with their notes that were dated inside the time the child was in that class, the newest 100 and `moodsTruncated` when there were
+        more. It is read only and only for a child that already moved into the class, so a request that waits shows nothing. It does
+        not show anything about other children or about the forum, the videos or the chat of the old class. A child that never moved
+        has an empty list. The teachers of the old class cannot read the child any more. See the privacy page for what this means.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ClassStudentPath"
+      responses:
+        "200":
+          description: The earlier classes of the child
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StudentHistoryEnvelope"
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -3110,6 +3151,62 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/PreviousClassList"
+    HistoryMood:
+      type: object
+      required: [moodType, label, confidenceScore, notes, recordedAt]
+      properties:
+        moodType:
+          type: string
+          enum: [SENANG, SEDIH, MARAH, BINGUNG]
+        label:
+          type: string
+        confidenceScore:
+          type: number
+        notes:
+          type: string
+          nullable: true
+          description: The note that the teacher of that class wrote
+        recordedAt:
+          type: string
+          format: date-time
+    HistoryClass:
+      allOf:
+        - $ref: "#/components/schemas/PreviousClass"
+        - type: object
+          required: [breakdown, moods, moodsTruncated]
+          properties:
+            breakdown:
+              type: array
+              description: The scans of the child in that class per category, always `ORGANIK`, `ANORGANIK` and `B3` in that order
+              items:
+                $ref: "#/components/schemas/TrashTypeStat"
+            moods:
+              type: array
+              description: The newest moods of that class first, at most 100
+              items:
+                $ref: "#/components/schemas/HistoryMood"
+            moodsTruncated:
+              type: boolean
+              description: True when the class had more than the 100 moods that are listed
+    StudentHistory:
+      type: object
+      required: [previousClasses]
+      properties:
+        previousClasses:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryClass"
+    StudentHistoryEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/StudentHistory"
     ChildEnvelope:
       type: object
       required: [success, data]
