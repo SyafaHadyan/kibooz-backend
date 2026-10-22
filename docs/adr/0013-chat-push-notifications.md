@@ -1,6 +1,6 @@
 # 0013 A closed app is woken by a push without text, and fetches the message from the API
 
-Status: Proposed, 2026-10-21
+Status: Accepted, 2026-10-22. It was proposed on 2026-10-21, and the push has been built since then, with the token routes, the `push_tokens` table and the sender that calls Firebase.
 
 ## Context
 
