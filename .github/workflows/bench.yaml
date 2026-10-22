@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: The commit, branch or tag to compare with, which is the commit from 7 days ago when it is empty
+        description: The commit, tag or remote branch (origin/name) to compare with, which is the commit from 7 days ago when it is empty
         required: false
         default: ""
         type: string
@@ -43,7 +43,7 @@ jobs:
         env:
           BASE_INPUT: ${{ inputs.base }}
           # renovate: datasource=go depName=golang.org/x/perf
-          BENCHSTAT: golang.org/x/perf/cmd/benchstat@v0.0.0-20261009192801-be2c69fb417e
+          BENCHSTAT_VERSION: v0.0.0-20261009192801-be2c69fb417e
         run: |
           set -euo pipefail
 
@@ -53,37 +53,55 @@ jobs:
           fi
 
           if [ -z "$base" ]; then
-            echo "the repository has no commit that is a week old, nothing to compare with" >&2
+            echo "the repository has no commit that is a week old, so there is nothing to compare with" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          if ! [[ "$base" =~ ^[0-9A-Za-z._/-]+$ ]]; then
-            echo "the base has to be a commit, a branch or a tag name" >&2
+          # the first character is no dash, so the value can never be read as an option of git
+          if ! [[ "$base" =~ ^[0-9A-Za-z][0-9A-Za-z._/-]*$ ]]; then
+            echo "the base has to be a commit, a tag or a remote branch such as origin/name" >&2
             exit 1
           fi
 
-          git worktree add --detach "$RUNNER_TEMP/base" "$base"
+          git worktree add --detach -- "$RUNNER_TEMP/base" "$base"
 
           # both commits run the benchmark files of the head, so a benchmark that did not exist a week ago still has a number for both
           # when the code it calls did exist
-          while IFS= read -r file; do
+          while IFS= read -r -d '' file; do
             if [ -d "$RUNNER_TEMP/base/$(dirname "$file")" ]; then
               cp "$file" "$RUNNER_TEMP/base/$file"
             fi
-          done < <(git ls-files '*bench_test.go')
+          done < <(git ls-files -z '*bench_test.go')
 
           run() {
             (cd "$1" && go test -run '^$' -bench . -benchmem -count 8 -timeout 30m ./... 2>&1 | tee "$2")
           }
 
-          # a package of the base that does not build with the new benchmark file is left out of the comparison, and its error stays in the log
+          # a package of the base that does not build with the new benchmark file, because the benchmark calls code that is newer than the
+          # base, is left out of the comparison, and its error stays in the log
           run "$RUNNER_TEMP/base" "$RUNNER_TEMP/old.txt" || true
           run "$PWD" "$RUNNER_TEMP/new.txt"
+
+          # benchstat fails when the base has no number at all, and the summary still has to say so
+          if ! comparison="$(go run "golang.org/x/perf/cmd/benchstat@${BENCHSTAT_VERSION}" "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt" 2>&1)"; then
+            comparison="$comparison"$'\n'"benchstat found nothing to compare, the base has no benchmark that builds"
+          fi
 
           {
             echo "### Benchmarks, $base against $(git rev-parse --short HEAD)"
             echo
             echo '```'
-            go run "$BENCHSTAT" "$RUNNER_TEMP/old.txt" "$RUNNER_TEMP/new.txt"
+            echo "$comparison"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the numbers
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmarks
+          path: |
+            ${{ runner.temp }}/old.txt
+            ${{ runner.temp }}/new.txt
+          if-no-files-found: ignore
+          retention-days: 14
