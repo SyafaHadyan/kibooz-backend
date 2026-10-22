@@ -408,6 +408,27 @@ s, js = call("GET", f"/wali/children/{wm['student']}/previous-classes", wm["toke
 check("the child has the old class as a previous class", s == 200 and [c.get("classId") for c in dig(js, "data", "classes") or []] == [g1["class"]], f"{s} {js}")
 expect("previous classes of the child of another parent", call("GET", f"/wali/children/{w2['student']}/previous-classes", wm["token"]), 404, "STUDENT_NOT_FOUND")
 
+# ---------- archiving a class ----------
+ga = register_guru("ga", "Smoke Archive")
+wa = register_wali("wa", ga["code"], "Smoke Archived Child")
+archive = f"/guru/classes/{ga['class']}"
+expect("a parent cannot archive a class", call("POST", f"{archive}/archive", wa["token"]), 403, "AUTH_FORBIDDEN")
+expect("the teacher of another class cannot archive it", call("POST", f"{archive}/archive", g2["token"]), 404, "CLASS_NOT_FOUND")
+expect("restoring a class that is not archived", call("POST", f"{archive}/restore", ga["token"]), 409, "CLASS_NOT_ARCHIVED")
+s, js = call("POST", f"{archive}/archive", ga["token"])
+check("the owner archives the class", s == 200 and dig(js, "data", "archivedAt") is not None, f"{s} {js}")
+expect("archiving twice", call("POST", f"{archive}/archive", ga["token"]), 409, "CLASS_ARCHIVED")
+expect("a scan into an archived class", call("POST", "/trash/scan-claim", wa["token"], {"studentId": wa["student"], "trashType": "ORGANIK", "confidenceScore": 0.9}), 409, "CLASS_ARCHIVED")
+expect("a mood into an archived class", call("POST", "/guru/mood/log", ga["token"], {"studentId": wa["student"], "moodType": "SENANG"}), 409, "CLASS_ARCHIVED")
+expect("the join code of an archived class", call("POST", "/auth/register", body={"email": f"kibooz-smoke-{RUN}-late@example.com", "password": PW, "fullName": "Smoke Late", "role": "WALI", "classCode": ga["code"], "student": {"nisn": nisn(), "fullName": "Smoke Late Child"}}), 404, "CLASS_CODE_NOT_FOUND")
+s, js = call("GET", "/guru/classes", ga["token"])
+check("the list shows the archive time", s == 200 and any(c.get("id") == ga["class"] and c.get("archivedAt") for c in dig(js, "data", "classes") or []), f"{s} {js}")
+expect("an archived class can still be read", call("GET", f"/leaderboard?classId={ga['class']}", ga["token"]), 200)
+s, js = call("POST", f"{archive}/restore", ga["token"])
+check("the teacher restores the class with a new code", s == 200 and dig(js, "data", "archivedAt") is None and dig(js, "data", "joinCode") not in (None, ga["code"]), f"{s} {js}")
+expect("restoring twice", call("POST", f"{archive}/restore", ga["token"]), 409, "CLASS_NOT_ARCHIVED")
+expect("a scan into the restored class", call("POST", "/trash/scan-claim", wa["token"], {"studentId": wa["student"], "trashType": "ORGANIK", "confidenceScore": 0.9}), 200)
+
 # ---------- classes ----------
 s, js = call("GET", "/guru/classes", g1["token"])
 check("classes list has the registration class", s == 200 and dig(js, "data", "total") == 1 and dig(js, "data", "classes", 0, "totalStudents") == 2, f"{s} {js}")

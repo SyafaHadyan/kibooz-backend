@@ -141,5 +141,6 @@ var (
 
 // errors of an archived class, which is read only until a teacher restores it
 var (
-	ErrClassArchived = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
+	ErrClassArchived    = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
+	ErrClassNotArchived = New(http.StatusConflict, "CLASS_NOT_ARCHIVED", "This class is not archived")
 )
