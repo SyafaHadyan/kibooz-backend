@@ -616,11 +616,13 @@ func TestAParentRegistrationChecksTheNisnOfTheChild(t *testing.T) {
 	repo := &fakeRepo{}
 	useCase := build(t, nil, repo, newFakeCache())
 
-	_, err := useCase.Register(context.Background(), waliRegistration("ab12cd34"))
+	req := waliRegistration("ab12cd34")
+	req.Student.NISN = " 0012345678 "
+
+	_, err := useCase.Register(context.Background(), req)
 
 	require.NoError(t, err)
-	require.Len(t, repo.takenChecks, 1)
-	require.Empty(t, repo.takenChecks[0][1], "a parent has no NIP")
+	require.Equal(t, [][3]string{{"parent@example.com", "", "0012345678"}}, repo.takenChecks, "a parent has no NIP and the NISN is trimmed")
 }
 
 func TestARegistrationFailsWhenTheTakenCheckCannotRun(t *testing.T) {
