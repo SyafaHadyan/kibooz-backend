@@ -106,9 +106,10 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
           cache-from: type=gha
-          # A pull request reads the cache of main and writes none. Every push to a pull request used to add about 120 MB of
-          # layers, which pushed the repository over the 10 GB limit and evicted the caches of main (Go modules, CodeQL, Trivy)
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=max' || '' }}
+          # Only main writes the cache. A pull request and a tag read the cache of main and write none, because a cache that a
+          # pull request or a tag wrote can only be read by that same ref. Every push to a pull request used to add about 120 MB
+          # of layers, which pushed the repository over the 10 GB limit and evicted the caches of main
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       # The build digest is the one of the index of both platforms. Each platform has an image of its own with its own
       # digest, and scanning that digest is the only way to be sure which of them Trivy looked at
