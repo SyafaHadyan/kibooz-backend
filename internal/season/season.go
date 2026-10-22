@@ -5,6 +5,8 @@ package season
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"slices"
 	"sync"
@@ -19,7 +21,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
-// Interval is how often the job looks at the calendar. The look is a single cheap query, and it bounds how many points
+// Interval is how often the job looks at the calendar. The look is a cheap check of the latest semester and of the classes that are left, and it bounds how many points
 // earned right after a semester begins are still counted in the semester that ended. A semester that begins while the API is
 // down is picked up by the first look after it starts.
 const Interval = time.Minute
@@ -88,9 +90,14 @@ const batchSize = 200
 func (j *Job) Run(ctx context.Context) (bool, error) {
 	label := Label(j.now(), j.loc, j.startMonths)
 
-	err := j.record(ctx, label)
+	current, err := j.record(ctx, label)
 	if err != nil {
 		return false, err
+	}
+
+	// an instance whose clock is behind finds a later semester recorded, and it must not take the classes back to an older one
+	if !current {
+		return false, nil
 	}
 
 	return j.startClasses(ctx, label)
@@ -103,9 +110,17 @@ type season struct {
 
 func (season) TableName() string { return "leaderboard_seasons" }
 
-// record notes that the semester has begun. The one instance whose insert succeeds is the first and any other finds the label taken.
-func (j *Job) record(ctx context.Context, label string) error {
-	return j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// record notes that the semester has begun and tells whether it is the latest one. The one instance whose insert succeeds is the
+// first and any other finds the label taken. A label that sorts before the latest one is never recorded, because the labels are
+// the first days of the semesters and so they sort by time, and an instance with a wrong clock would otherwise make an older
+// semester the latest one for every instance.
+func (j *Job) record(ctx context.Context, label string) (bool, error) {
+	current := false
+
+	err := j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		current = false
+
 		var latest []string
 
 		err := tx.Raw("SELECT label FROM leaderboard_seasons ORDER BY started_at DESC, label DESC LIMIT 1").Scan(&latest).Error
@@ -114,11 +129,22 @@ func (j *Job) record(ctx context.Context, label string) error {
 		}
 
 		if len(latest) > 0 && latest[0] == label {
+			current = true
+
 			return nil
 		}
 
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&season{Label: label}).Error
+		if len(latest) > 0 && label < latest[0] {
+			return nil
+		}
+
+		inserted := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&season{Label: label})
+		current = inserted.Error == nil && inserted.RowsAffected == 1
+
+		return inserted.Error
 	})
+
+	return current, err
 }
 
 // startClasses starts the semester for every class that belongs to another one, a batch at a time in the order of the ids. An
@@ -127,6 +153,8 @@ func (j *Job) record(ctx context.Context, label string) error {
 func (j *Job) startClasses(ctx context.Context, label string) (bool, error) {
 	reset := false
 	after := uuid.Nil
+
+	var failed []error
 
 	for {
 		var classIDs []uuid.UUID
@@ -141,13 +169,20 @@ func (j *Job) startClasses(ctx context.Context, label string) (bool, error) {
 		}
 
 		if len(classIDs) == 0 {
-			return reset, nil
+			return reset, errors.Join(failed...)
 		}
 
 		for _, classID := range classIDs {
 			started, err := j.startClass(ctx, classID, label)
 			if err != nil {
-				return reset, err
+				// the next class goes on, so one class that fails does not hold back all the classes after it
+				if ctx.Err() != nil {
+					return reset, err
+				}
+
+				failed = append(failed, fmt.Errorf("class %s: %w", classID, err))
+
+				continue
 			}
 
 			reset = reset || started
@@ -176,6 +211,8 @@ func (j *Job) startClass(ctx context.Context, classID uuid.UUID, label string) (
 
 		var current []string
 
+		// the read comes after the lock, and a statement of the default isolation level, read committed, sees what the instance that held
+		// the lock before committed. A stricter level would read a snapshot from before the wait and miss it.
 		err = tx.Raw("SELECT COALESCE(season_label, '') FROM class_seasons WHERE class_id = ?", classID).Scan(&current).Error
 		if err != nil {
 			return err
@@ -191,12 +228,10 @@ func (j *Job) startClass(ctx context.Context, classID uuid.UUID, label string) (
 		}
 
 		if ended != "" {
-			err = j.saveAndClear(tx, classID, ended)
+			started, err = j.saveAndClear(tx, classID, ended)
 			if err != nil {
 				return err
 			}
-
-			started = true
 		}
 
 		return tx.Exec(
@@ -219,23 +254,23 @@ func (j *Job) startClass(ctx context.Context, classID uuid.UUID, label string) (
 
 // saveAndClear copies the standings of the semester that ended to leaderboard_history, sets the points of the semester back to
 // zero and numbers the class again
-func (j *Job) saveAndClear(tx *gorm.DB, classID uuid.UUID, ended string) error {
-	err := tx.Exec(
+func (j *Job) saveAndClear(tx *gorm.DB, classID uuid.UUID, ended string) (bool, error) {
+	saved := tx.Exec(
 		"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
 			"SELECT class_id, id, full_name, ?, season_points, rank_position FROM students "+
 			"WHERE deleted_at IS NULL AND season_points > 0 AND class_id = ?",
 		ended, classID,
-	).Error
-	if err != nil {
-		return err
+	)
+	if saved.Error != nil {
+		return false, saved.Error
 	}
 
-	err = tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0 AND class_id = ?", classID).Error
-	if err != nil {
-		return err
+	cleared := tx.Exec("UPDATE students SET season_points = 0 WHERE season_points <> 0 AND class_id = ?", classID)
+	if cleared.Error != nil {
+		return false, cleared.Error
 	}
 
-	return ranking.Recompute(tx, classID)
+	return saved.RowsAffected > 0 || cleared.RowsAffected > 0, ranking.Recompute(tx, classID)
 }
 
 // Start looks at the calendar once now and then once per interval until the returned stop function is called, which

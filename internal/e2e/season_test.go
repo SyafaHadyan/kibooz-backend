@@ -167,6 +167,7 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		require.NoError(t, tx.Raw(
 			"SELECT COUNT(*) FROM leaderboard_history WHERE class_id = ?::uuid AND season_label = '2030-07'", classID,
 		).Scan(&savedFirst).Error)
+		require.Contains(t, cache.deleted, constants.LeaderboardKeyPrefix+otherClassID, "the cached leaderboard of the class that was started was dropped")
 		require.Equal(t, 11, savedOther, "saved under the semester that the class was in")
 		require.Zero(t, savedFirst, "nothing is saved a second time for the class that was started")
 
@@ -188,5 +189,30 @@ func TestLeaderboardStartsOverWithANewSemester(t *testing.T) {
 		reset, err := job.Run(context.Background())
 		require.NoError(t, err)
 		require.False(t, reset)
+	})
+
+	t.Run("an instance with a clock that is behind changes nothing", func(t *testing.T) {
+		// 2030-01 sorts before 2031-01, which is the latest semester, so this instance must not take any class back to it
+		behind := time.Date(2030, 3, 1, 9, 0, 0, 0, time.UTC)
+		late := season.New(tx, cache, time.UTC, []int{1, 7}).WithClock(func() time.Time { return behind })
+
+		require.NoError(t, tx.Exec("UPDATE students SET season_points = 4 WHERE id = ?::uuid", ameliaID).Error)
+
+		var before int
+		require.NoError(t, tx.Raw("SELECT COUNT(*) FROM leaderboard_history").Scan(&before).Error)
+
+		reset, err := late.Run(context.Background())
+		require.NoError(t, err)
+		require.False(t, reset)
+
+		var points, after int
+		require.NoError(t, tx.Raw("SELECT season_points FROM students WHERE id = ?::uuid", ameliaID).Scan(&points).Error)
+		require.NoError(t, tx.Raw("SELECT COUNT(*) FROM leaderboard_history").Scan(&after).Error)
+		require.Equal(t, 4, points, "the points of the semester under way stay")
+		require.Equal(t, before, after, "no history is saved")
+
+		var label string
+		require.NoError(t, tx.Raw("SELECT season_label FROM class_seasons WHERE class_id = ?::uuid", classID).Scan(&label).Error)
+		require.Equal(t, "2031-01", label)
 	})
 }

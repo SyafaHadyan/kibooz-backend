@@ -4,6 +4,7 @@
 -- the whole run. Each class now keeps the label of the semester that its points belong to, so a reset can handle one class
 -- in a short transaction of its own, any copy of the API can continue where another stopped, and a class is never reset twice.
 -- The label is kept in its own table and not on classes, so the reset never waits for a change of the join code or of the archive.
+-- A deploy during the first minute of a semester, while a copy that still runs the old reset is up, resets the classes twice, so avoid it.
 CREATE TABLE class_seasons (
     class_id UUID PRIMARY KEY REFERENCES classes(id) ON DELETE CASCADE,
     season_label TEXT
