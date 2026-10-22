@@ -27,6 +27,10 @@ type AuthDBItf interface {
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
+	// RegistrationTaken returns the conflict error of the first of the email, the NIP and the NISN that an active account already
+	// uses, and nil when none is. An empty NIP or NISN is not looked up. It lets a registration that cannot succeed be refused
+	// before the password hash, and the unique indexes still decide when two registrations race.
+	RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
 	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
@@ -38,8 +42,8 @@ type AuthDBItf interface {
 	// sign in checked, and a user whose hash is another one by now, or who is gone, gets ErrCredentialsChanged and no session.
 	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration) error
 	// RotateRefreshToken uses a valid token and stores its replacement in the same session atomically. The row of the
-	// used token stays, so a replay can be recognized. A token that is unknown, expired or used a moment ago is only
-	// refused, and one that was used earlier ends its whole session.
+	// used token stays, so a replay can be recognized. A token that is unknown or expired is only refused, one that
+	// was used within the leeway gets a new token of the same session, and one that was used earlier ends its whole session.
 	RotateRefreshToken(
 		ctx context.Context, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy,
 	) (Rotation, error)
@@ -51,9 +55,9 @@ type AuthDBItf interface {
 type RotationPolicy struct {
 	// SessionMax is the longest a session can last, however often its token is swapped
 	SessionMax time.Duration
-	// ReuseGrace is how long after its use a token can be shown again without being taken for a theft, because a client
-	// that lost the answer retries with the same token
-	ReuseGrace time.Duration
+	// ReuseLeeway is how long after its use a token can be shown again and get a new token of the same session, because a
+	// client that lost the answer retries with the same token. Later it is taken for a theft and the session ends.
+	ReuseLeeway time.Duration
 }
 
 // Rotation is the outcome of swapping a refresh token
@@ -63,6 +67,9 @@ type Rotation struct {
 	// Reused tells that the token had been used before and its whole session was ended, UserID is the owner
 	Reused bool
 	UserID uuid.UUID
+	// Replayed tells that the token had been used a moment before, within the leeway, and User holds the new token of the same
+	// session that it got
+	Replayed bool
 }
 
 type AuthDB struct {
@@ -95,6 +102,37 @@ func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, er
 		Where("join_code = ? AND archived_at IS NULL", joinCode).Limit(1).Count(&found).Error
 
 	return found > 0, err
+}
+
+func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+	checks := []struct {
+		value string
+		query string
+		err   error
+	}{
+		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrEmailTaken},
+		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNIPTaken},
+		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
+	}
+
+	for _, check := range checks {
+		if check.value == "" {
+			continue
+		}
+
+		var found []int
+
+		err := r.db.WithContext(ctx).Raw(check.query, check.value).Scan(&found).Error
+		if err != nil {
+			return err
+		}
+
+		if len(found) > 0 {
+			return check.err
+		}
+	}
+
+	return nil
 }
 
 func (r *AuthDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error) {
@@ -294,7 +332,7 @@ func (r *AuthDB) RotateRefreshToken(
 		}
 
 		if len(used) == 0 {
-			rotation.Reused, rotation.UserID, err = endReusedSession(tx, tokenHash, now, policy.ReuseGrace)
+			rotation, err = answerReuse(tx, tokenHash, now, next, policy)
 
 			return err
 		}
@@ -316,6 +354,7 @@ type sessionRow struct {
 	FamilyID         uuid.UUID
 	SessionStartedAt time.Time
 	UsedAt           *time.Time
+	ExpiresAt        time.Time
 }
 
 // continueSession stores the next token of the session, capped at the longest lifetime of a session. It returns nil
@@ -354,17 +393,34 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 	return &found, purgeExpiredTokens(tx, found.ID, now, policy.SessionMax)
 }
 
-// endReusedSession ends the session of a token that was used before and is shown again. A token that is unknown,
-// expired, or was used within the grace period is only refused.
-func endReusedSession(tx *gorm.DB, tokenHash string, now time.Time, grace time.Duration) (bool, uuid.UUID, error) {
+// answerReuse decides what a token that cannot be used is. A token that is unknown, or was never used, is only refused. A token
+// that was used a moment ago, within the leeway, belongs to a client that lost the answer, so it gets a new token of the same
+// session, unless it has expired since. A token that was used earlier is taken for a theft and its whole session ends.
+func answerReuse(tx *gorm.DB, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy) (Rotation, error) {
 	var seen []sessionRow
 
-	err := tx.Raw("SELECT user_id, family_id, used_at FROM refresh_tokens WHERE token_hash = ?", tokenHash).Scan(&seen).Error
-	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil || now.Sub(*seen[0].UsedAt) <= grace {
-		return false, uuid.Nil, err
+	// FOR SHARE makes a logout, a password change or a deletion that ends the family wait for this request, so the token that it
+	// stores is seen and removed by the second pass of that deletion, the same way as for a token that a refresh has just used
+	err := tx.Raw(
+		"SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ? FOR SHARE", tokenHash,
+	).Scan(&seen).Error
+	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil {
+		return Rotation{}, err
 	}
 
-	return true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
+	// a leeway of 0 means none, even for a request whose clock is a little behind the one that used the token
+	if policy.ReuseLeeway > 0 && now.Sub(*seen[0].UsedAt) <= policy.ReuseLeeway {
+		if !seen[0].ExpiresAt.After(now) {
+			// a client that retries after its token expired has nothing to be taken for a thief, it signs in again
+			return Rotation{}, nil
+		}
+
+		user, err := continueSession(tx, seen[0], now, next, policy)
+
+		return Rotation{User: user, Replayed: user != nil}, err
+	}
+
+	return Rotation{Reused: true, UserID: seen[0].UserID}, sessions.EndFamily(tx, seen[0].FamilyID)
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {

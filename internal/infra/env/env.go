@@ -52,14 +52,17 @@ type Env struct {
 	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
 	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
 	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
-	DeviceTokenTTLDays      int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
-	S3Endpoint              string `env:"S3_ENDPOINT"`
-	S3AccountID             string `env:"S3_ACCOUNT_ID"`
-	S3Region                string `env:"S3_REGION" envDefault:"auto"`
-	S3PublicBucketName      string `env:"S3_PUBLIC_BUCKET_NAME"`
-	S3AccessKeyID           string `env:"S3_ACCESS_KEY_ID"`
-	S3AccessKeySecret       string `env:"S3_ACCESS_KEY_SECRET"`
-	S3PublicURL             string `env:"S3_PUBLIC_URL"`
+	// RefreshReuseLeewaySeconds is how long after its use a refresh token can be shown again and get a new token of the same
+	// session, for a client that lost the answer to its first call. 0 switches it off, and any reuse ends the session.
+	RefreshReuseLeewaySeconds int    `env:"REFRESH_REUSE_LEEWAY_SECONDS" envDefault:"10"`
+	DeviceTokenTTLDays        int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
+	S3Endpoint                string `env:"S3_ENDPOINT"`
+	S3AccountID               string `env:"S3_ACCOUNT_ID"`
+	S3Region                  string `env:"S3_REGION" envDefault:"auto"`
+	S3PublicBucketName        string `env:"S3_PUBLIC_BUCKET_NAME"`
+	S3AccessKeyID             string `env:"S3_ACCESS_KEY_ID"`
+	S3AccessKeySecret         string `env:"S3_ACCESS_KEY_SECRET"`
+	S3PublicURL               string `env:"S3_PUBLIC_URL"`
 	// S3PrivateBucketName is the bucket of the chat media, which is never public. Empty switches chat media off.
 	S3PrivateBucketName string `env:"S3_PRIVATE_BUCKET_NAME"`
 	ChatPhotoMaxMB      int    `env:"CHAT_PHOTO_MAX_MB" envDefault:"4"`
@@ -209,7 +212,7 @@ func (e *Env) validate() error {
 		value int
 		min   int
 	}{
-		{"BODY_LIMIT_MB", e.BodyLimitMB, 1},
+		{"BODY_LIMIT_MB", e.BodyLimitMB, minBodyLimitMB},
 		{"CLASS_VIDEO_MAX_MB", e.ClassVideoMaxMB, 1},
 		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
 		{"CHAT_PHOTO_MAX_MB", e.ChatPhotoMaxMB, 1},
@@ -257,6 +260,11 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// a leeway that is long gives a stolen token that much time to mint tokens of its own, and a negative one has no meaning
+	if e.RefreshReuseLeewaySeconds < 0 || e.RefreshReuseLeewaySeconds > maxRefreshReuseLeewaySeconds {
+		return fmt.Errorf("REFRESH_REUSE_LEEWAY_SECONDS must be between 0 and %d", maxRefreshReuseLeewaySeconds)
+	}
+
 	// below 4 bcrypt would not hash at all, and above 14 a single sign in would take seconds of a whole CPU
 	if e.PasswordHashCost < minPasswordHashCost || e.PasswordHashCost > maxPasswordHashCost {
 		return fmt.Errorf("PASSWORD_HASH_COST must be between %d and %d", minPasswordHashCost, maxPasswordHashCost)
@@ -279,6 +287,14 @@ func (e *Env) validate() error {
 }
 
 const maxPort = 65535
+
+// maxRefreshReuseLeewaySeconds is the longest REFRESH_REUSE_LEEWAY_SECONDS. A thief who holds a used token can mint tokens of its own
+// only for this long after the owner used it, and a retry of an app that lost its answer needs seconds and not minutes.
+const maxRefreshReuseLeewaySeconds = 60
+
+// minBodyLimitMB is the smallest BODY_LIMIT_MB. The trash photo is 4 MiB at most and travels as base64 inside a JSON body, which is
+// about 5.4 MiB with the keys around it, so a smaller limit would answer 413 to a photo that the route allows.
+const minBodyLimitMB = 6
 
 // the range of PASSWORD_HASH_COST, bcrypt itself refuses a cost below 4
 const (

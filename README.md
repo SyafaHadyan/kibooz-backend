@@ -77,7 +77,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `APP_PORT` | `8080` | HTTP port |
 | `METRICS_ADDRESS` | empty | Where the Prometheus endpoint listens, such as `:9100`, and empty switches it off. It is a listener of its own that serves only `GET /metrics`, so never publish its port or route it through the proxy, see [operations](docs/operations.md#metrics) |
 | `APP_TIMEZONE` | `Asia/Jakarta` | School timezone used for "today" and the Monday to Friday chart |
-| `BODY_LIMIT_MB` | `8` | Maximum request body size, which only the three photo uploads (the avatar, the trash photo and the photo of a chat message) can use, and `CHAT_PHOTO_MAX_MB` has to stay below it. Every other request is limited to 64 KB. The proxy needs the same limit, see [the design notes](docs/design.md#a-flood-limit-in-the-proxy) |
+| `BODY_LIMIT_MB` | `8` | Maximum request body size (at least 6, because the trash photo travels as base64 and 4 MiB becomes about 5.4 MiB), which only the three photo uploads (the avatar, the trash photo and the photo of a chat message) can use, and `CHAT_PHOTO_MAX_MB` has to stay below it. Every other request is limited to 64 KB. The proxy needs the same limit, see [the design notes](docs/design.md#a-flood-limit-in-the-proxy) |
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be at least 1 |
 | `CLASS_VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload for a class, and how long the signed upload address works for the videos of a class and of the chat |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
@@ -95,6 +95,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
 | `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `15`, `30` | Token lifetimes |
+| `REFRESH_REUSE_LEEWAY_SECONDS` | `10` | How long after its use a refresh token can be shown again and get a new token of the same session, for an app that lost the answer to its first call. Later the reuse ends the whole session. `0` switches it off and the highest value is `60` |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |
