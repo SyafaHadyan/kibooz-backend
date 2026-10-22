@@ -16,6 +16,9 @@ const (
 	queueSize = 1000
 	// workers is how many wake-ups are sent at the same time
 	workers = 4
+	// sendsPerJob is how many calls to FCM one message makes at the same time. A call takes about a tenth of a second or more, so
+	// a class room of sixty parents with two phones each would need most of jobTimeout one after the other.
+	sendsPerJob = 8
 	// jobTimeout bounds the work for one message, the lookup of the tokens and every call to FCM
 	jobTimeout = 30 * time.Second
 	// stopTimeout is how long the shutdown waits for the wake-ups that are under way
@@ -150,23 +153,40 @@ func (d *Dispatcher) deliver(next job) {
 		return
 	}
 
-	var stale []string
+	var (
+		staleMu sync.Mutex
+		stale   []string
+		sends   sync.WaitGroup
+		slots   = make(chan struct{}, sendsPerJob)
+	)
 
 	for _, row := range tokens {
-		err = d.sender.Send(ctx, Message{Token: row.Token, ConversationID: next.conversationID.String(), MessageID: next.messageID})
+		slots <- struct{}{}
 
-		switch {
-		case err == nil:
-			d.results.WithLabelValues("sent").Inc()
-		case isUnregistered(err):
-			d.results.WithLabelValues("unregistered").Inc()
+		sends.Go(func() {
+			defer func() { <-slots }()
 
-			stale = append(stale, row.Token)
-		default:
-			d.results.WithLabelValues("failed").Inc()
-			log.Printf("a push could not be sent %v", err)
-		}
+			err := d.sender.Send(ctx, Message{Token: row.Token, ConversationID: next.conversationID.String(), MessageID: next.messageID})
+
+			switch {
+			case err == nil:
+				d.results.WithLabelValues("sent").Inc()
+			case isUnregistered(err):
+				d.results.WithLabelValues("unregistered").Inc()
+
+				staleMu.Lock()
+
+				stale = append(stale, row.Token)
+
+				staleMu.Unlock()
+			default:
+				d.results.WithLabelValues("failed").Inc()
+				log.Printf("a push could not be sent %v", err)
+			}
+		})
 	}
+
+	sends.Wait()
 
 	if len(stale) == 0 {
 		return

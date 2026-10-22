@@ -208,3 +208,90 @@ func TestTheCollectorsListTheMetricsOfTheDispatcher(t *testing.T) {
 	require.Len(t, dispatcher.Collectors(), 1)
 	require.Equal(t, 4, testutil.CollectAndCount(dispatcher.results), "every result has a series from the start")
 }
+
+// countingSender holds every call until it is released, and remembers how many were under way at once
+type countingSender struct {
+	mu      sync.Mutex
+	running int
+	peak    int
+	release chan struct{}
+	done    int
+}
+
+func (b *countingSender) Send(ctx context.Context, _ Message) error {
+	b.mu.Lock()
+	b.running++
+	b.peak = max(b.peak, b.running)
+	b.mu.Unlock()
+
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+	}
+
+	b.mu.Lock()
+	b.running--
+	b.done++
+	b.mu.Unlock()
+
+	return nil
+}
+
+func TestTheTokensOfOneMessageAreSentAtTheSameTimeButNotAllAtOnce(t *testing.T) {
+	user := uuid.New()
+	rows := make([]TokenRow, 0, 40)
+
+	for i := range 40 {
+		rows = append(rows, TokenRow{UserID: user, Token: fmt.Sprintf("token-%d", i)})
+	}
+
+	sender := &countingSender{release: make(chan struct{})}
+	dispatcher := NewDispatcher(&fakeStore{tokens: rows}, sender)
+
+	finished := make(chan struct{})
+
+	go func() {
+		dispatcher.deliver(job{recipients: []uuid.UUID{user}, conversationID: uuid.New(), messageID: 1})
+		close(finished)
+	}()
+
+	require.Eventually(t, func() bool {
+		sender.mu.Lock()
+		defer sender.mu.Unlock()
+
+		return sender.running == sendsPerJob
+	}, time.Second, time.Millisecond, "the calls overlap")
+
+	close(sender.release)
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the message was never finished")
+	}
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+
+	require.Equal(t, 40, sender.done)
+	require.Equal(t, sendsPerJob, sender.peak, "never more than the bound at once")
+}
+
+func TestStaleTokensFoundInParallelAreAllRemoved(t *testing.T) {
+	user := uuid.New()
+	rows := make([]TokenRow, 0, 30)
+	failures := map[string]error{}
+
+	for i := range 30 {
+		token := fmt.Sprintf("token-%d", i)
+		rows = append(rows, TokenRow{UserID: user, Token: token})
+		failures[token] = ErrUnregistered
+	}
+
+	store := &fakeStore{tokens: rows}
+	dispatcher := NewDispatcher(store, &fakeSender{failures: failures})
+
+	dispatcher.deliver(job{recipients: []uuid.UUID{user}, conversationID: uuid.New(), messageID: 1})
+
+	require.Len(t, store.removed(), 30)
+}
