@@ -154,8 +154,9 @@ paths:
       summary: Exchange a refresh token for a new pair
       description: |
         The refresh token is single use, so the old one stops working as soon as this call succeeds. Send the new
-        token the next time and save it before anything else. An old token that is shown again more than a minute after
-        its use is taken for a stolen one, and the whole session ends, including the newest token. A session also
+        token the next time and save it before anything else. If the answer gets lost, the old token may be sent again
+        within `REFRESH_REUSE_LEEWAY_SECONDS` (10 by default) and gets a new token of the same session. An old token
+        that is shown again later is taken for a stolen one, and the whole session ends, including the newest token. A session also
         ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed.
       security: []
       requestBody:

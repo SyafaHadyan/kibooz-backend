@@ -95,6 +95,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
 | `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `15`, `30` | Token lifetimes |
+| `REFRESH_REUSE_LEEWAY_SECONDS` | `10` | How long after its use a refresh token can be shown again and get a new token of the same session, for an app that lost the answer to its first call. Later the reuse ends the whole session. `0` switches it off and the highest value is `60` |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |
