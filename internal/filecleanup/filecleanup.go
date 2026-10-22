@@ -23,9 +23,9 @@ const (
 	batch = 100
 	// attemptTimeout bounds the removal of one file
 	attemptTimeout = 5 * time.Second
-	// lease is how long a file that one copy took for a try is kept from the other copy, a little more than the batch needs at its
-	// worst, so a copy that dies in the middle only delays its files
-	lease = batch * attemptTimeout
+	// lease is how long a file that one copy took for a try is kept from the other copy. It is the time that a whole batch needs at
+	// its worst and a minute more for the writes to the database, so a copy that dies in the middle only delays its files
+	lease = batch*attemptTimeout + time.Minute
 	// maxSteps caps the wait between tries, which grows by 10 minutes with each failed attempt, at 24 hours
 	maxSteps = 144
 )
@@ -70,7 +70,7 @@ func (s *Sweeper) Observe(report func(error)) *Sweeper {
 	return s
 }
 
-// Sweep tries the queued files that are due, the longest waiting first, up to one batch. A file that is gone leaves the
+// Sweep tries the queued files that are due, up to one batch of the ones that waited longest, in no set order. A file that is gone leaves the
 // queue, and one that still fails waits longer before the next try, so files that keep failing cannot keep newer ones
 // from being tried. It returns how many files were removed.
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {

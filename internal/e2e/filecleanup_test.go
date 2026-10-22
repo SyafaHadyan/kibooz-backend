@@ -137,17 +137,34 @@ func TestFileCleanupSweep(t *testing.T) {
 	})
 }
 
+// gate holds every delete of the bucket until both sweeps have taken their files, so a file that both of them took would show twice
+type gateBucket struct {
+	bucketStub
+
+	taken   chan struct{}
+	release chan struct{}
+}
+
+func (g *gateBucket) Delete(ctx context.Context, key string) error {
+	g.taken <- struct{}{}
+
+	<-g.release
+
+	return g.bucketStub.Delete(ctx, key)
+}
+
 // Two copies of the API sweep at the same time, and a file must not be tried by both
 func TestTwoSweepsAtOnceNeverTryTheSameFile(t *testing.T) {
 	prefix := "avatars/" + uuid.NewString()
 
-	const files = 40
+	// more files than a batch, so the second sweep has files of its own to take while the first still holds its lease
+	const files = 150
 
 	for i := range files {
 		require.NoError(t, testDB.Exec("INSERT INTO file_cleanups (object_key) VALUES (?)", fmt.Sprintf("%s/%d.jpg", prefix, i)).Error)
 	}
 
-	bucket := &bucketStub{}
+	bucket := &gateBucket{taken: make(chan struct{}, 2*files), release: make(chan struct{})}
 	first, second := filecleanup.New(testDB, bucket), filecleanup.New(testDB, bucket)
 
 	var wg sync.WaitGroup
@@ -159,19 +176,28 @@ func TestTwoSweepsAtOnceNeverTryTheSameFile(t *testing.T) {
 		})
 	}
 
+	// each sweep has taken its files once both of them are at their first delete
+	for range 2 {
+		<-bucket.taken
+	}
+
+	var leased int64
+
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM file_cleanups WHERE object_key LIKE ? AND next_try_at > now()", prefix+"%").Scan(&leased).Error)
+	require.EqualValues(t, files, leased, "every file is leased to one sweep or the other, none waits for a third")
+
+	close(bucket.release)
 	wg.Wait()
 
-	mine := 0
 	seen := map[string]int{}
 
 	for _, key := range bucket.removed {
 		if strings.HasPrefix(key, prefix) {
 			seen[key]++
-			mine++
 		}
 	}
 
-	require.Equal(t, files, mine, "every file was removed")
+	require.Len(t, seen, files, "every file was removed")
 
 	for key, count := range seen {
 		require.Equal(t, 1, count, "%s was tried twice", key)
