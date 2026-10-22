@@ -50,3 +50,11 @@ func TestLabelFollowsTheTimeZoneOfTheSchoolAndNotUTC(t *testing.T) {
 	require.Equal(t, "2026-07", season.Label(at, jakarta, []int{1, 7}))
 	require.Equal(t, "2026-01", season.Label(at, time.UTC, []int{1, 7}))
 }
+
+func TestAnIntervalOfZeroSwitchesTheJobOff(t *testing.T) {
+	stop := season.New(nil, nil, time.UTC, []int{1, 7}).Start(0)
+
+	require.NotNil(t, stop)
+
+	stop()
+}

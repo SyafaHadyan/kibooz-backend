@@ -43,7 +43,7 @@ The schema is built from SQL files embedded in the binary. The server applies ev
 - Files are append only. A schema change is a new numbered file and never an edit of an old one, because other databases have already applied the old one. A test fails when a number is missing or used twice.
 - Every migration has an up and a down file.
 - A stop signal that arrives while the API starts, which includes the migrations, waits until the start has finished and the process then exits without listening, so the migration that is running is not cut off. A second signal ends the process at once. If the stop grace period of the container ends first, the process is killed anyway and a migration that was running leaves the database dirty. A copy that only waits for the migration lock of another copy also holds the signal, so its `docker stop` can take the whole grace period.
-- A migration that fails halfway leaves the database marked dirty, and the next start stops with `Dirty database version`. Fix the cause, repair the data by hand if needed, and clear the mark with `migrate force <version>` from the golang-migrate command line before starting again.
+- A migration that fails halfway leaves the database marked dirty, and the next start stops with `Dirty database version`. Fix the cause, repair the data by hand if needed, and clear the mark with `migrate force <version>` from the golang-migrate command line before starting again. A migration file runs as one statement batch, so a failure rolls the whole file back and the version to force is the one before it, for example `migrate force 23` after a failure of migration 24, and forcing the failed version itself would skip the file.
 
 ## Settings that need care
 
@@ -66,7 +66,7 @@ The server runs four jobs by itself, and none of them needs a scheduler outside 
 
 | Job | Every | What it does |
 |:---|:---|:---|
-| Semester check | 1 minute | Starts a new semester when the calendar says so, saves the final standings and clears the leaderboard cache |
+| Semester check | 1 minute | Starts a new semester when the calendar says so, then starts it for every class that has not started it yet, one class at a time, saving its final standings and clearing its leaderboard cache. An instance that stops halfway is continued by the next run of any instance |
 | File cleanup | 10 minutes | Removes bucket files that a deleted account left behind and retries the ones that failed. Only runs when storage is configured |
 | Idempotency purge | 1 hour | Deletes remembered keys older than `IDEMPOTENCY_TTL_HOURS` |
 | Keepalive | `KEEPALIVE_SECONDS` | Sends `SELECT 1` to the database and `PING` to Redis, so hosted instances that pause when idle stay awake |
