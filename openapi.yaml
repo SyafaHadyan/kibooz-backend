@@ -22,7 +22,7 @@ info:
     and a `Retry-After` header when a request did not finish within the time the server gives it. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
-    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
+    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the three photo uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
@@ -154,8 +154,9 @@ paths:
       summary: Exchange a refresh token for a new pair
       description: |
         The refresh token is single use, so the old one stops working as soon as this call succeeds. Send the new
-        token the next time and save it before anything else. An old token that is shown again more than a minute after
-        its use is taken for a stolen one, and the whole session ends, including the newest token. A session also
+        token the next time and save it before anything else. If the answer gets lost, the old token may be sent again
+        within `REFRESH_REUSE_LEEWAY_SECONDS` (10 by default) and gets a new token of the same session. An old token
+        that is shown again later is taken for a stolen one, and the whole session ends, including the newest token. A session also
         ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed.
       security: []
       requestBody:
@@ -2741,7 +2742,7 @@ paths:
         sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
         children and the photos of their trash scans are deleted too.
 
-        A teacher who is the only teacher of a class that still has children has to send `successorEmail`. The successor
+        A teacher who is the only teacher of a class that is not archived and still has active children has to send `successorEmail`. The successor
         is added to every class that nobody else teaches and becomes its owner, so a class with children never loses its
         last teacher. Without a `successorEmail`, a class that nobody else teaches and that has no active child is
         archived instead. Its join code then answers `CLASS_CODE_NOT_FOUND` and nobody is left to restore the class
@@ -2780,7 +2781,7 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "409":
           description: >-
-            The account is the only teacher of a class that still has children and no `successorEmail` was sent
+            The account is the only teacher of a class that is not archived and still has active children, and no `successorEmail` was sent
             (`SUCCESSOR_REQUIRED`)
           content:
             application/json:
@@ -3437,7 +3438,9 @@ components:
           format: password
           minLength: 8
           maxLength: 72
-          description: At most 72 bytes, which is the limit of bcrypt
+          description: >-
+            At most 72 bytes, which is the limit of bcrypt, and not on the list of common passwords (`400` with `VALIDATION_ERROR` on
+            this field).
         fullName:
           type: string
           minLength: 2
@@ -3490,6 +3493,7 @@ components:
           type: string
           format: password
           maxLength: 72
+          description: A login only checks the password against the account, and never applies the rule of the common passwords
         role:
           $ref: "#/components/schemas/Role"
         deviceToken:
@@ -4091,7 +4095,7 @@ components:
           maxLength: 255
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
-            the account is the only teacher of a class that has children, and ignored for a parent. It cannot be the email of the account itself.
+            the account is the only teacher of a class that is not archived and has active children, and ignored for a parent. It cannot be the email of the account itself.
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]
@@ -4105,7 +4109,9 @@ components:
           format: password
           minLength: 8
           maxLength: 72
-          description: At most 72 bytes, because the hash only reads that much, and different from the current password.
+          description: >-
+            At most 72 bytes, because the hash only reads that much, different from the current password, and not on the list of
+            common passwords (`400` with `VALIDATION_ERROR` on this field).
     PageInfo:
       type: object
       required: [page, limit, total]
