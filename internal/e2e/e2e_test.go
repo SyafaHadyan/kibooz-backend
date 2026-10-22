@@ -1115,6 +1115,8 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 	rotated := callApp(t, noRedis, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": refreshToken})
 	require.Equal(t, http.StatusOK, rotated.Status, "body %v", rotated.Body)
 
+	ageUse(t, refreshToken, 2*time.Minute)
+
 	callApp(t, noRedis, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": refreshToken}).
 		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 

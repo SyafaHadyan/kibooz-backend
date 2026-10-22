@@ -198,3 +198,19 @@ func TestAUsedRefreshTokenIsRememberedForTheWholeSession(t *testing.T) {
 	refresh(t, current).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	require.Zero(t, tokensOfSession(t, current), "the replay ended the whole session")
 }
+
+// A token that was used a moment ago and has expired since is only refused, because a client that retries late is no thief
+func TestAUsedTokenThatExpiredWithinTheLeewayIsRefusedAndTheSessionGoesOn(t *testing.T) {
+	guru := registerGuru(t, "Expired In Leeway")
+
+	first := refresh(t, guru.RefreshToken)
+	require.Equal(t, http.StatusOK, first.Status, "body %v", first.Body)
+
+	second := first.data("refreshToken").(string)
+
+	require.NoError(t, testDB.Exec("UPDATE refresh_tokens SET expires_at = now() - interval '1 second' WHERE token_hash = ?", refreshHash(guru.RefreshToken)).Error)
+
+	refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+
+	require.Equal(t, http.StatusOK, refresh(t, second).Status, "the session was not ended")
+}
