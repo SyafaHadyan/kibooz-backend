@@ -13,7 +13,7 @@ Settings come from the environment
   SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
                          bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
-import atexit, base64, json, os, random, secrets, socket, ssl, subprocess, sys, time, uuid
+import atexit, base64, json, os, random, re, secrets, socket, ssl, subprocess, sys, time, uuid
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 
@@ -41,6 +41,14 @@ if not (SECURE or LOCAL) or not KEEPER_EMAIL or not KEEPER_PASSWORD:
 created = []  # every account of this run, so a crash can still clean up
 passed, failed = 0, []
 
+# a failed check prints the answer of the API, which can hold a session, so the values of these fields and every JWT are hidden
+SECRET_FIELD = re.compile(r"""(["'](?:token|refreshToken|deviceToken|accessToken|password|newPassword|currentPassword|uploadUrl|url)["']\s*:\s*["'])[^"']+""")
+JWT = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]+")
+
+
+def redact(text):
+    return JWT.sub("<jwt>", SECRET_FIELD.sub(r"\1<hidden>", str(text)))
+
 
 def finish():
     """Runs on every exit, a crash included. Removes the accounts of this run and writes the report."""
@@ -58,7 +66,7 @@ def finish():
     lines = [f"Smoke test of {BASE} run {RUN}, passed {passed}, failed {len(failed)}"]
     if keeper:
         lines.append(f"Keeper {keeper['email']} {'reused' if keeper.get('reused') else 'registered now'}")
-    lines += [f"FAIL {f}" for f in failed]
+    lines += [f"FAIL {redact(f)}" for f in failed]
     print("\n".join(lines))
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
@@ -67,7 +75,7 @@ def finish():
 
 
 def crashed(kind, error, trace):
-    failed.append(f"the script stopped with {kind.__name__} {error}")
+    failed.append(f"the script stopped with {kind.__name__} {redact(error)}")
     sys.__excepthook__(kind, error, trace)
 
 
