@@ -1753,7 +1753,8 @@ paths:
       description: |
         Only for the teachers of the class. Newest report first. A report is made when a parent records with
         `POST /wali/guidance/apply` that a guide for the emotion of a child is being followed, so a teacher can see that the
-        handling is under way. The notes are the ones the parent wrote and are `null` when there were none.
+        handling is under way. The notes are the ones the parent wrote and are `null` when there were none. A child that joined
+        the class by a move only shows the applications from the day it joined, never the ones from an earlier class.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
         - $ref: "#/components/parameters/Page"
