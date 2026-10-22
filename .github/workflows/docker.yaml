@@ -94,6 +94,9 @@ jobs:
       - name: Build and push image
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          # the build record is one more artifact for every run and nothing reads it
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
           push: ${{ env.PUSH == 'true' }}
@@ -103,7 +106,10 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Only main writes the cache. A pull request and a tag read the cache of main and write none, because a cache that a
+          # pull request or a tag wrote can only be read by that same ref. Every push to a pull request used to add about 120 MB
+          # of layers, which pushed the repository over the 10 GB limit and evicted the caches of main
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       # The build digest is the one of the index of both platforms. Each platform has an image of its own with its own
       # digest, and scanning that digest is the only way to be sure which of them Trivy looked at
@@ -165,6 +171,7 @@ jobs:
           format: cyclonedx-json
           output-file: sbom.cdx.json
           upload-artifact: true
+          upload-artifact-retention: 14
           upload-release-assets: false
 
       - name: Attest SBOM for GitHub Container Registry

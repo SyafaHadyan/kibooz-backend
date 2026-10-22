@@ -31,4 +31,4 @@ Commits are signed. GitHub signs the merge commits and the commits of Renovate, 
 - With the DeepSource checks out, the remaining checks and a careful reading of the diff carry the load until the quota returns.
 - A required check that cannot run on a bot pull request would block dependency updates, so such a check is not made required.
 - Strict checks cost a rerun when `main` moves, which is the price for a branch that was always tested on top of the latest code.
-- A cancelled duplicate of a required check keeps a pull request blocked, and the fix is to run that job again.
+- A cancelled duplicate of a required check keeps a pull request blocked, and the fix is to run that job again. The `Commit messages` workflow therefore never cancels a run and skips the edit of a pull request that changes neither its title nor its base branch, so a common cause is gone.

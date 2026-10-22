@@ -174,6 +174,9 @@ func app(t *testing.T) *fiber.App {
 		defaults := map[string]string{
 			"USER_LIMITER_MAX": "100000",
 			"AUTH_LIMITER_MAX": "100000",
+			// the suite signs up hundreds of accounts, and bcrypt at the default cost under the race detector took about 800 ms
+			// each, which was nearly all of its running time. The cost only changes how long a guess takes
+			"PASSWORD_HASH_COST": "4",
 			// every test that registers a parent names a class code and they all share this budget
 			"CLASS_CODE_LIMITER_MAX": "100000",
 			"JWT_SECRET_KEY":         uuid.NewString() + uuid.NewString(),
