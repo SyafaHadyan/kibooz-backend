@@ -177,7 +177,8 @@ func (s *Storage) PresignUpload(
 		ContentLength: aws.Int64(size),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
-		return "", storageFailure(err)
+		// signing is done in this process and never waits for the bucket, so it cannot run out of time
+		return "", apperror.ErrStorageFailed.WithErr(err)
 	}
 
 	return req.URL, nil
@@ -189,7 +190,8 @@ func (s *Storage) PresignRead(ctx context.Context, objectKey string, ttl time.Du
 		Key:    aws.String(objectKey),
 	}, awss3.WithPresignExpires(ttl))
 	if err != nil {
-		return "", storageFailure(err)
+		// signing is done in this process and never waits for the bucket, so it cannot run out of time
+		return "", apperror.ErrStorageFailed.WithErr(err)
 	}
 
 	return req.URL, nil
