@@ -214,8 +214,25 @@ else
   changed=1
 fi
 
+# restore_tag puts IMAGE_TAG back as it was, for a step that fails before any copy was touched. Without it the env file would
+# name a version that no copy runs, and a later docker compose up -d would recreate every copy on it at once
+restore_tag() {
+  [ "$changed" = "1" ] || return 0
+
+  if [ -n "$previous" ]; then
+    sed -i --follow-symlinks "s/^IMAGE_TAG=.*/IMAGE_TAG=${previous}/" "$env_file"
+  else
+    sed -i --follow-symlinks '/^IMAGE_TAG=/d' "$env_file"
+  fi
+
+  changed=0
+}
+
 echo "Pulling through compose"
-run compose pull "${services[@]}"
+if ! run compose pull "${services[@]}"; then
+  restore_tag
+  die "The pull through compose failed, for example because Docker Hub limited it. IMAGE_TAG in $env_file is ${previous:-not set} again and no copy was touched, so run the update again later"
+fi
 
 # go_back prints how to return to the version that ran before, when that version is known
 go_back() {
