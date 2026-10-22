@@ -119,3 +119,30 @@ func TestLeaderboardHistoryShowsTheSemestersThatEnded(t *testing.T) {
 		call(t, http.MethodGet, "/api/v1/leaderboard/history?limit=0", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
 }
+
+func TestTheDatabaseRefusesTheSameStandingTwice(t *testing.T) {
+	guru := registerGuru(t, "Seruni")
+	classID, joinCode := classOf(t, guru)
+	_, childID := registerWali(t, joinCode, "Anak Dua Kali")
+
+	save := func(points int) error {
+		return testDB.Exec(
+			"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
+				"VALUES (?::uuid, ?::uuid, 'Anak Dua Kali', '2029-07', ?, 1)",
+			classID, childID, points,
+		).Error
+	}
+
+	require.NoError(t, save(10))
+
+	err := save(20)
+	require.Error(t, err, "a second row for the same class, child and semester is refused")
+	require.Contains(t, err.Error(), "leaderboard_history_unique")
+
+	// the semester of another child, or another semester of the same child, is not the same standing
+	require.NoError(t, testDB.Exec(
+		"INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position) "+
+			"VALUES (?::uuid, ?::uuid, 'Anak Dua Kali', '2030-01', 5, 1)",
+		classID, childID,
+	).Error)
+}
