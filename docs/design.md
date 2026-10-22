@@ -57,6 +57,8 @@ limit_req_zone $binary_remote_addr zone=kibooz_hash:10m rate=16r/s;
 limit_req_status 429;
 
 # server block
+client_max_body_size 8m;
+
 location ~* ^/api/v1/auth/(register|login)/?$ {
     limit_req zone=kibooz_hash burst=128 nodelay;
     proxy_pass http://127.0.0.1:8080;
@@ -77,6 +79,7 @@ location / {
 - **Keep the plain `location /`.** Without it every other route answers `404`.
 - **Both locations set `X-Forwarded-For` from `$remote_addr`.** `$proxy_add_x_forwarded_for` would append to the value that the client or the CDN sent, so a client could put its own addresses at the front of the header.
 - **A request that nginx limits gets a plain `429`** without the `RATE_LIMITED` body, so the apps treat any `429` as a signal to wait.
+- **Set `client_max_body_size` once, at the server level, to the value of `BODY_LIMIT_MB`.** nginx refuses a larger body before the API sees it, and its default is `1m`, which would cut every photo of more than 1 MiB. With `BODY_LIMIT_MB` at its default of 8, `8m` is right. A server level value is inherited by every `location`, so a new one cannot fall back to the default by accident. The API keeps its own limits whatever nginx allows, which are 64 KB for a JSON body, 2 MiB for an avatar, 4 MiB for a trash photo and `CHAT_PHOTO_MAX_MB` for a chat photo, so a higher value in nginx only costs some buffering. A request that nginx refuses gets a plain `413` without a JSON body, so the apps treat any `413` as a file that is too large. If you raise `BODY_LIMIT_MB`, raise the value in nginx with it.
 
 If a CDN or load balancer sits in front of nginx, restore the visitor address first. With Cloudflare, set `real_ip_header CF-Connecting-IP;` and add one `set_real_ip_from` line for each range that Cloudflare publishes at `cloudflare.com/ips`. nginx only trusts the header on a connection from a listed range, so a client that reaches the server directly cannot forge it. Without this step every request arrives from the address of the CDN, all visitors share one budget and the limit blocks everyone at once. The ranges change rarely, so compare them with the published list now and then. A request that reaches the server directly skips the CDN and its rules, so allow port 443 only from the CDN if you can. A CDN rule on the same two routes works the same way and stops the flood before it reaches your server.
 
