@@ -31,12 +31,20 @@ func main() {
 	log.Printf("starting kibooz-backend %s", version)
 
 	// before Start, because Start runs the migrations and the default action of SIGTERM ends the process in the middle of one,
-	// which leaves the migration table marked dirty and the next start refused. A signal that arrives meanwhile waits in the
-	// channel until Start has returned. Everything else that Start does is bounded and fails fast.
+	// which leaves the migration table marked dirty and the next start refused. The first signal that arrives meanwhile waits in
+	// the channel until Start has returned. Start can also wait for a long time without changing anything, for example for the
+	// migration lock of another copy or for a database that does not answer, so a second signal ends the process at once.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
+	started := make(chan struct{})
+
+	go stopAtOnceWhileStarting(started)
+
 	app, err := bootstrap.Start(version)
+
+	close(started)
+
 	if err != nil {
 		log.Fatalf("failed to start %v", err)
 	}
@@ -71,4 +79,28 @@ func main() {
 	}
 
 	log.Println("shutdown complete")
+}
+
+// stopAtOnceWhileStarting watches the signals until started is closed. The first one is only logged, because main holds it until
+// Start has returned. The second one means that the operator does not want to wait, and the process ends with a failure code.
+func stopAtOnceWhileStarting(started <-chan struct{}) {
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+
+	defer signal.Stop(signals)
+
+	for count := 1; ; count++ {
+		select {
+		case <-started:
+			return
+		case <-signals:
+		}
+
+		if count > 1 {
+			log.Println("stopping at once")
+			os.Exit(1)
+		}
+
+		log.Println("stop requested while starting, waiting for the start to finish, send the signal again to stop at once")
+	}
 }
