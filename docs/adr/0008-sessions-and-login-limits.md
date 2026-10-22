@@ -14,7 +14,7 @@ No rate limit of the API looks at the address of the client. Only the limit in t
 
 A device that signed in before gets a device token. It is signed with a key derived from the JWT secret, bound to the email and valid for 90 days, and it only picks which login bucket a request is counted in. A stranger who uses up the shared bucket of an email cannot keep the owner's devices from signing in. The token never replaces the password.
 
-The number of passwords that are hashed at the same time is capped by `PASSWORD_HASH_CONCURRENCY`, one slot for each CPU except one, and never fewer than one. A request that finds every slot taken waits `PASSWORD_HASH_WAIT_MILLISECONDS` and is then refused with `429` and `Retry-After: 1`, so an app waits the way it does for any other limit.
+The number of passwords that are hashed at the same time is capped by `PASSWORD_HASH_CONCURRENCY`, one slot for each CPU except one, and never fewer than one. A request that finds every slot taken waits `PASSWORD_HASH_WAIT_MILLISECONDS` and is then refused with `429` and `Retry-After: 1`, so an app waits the way it does for any other limit. A request that arrives when the callers in line already need more than that wait, by a moving estimate of the time of one hash, is refused at once instead of at the end of the wait (added 2026-10-23).
 
 A flood that names a new account in every request is not stopped by the API, because there is nothing to count. A limit in the reverse proxy for login and register is the answer, and the design notes hold the nginx example.
 
