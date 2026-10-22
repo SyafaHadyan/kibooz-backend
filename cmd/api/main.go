@@ -33,7 +33,7 @@ func main() {
 	// before Start, because Start runs the migrations and the default action of SIGTERM ends the process in the middle of one,
 	// which leaves the migration table marked dirty and the next start refused. The first signal that arrives meanwhile waits in
 	// the channel until Start has returned. Start can also wait for a long time without changing anything, for example for the
-	// migration lock of another copy or for a database that does not answer, so a second signal ends the process at once.
+	// migration lock of another copy or for a database that stalls after it connected, so a second signal ends the process at once.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 

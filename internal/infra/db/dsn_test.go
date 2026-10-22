@@ -2,6 +2,7 @@ package db
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -38,5 +39,6 @@ func TestBuildDSNKeepsAwkwardPasswordsIntact(t *testing.T) {
 		require.Equal(t, "kibooz", parsed.Database)
 		require.Equal(t, "UTC", parsed.RuntimeParams["TimeZone"])
 		require.Equal(t, "30000", parsed.RuntimeParams["idle_in_transaction_session_timeout"])
+		require.Equal(t, 10*time.Second, parsed.ConnectTimeout, "a database that does not answer ends the connection after ten seconds")
 	}
 }
