@@ -310,7 +310,14 @@ expect("login wrong role", call("POST", "/auth/login", body={"email": g1["email"
 old_refresh = dig(js, "data", "refreshToken")
 s, js2 = call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]})
 check("refresh rotates", s == 200 and dig(js2, "data", "refreshToken") not in (None, old_refresh), f"{s} {js2}")
-expect("refresh reuse rejected", call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]}), 401, "AUTH_REFRESH_INVALID")
+# a client that lost the answer to its first call retries with the old token, and within the leeway it gets a fresh one of the same session
+LEEWAY = int(os.environ.get("SMOKE_REUSE_LEEWAY_SECONDS", "10"))  # REFRESH_REUSE_LEEWAY_SECONDS of the stack, 0 switches it off
+if LEEWAY > 0:
+    s, js2b = call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]})
+    check("refresh reuse within the leeway gets a fresh token", s == 200 and dig(js2b, "data", "refreshToken") not in (None, old_refresh, dig(js2, "data", "refreshToken")), f"{s} {js2b}")
+    time.sleep(LEEWAY + 1)
+expect("refresh reuse after the leeway rejected", call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]}), 401, "AUTH_REFRESH_INVALID")
+expect("refresh reuse ended the whole session", call("POST", "/auth/refresh-token", body={"refreshToken": dig(js2, "data", "refreshToken"), "email": g1["email"]}), 401, "AUTH_REFRESH_INVALID")
 s, js3 = call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "GURU"})
 lr = dig(js3, "data", "refreshToken")
 expect("logout", call("POST", "/auth/logout", body={"refreshToken": lr}), 200)
