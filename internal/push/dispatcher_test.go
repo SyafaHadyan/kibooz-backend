@@ -295,3 +295,21 @@ func TestStaleTokensFoundInParallelAreAllRemoved(t *testing.T) {
 
 	require.Len(t, store.removed(), 30)
 }
+
+func TestTokensLeftWhenTheTimeIsOverAreCountedOnceAndStaleOnesAreStillRemoved(t *testing.T) {
+	user := uuid.New()
+	store := &fakeStore{tokens: []TokenRow{{user, "stale"}, {user, "a"}, {user, "b"}}}
+	dispatcher := NewDispatcher(store, &fakeSender{failures: map[string]error{"stale": ErrUnregistered}})
+
+	dispatcher.deliver(job{recipients: []uuid.UUID{user}, conversationID: uuid.New(), messageID: 1})
+	require.Equal(t, []string{"stale"}, store.removed())
+
+	// a context that is over before the first send leaves every token unsent, and they are counted in one step
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	before := result(dispatcher, "failed")
+
+	dispatcher.deliverWith(ctx, job{recipients: []uuid.UUID{user}, conversationID: uuid.New(), messageID: 2})
+	require.EqualValues(t, before+3, result(dispatcher, "failed"))
+}

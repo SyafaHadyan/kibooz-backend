@@ -21,6 +21,8 @@ const (
 	sendsPerJob = 8
 	// jobTimeout bounds the work for one message, the lookup of the tokens and every call to FCM
 	jobTimeout = 30 * time.Second
+	// cleanupTimeout bounds the removal of the tokens that Firebase does not know any more
+	cleanupTimeout = 5 * time.Second
 	// stopTimeout is how long the shutdown waits for the wake-ups that are under way
 	stopTimeout = 10 * time.Second
 )
@@ -145,6 +147,11 @@ func (d *Dispatcher) deliver(next job) {
 	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	defer cancel()
 
+	d.deliverWith(ctx, next)
+}
+
+// deliverWith does the work of a message inside the time that the context allows
+func (d *Dispatcher) deliverWith(ctx context.Context, next job) {
 	tokens, err := d.store.TokensOf(ctx, next.recipients)
 	if err != nil {
 		log.Printf("the push tokens could not be read %v", err)
@@ -160,7 +167,15 @@ func (d *Dispatcher) deliver(next job) {
 		slots   = make(chan struct{}, sendsPerJob)
 	)
 
-	for _, row := range tokens {
+	for i, row := range tokens {
+		// the time of the job is over, so the rest would fail at once, one log line each, and they are counted together
+		if ctx.Err() != nil {
+			d.results.WithLabelValues("failed").Add(float64(len(tokens) - i))
+			log.Printf("the time for a push is over, %d wake-ups were not sent", len(tokens)-i)
+
+			break
+		}
+
 		slots <- struct{}{}
 
 		sends.Go(func() {
@@ -192,7 +207,11 @@ func (d *Dispatcher) deliver(next job) {
 		return
 	}
 
-	err = d.store.DeleteTokenValues(ctx, stale)
+	// the tokens that were found stale are removed even when the sends used up the time of the job
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+
+	err = d.store.DeleteTokenValues(cleanup, stale)
 	if err != nil {
 		log.Printf("the stale push tokens could not be removed %v", err)
 	}
