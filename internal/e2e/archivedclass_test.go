@@ -94,6 +94,14 @@ func TestAnArchivedClassIsReadOnly(t *testing.T) {
 		require.Equal(t, http.StatusOK, board.Status, "body %v", board.Body)
 		require.EqualValues(t, 10, pointsByName(t, board)["Anak Kelas Arsip"], "the points are frozen where they were")
 
+		dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
+		require.Equal(t, http.StatusOK, dashboard.Status, "body %v", dashboard.Body)
+		require.NotEmpty(t, dashboard.data("student", "classArchivedAt"), "a parent can tell that the class is archived")
+
+		children := call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil)
+		require.Equal(t, http.StatusOK, children.Status, "body %v", children.Body)
+		require.NotEmpty(t, dig(children.data("children").([]any)[0], "classArchivedAt"))
+
 		forum := call(t, http.MethodGet, "/api/v1/classes/"+classID+"/forum", parent.Token, nil)
 		require.Equal(t, http.StatusOK, forum.Status, "body %v", forum.Body)
 

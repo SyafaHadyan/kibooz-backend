@@ -632,7 +632,7 @@ paths:
       tags: [Teacher]
       operationId: guruDashboard
       summary: Overview of a class
-      description: The class overview and the distribution of today's moods. Without `classId` the first class of the teacher is used.
+      description: The class overview and the distribution of today's moods. Without `classId` the oldest class of the teacher that is not archived is used.
       parameters:
         - $ref: "#/components/parameters/ClassId"
       responses:
@@ -692,8 +692,8 @@ paths:
           description: |
             The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
             `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
-            children who have no room left, and nothing of the batch is saved.
-            or the class is archived and read only (`CLASS_ARCHIVED`)
+            children who have no room left, and nothing of the batch is saved. A class that is archived and read only answers
+            `CLASS_ARCHIVED`.
           content:
             application/json:
               schema:
@@ -744,8 +744,8 @@ paths:
           description: |
             The child already has 20 mood logs on that local day (`MOOD_LOG_LIMIT_REACHED`), or a request with the same
             `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`). On a batch, `details` names the entries of the
-            children who have no room left, and nothing of the batch is saved.
-            or the class is archived and read only (`CLASS_ARCHIVED`)
+            children who have no room left, and nothing of the batch is saved. A class that is archived and read only answers
+            `CLASS_ARCHIVED`.
           content:
             application/json:
               schema:
@@ -3032,6 +3032,10 @@ components:
           format: uuid
         className:
           type: string
+        classArchivedAt:
+          type: string
+          format: date-time
+          description: When the class of the child was archived, missing while it is not. An archived class is read only.
     MoveRequestInput:
       type: object
       required: [classCode]
@@ -3385,6 +3389,10 @@ components:
           nullable: true
         nisn:
           type: string
+        classArchivedAt:
+          type: string
+          format: date-time
+          description: When the class of the child was archived, missing while it is not. An archived class is read only.
     TodayMood:
       type: object
       nullable: true

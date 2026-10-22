@@ -156,19 +156,20 @@ func leaveClass(tx *gorm.DB, classID uuid.UUID, guruID uuid.UUID, successorEmail
 		return HandOver(tx, classID, guruID)
 	}
 
-	// an archived class is read only, so nobody needs to take it over, and it stays archived
-	var archived bool
-
-	err = tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
-	if err != nil {
-		return err
-	}
-
-	if archived {
-		return nil
-	}
-
 	if successorEmail == "" {
+		// an archived class is read only, so nobody needs to take it over without a name, and it stays archived. A successor that
+		// is named still gets the class, children or none.
+		var archived bool
+
+		err = tx.Raw("SELECT archived_at IS NOT NULL FROM classes WHERE id = ?", classID).Scan(&archived).Error
+		if err != nil {
+			return err
+		}
+
+		if archived {
+			return nil
+		}
+
 		return archiveEmpty(tx, classID)
 	}
 
