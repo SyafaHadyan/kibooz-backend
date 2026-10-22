@@ -211,6 +211,22 @@ func TestThePasswordHashCostHasToBeInTheRangeOfBcrypt(t *testing.T) {
 	}
 }
 
+func TestTheRefreshReuseLeewayIsAtMostAMinuteAndZeroSwitchesItOff(t *testing.T) {
+	for _, seconds := range []int{-1, 61} {
+		cfg := valid()
+		cfg.RefreshReuseLeewaySeconds = seconds
+
+		require.ErrorContains(t, cfg.validate(), "REFRESH_REUSE_LEEWAY_SECONDS", "seconds %d", seconds)
+	}
+
+	for _, seconds := range []int{0, 10, 60} {
+		cfg := valid()
+		cfg.RefreshReuseLeewaySeconds = seconds
+
+		require.NoError(t, cfg.validate(), "seconds %d", seconds)
+	}
+}
+
 func TestAKeepaliveOfZeroAndZeroPointsAreAllowed(t *testing.T) {
 	cfg := valid()
 	cfg.KeepaliveSeconds = 0
@@ -366,6 +382,17 @@ func TestAChatPhotoLimitThatDoesNotFitInTheBodyLimitIsRejected(t *testing.T) {
 	require.ErrorContains(t, cfg.validate(), "CHAT_PHOTO_MAX_MB")
 
 	cfg.ChatPhotoMaxMB = 7
+	require.NoError(t, cfg.validate())
+}
+
+// The trash photo may be 4 MiB and travels as base64, which is about 5.4 MiB, so a body limit of 5 MB would answer 413 to a photo that the route allows
+func TestABodyLimitBelowTheLargestFixedPhotoIsRejected(t *testing.T) {
+	cfg := valid()
+	cfg.ChatPhotoMaxMB, cfg.BodyLimitMB = 1, 5
+
+	require.ErrorContains(t, cfg.validate(), "BODY_LIMIT_MB")
+
+	cfg.BodyLimitMB = 6
 	require.NoError(t, cfg.validate())
 }
 
