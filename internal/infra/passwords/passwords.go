@@ -6,6 +6,7 @@ package passwords
 
 import (
 	"context"
+	"log"
 	"runtime"
 	"time"
 
@@ -20,6 +21,10 @@ type Hasher struct {
 	slots chan struct{}
 	wait  time.Duration
 	cost  int
+
+	// dummy is a hash of the configured cost for a sign in with an email that nobody registered, so that it takes as long as one
+	// with a known email
+	dummy string
 }
 
 // New sizes the pool from PASSWORD_HASH_CONCURRENCY. When that is 0 it leaves one CPU free for everything else, so a flood of
@@ -30,11 +35,34 @@ func New(cfg *env.Env) *Hasher {
 		slots = max(runtime.GOMAXPROCS(0)-1, 1)
 	}
 
+	// a cost that bcrypt would not accept is the default, which only happens for a config that did not come from the environment
+	cost := cfg.PasswordHashCost
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		cost = bcrypt.DefaultCost
+	}
+
+	if cost < bcrypt.DefaultCost {
+		log.Printf("PASSWORD_HASH_COST is %d, below the default of %d, so hashes are cheap to guess, use it for tests only", cost, bcrypt.DefaultCost)
+	}
+
+	// made here and not on the first sign in, so no sign in is slower than another and the dummy never goes missing. A fixed
+	// short password and a cost in the range of bcrypt cannot fail, so a failure is a bug and the server must not start
+	dummy, err := bcrypt.GenerateFromPassword([]byte("kibooz-dummy-password"), cost)
+	if err != nil {
+		panic("passwords: the dummy hash could not be made: " + err.Error())
+	}
+
 	return &Hasher{
 		slots: make(chan struct{}, slots),
 		wait:  time.Duration(cfg.PasswordHashWaitMilliseconds) * time.Millisecond,
-		cost:  bcrypt.DefaultCost,
+		cost:  cost,
+		dummy: string(dummy),
 	}
+}
+
+// DummyHash returns a hash that no password matches and that costs as much to check as a real one.
+func (h *Hasher) DummyHash() string {
+	return h.dummy
 }
 
 // Acquire takes a slot and returns the function that gives it back. A caller that finds every slot taken waits for the

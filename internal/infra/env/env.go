@@ -82,7 +82,10 @@ type Env struct {
 	SentryEventsPerMinute int    `env:"SENTRY_EVENTS_PER_MINUTE" envDefault:"30"`
 	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
 	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
-	PasswordHashConcurrency      int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
+	PasswordHashConcurrency int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
+	// PasswordHashCost is the bcrypt cost of new hashes. 10 is the default of bcrypt and the lowest that OWASP accepts. A lower
+	// value is for tests only, and every cost up to 14 is allowed because the time of a hash doubles with each step.
+	PasswordHashCost             int `env:"PASSWORD_HASH_COST" envDefault:"10"`
 	PasswordHashWaitMilliseconds int `env:"PASSWORD_HASH_WAIT_MILLISECONDS" envDefault:"1000"`
 	// SemesterStartMonths are the months in which a semester begins, the leaderboard starts from zero on the first day of each
 	SemesterStartMonths []int `env:"SEMESTER_START_MONTHS" envSeparator:"," envDefault:"1,7"`
@@ -248,6 +251,11 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// below 4 bcrypt would not hash at all, and above 14 a single sign in would take seconds of a whole CPU
+	if e.PasswordHashCost < minPasswordHashCost || e.PasswordHashCost > maxPasswordHashCost {
+		return fmt.Errorf("PASSWORD_HASH_COST must be between %d and %d", minPasswordHashCost, maxPasswordHashCost)
+	}
+
 	for _, port := range []struct {
 		name  string
 		value uint
@@ -265,6 +273,12 @@ func (e *Env) validate() error {
 }
 
 const maxPort = 65535
+
+// the range of PASSWORD_HASH_COST, bcrypt itself refuses a cost below 4
+const (
+	minPasswordHashCost = 4
+	maxPasswordHashCost = 14
+)
 
 // Location returns the school timezone used for "today" and weekly boundaries
 func (e *Env) Location() *time.Location {
