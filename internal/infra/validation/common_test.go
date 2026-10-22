@@ -30,3 +30,17 @@ func TestAChangedPasswordFromTheListIsRefusedWithItsField(t *testing.T) {
 
 	require.NoError(t, validation.Struct(&dto.ChangePasswordRequest{CurrentPassword: "x", NewPassword: "a long phrase nobody guesses"}))
 }
+
+func TestARegisteredPasswordFromTheListIsRefusedWithItsField(t *testing.T) {
+	request := &dto.RegisterRequest{
+		Email: "a@example.com", Password: "Password123", FullName: "Ana", Role: "GURU", Class: &dto.RegisterClass{Name: "A"},
+	}
+
+	var appErr *apperror.Error
+
+	require.ErrorAs(t, validation.Struct(request), &appErr)
+	require.Equal(t, "is too common, choose another password", appErr.Details["password"])
+
+	request.Password = "a long phrase nobody guesses"
+	require.NoError(t, validation.Struct(request))
+}
