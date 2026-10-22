@@ -26,18 +26,22 @@ type MiddlewareItf interface {
 	RequireRole(roles ...constants.Role) fiber.Handler
 	// Idempotent makes a route that creates something safe to repeat, it has to come after Authentication
 	Idempotent() fiber.Handler
+	// Upload keeps a copy of the API from handling more photo uploads than it can hold in memory, it comes after RequireRole
+	Upload() fiber.Handler
 }
 
 type Middleware struct {
 	jwt        jwt.JWTItf
 	limit      fiber.Handler
 	idempotent fiber.Handler
+	upload     fiber.Handler
 }
 
 // NewMiddleware builds the authentication and role checks. The limit handler runs right after a request is
 // authenticated, so it can use UserKey, and a nil limit lets every authenticated request through. The idempotent handler
-// guards the routes that create something, and a nil one makes them run on every request as before.
-func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler, idempotent fiber.Handler) MiddlewareItf {
+// guards the routes that create something, and a nil one makes them run on every request as before. The upload handler gates the
+// photo uploads, and a nil one lets every upload through.
+func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler, idempotent fiber.Handler, upload fiber.Handler) MiddlewareItf {
 	if limit == nil {
 		limit = func(c fiber.Ctx) error { return c.Next() }
 	}
@@ -46,7 +50,11 @@ func NewMiddleware(jwt jwt.JWTItf, limit fiber.Handler, idempotent fiber.Handler
 		idempotent = func(c fiber.Ctx) error { return c.Next() }
 	}
 
-	return &Middleware{jwt: jwt, limit: limit, idempotent: idempotent}
+	if upload == nil {
+		upload = func(c fiber.Ctx) error { return c.Next() }
+	}
+
+	return &Middleware{jwt: jwt, limit: limit, idempotent: idempotent, upload: upload}
 }
 
 func (m *Middleware) Authentication(c fiber.Ctx) error {
@@ -82,6 +90,10 @@ func (m *Middleware) Authentication(c fiber.Ctx) error {
 
 func (m *Middleware) Idempotent() fiber.Handler {
 	return m.idempotent
+}
+
+func (m *Middleware) Upload() fiber.Handler {
+	return m.upload
 }
 
 func (m *Middleware) RequireRole(roles ...constants.Role) fiber.Handler {

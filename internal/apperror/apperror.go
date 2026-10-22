@@ -126,6 +126,11 @@ var (
 	ErrBusy = &Error{
 		Status: http.StatusTooManyRequests, Code: "RATE_LIMITED", Message: "The server is busy, please try again in a moment", RetryAfterSeconds: 1,
 	}
+	// ErrUploadsBusy answers a photo upload while the copy already handles as many as it may. It is a rate limit to an app, and
+	// it is a value of its own so that the metrics count it as a limiter refusal of its route and not as a busy password pool.
+	ErrUploadsBusy = &Error{
+		Status: http.StatusTooManyRequests, Code: "RATE_LIMITED", Message: "The server is busy receiving photos, please try again in a moment", RetryAfterSeconds: 1,
+	}
 	ErrNotFound = New(http.StatusNotFound, "NOT_FOUND", "Resource not found")
 )
 

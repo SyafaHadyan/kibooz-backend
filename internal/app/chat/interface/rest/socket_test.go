@@ -89,7 +89,7 @@ func newFixture(t *testing.T, maxSockets int) fixture {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"errorCode": "INTERNAL"})
 	}})
 
-	NewChatHandler(app.Group("/api/v1"), middleware.NewMiddleware(tokens, nil, nil), use, hub, cfg)
+	NewChatHandler(app.Group("/api/v1"), middleware.NewMiddleware(tokens, nil, nil, nil), use, hub, cfg)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

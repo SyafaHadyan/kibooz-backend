@@ -24,6 +24,7 @@ func valid() *Env {
 		ChatMediaURLSeconds:          3600,
 		ChatMaxSockets:               1000,
 		ChatMaxSocketsPerUser:        5,
+		UploadConcurrency:            4,
 
 		RequestTimeoutSeconds: 10,
 
@@ -183,6 +184,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"SENTRY_EVENTS_PER_MINUTE":        func(e *Env) { e.SentryEventsPerMinute = 0 },
 		"PASSWORD_HASH_WAIT_MILLISECONDS": func(e *Env) { e.PasswordHashWaitMilliseconds = 0 },
 		"PASSWORD_HASH_CONCURRENCY":       func(e *Env) { e.PasswordHashConcurrency = -1 },
+		"UPLOAD_CONCURRENCY":              func(e *Env) { e.UploadConcurrency = 0 },
 	}
 
 	for name, change := range tests {
