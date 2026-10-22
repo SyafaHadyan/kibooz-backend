@@ -53,6 +53,8 @@ type GuruUseCaseItf interface {
 	ArchiveClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error)
 	// RestoreClass makes an archived class of the caller writable again, with a new join code
 	RestoreClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error)
+	// StudentHistory shows what a child of the class did in the classes it left, read only
+	StudentHistory(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) (dto.StudentHistory, error)
 	// RejectMove turns down a request to move a child into the class
 	RejectMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error
 	// Teachers lists the teachers of a class the caller teaches
@@ -188,7 +190,7 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 
 	full, err := u.repo.CreateMoodLogs(ctx, student.ClassID, []entity.MoodLog{*moodLog}, u.moodDay(recordedAt))
 	if err != nil {
-		return dto.LogMoodResponse{}, apperror.Internal(err)
+		return dto.LogMoodResponse{}, appOrInternal(err)
 	}
 
 	if len(full) > 0 {
@@ -332,7 +334,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 
 	full, err := u.repo.CreateMoodLogs(ctx, class.ID, moodLogs, u.moodDay(recordedAt))
 	if err != nil {
-		return dto.LogMoodBatchResponse{}, apperror.Internal(err)
+		return dto.LogMoodBatchResponse{}, appOrInternal(err)
 	}
 
 	if len(full) > 0 {
@@ -953,4 +955,48 @@ func (u *GuruUseCase) classSummaryOf(ctx context.Context, guruID uuid.UUID, clas
 	}
 
 	return classSummary(row), nil
+}
+
+func (u *GuruUseCase) StudentHistory(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID,
+) (dto.StudentHistory, error) {
+	_, class, err := u.resolveClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.StudentHistory{}, err
+	}
+
+	rows, err := u.repo.StudentHistory(ctx, class.ID, studentID)
+	if err != nil {
+		return dto.StudentHistory{}, appOrInternal(err)
+	}
+
+	res := dto.StudentHistory{PreviousClasses: make([]dto.HistoryClass, 0, len(rows))}
+
+	for i := range rows {
+		item := dto.HistoryClass{
+			PreviousClass: dto.PreviousClass{
+				ClassID: rows[i].ClassID, ClassName: rows[i].ClassName, GradeLevel: rows[i].GradeLevel, SchoolName: rows[i].SchoolName,
+				AcademicYear: rows[i].AcademicYear, StartedAt: rows[i].ActivatedAt.UTC(), EndedAt: rows[i].EndedAt.UTC(),
+				TotalPoints: rows[i].FinalPoints, SeasonPoints: rows[i].FinalSeason, ClassRank: rows[i].FinalRank, TotalScans: rows[i].FinalScans,
+			},
+			Breakdown:      make([]dto.TrashTypeStat, 0, len(rows[i].Breakdown)),
+			Moods:          make([]dto.HistoryMood, 0, len(rows[i].Moods)),
+			MoodsTruncated: rows[i].MoodsTruncated,
+		}
+
+		for _, totals := range rows[i].Breakdown {
+			item.Breakdown = append(item.Breakdown, dto.TrashTypeStat{TrashType: totals.TrashType, Scans: totals.Scans, Points: totals.Points})
+		}
+
+		for _, mood := range rows[i].Moods {
+			item.Moods = append(item.Moods, dto.HistoryMood{
+				MoodType: mood.MoodType, Label: constants.MoodLabels[mood.MoodType], ConfidenceScore: mood.ConfidenceScore,
+				Notes: mood.Notes, RecordedAt: mood.RecordedAt.UTC(),
+			})
+		}
+
+		res.PreviousClasses = append(res.PreviousClasses, item)
+	}
+
+	return res, nil
 }

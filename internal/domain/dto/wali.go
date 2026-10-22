@@ -15,6 +15,8 @@ type WaliStudent struct {
 	ClassName string    `json:"className"`
 	AvatarURL *string   `json:"avatarUrl"`
 	NISN      string    `json:"nisn"`
+	// ClassArchivedAt is set while the class of the child is archived and read only, so the app can hide what the child cannot do
+	ClassArchivedAt *time.Time `json:"classArchivedAt,omitempty"`
 }
 
 type TodayMood struct {
@@ -106,6 +108,8 @@ type ChildSummary struct {
 	AvatarURL *string   `json:"avatarUrl"`
 	ClassID   uuid.UUID `json:"classId"`
 	ClassName string    `json:"className"`
+	// ClassArchivedAt is set while the class of the child is archived and read only
+	ClassArchivedAt *time.Time `json:"classArchivedAt,omitempty"`
 }
 
 type ChildList struct {

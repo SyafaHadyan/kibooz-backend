@@ -96,6 +96,8 @@ func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID
 			ClassName: fmt.Sprintf("%s • %s", student.GradeLevel, student.SchoolName),
 			AvatarURL: student.AvatarURL,
 			NISN:      student.NISN,
+
+			ClassArchivedAt: archivedAt(student.ClassArchivedAt),
 		},
 		PointsSummary: dto.PointsSummary{
 			TotalPoints:    student.CurrentPoints,
@@ -541,7 +543,19 @@ func childSummary(row *repository.StudentRow) dto.ChildSummary {
 		AvatarURL: row.AvatarURL,
 		ClassID:   row.ClassID,
 		ClassName: row.ClassName,
+
+		ClassArchivedAt: archivedAt(row.ClassArchivedAt),
 	}
+}
+
+func archivedAt(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+
+	utc := at.UTC()
+
+	return &utc
 }
 
 func (u *WaliUseCase) resolveStudent(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (*repository.StudentRow, error) {

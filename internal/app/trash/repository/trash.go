@@ -73,7 +73,7 @@ func (r *TrashDB) FirstWaliClass(ctx context.Context, waliID uuid.UUID) (*uuid.U
 func (r *TrashDB) FirstGuruClass(ctx context.Context, guruID uuid.UUID) (*uuid.UUID, error) {
 	return r.firstID(ctx, `SELECT ct.class_id FROM class_teachers AS ct
 		JOIN classes AS c ON c.id = ct.class_id
-		WHERE ct.guru_id = ? ORDER BY c.created_at ASC, c.id ASC LIMIT 1`, guruID)
+		WHERE ct.guru_id = ? ORDER BY (c.archived_at IS NOT NULL) ASC, c.created_at ASC, c.id ASC LIMIT 1`, guruID)
 }
 
 func (r *TrashDB) WaliHasStudentInClass(ctx context.Context, waliID uuid.UUID, classID uuid.UUID) (bool, error) {

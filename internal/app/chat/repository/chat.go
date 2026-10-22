@@ -107,12 +107,13 @@ type ConversationRow struct {
 	CanSend               bool
 }
 
-// sharedClass is a condition that holds when a teacher and a parent have an active child in the same class that is not archived,
-// in either order. It reads the account from the named argument user and takes the column or argument of the second account.
+// sharedClass is a condition that holds when a teacher and a parent have an active child in the same class, in either order.
+// An archived class still counts, so a direct conversation stays open after the archive and only the room is closed.
+// It reads the account from the named argument user and takes the column or argument of the second account.
 func sharedClass(peer string) string {
 	return `EXISTS (SELECT 1 FROM class_teachers AS ct
 		JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
-		JOIN classes AS c ON c.id = ct.class_id AND c.archived_at IS NULL
+		JOIN classes AS c ON c.id = ct.class_id
 		JOIN students AS s ON s.class_id = c.id AND s.deleted_at IS NULL
 		JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
 		WHERE (g.user_id = @user AND w.user_id = ` + peer + `) OR (g.user_id = ` + peer + ` AND w.user_id = @user))`
@@ -155,7 +156,7 @@ const conversationColumns = `c.id, c.kind, c.created_at,
 type ChatDBItf interface {
 	// FindAccount returns an account that is not deleted, or nil
 	FindAccount(ctx context.Context, userID uuid.UUID) (*AccountRow, error)
-	// ShareClass reports whether a teacher and a parent have an active child in one class that is not archived, in either order
+	// ShareClass reports whether a teacher and a parent have an active child in one class, archived or not, in either order
 	ShareClass(ctx context.Context, a uuid.UUID, b uuid.UUID) (bool, error)
 	// ListContacts returns the accounts of the other role that share an active class with the account, by name
 	ListContacts(ctx context.Context, userID uuid.UUID, peerRole constants.Role, limit int, offset int) ([]ContactRow, int, error)
@@ -278,7 +279,7 @@ func (r *ChatDB) ContactLinks(ctx context.Context, userID uuid.UUID, peers []uui
 				c.id AS class_id, c.name AS class_name, s.full_name AS child_name
 			FROM class_teachers AS ct
 			JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
-			JOIN classes AS c ON c.id = ct.class_id AND c.archived_at IS NULL
+			JOIN classes AS c ON c.id = ct.class_id
 			JOIN students AS s ON s.class_id = c.id AND s.deleted_at IS NULL
 			JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
 			WHERE (g.user_id = ? AND w.user_id IN ?) OR (w.user_id = ? AND g.user_id IN ?)
