@@ -67,7 +67,7 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 | 5xx ratio is high | More than 5 percent of the requests failed with a 5xx for 10 minutes |
 | p95 latency is high | The p95 latency of the requests other than the health check, which 95 percent of them stay under, was above one second for 10 minutes. The health check is left out because its storage write probe takes half a second or more on purpose, and with no other traffic it alone would set the percentile. A rule with no requests to measure stays quiet |
 | A background job has not succeeded | The semester check or a keepalive of a copy has not succeeded for 10 minutes |
-| A slow background job has not succeeded | The file cleanup or the idempotency purge of a copy has not succeeded for 3 hours |
+| A slow background job has not succeeded | The file cleanup, the idempotency purge or the refresh token purge of a copy has not succeeded for 3 hours |
 | Background jobs are failing | A job of a copy failed more than 3 times in 30 minutes |
 | Password hashing is saturated | A copy refused more than 5 requests in 10 minutes because every hashing slot was taken |
 | Database pool is nearly full | More than 90 percent of the 25 connections of a copy were in use for 5 minutes |

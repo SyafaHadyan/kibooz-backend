@@ -231,7 +231,7 @@
     {
       "type": "timeseries",
       "title": "Age of the last successful run",
-      "description": "semester_check and the keepalives run every minute, file_cleanup every 10 minutes, idempotency_purge every hour. Every copy runs its own jobs",
+      "description": "semester_check and the keepalives run every minute, file_cleanup every 10 minutes, idempotency_purge and refresh_token_purge every hour. Every copy runs its own jobs",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"

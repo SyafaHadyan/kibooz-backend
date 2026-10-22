@@ -22,7 +22,7 @@ info:
     and a `Retry-After` header when a request did not finish within the time the server gives it. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
     processed answers `400` with `BAD_REQUEST`, a request with a non-empty `Content-Encoding` other than `identity`, such as `gzip` or
-    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the two uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
+    `zstd`, answers `415` with `BAD_REQUEST`, a JSON body of more than 64 KB answers `413` with `BODY_TOO_LARGE` on every route except the three photo uploads, and a photo over its size limit answers `413` with `FILE_TOO_LARGE`.
     A client should branch on `errorCode` and treat an unknown code like its status.
 
     Whether the API is up, and the history of past incidents, is on the status page at https://status.syafahadyan.com/.
@@ -2740,7 +2740,7 @@ paths:
         sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
         children and the photos of their trash scans are deleted too.
 
-        A teacher who is the only teacher of a class that still has children has to send `successorEmail`. The successor
+        A teacher who is the only teacher of a class that is not archived and still has active children has to send `successorEmail`. The successor
         is added to every class that nobody else teaches and becomes its owner, so a class with children never loses its
         last teacher. Without a `successorEmail`, a class that nobody else teaches and that has no active child is
         archived instead. Its join code then answers `CLASS_CODE_NOT_FOUND` and nobody is left to restore the class
@@ -2779,7 +2779,7 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "409":
           description: >-
-            The account is the only teacher of a class that still has children and no `successorEmail` was sent
+            The account is the only teacher of a class that is not archived and still has active children, and no `successorEmail` was sent
             (`SUCCESSOR_REQUIRED`)
           content:
             application/json:
@@ -4093,7 +4093,7 @@ components:
           maxLength: 255
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
-            the account is the only teacher of a class that has children, and ignored for a parent. It cannot be the email of the account itself.
+            the account is the only teacher of a class that is not archived and has active children, and ignored for a parent. It cannot be the email of the account itself.
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]
