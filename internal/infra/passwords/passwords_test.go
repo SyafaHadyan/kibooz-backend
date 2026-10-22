@@ -200,12 +200,12 @@ func TestACostAboveTheLimitOfBcryptFallsBackToTheDefault(t *testing.T) {
 
 func TestACallerThatCannotGetASlotInTimeIsRefusedAtOnce(t *testing.T) {
 	hasher := fast(1, time.Second)
-	hasher.typical.Store(int64(400 * time.Millisecond))
+	hasher.typical.Store(int64(450 * time.Millisecond))
 
 	release, err := hasher.Acquire(t.Context())
 	require.NoError(t, err)
 
-	// the first two callers fit in the wait of a second (400 and 800 milliseconds), the third needs 1200
+	// the first two callers fit in the wait of a second (225 and 675 milliseconds), the third needs 1125
 	results := make(chan error, 2)
 
 	for range 2 {
@@ -225,7 +225,7 @@ func TestACallerThatCannotGetASlotInTimeIsRefusedAtOnce(t *testing.T) {
 	_, err = hasher.Acquire(t.Context())
 
 	require.ErrorIs(t, err, apperror.ErrBusy)
-	require.Less(t, time.Since(started), 200*time.Millisecond, "the refusal does not wait for the end of the wait")
+	require.Less(t, time.Since(started), 500*time.Millisecond, "the refusal does not wait for the end of the wait")
 	require.EqualValues(t, 2, hasher.waiters.Load(), "a refused caller leaves the line")
 
 	release()

@@ -117,7 +117,8 @@ func (h *Hasher) Acquire(ctx context.Context) (release func(), err error) {
 
 // cannotWaitThatLong tells whether the callers that wait, this one included, need more time than the wait allows. Each round of
 // the slots takes about the typical time of one hash, and the caller at the back of the line needs one round for every
-// slots-sized group before it and its own. Before the first estimate exists nobody is refused early.
+// slots-sized group before it and its own, less half a round because the hash that holds a slot is half done on average.
+// Before the first estimate exists nobody is refused early.
 func (h *Hasher) cannotWaitThatLong(queued int64) bool {
 	typical := h.typical.Load()
 	if typical <= 0 {
@@ -126,7 +127,7 @@ func (h *Hasher) cannotWaitThatLong(queued int64) bool {
 
 	rounds := (queued + int64(cap(h.slots)) - 1) / int64(cap(h.slots))
 
-	return time.Duration(rounds*typical) > h.wait
+	return time.Duration(rounds*typical-typical/2) > h.wait
 }
 
 // took folds the time of a hash into the typical time, so the estimate follows a loaded machine and a changed cost
