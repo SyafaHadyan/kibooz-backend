@@ -16,7 +16,7 @@ What the account made stays in the database. Moods, scans, guidance records, for
 
 What is stored in the bucket does not stay. The avatar of the user, the avatars of the children and the photos of their trash scans have their addresses cleared, and their object keys go into the `file_cleanups` table in the same transaction that hides the account. A job then deletes the files and takes the keys off the table, so a crash cannot make the API forget a file and a failure of the bucket only delays the deletion.
 
-A teacher who is the only teacher of a class with active children has to name another registered teacher in `successorEmail`, who takes the class over. A class that nobody else teaches and that has no active child is archived instead, which keeps its rows and its join code so the code is never given to another class. A parent and a teacher remove a child through the same function, `internal/childremoval`, so the steps do not differ by who asks.
+A teacher who is the only teacher of a class with active children has to name another registered teacher in `successorEmail`, who takes the class over. A class that nobody else teaches and that has no active child is archived instead, which keeps its rows and its join code so the code is never given to another class. A class that its owner already archived on purpose (ADR 0014) needs no successor even when it has children, and it stays archived. A parent and a teacher remove a child through the same function, `internal/childremoval`, so the steps do not differ by who asks.
 
 ## Consequences
 

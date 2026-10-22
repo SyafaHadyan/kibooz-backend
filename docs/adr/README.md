@@ -17,6 +17,6 @@ An architecture decision record says why a choice was made, so that nobody has t
 | [0011 The service runs as two small copies behind nginx](0011-how-the-service-runs.md) | Accepted |
 | [0012 Which checks gate a merge into main, and which ones do not](0012-required-ci-gates.md) | Accepted |
 | [0013 A closed app is woken by a push without text, and fetches the message from the API](0013-chat-push-notifications.md) | Proposed |
-| [0014 A child moves to another class through an enrollment](0014-class-enrollments.md) | Proposed |
+| [0014 A child moves to another class through an enrollment](0014-class-enrollments.md) | Accepted |
 
 To add one, copy the layout of an existing record, give it the next number and a short name, and add it to the table. Keep it to what was decided and why, and link to the pages that describe the details.

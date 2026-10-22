@@ -1,12 +1,12 @@
 # 0014 A child moves to another class through an enrollment
 
-Status: Proposed
+Status: Accepted, 2026-10-22. Built and released in 0.18.0.
 
 ## Context
 
 Today a child belongs to one class for good. The `students` row holds the class, the parent creates the child with a join code and a NISN, and no route changes the class. A child who goes to next year's class has to be registered again, and the NISN is unique among active children, so that is impossible without deleting the child first and losing the history. A teacher can also close joining and remove a child, but the history of the child stays with the class that wrote it.
 
-The owner decided on 2026-10-21 how a move should work. This record writes those decisions down so the design can be reviewed before any code is written.
+The owner decided on 2026-10-21 how a move should work. This record writes those decisions down. It was written before the code and is kept up to date with what was built.
 
 ## Decision
 
@@ -17,7 +17,10 @@ A move is an enrollment, a record that says that a child asks to be, is, or was 
 - **What a move does.** Accepting ends the old enrollment and activates the new one in one transaction. The class, the all-time points and the semester points of the child all start from zero in the new class. The points, the rank and the number of scans of the old class are saved on the ended enrollment, so they are never lost and can be listed as the previous classes of the child.
 - **History.** A teacher of the new class may read the old history of the child, read only. The decision is to share everything about the child, which means the stats, the moods and the notes that the old teacher wrote, and nothing about the other children, the forum or the chat of the old class. This changes what `docs/privacy.md` says and has to be written there before it ships.
 - **Rejected requests.** A rejection only touches the enrollment. There is no limit on how often a parent can ask again, so the rate limiters of the account are the only brake.
-- **Archive and restore.** The owner of a class archives it, whatever number of children it has, and any teacher of the class restores it. An archived class is read only, with its join code out of use, its leaderboard frozen and its enrollments kept, while a child can still move out of it. A restore gives the class a new join code and counts toward the 20 classes of a teacher. Before this record the only way to archive a class was that its only teacher, with no active child, deleted the account, and then nobody was left to restore it.
+- **Archive and restore.** The owner of a class archives it, whatever number of children it has, and any teacher of the class restores it. An archived class is read only, with its join code out of use, its leaderboard frozen and its enrollments kept, while a child can still move out of it. A restore gives the class a new join code and counts toward the 20 classes of a teacher, and the limit is checked for every teacher of the class and not only for the one who restores, because a class that is archived does not count against any of them. Before this record the only way to archive a class was that its only teacher, with no active child, deleted the account, and then nobody was left to restore it.
+- **What an archived class still does.** The class is read only in every part, so mood logs, scans, the forum (including deleting a post), videos and the settings and the people of the class all answer `CLASS_ARCHIVED`. The semester change still ends the semester for an archived class, so its standings are saved and a restored class starts from the semester that is under way. The class chat room stays readable and closes for sending, while direct conversations between a teacher and a parent stay open, because an archived class still counts as a class that they share. A parent reads `classArchivedAt` on the child and a teacher reads `archivedAt` on the class, so the apps can hide the write actions.
+- **A sole teacher who archived the class.** The only teacher of an archived class can delete the account without naming a successor even when the class has children, and the class then stays archived with nobody to restore it. The owner chose this on 2026-10-22 and a named successor still takes the class over. The cost is that such a class and its children cannot be changed until a teacher is added by hand.
+- **Moods and the date of a move.** A mood log has no class, so the moods of the old class are told apart from the new ones by their date. A mood dated before the child joined its current class is refused with `VALIDATION_ERROR` on `recordedAt`, so a late offline entry cannot land inside the old class window after the move.
 - **Registration.** The NISN stays required at registration. The idea that preschool children may have none is unverified, and the unique NISN is what stops one child being registered twice.
 
 ## Consequences
