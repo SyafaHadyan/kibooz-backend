@@ -2,6 +2,7 @@
 package validation
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -19,6 +20,35 @@ import (
 // PhonePattern accepts 6 to 30 characters of digits with an optional leading plus, and spaces, dashes and brackets between them
 var PhonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
 
+// notCommonTag is the validator tag that refuses a password from the list of common passwords
+const notCommonTag = "notcommon"
+
+//go:embed common_passwords.txt
+var commonPasswordList string
+
+var (
+	commonOnce      sync.Once
+	commonPasswords map[string]struct{}
+)
+
+// IsCommonPassword reports whether the password is on the embedded list of passwords that people choose most, which an attacker
+// tries first. The list is lowercase, so the case of the password does not matter. It holds no password below the minimum length
+// of 8, because the length rule refuses those first.
+func IsCommonPassword(password string) bool {
+	commonOnce.Do(func() {
+		lines := strings.Fields(commonPasswordList)
+		commonPasswords = make(map[string]struct{}, len(lines))
+
+		for _, line := range lines {
+			commonPasswords[line] = struct{}{}
+		}
+	})
+
+	_, found := commonPasswords[strings.ToLower(password)]
+
+	return found
+}
+
 var (
 	once     sync.Once
 	instance *validator.Validate
@@ -27,6 +57,14 @@ var (
 func get() *validator.Validate {
 	once.Do(func() {
 		instance = validator.New(validator.WithRequiredStructEnabled())
+
+		err := instance.RegisterValidation(notCommonTag, func(fl validator.FieldLevel) bool {
+			return !IsCommonPassword(fl.Field().String())
+		})
+		if err != nil {
+			panic(err)
+		}
+
 		instance.RegisterTagNameFunc(func(field reflect.StructField) string {
 			name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
 			if name == "-" || name == "" {
@@ -100,6 +138,8 @@ func describe(fieldErr validator.FieldError) string {
 		return "too short or too small, minimum " + fieldErr.Param()
 	case "max":
 		return "too long or too large, maximum " + fieldErr.Param()
+	case notCommonTag:
+		return "is too common, choose another password"
 	case "oneof":
 		return "must be one of " + fieldErr.Param()
 	case "numeric", "number":
