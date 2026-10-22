@@ -2,7 +2,7 @@ name: Mutation testing
 
 # A mutation tool changes the code of a package a little at a time (a `<` becomes `<=`, a `+` becomes `-`) and runs the tests of the
 # package. A change that no test notices shows a line that the tests run without checking. It only reports in the summary of the run
-# and never fails, because a surviving mutant is a question for a person and not a defect. It runs on the packages whose logic is
+# and never gates a merge, because a surviving mutant is a question for a person and not a defect. It runs on the packages whose logic is
 # tested by their own unit tests. The packages that are tested through the end to end tests would show survivors that are not real,
 # because the tool runs only the tests of the package.
 on:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: The packages to mutate, separated by spaces, for example "./internal/ranking ./internal/season", empty for the usual list
+        description: The packages to mutate, separated by spaces, for example "./internal/pagination ./internal/ratelimit", empty for the usual list
         required: false
         default: ""
         type: string
@@ -94,7 +94,8 @@ jobs:
             echo "### Mutation testing of $PACKAGE"
             echo
             echo '```'
-            tail -n 25 "$RUNNER_TEMP/mutants.txt"
+            grep -E 'LIVED|TIMED OUT' "$RUNNER_TEMP/mutants.txt" || echo "no mutant lived or timed out"
+            tail -n 8 "$RUNNER_TEMP/mutants.txt"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
