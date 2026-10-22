@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.18.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.17.1...v0.18.0) (2026-10-22)
+
+
+### Features
+
+* **chat:** keep direct chats open after a class is archived ([a30c305](https://github.com/SyafaHadyan/kibooz-backend/commit/a30c30529f54a990825222ce0b74218c457bee66))
+* **classes:** let the owner archive a class and any teacher restore it with a new code ([8a0ab61](https://github.com/SyafaHadyan/kibooz-backend/commit/8a0ab614f6f363163556e320189281beacb30c3a))
+* **classes:** let the owner archive a class and any teacher restore it with a new code ([#321](https://github.com/SyafaHadyan/kibooz-backend/issues/321)) ([c58d600](https://github.com/SyafaHadyan/kibooz-backend/commit/c58d600eb0b96bb405b0b834f91b0499caed92c2))
+* **classes:** make an archived class read only and show when it was archived ([46dd57d](https://github.com/SyafaHadyan/kibooz-backend/commit/46dd57d01e37ce60513db35dbb5edc34567117cb))
+* **classes:** make an archived class read only and show when it was archived ([#320](https://github.com/SyafaHadyan/kibooz-backend/issues/320)) ([4d28fcd](https://github.com/SyafaHadyan/kibooz-backend/commit/4d28fcd59be1460138437db559fc9758df142c24))
+* **enrollments:** add the enrollments table and backfill existing children ([#311](https://github.com/SyafaHadyan/kibooz-backend/issues/311)) ([a59de37](https://github.com/SyafaHadyan/kibooz-backend/commit/a59de377a7d8c644b19f4427c64a02a60189de32))
+* **enrollments:** add the enrollments table, keep it in step with students and backfill existing children ([402a734](https://github.com/SyafaHadyan/kibooz-backend/commit/402a734fa8bddfa1a6d8a3e589a6fb5774936a5a))
+* **enrollments:** let a parent ask for a move and a teacher of the new class decide ([4bd3fd3](https://github.com/SyafaHadyan/kibooz-backend/commit/4bd3fd331b434e4d776f4289fa3eda1ca0cdef25))
+* **enrollments:** let a parent ask for a move and a teacher of the new class decide ([#314](https://github.com/SyafaHadyan/kibooz-backend/issues/314)) ([6f3b133](https://github.com/SyafaHadyan/kibooz-backend/commit/6f3b13315d53f06461ae4ff5a177bb87d511ec15))
+* **enrollments:** let a parent list the classes that a child left ([d5203f6](https://github.com/SyafaHadyan/kibooz-backend/commit/d5203f64e751ccad7d78ca0015adea62a7e774d2))
+* **enrollments:** let a parent list the classes that a child left ([#315](https://github.com/SyafaHadyan/kibooz-backend/issues/315)) ([4051c1b](https://github.com/SyafaHadyan/kibooz-backend/commit/4051c1be8ada03094ed4e0d7d91db8555f1fd334))
+* **enrollments:** let a teacher of the new class read what a child did before ([#319](https://github.com/SyafaHadyan/kibooz-backend/issues/319)) ([6df2398](https://github.com/SyafaHadyan/kibooz-backend/commit/6df23981373249aca11f7e68ed512bf419e82728))
+* **enrollments:** let a teacher of the new class read what a child did in the classes it left ([7983363](https://github.com/SyafaHadyan/kibooz-backend/commit/7983363378a5ff105d0d708eda7f3bc61911427a))
+* **leaderboard:** limit the leaderboard and the trash stats to a day, week or month ([5ec1759](https://github.com/SyafaHadyan/kibooz-backend/commit/5ec1759a92cd52d4895b181a84f222c65a679ed7))
+* **leaderboard:** limit the leaderboard and the trash stats to a day, week or month ([#308](https://github.com/SyafaHadyan/kibooz-backend/issues/308)) ([0d868ee](https://github.com/SyafaHadyan/kibooz-backend/commit/0d868eed6ed9d99d677654ac4b61fb268f3d1ae9))
+* **ops:** add a script that updates the API copies of a host one at a time ([3ea6941](https://github.com/SyafaHadyan/kibooz-backend/commit/3ea69416cced8d5d940b38a3784076633cccb779))
+* **ops:** add a script that updates the API copies of a host one at a time ([#299](https://github.com/SyafaHadyan/kibooz-backend/issues/299)) ([4fea5ff](https://github.com/SyafaHadyan/kibooz-backend/commit/4fea5ff3fce8a359789d90e9a4f428a060a9987e))
+* **ops:** warn before the update script goes back and stop when migrations were added ([6cf27ca](https://github.com/SyafaHadyan/kibooz-backend/commit/6cf27ca61200cd7da900a2fb5fc6d0c27e638904))
+* **ops:** warn before the update script goes back and stop when migrations were added ([#302](https://github.com/SyafaHadyan/kibooz-backend/issues/302)) ([b2fe92f](https://github.com/SyafaHadyan/kibooz-backend/commit/b2fe92f4532f61862dd3de5fbc734ea33ae31cfb))
+
+
+### Bug Fixes
+
+* **classes:** count every teacher at the restore limit and check the owner before the ranking lock ([5e5a55d](https://github.com/SyafaHadyan/kibooz-backend/commit/5e5a55d424eb61df1893e1fbea2f8bb73c0aa1ba))
+* **classes:** keep the archived error, order the default class and tell parents ([1d5faf4](https://github.com/SyafaHadyan/kibooz-backend/commit/1d5faf4fa1d061e9d49bf0c14d4a5a40033e1560))
+* **enrollments:** reach the saved numbers check with a pending row that only has final points ([4efb65b](https://github.com/SyafaHadyan/kibooz-backend/commit/4efb65b46b8722ba0b270f57cc17ed324bbc1887))
+* **enrollments:** refuse a mood dated before the child joined its class ([34da68e](https://github.com/SyafaHadyan/kibooz-backend/commit/34da68e29433f5c752f11bc152b7e51322c53a86))
+* **enrollments:** run the backfill test through the plain pool, name the checks it expects and word the docs exactly ([e99eca7](https://github.com/SyafaHadyan/kibooz-backend/commit/e99eca7529150e13ea14c983fc08457ccbd8add5))
+* **ops:** give every compose command the checked IMAGE_TAG even when the shell exports another ([a85c99e](https://github.com/SyafaHadyan/kibooz-backend/commit/a85c99e13f54d0d2078afc9f3e670c5095cd377a))
+* **ops:** list the migrations of both tags, stop when they cannot be checked and say when the running version is unknown ([8d3022f](https://github.com/SyafaHadyan/kibooz-backend/commit/8d3022f340ba8f3876b219f92ed8c4baf7aa8d62))
+* **ops:** pull before the env edit, check the services, accept a disabled storage and name the old and new copies ([f65a971](https://github.com/SyafaHadyan/kibooz-backend/commit/f65a97193aed3f6bf2305e7fb762b99f6ebcaf88))
+* **ops:** take the newest version of all copies as the running one before a downgrade ([eef20ad](https://github.com/SyafaHadyan/kibooz-backend/commit/eef20ad690049394d851344b6105a43ad7cfe80f))
+
 ## [0.17.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.17.0...v0.17.1) (2026-10-21)
 
 
