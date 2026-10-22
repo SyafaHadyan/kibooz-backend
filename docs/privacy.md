@@ -37,16 +37,16 @@ Passwords are never stored in clear text or logged. The server holds the hash on
 | Data | Kept for |
 |:---|:---|
 | Account, child, mood, scan, guidance, forum, chat and video rows | Until the project owner removes them from the database. Nothing in the code removes them on a timer |
-| Refresh tokens | Until they expire or the session ends. A used token stays until its session reaches `JWT_SESSION_MAX_DAYS`, 90 days by default, so that a replay can be recognized however late it comes |
+| Refresh tokens | Until they expire or the session ends. A used token stays while its session lives and goes at a later sign in or refresh of that user once the session has reached `JWT_SESSION_MAX_DAYS`, 90 days by default, so that a replay can be recognized however late it comes |
 | Remembered `Idempotency-Key` rows, which hold the response of the request | `IDEMPOTENCY_TTL_HOURS`, 7 days by default, and an hourly job removes the older ones |
 | A deleted chat message | The row stays with an empty body, so the text is gone and a placeholder is left in the conversation. Its photo or video is queued for removal from the private bucket in the same step and is deleted within minutes |
 | Chat photos and videos | In the private bucket until the message is deleted by its author. A file that was uploaded and never sent is removed after one day by the lifecycle rule on `pending/`. A message stays after its sender deletes the account, and so does its file, because the other people of the conversation still need the history |
 | Semester standings in `leaderboard_history` | Without an end. They keep the name of the child as it was when the semester closed |
 | Photos in the bucket | Until the account, or the child that the photo belongs to, is deleted. A video file that was uploaded and never added is removed after one day when the bucket has the lifecycle rule on `pending/` that the [README](../README.md#configuration) asks for |
 | Error reports at Sentry | For the retention of the Sentry plan, which the owner can shorten in the project settings. Nothing in the code deletes them, and deleting an account does not remove them. They hold the id of the account and no name or email |
-| Access log lines | At most 90 days. Nothing keeps them longer than that, and in practice they are shorter. The container logs on the host are at most five files of 10 MB with the bundled Compose file, which is a few hours of requests, and Grafana Cloud keeps the lines that Alloy sends for the retention of its plan, 14 days on the free plan |
+| Access log lines | At most 90 days, which holds as long as the owner keeps the plan of Grafana Cloud at a retention of 90 days or less, and in practice they are shorter. The container logs on the host are at most five files of 10 MB with the bundled Compose file, which is a few hours of requests, and Grafana Cloud keeps the lines that Alloy sends for the retention of its plan, 14 days on the free plan |
 
-The access log holds the time, the client address, the method, the path, the status, the time taken and a request id, and for a failed request the error code and its message. The path can carry the ids of a class, a child or a conversation. With `TRUST_PROXY` off, the address is the one of the reverse proxy.
+The access log holds the time, the client address, the method, the path, the status, the time taken, the size of the answer and a request id, and the route pattern when a route matched. For a failed request it also holds the error code and its message, the names of the fields that failed validation, and for a rate limited one the `Retry-After` value. The path can carry the ids of a class, a child or a conversation. With `TRUST_PROXY` off, the address is the one of the reverse proxy.
 
 ## What deleting an account does
 
