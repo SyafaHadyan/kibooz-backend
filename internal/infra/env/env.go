@@ -259,12 +259,12 @@ func (e *Env) validate() error {
 		}
 	}
 
-	// below 4 bcrypt would not hash at all, and above 14 a single sign in would take seconds of a whole CPU
 	// a leeway that is long gives a stolen token that much time to mint tokens of its own, and a negative one has no meaning
 	if e.RefreshReuseLeewaySeconds < 0 || e.RefreshReuseLeewaySeconds > maxRefreshReuseLeewaySeconds {
 		return fmt.Errorf("REFRESH_REUSE_LEEWAY_SECONDS must be between 0 and %d", maxRefreshReuseLeewaySeconds)
 	}
 
+	// below 4 bcrypt would not hash at all, and above 14 a single sign in would take seconds of a whole CPU
 	if e.PasswordHashCost < minPasswordHashCost || e.PasswordHashCost > maxPasswordHashCost {
 		return fmt.Errorf("PASSWORD_HASH_COST must be between %d and %d", minPasswordHashCost, maxPasswordHashCost)
 	}
@@ -287,7 +287,8 @@ func (e *Env) validate() error {
 
 const maxPort = 65535
 
-// maxRefreshReuseLeewaySeconds is the longest REFRESH_REUSE_LEEWAY_SECONDS, which is the most that the usual identity providers allow
+// maxRefreshReuseLeewaySeconds is the longest REFRESH_REUSE_LEEWAY_SECONDS. A thief who holds a used token can mint tokens of its own
+// only for this long after the owner used it, and a retry of an app that lost its answer needs seconds and not minutes.
 const maxRefreshReuseLeewaySeconds = 60
 
 // the range of PASSWORD_HASH_COST, bcrypt itself refuses a cost below 4

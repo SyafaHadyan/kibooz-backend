@@ -270,6 +270,10 @@ func (u *AuthUseCase) Refresh(ctx context.Context, refreshToken string) (dto.Aut
 		return dto.AuthResponse{}, apperror.Internal(err)
 	}
 
+	if rotation.Replayed {
+		log.Printf("a refresh token that was used a moment ago was shown again, user %s got a new token of the same session", rotation.User.ID)
+	}
+
 	if rotation.Reused {
 		log.Printf("a refresh token that was already used was shown again, the session of user %s ended", rotation.UserID)
 	}

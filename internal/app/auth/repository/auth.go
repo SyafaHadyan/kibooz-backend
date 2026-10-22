@@ -38,8 +38,8 @@ type AuthDBItf interface {
 	// sign in checked, and a user whose hash is another one by now, or who is gone, gets ErrCredentialsChanged and no session.
 	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration) error
 	// RotateRefreshToken uses a valid token and stores its replacement in the same session atomically. The row of the
-	// used token stays, so a replay can be recognized. A token that is unknown, expired or used a moment ago is only
-	// refused, and one that was used earlier ends its whole session.
+	// used token stays, so a replay can be recognized. A token that is unknown or expired is only refused, one that
+	// was used within the leeway gets a new token of the same session, and one that was used earlier ends its whole session.
 	RotateRefreshToken(
 		ctx context.Context, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy,
 	) (Rotation, error)
@@ -63,6 +63,9 @@ type Rotation struct {
 	// Reused tells that the token had been used before and its whole session was ended, UserID is the owner
 	Reused bool
 	UserID uuid.UUID
+	// Replayed tells that the token had been used a moment before, within the leeway, and User holds the new token of the same
+	// session that it got
+	Replayed bool
 }
 
 type AuthDB struct {
@@ -294,7 +297,7 @@ func (r *AuthDB) RotateRefreshToken(
 		}
 
 		if len(used) == 0 {
-			rotation.User, rotation.Reused, rotation.UserID, err = answerReuse(tx, tokenHash, now, next, policy)
+			rotation, err = answerReuse(tx, tokenHash, now, next, policy)
 
 			return err
 		}
@@ -355,28 +358,34 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 	return &found, purgeExpiredTokens(tx, found.ID, now, policy.SessionMax)
 }
 
-// answerReuse decides what a token that cannot be used is. A token that is unknown, or expired without a use, is only refused. A
-// token that was used a moment ago, within the leeway, belongs to a client that lost the answer, so it gets a new token of the
-// same session. A token that was used earlier is taken for a theft and its whole session ends.
-func answerReuse(
-	tx *gorm.DB, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy,
-) (*entity.User, bool, uuid.UUID, error) {
+// answerReuse decides what a token that cannot be used is. A token that is unknown, or was never used, is only refused. A token
+// that was used a moment ago, within the leeway, belongs to a client that lost the answer, so it gets a new token of the same
+// session, unless it has expired since. A token that was used earlier is taken for a theft and its whole session ends.
+func answerReuse(tx *gorm.DB, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy) (Rotation, error) {
 	var seen []sessionRow
 
+	// FOR SHARE makes a logout, a password change or a deletion that ends the family wait for this request, so the token that it
+	// stores is seen and removed by the second pass of that deletion, the same way as for a token that a refresh has just used
 	err := tx.Raw(
-		"SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ?", tokenHash,
+		"SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ? FOR SHARE", tokenHash,
 	).Scan(&seen).Error
 	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil {
-		return nil, false, uuid.Nil, err
+		return Rotation{}, err
 	}
 
-	if now.Sub(*seen[0].UsedAt) <= policy.ReuseLeeway && seen[0].ExpiresAt.After(now) {
+	// a leeway of 0 means none, even for a request whose clock is a little behind the one that used the token
+	if policy.ReuseLeeway > 0 && now.Sub(*seen[0].UsedAt) <= policy.ReuseLeeway {
+		if !seen[0].ExpiresAt.After(now) {
+			// a client that retries after its token expired has nothing to be taken for a thief, it signs in again
+			return Rotation{}, nil
+		}
+
 		user, err := continueSession(tx, seen[0], now, next, policy)
 
-		return user, false, uuid.Nil, err
+		return Rotation{User: user, Replayed: user != nil}, err
 	}
 
-	return nil, true, seen[0].UserID, sessions.EndFamily(tx, seen[0].FamilyID)
+	return Rotation{Reused: true, UserID: seen[0].UserID}, sessions.EndFamily(tx, seen[0].FamilyID)
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
