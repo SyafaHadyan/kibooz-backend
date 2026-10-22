@@ -132,7 +132,7 @@ func Start(version string) (*Bootstrap, error) {
 	keys := idempotency.New(
 		database, time.Duration(cfg.IdempotencyTTLHours)*time.Hour, time.Duration(cfg.RequestTimeoutSeconds)*time.Second,
 	)
-	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey), keys.Handler())
+	mw := middleware.NewMiddleware(jwtService, app.UserLimiter(middleware.UserKey), keys.Handler(), app.UploadGate())
 
 	// every bucket that is on is probed, so a private bucket that refuses writes shows in /healthz as well
 	var pingStorage pinger

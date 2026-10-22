@@ -14,8 +14,9 @@ info:
     and a `Retry-After` header. They count requests per signed-in user, and login, registration and token routes per account,
     never per IP address. The daily limit of trash claims is a different `429` with `TRASH_DAILY_LIMIT_REACHED` and no `Retry-After`
     header, because it ends at midnight of the local day. Login, registration, changing the password and deleting the account
-    also answer `429` with `RATE_LIMITED` and `Retry-After: 1` when the server is busy checking passwords, and a client can send
-    the same request once more after that second.
+    also answer `429` with `RATE_LIMITED` and `Retry-After: 1` when the server is busy checking passwords, and the three photo
+    uploads (the avatar, a trash claim and a chat photo) answer the same when the server is already receiving as many photos as
+    it may. A client can send the same request once more after that second.
 
     Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks. A path that does not exist answers
     `404` with `NOT_FOUND`, a method that is not allowed answers `405` with `METHOD_NOT_ALLOWED`, a request that cannot be
@@ -3024,10 +3025,12 @@ components:
           schema:
             $ref: "#/components/schemas/Failure"
     RateLimited:
-      description: Too many requests from this user or for this account (`RATE_LIMITED`)
+      description: >-
+        Too many requests from this user or for this account, or the server is busy checking passwords or receiving photos
+        (`RATE_LIMITED`)
       headers:
         Retry-After:
-          description: Seconds to wait before the next try. A try before that is refused again and counts, so it makes the wait longer.
+          description: Seconds to wait before the next try. A try before that is refused again and counts, so it makes the wait longer. It is 1 when the server is busy and not the person.
           schema:
             type: string
         X-RateLimit-Limit:

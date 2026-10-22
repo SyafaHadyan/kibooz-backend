@@ -24,7 +24,7 @@ type UserHandler struct {
 func NewUserHandler(router fiber.Router, passwordLimiter fiber.Handler, mw middleware.MiddlewareItf, useCase usecase.UserUseCaseItf) {
 	handler := UserHandler{useCase: useCase}
 
-	router.Post("/users/avatar", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.UploadAvatar)
+	router.Post("/users/avatar", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), mw.Upload(), handler.UploadAvatar)
 	// the password is checked here, so the same strict limit as the login route applies per user, and it needs the user to be known
 	router.Delete("/users/me", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.DeleteAccount)
 	router.Put("/users/me/password", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.ChangePassword)

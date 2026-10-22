@@ -24,7 +24,8 @@ type TrashHandler struct {
 func NewTrashHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase usecase.TrashUseCaseItf) {
 	handler := TrashHandler{useCase: useCase}
 
-	router.Post("/trash/scan-claim", mw.Authentication, mw.RequireRole(constants.RoleWali), mw.Idempotent(), handler.ScanClaim)
+	// the photo is held in memory several times over, so only a few claims are handled at once, before the key is claimed
+	router.Post("/trash/scan-claim", mw.Authentication, mw.RequireRole(constants.RoleWali), mw.Upload(), mw.Idempotent(), handler.ScanClaim)
 	router.Get("/leaderboard", mw.Authentication, mw.RequireRole(constants.RoleWali, constants.RoleGuru), handler.Leaderboard)
 	router.Get("/leaderboard/history", mw.Authentication, mw.RequireRole(constants.RoleWali, constants.RoleGuru), handler.LeaderboardHistory)
 }

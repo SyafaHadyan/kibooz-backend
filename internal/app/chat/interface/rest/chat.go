@@ -50,7 +50,7 @@ func NewChatHandler(router fiber.Router, mw middleware.MiddlewareItf, useCase us
 	group.Post("/conversations/:conversationId/messages", idempotent, handler.SendMessage)
 	group.Delete("/conversations/:conversationId/messages/:messageId", handler.DeleteMessage)
 	group.Put("/conversations/:conversationId/read", handler.MarkRead)
-	group.Post("/conversations/:conversationId/media/photo", handler.UploadPhoto)
+	group.Post("/conversations/:conversationId/media/photo", mw.Upload(), handler.UploadPhoto)
 	group.Post("/conversations/:conversationId/media/video-upload", handler.CreateVideoUpload)
 }
 
