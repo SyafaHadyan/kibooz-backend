@@ -76,6 +76,8 @@ A child that is already in a class moves with a request, and a teacher of the ne
 
 `GET /api/v1/wali/children/{studentId}/previous-classes` lists the classes that the child left, the latest first, each with the dates and with the points, the rank and the scans that the child had when it left. The list is empty for a child that never moved, and the screen can show it under the current class of the child.
 
+A teacher of the new class reads what a child did before with `GET /api/v1/guru/classes/{classId}/students/{studentId}/history`, which is read only and works after the move was accepted and never while the request waits. For each class that the child left it has the dates, the points, the rank and the scans, the scans per category, and the moods with the notes that the old teachers wrote, newest first and at most 100 for each class with `moodsTruncated` set when there were more. It answers an empty list for a child that never moved, and `STUDENT_NOT_FOUND` for a child that is not in the class.
+
 A teacher lists what waits with `GET /api/v1/guru/classes/{classId}/move-requests` and decides with `POST /api/v1/guru/classes/{classId}/move-requests/{requestId}/accept` or `.../reject`. Any teacher of the class can decide. When a request is accepted the child starts from zero in the new class, with no points, no semester points and no scans, and a new rank that zero points and its name give. What the child had in the old class is saved and does not count in the new one. The leaderboard and the stats of the new class only count the scans made after the move. A teacher who gets `MOVE_REQUEST_NOT_FOUND` should refresh the list, because another teacher or the parent may have decided first.
 
 ## Edit a profile
