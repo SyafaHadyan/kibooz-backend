@@ -25,7 +25,32 @@ func TestAnArchivedClassIsReadOnly(t *testing.T) {
 
 	threadID := thread.data("id").(string)
 
+	room := call(t, http.MethodPost, chatBase+"/conversations", parent.Token, map[string]any{"classId": classID})
+	require.Equal(t, http.StatusCreated, room.Status, "body %v", room.Body)
+
+	roomID := room.data("id").(string)
+
 	require.NoError(t, testDB.Exec("UPDATE classes SET archived_at = now() WHERE id = ?::uuid", classID).Error)
+
+	t.Run("the class room closes and the direct chat stays open", func(t *testing.T) {
+		send := func(token string, conversation string) result {
+			res, _ := callKey(t, http.MethodPost, chatBase+"/conversations/"+conversation+"/messages", token, uuid.NewString(), map[string]any{"body": "Halo"})
+
+			return res
+		}
+
+		send(parent.Token, roomID).requireError(t, http.StatusConflict, "CHAT_SENDING_CLOSED")
+
+		contact := chatContactOf(t, call(t, http.MethodGet, chatBase+"/contacts", teacher.Token, nil), "Anak Kelas Arsip")
+		require.Equal(t, "WALI", contact["role"], "the parent is still a contact after the archive")
+
+		direct := call(t, http.MethodPost, chatBase+"/conversations", teacher.Token, map[string]any{"userId": contact["id"]})
+		require.Contains(t, []int{http.StatusOK, http.StatusCreated}, direct.Status, "body %v", direct.Body)
+		require.Equal(t, true, direct.data("canSend"), "a direct conversation stays open")
+
+		sent := send(teacher.Token, direct.data("id").(string))
+		require.Equal(t, http.StatusCreated, sent.Status, "body %v", sent.Body)
+	})
 
 	t.Run("nothing can be written into the class", func(t *testing.T) {
 		claim := call(t, http.MethodPost, "/api/v1/trash/scan-claim", parent.Token, map[string]any{

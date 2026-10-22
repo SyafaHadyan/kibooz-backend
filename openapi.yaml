@@ -2315,7 +2315,8 @@ paths:
         `POST .../media/photo` or `POST .../media/video-upload` to carry a file, which the server only accepts when it is a finished upload
         of the same account for the same conversation, and a message needs `body` or `mediaKey`. Send an `Idempotency-Key` so that a try
         that is repeated after a lost answer writes the message once. Sending needs an open conversation, which means a class that the
-        two of a direct conversation still share, an account that is still there and a class that is not archived, otherwise it answers
+        two of a direct conversation still share, which an archived class still counts as, an account that is still there and, for a room,
+        a class that is not archived, otherwise it answers
         `409` with `CHAT_SENDING_CLOSED`, while reading stays open. Only the people of the conversation can use it, and anyone else
         gets `404`.
       parameters:
@@ -4287,7 +4288,7 @@ components:
           description: The message the other person has read up to, 0 when none and always 0 for a class room
         canSend:
           type: boolean
-          description: False when the two of a direct conversation no longer share a class, the other account was deleted, or the class of a room is archived
+          description: False when the two of a direct conversation no longer share a class (an archived class still counts), the other account was deleted, or the class of a room is archived
         createdAt:
           type: string
           format: date-time
