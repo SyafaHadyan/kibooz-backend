@@ -381,6 +381,23 @@ func TestRegistrationAndLogin(t *testing.T) {
 		res.requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
 	})
 
+	// the unique index of the NIP is mapped to its own code by the name of the index, so a renamed index would turn it into a 500
+	t.Run("duplicate NIP", func(t *testing.T) {
+		nip := suffix()
+
+		first := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": fmt.Sprintf("nip.one.%s@example.com", suffix()), "password": testPassword, "fullName": "Guru Satu",
+			"role": "GURU", "nip": nip, "class": map[string]any{"name": "Anggrek"},
+		})
+		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
+
+		second := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": fmt.Sprintf("nip.two.%s@example.com", suffix()), "password": testPassword, "fullName": "Guru Dua",
+			"role": "GURU", "nip": nip, "class": map[string]any{"name": "Kenanga"},
+		})
+		second.requireError(t, http.StatusConflict, "NIP_ALREADY_REGISTERED")
+	})
+
 	t.Run("a NISN with anything but digits", func(t *testing.T) {
 		for _, bad := range []string{"-12345", "+12345", "123.45", "12 345", "12e345", "١٢٣٤٥"} {
 			res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
