@@ -1,0 +1,92 @@
+name: Explain plans
+
+# Seeds a throwaway PostgreSQL 18 on the runner with about 200000 accounts (4000 classes of 49 children, a chat of every second
+# child with its teacher, about a million messages and guidance applications) and writes the EXPLAIN (ANALYZE, BUFFERS) plans of
+# the queries that the scale review marked as the ones to watch. It runs by hand only, because the seed takes minutes. The
+# database is a container of the job and never the one of the VPS, and nothing here touches production.
+on:
+  workflow_dispatch:
+    inputs:
+      classes:
+        description: How many classes to seed, with 49 children each, so 4000 gives about 200000 accounts
+        required: false
+        default: "4000"
+        type: string
+
+concurrency:
+  group: explain-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  explain:
+    name: Explain the queries
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: mirror.gcr.io/library/postgres:18-alpine
+        env:
+          POSTGRES_USER: kibooz
+          POSTGRES_PASSWORD: kibooz
+          POSTGRES_DB: kibooz_explain
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kibooz -d kibooz_explain"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Seed the database and explain the queries
+        env:
+          CLASSES: ${{ inputs.classes }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: "5432"
+          DB_NAME: kibooz_explain
+          DB_USERNAME: kibooz
+          DB_PASSWORD: kibooz
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$CLASSES" =~ ^[0-9]{1,5}$ ]] || [ "$CLASSES" -lt 10 ]; then
+            echo "classes has to be a number from 10 to 99999" >&2
+            exit 1
+          fi
+
+          export EXPLAIN_CLASSES="$CLASSES"
+          export EXPLAIN_OUT="$RUNNER_TEMP/explain-plans.txt"
+
+          go test -tags explain -run TestExplainThePlansOfTheQueriesToWatch -count=1 -timeout 50m -v ./internal/explain/ | tee "$RUNNER_TEMP/explain-log.txt"
+
+          {
+            echo "### Plans of the queries to watch, $CLASSES classes"
+            echo
+            echo '```'
+            grep -E '^(====|Execution Time|Planning Time)' "$EXPLAIN_OUT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the plans
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: explain-plans
+          path: |
+            ${{ runner.temp }}/explain-plans.txt
+            ${{ runner.temp }}/explain-log.txt
+          if-no-files-found: ignore
+          retention-days: 14
