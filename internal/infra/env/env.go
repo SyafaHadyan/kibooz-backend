@@ -208,7 +208,6 @@ func (e *Env) validate() error {
 		value int
 		min   int
 	}{
-		// the trash photo may be 4 MiB, so a smaller limit would answer 413 to a photo that the route allows
 		{"BODY_LIMIT_MB", e.BodyLimitMB, minBodyLimitMB},
 		{"CLASS_VIDEO_MAX_MB", e.ClassVideoMaxMB, 1},
 		{"VIDEO_UPLOAD_URL_SECONDS", e.VideoUploadURLSeconds, 1},
@@ -280,9 +279,9 @@ func (e *Env) validate() error {
 
 const maxPort = 65535
 
-// minBodyLimitMB is the smallest BODY_LIMIT_MB, one more than the 4 MiB of the largest photo that is fixed in the code,
-// which leaves room for the framing of the multipart form
-const minBodyLimitMB = 5
+// minBodyLimitMB is the smallest BODY_LIMIT_MB. The trash photo is 4 MiB at most and travels as base64 inside a JSON body, which is
+// about 5.4 MiB with the keys around it, so a smaller limit would answer 413 to a photo that the route allows.
+const minBodyLimitMB = 6
 
 // the range of PASSWORD_HASH_COST, bcrypt itself refuses a cost below 4
 const (
