@@ -23,6 +23,9 @@ const (
 	batch = 100
 	// attemptTimeout bounds the removal of one file
 	attemptTimeout = 5 * time.Second
+	// lease is how long a file that one copy took for a try is kept from the other copy, a little more than the batch needs at its
+	// worst, so a copy that dies in the middle only delays its files
+	lease = batch * attemptTimeout
 	// maxSteps caps the wait between tries, which grows by 10 minutes with each failed attempt, at 24 hours
 	maxSteps = 144
 )
@@ -73,8 +76,13 @@ func (s *Sweeper) Observe(report func(error)) *Sweeper {
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	var keys []string
 
+	// the files are taken with a lease and not locked while the bucket is called, so the two copies of the API that sweep at the
+	// same time do not try the same file and no transaction stays open for the length of 100 calls. A try that fails sets its own
+	// later time, and a try that succeeds deletes the row.
 	err := s.db.WithContext(ctx).
-		Raw("SELECT object_key FROM file_cleanups WHERE next_try_at <= now() ORDER BY next_try_at, object_key LIMIT ?", batch).
+		Raw("UPDATE file_cleanups SET next_try_at = now() + make_interval(secs => ?) WHERE object_key IN ("+
+			"SELECT object_key FROM file_cleanups WHERE next_try_at <= now() ORDER BY next_try_at, object_key LIMIT ? FOR UPDATE SKIP LOCKED"+
+			") RETURNING object_key", lease.Seconds(), batch).
 		Scan(&keys).Error
 	if err != nil {
 		return 0, err

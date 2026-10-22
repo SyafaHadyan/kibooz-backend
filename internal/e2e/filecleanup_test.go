@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
@@ -134,4 +135,45 @@ func TestFileCleanupSweep(t *testing.T) {
 		rows, _ := queuedAttempts(t, stuck)
 		require.Zero(t, rows)
 	})
+}
+
+// Two copies of the API sweep at the same time, and a file must not be tried by both
+func TestTwoSweepsAtOnceNeverTryTheSameFile(t *testing.T) {
+	prefix := "avatars/" + uuid.NewString()
+
+	const files = 40
+
+	for i := range files {
+		require.NoError(t, testDB.Exec("INSERT INTO file_cleanups (object_key) VALUES (?)", fmt.Sprintf("%s/%d.jpg", prefix, i)).Error)
+	}
+
+	bucket := &bucketStub{}
+	first, second := filecleanup.New(testDB, bucket), filecleanup.New(testDB, bucket)
+
+	var wg sync.WaitGroup
+
+	for _, sweeper := range []*filecleanup.Sweeper{first, second} {
+		wg.Go(func() {
+			_, err := sweeper.Sweep(context.Background())
+			assert.NoError(t, err)
+		})
+	}
+
+	wg.Wait()
+
+	mine := 0
+	seen := map[string]int{}
+
+	for _, key := range bucket.removed {
+		if strings.HasPrefix(key, prefix) {
+			seen[key]++
+			mine++
+		}
+	}
+
+	require.Equal(t, files, mine, "every file was removed")
+
+	for key, count := range seen {
+		require.Equal(t, 1, count, "%s was tried twice", key)
+	}
 }
