@@ -63,18 +63,30 @@ type ClassTeacher struct {
 }
 
 type Student struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	WaliID    uuid.UUID `gorm:"type:uuid;not null"`
-	ClassID   uuid.UUID `gorm:"type:uuid;not null"`
-	NISN      string    `gorm:"column:nisn;size:30;not null;uniqueIndex"`
-	FullName  string    `gorm:"size:150;not null"`
-	AvatarURL *string
+	ID      uuid.UUID `gorm:"type:uuid;primaryKey"`
+	WaliID  uuid.UUID `gorm:"type:uuid;not null"`
+	ClassID uuid.UUID `gorm:"type:uuid;not null"`
+	NISN    string    `gorm:"column:nisn;size:30;not null"`
+	// NISNVerifiedAt is set while a teacher vouches for the NISN, and only a verified NISN is unique among the active children
+	NISNVerifiedAt *time.Time `gorm:"column:nisn_verified_at"`
+	FullName       string     `gorm:"size:150;not null"`
+	AvatarURL      *string
 	// CurrentPoints holds the points of all semesters, SeasonPoints the ones of the semester that is under way
 	CurrentPoints int            `gorm:"not null;default:0"`
 	SeasonPoints  int            `gorm:"not null;default:0"`
 	RankPosition  int            `gorm:"not null;default:0"`
 	CreatedAt     time.Time      `gorm:"autoCreateTime"`
 	DeletedAt     gorm.DeletedAt `gorm:"index"`
+}
+
+// NISNVerified tells whether a teacher vouched for the NISN of the child
+func (s *Student) NISNVerified() bool {
+	return s.NISNVerifiedAt != nil
+}
+
+// NISNNeedsUpdate tells whether the NISN is empty, which only happens when another child was verified with the same number
+func (s *Student) NISNNeedsUpdate() bool {
+	return s.NISN == ""
 }
 
 // Enrollment is a child in a class, asked for, current or over. The class of the one active enrollment of a child is the class in

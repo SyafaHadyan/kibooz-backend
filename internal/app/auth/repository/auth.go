@@ -15,6 +15,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
 )
@@ -112,7 +113,7 @@ func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string
 	}{
 		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrEmailTaken},
 		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNIPTaken},
-		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
+		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
 	}
 
 	for _, check := range checks {
@@ -247,6 +248,17 @@ func (r *AuthDB) CreateWali(
 		student.WaliID = wali.ID
 		student.ClassID = class.ID
 
+		// only a verified child holds a NISN alone, so a number that an unverified child holds may be registered again
+		err = nisn.Lock(tx, student.NISN)
+		if err != nil {
+			return err
+		}
+
+		err = nisn.RefuseVerifiedHolder(tx, student.NISN, student.ID)
+		if err != nil {
+			return err
+		}
+
 		err = createAll(tx, student, session)
 		if err != nil {
 			return err
@@ -269,7 +281,7 @@ func mapUniqueViolation(err error) error {
 		return apperror.ErrEmailTaken
 	case "gurus_nip_key":
 		return apperror.ErrNIPTaken
-	case "students_nisn_key":
+	case "students_nisn_verified_key":
 		return apperror.ErrNISNTaken
 	default:
 		return err
