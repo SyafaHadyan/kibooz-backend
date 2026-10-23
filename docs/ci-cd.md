@@ -167,3 +167,5 @@ Versions are decided by [release-please](https://github.com/googleapis/release-p
 4. Merge the release pull request when you want to release. This creates the `v0.2.0` tag and GitHub release, and the tag makes `docker.yaml` push the `0.2.0`, `0.2` and `0` image tags.
 
 For the release pull request to run CI and for the tag to trigger the Docker workflow, the workflow gets its token from a GitHub App with contents, pull requests and issues write access, installed only on this repository. Set the repository variable `RELEASE_APP_CLIENT_ID` and the secret `RELEASE_APP_PRIVATE_KEY` of the `release` environment from that App. GitHub does not start workflows for events created with the default token, and the release commits are made by the App instead of a personal account. The App is also the bypass actor of the `release-tags-creation` ruleset, so only this App can create a `v*` tag.
+
+<!-- throwaway test of the PR format check -->
