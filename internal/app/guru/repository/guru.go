@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -737,7 +738,7 @@ func (r *GuruDB) VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uu
 		return err
 	})
 	if err != nil {
-		return false, 0, err
+		return false, 0, mapVerifiedNISNTaken(err)
 	}
 
 	return found, displaced, nil
@@ -760,11 +761,27 @@ func (r *GuruDB) UnverifyNISN(ctx context.Context, classID uuid.UUID, studentID 
 	return found && err == nil, err
 }
 
+// mapVerifiedNISNTaken turns the violation of the unique index of the verified NISNs into its API error. The lock of the NISN keeps
+// it from happening, so it is the last line of defence.
+func mapVerifiedNISNTaken(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "students_nisn_verified_key" {
+		return apperror.ErrNISNTaken
+	}
+
+	return err
+}
+
 // lockChildOfClass takes the lock of the class and then looks for the active child in it, so a move or a removal that ran while the
-// request waited for the lock is seen. A parent changes the NISN of a child under the same lock, which keeps the number still while
+// request waited for the lock is seen. A class that was archived while the request waited is refused too. A parent changes the NISN of a child under the same lock, which keeps the number still while
 // the transaction of the teacher reads and marks it.
 func lockChildOfClass(tx *gorm.DB, classID uuid.UUID, studentID uuid.UUID) (bool, error) {
 	err := ranking.Lock(tx, classID)
+	if err != nil {
+		return false, err
+	}
+
+	err = classteam.CheckWritable(tx, classID)
 	if err != nil {
 		return false, err
 	}

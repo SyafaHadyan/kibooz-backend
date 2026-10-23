@@ -47,8 +47,10 @@ func RefuseVerifiedHolder(tx *gorm.DB, number string, except uuid.UUID) error {
 // Verify marks the NISN of a child as verified and takes the number from every unverified child that holds it, in any class. They keep
 // their records with an empty NISN. It answers apperror.ErrNISNNotSet for a child without a NISN and apperror.ErrNISNTaken when a
 // verified child already holds the number. Verifying a child that is verified already changes nothing. The caller holds the lock of
-// the class of the child, which a parent also takes to change the number of its child, so the number that is read here cannot change
-// before the transaction ends. The lock of the NISN is taken here. It returns how many children lost the number.
+// the class of the child, which a parent also takes to change the number of its child, so the parent cannot change it meanwhile. The
+// lock of the NISN is taken here, and the number is read again under it, because a verification of the same number in another class,
+// which holds the lock of its own class only, may have taken it from this child in the meantime. It returns how many children lost
+// the number.
 func Verify(tx *gorm.DB, studentID uuid.UUID, now time.Time) (displaced int64, err error) {
 	var current []string
 
@@ -69,6 +71,17 @@ func Verify(tx *gorm.DB, studentID uuid.UUID, now time.Time) (displaced int64, e
 	err = Lock(tx, number)
 	if err != nil {
 		return 0, err
+	}
+
+	var again []string
+
+	err = tx.Raw("SELECT nisn FROM students WHERE id = ? AND deleted_at IS NULL", studentID).Scan(&again).Error
+	if err != nil {
+		return 0, err
+	}
+
+	if len(again) == 0 || again[0] != number {
+		return 0, apperror.ErrNISNNotSet
 	}
 
 	err = RefuseVerifiedHolder(tx, number, studentID)

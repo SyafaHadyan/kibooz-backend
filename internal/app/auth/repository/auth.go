@@ -248,6 +248,12 @@ func (r *AuthDB) CreateWali(
 		student.WaliID = wali.ID
 		student.ClassID = class.ID
 
+		// the lock of the class comes before the lock of the NISN, the order that a verification and a change of the number take them in
+		err = ranking.Lock(tx, class.ID)
+		if err != nil {
+			return err
+		}
+
 		// only a verified child holds a NISN alone, so a number that an unverified child holds may be registered again
 		err = nisn.Lock(tx, student.NISN)
 		if err != nil {

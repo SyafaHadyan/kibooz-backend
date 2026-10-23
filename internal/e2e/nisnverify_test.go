@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -116,7 +117,7 @@ func TestATeacherVerifiesANISN(t *testing.T) {
 
 		roster = call(t, http.MethodGet, "/api/v1/classes/"+classA+"/students", guruA.Token, nil)
 		require.Equal(t, http.StatusOK, roster.Status, "body %v", roster.Body)
-		require.Equal(t, 2, len(listOf(t, roster, "students")))
+		require.Len(t, listOf(t, roster, "students"), 2)
 	})
 
 	t.Run("verifying again changes nothing", func(t *testing.T) {
@@ -176,8 +177,113 @@ func TestATeacherVerifiesANISN(t *testing.T) {
 		require.Equal(t, false, res.data("nisnVerified"))
 		require.Equal(t, false, child(parentB, childB).data("nisnVerified"))
 
+		again := call(t, http.MethodDelete, verifyPath(classB, childB), guruB.Token, nil)
+		require.Equal(t, http.StatusOK, again.Status, "taking back what is not there changes nothing, body %v", again.Body)
+		require.Equal(t, false, again.data("nisnVerified"))
+
 		call(t, http.MethodDelete, verifyPath(classB, childB), outsider.Token, nil).requireError(t, http.StatusNotFound, "CLASS_NOT_FOUND")
 		call(t, http.MethodDelete, verifyPath(classB, childB), parentB.Token, nil).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")
 		call(t, http.MethodDelete, verifyPath(classB, childA), guruB.Token, nil).requireError(t, http.StatusNotFound, "STUDENT_NOT_FOUND")
 	})
+}
+
+// A verification and a registration, an added child or a parent's own change of the number all take the lock of the class and the
+// lock of the NISN. They have to take them in the same order, or a pair of them waits for each other until the database gives one up
+// with a deadlock error, which the caller sees as a 500.
+func TestAVerificationAndARegistrationOfTheSameNISNDoNotDeadlock(t *testing.T) {
+	guru := registerGuru(t, "Yasmin")
+	classID, code := classOf(t, guru)
+
+	for round := 0; round < 6; round++ {
+		number := nisn()
+		_, held := registeredChild(t, code, number, fmt.Sprintf("Anak Pemegang %d", round))
+		other, otherChild := registeredChild(t, code, nisn(), fmt.Sprintf("Anak Pengubah %d", round))
+
+		var wg sync.WaitGroup
+
+		answers := make([]result, 3)
+
+		wg.Add(3)
+
+		go func() {
+			defer wg.Done()
+
+			answers[0] = call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/students/"+held+"/nisn-verification", guru.Token, nil)
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			answers[1] = registerWaliWith(t, fmt.Sprintf("race.%s@example.com", suffix()), number, code, "Anak Baru")
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			answers[2] = call(t, http.MethodPatch, "/api/v1/wali/children/"+otherChild, other.Token, map[string]any{"nisn": number})
+		}()
+
+		wg.Wait()
+
+		require.Equal(t, http.StatusOK, answers[0].Status, "round %d, body %v", round, answers[0].Body)
+
+		for _, res := range answers[1:] {
+			require.Contains(t, []int{http.StatusCreated, http.StatusOK, http.StatusConflict}, res.Status, "round %d, body %v", round, res.Body)
+		}
+	}
+}
+
+// Two teachers verify the same number for two children in two classes at once. The number may belong to one verified child only.
+func TestTwoVerificationsOfTheSameNISNLeaveOneVerifiedChild(t *testing.T) {
+	guruA := registerGuru(t, "Zinnia")
+	guruB := registerGuru(t, "Amaryllis")
+	classA, codeA := classOf(t, guruA)
+	classB, codeB := classOf(t, guruB)
+
+	for round := 0; round < 6; round++ {
+		number := nisn()
+		_, childA := registeredChild(t, codeA, number, fmt.Sprintf("Anak A %d", round))
+		_, childB := registeredChild(t, codeB, number, fmt.Sprintf("Anak B %d", round))
+
+		var wg sync.WaitGroup
+
+		answers := make([]result, 2)
+
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+
+			answers[0] = call(t, http.MethodPost, "/api/v1/guru/classes/"+classA+"/students/"+childA+"/nisn-verification", guruA.Token, nil)
+		}()
+
+		go func() {
+			defer wg.Done()
+
+			answers[1] = call(t, http.MethodPost, "/api/v1/guru/classes/"+classB+"/students/"+childB+"/nisn-verification", guruB.Token, nil)
+		}()
+
+		wg.Wait()
+
+		wins := 0
+
+		for _, res := range answers {
+			if res.Status == http.StatusOK {
+				wins++
+
+				continue
+			}
+
+			require.Equal(t, http.StatusConflict, res.Status, "round %d, body %v", round, res.Body)
+			require.Contains(t, []any{"NISN_NOT_SET", "NISN_ALREADY_REGISTERED"}, res.Body["errorCode"])
+		}
+
+		require.Equal(t, 1, wins, "round %d, one teacher gets the number and the other one is told that it is gone", round)
+
+		var verified int64
+
+		require.NoError(t, testDB.Raw("SELECT count(*) FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL", number).
+			Scan(&verified).Error)
+		require.EqualValues(t, 1, verified)
+	}
 }
