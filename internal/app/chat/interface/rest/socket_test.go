@@ -263,14 +263,21 @@ func TestASocketClosesWithItsOwnCodeWhenTheTokenEnds(t *testing.T) {
 		Role: constants.RoleGuru,
 		RegisteredClaims: golangjwt.RegisteredClaims{
 			Subject: user.String(), Issuer: constants.AccessTokenIssuer,
-			IssuedAt: golangjwt.NewNumericDate(time.Now()), ExpiresAt: golangjwt.NewNumericDate(time.Now().Add(time.Second)),
+			IssuedAt: golangjwt.NewNumericDate(time.Now()), ExpiresAt: golangjwt.NewNumericDate(time.Now().Add(2 * time.Second)),
 		},
 	}
 
+	// The time of a token counts whole seconds, so one that ends a second from now may have less than a second left, and on a slow
+	// runner it has ended before the handshake reads it. Two seconds leave at least one.
 	signed, err := golangjwt.NewWithClaims(golangjwt.SigningMethodHS256, claims).SignedString([]byte(testSecret))
 	require.NoError(t, err)
 
-	conn, _, err := f.dial(signed)
+	conn, res, err := f.dial(signed)
+	if err != nil && res != nil {
+		// a repeat of the flake then says which answer the handshake got, and not only that it was bad
+		t.Fatalf("the handshake answered %d, %v", res.StatusCode, err)
+	}
+
 	require.NoError(t, err)
 
 	defer func() { _ = conn.Close() }()
