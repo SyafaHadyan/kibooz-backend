@@ -75,12 +75,15 @@ type Env struct {
 	ChatMaxSocketsPerUser   int    `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
 	// UploadConcurrency is how many photo uploads one API copy handles at the same time, and the next one is refused with 429 and
 	// a Retry-After, because each upload holds several copies of its photo in memory
-	UploadConcurrency   int `env:"UPLOAD_CONCURRENCY" envDefault:"4"`
-	PointsOrganik       int `env:"POINTS_ORGANIK" envDefault:"10"`
-	PointsAnorganik     int `env:"POINTS_ANORGANIK" envDefault:"15"`
-	PointsB3            int `env:"POINTS_B3" envDefault:"0"`
-	TrashDailyLimit     int `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
-	IdempotencyTTLHours int `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
+	UploadConcurrency int `env:"UPLOAD_CONCURRENCY" envDefault:"4"`
+	// UploadConcurrencyPerAccount is how many of those one account may have running in one API copy, so a client that loops cannot
+	// take every slot from the others
+	UploadConcurrencyPerAccount int `env:"UPLOAD_CONCURRENCY_PER_ACCOUNT" envDefault:"2"`
+	PointsOrganik               int `env:"POINTS_ORGANIK" envDefault:"10"`
+	PointsAnorganik             int `env:"POINTS_ANORGANIK" envDefault:"15"`
+	PointsB3                    int `env:"POINTS_B3" envDefault:"0"`
+	TrashDailyLimit             int `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	IdempotencyTTLHours         int `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
 	// SentryDSN is where the error reports go, and empty switches them off. SentryEventsPerMinute is the cap on how many leave in a minute.
 	SentryDSN             string `env:"SENTRY_DSN"`
 	SentryEnvironment     string `env:"SENTRY_ENVIRONMENT" envDefault:"production"`
@@ -224,6 +227,8 @@ func (e *Env) validate() error {
 		{"CHAT_MAX_SOCKETS_PER_USER", e.ChatMaxSocketsPerUser, 1},
 		// a gate of 0 would refuse every photo, and the gate is what keeps a few uploads from using up the memory of the copy
 		{"UPLOAD_CONCURRENCY", e.UploadConcurrency, 1},
+		// an account that may have no upload running could not upload at all
+		{"UPLOAD_CONCURRENCY_PER_ACCOUNT", e.UploadConcurrencyPerAccount, 1},
 		{"USER_LIMITER_MAX", e.UserLimiterMax, 1},
 		{"AUTH_LIMITER_MAX", e.AuthLimiterMax, 1},
 		{"CLASS_CODE_LIMITER_MAX", e.ClassCodeLimiterMax, 1},
