@@ -63,7 +63,8 @@ sinks:
     batch:
       max_bytes: 10485760
       timeout_secs: 600
-    # lines wait on disk while the store cannot be reached, and the source slows down when the buffer is full and loses nothing
+    # lines that were read wait on disk while the store cannot be reached, and the source stops reading when the buffer is full. A line that
+    # the container writes while Vector is down or not reading is not archived, because docker_logs keeps no read position.
     buffer:
       type: disk
       max_size: 536870912
