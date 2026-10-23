@@ -114,9 +114,17 @@ jobs:
         with:
           persist-credentials: false
 
-      # reads the list of tracked files and never opens one, so it needs no tools, the rules are in the script
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # ls-lint reads the names of the files and never opens one, the rules are in .ls-lint.yml
       - name: Check the names of the files
-        run: python3 -I scripts/check-file-names.py
+        env:
+          # renovate: datasource=npm depName=@ls-lint/ls-lint
+          version: 2.3.2
+        run: npx --yes "@ls-lint/ls-lint@${version}"
 
   shell:
     name: Shell lint

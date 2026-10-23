@@ -121,16 +121,16 @@ docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 README.md CONTRIBUT
 
 ## File names
 
-The `File names` job runs `scripts/check-file-names.py` on every pull request. It reads the list of files that git tracks and fails with the files that break a rule, so a name is fixed before the merge and not renamed later. The first rule that applies to a path decides.
+The `File names` job runs [ls-lint](https://ls-lint.org/) with the rules of `.ls-lint.yml` on every pull request. It reads the names of the files and folders and fails with the ones that break a rule, so a name is fixed before the merge and not renamed later.
 
 - A Go file is lowercase words with no separator, such as `childdelete_test.go`, and only `_test` may follow the words.
-- A migration is a six digit number, snake case words and `.up.sql` or `.down.sql`.
-- A decision record is four digits, kebab case words and `.md`. A workflow is kebab case and ends with `.yaml`. A script is kebab case with `.sh`, `.py` or `.js`.
-- Any other file and every folder is lowercase words joined by hyphens, with dots for the extension and for a variant such as `.example.yml`. A name that starts with a dot is a tool setting.
-- A few names are fixed by the tool that reads them and are allowed as they are, the community files in capitals such as `README.md`, `LICENSE` and `Dockerfile`, the files of `.github` that GitHub looks for by name, the style folder of Vale, and `docs/_headers`.
-- Two names that differ only by case are refused, because they cannot live together on a case insensitive disk.
+- A migration is a six digit number and snake case words, then `.up.sql` or `.down.sql`.
+- A workflow ends with `.yaml` and never `.yml`.
+- A folder is lowercase words joined by hyphens, and a leading dot marks the folder of a tool.
+- Every other file is lowercase words joined by hyphens, with dots for the extension and for a variant such as `.example.yml`. A Markdown file may also be in capitals such as `README.md`.
+- A file with no extension, such as `Dockerfile`, `LICENSE` and `CODEOWNERS`, has no rule, and the issue forms and the Vale styles are left out because GitHub and Vale name them.
 
-A new tool that needs a name of its own is added to the `ALLOWED` list of the script, with the reason in the comment.
+Two names that differ only by case are not checked, because the tool does not do it. A new tool that needs a name of its own is added to the `ignore` list of `.ls-lint.yml`, with the reason in a comment.
 
 ## Releases
 
