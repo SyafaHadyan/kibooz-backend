@@ -69,6 +69,8 @@ type Student struct {
 	NISN    string    `gorm:"column:nisn;size:30;not null"`
 	// NISNVerifiedAt is set while a teacher vouches for the NISN, and only a verified NISN is unique among the active children
 	NISNVerifiedAt *time.Time `gorm:"column:nisn_verified_at"`
+	// NISNVerifiedBy is the teacher who vouched for the NISN, kept for the audit and never shown to a parent
+	NISNVerifiedBy *uuid.UUID `gorm:"column:nisn_verified_by;type:uuid"`
 	FullName       string     `gorm:"size:150;not null"`
 	AvatarURL      *string
 	// CurrentPoints holds the points of all semesters, SeasonPoints the ones of the semester that is under way

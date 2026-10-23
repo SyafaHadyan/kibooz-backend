@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 )
@@ -20,11 +21,19 @@ type nisnRepo struct {
 	displaced int64
 	err       error
 	asked     uuid.UUID
+	askedBy   uuid.UUID
 	unasked   uuid.UUID
+	// guru is the teacher that the repository finds for the account of the caller
+	guru repository.GuruRow
 }
 
-func (r *nisnRepo) VerifyNISN(_ context.Context, _ uuid.UUID, studentID uuid.UUID) (bool, int64, error) {
+func (r *nisnRepo) FindGuruByUserID(context.Context, uuid.UUID) (*repository.GuruRow, error) {
+	return &r.guru, nil
+}
+
+func (r *nisnRepo) VerifyNISN(_ context.Context, _ uuid.UUID, studentID uuid.UUID, guruID uuid.UUID) (bool, int64, error) {
 	r.asked = studentID
+	r.askedBy = guruID
 
 	return r.found, r.displaced, r.err
 }
@@ -37,7 +46,9 @@ func (r *nisnRepo) UnverifyNISN(_ context.Context, _ uuid.UUID, studentID uuid.U
 
 func TestVerifyNISNAnswersWhoLostTheNumber(t *testing.T) {
 	class := &entity.Class{ID: uuid.New()}
-	repo := &nisnRepo{removeRepo: removeRepo{class: class}, found: true, displaced: 3}
+	repo := &nisnRepo{
+		removeRepo: removeRepo{class: class}, found: true, displaced: 3, guru: repository.GuruRow{Guru: entity.Guru{ID: uuid.New()}},
+	}
 	child := uuid.New()
 
 	res, err := NewGuruUseCase(repo, &deletedKeys{}, nil).VerifyNISN(context.Background(), uuid.New(), class.ID, child)
@@ -46,6 +57,7 @@ func TestVerifyNISNAnswersWhoLostTheNumber(t *testing.T) {
 	require.True(t, res.NISNVerified)
 	require.EqualValues(t, 3, res.Displaced)
 	require.Equal(t, child, repo.asked)
+	require.Equal(t, repo.guru.ID, repo.askedBy, "the teacher who asked is the one that is recorded")
 }
 
 func TestUnverifyNISNAnswersUnverified(t *testing.T) {

@@ -538,7 +538,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 	call("guru, accept a move", func(ctx context.Context) error { return drop(guruRepo.AcceptMove(ctx, class, accepted, guru)) })
 	call("guru, reject a move", func(ctx context.Context) error { return guruRepo.RejectMove(ctx, class, rejected, guru) })
-	call("guru, verify a NISN", func(ctx context.Context) error { return verified(guruRepo.VerifyNISN(ctx, class, child)) })
+	call("guru, verify a NISN", func(ctx context.Context) error { return verified(guruRepo.VerifyNISN(ctx, class, child, guru)) })
 	call("guru, take a verification back", func(ctx context.Context) error { return okOnly(guruRepo.UnverifyNISN(ctx, class, child)) })
 	call("guru, update the profile", func(ctx context.Context) error {
 		phone := "+62 812 3456 7890"

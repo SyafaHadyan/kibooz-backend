@@ -144,10 +144,10 @@ type GuruDBItf interface {
 	// child and the photos of its trash scans for deletion in the same transaction. It returns false when the class has
 	// no such active child.
 	RemoveStudent(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error)
-	// VerifyNISN marks the NISN of the active child of the class as verified and takes the number from every unverified child that holds
+	// VerifyNISN marks the NISN of the active child of the class as verified by the teacher guruID and takes the number from every unverified child that holds
 	// it. It returns false when the class has no such child and how many children lost the number. It answers
 	// apperror.ErrNISNNotSet for a child without a NISN and apperror.ErrNISNTaken when a verified child holds the number.
-	VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, int64, error)
+	VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID, guruID uuid.UUID) (bool, int64, error)
 	// UnverifyNISN takes the verification off the NISN of the active child of the class. It returns false when the class has no such child.
 	UnverifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error)
 }
@@ -738,7 +738,7 @@ func (r *GuruDB) RemoveStudent(ctx context.Context, classID uuid.UUID, studentID
 	return removed, err
 }
 
-func (r *GuruDB) VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, int64, error) {
+func (r *GuruDB) VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID, guruID uuid.UUID) (bool, int64, error) {
 	var (
 		found     bool
 		displaced int64
@@ -755,7 +755,7 @@ func (r *GuruDB) VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uu
 			return err
 		}
 
-		displaced, err = nisn.Verify(tx, studentID, time.Now())
+		displaced, err = nisn.Verify(tx, studentID, guruID, time.Now())
 
 		return err
 	})
