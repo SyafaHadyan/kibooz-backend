@@ -14,6 +14,16 @@ linters:
     - nilerr
     # the json tags of the API are camelCase, see docs/client-guide.md
     - tagliatelle
+    # a //nolint comment has to name the linter and say why, so a suppression is never left behind by accident
+    - nolintlint
+    # an error value is named ErrSomething and an error type SomethingError
+    - errname
+    - testifylint
+    # a request or a command that is built without the context of its caller cannot be cancelled
+    - noctx
+    - contextcheck
+    # the program writes to its log and not to the standard output, and only main may end the process
+    - forbidigo
     - unconvert
     - usestdlibvars
   settings:
@@ -27,6 +37,14 @@ linters:
         - -ST1020
         - -ST1021
         - -ST1022
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.(Print|Printf|Println)$
+          msg: write to the log, and not to the standard output
+        - pattern: ^log\.(Fatal|Fatalf|Fatalln)$
+          msg: return the error, and let main decide to end the process
+        - pattern: ^(print|println)$
+          msg: write to the log, and not to the standard error
     tagliatelle:
       case:
         rules:
@@ -44,6 +62,10 @@ linters:
           - gosec
           - errcheck
           - bodyclose
+      # a test may print, and main decides how the program ends and what it prints
+      - path: (_test\.go|^cmd/)
+        linters:
+          - forbidigo
 
 formatters:
   enable:
