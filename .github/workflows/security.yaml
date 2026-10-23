@@ -71,6 +71,34 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go -C tools install tool
           "$RUNNER_TEMP/bin/govulncheck" ./...
 
+  licenses:
+    name: Go licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # Dependency review only looks at the dependencies that a pull request adds or changes. This reads the licenses of every package
+      # that the service and its tests import, and fails on a license that go-licenses counts as forbidden, such as WTFPL or a
+      # license that restricts use. The GPL family is not forbidden here because the repository is under GPL-3.0 itself.
+      - name: Check the licenses of the dependencies
+        env:
+          # renovate: datasource=go depName=github.com/google/go-licenses/v2
+          GO_LICENSES_VERSION: v2.0.1
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install "github.com/google/go-licenses/v2@${GO_LICENSES_VERSION}"
+          "$RUNNER_TEMP/bin/go-licenses" check --include_tests ./...
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
