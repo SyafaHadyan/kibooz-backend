@@ -36,3 +36,4 @@ __pycache__/
 
 # the key of the log archive
 /logarchive/.env.archive
+/bucketsizes/.env.sizes

@@ -139,6 +139,7 @@ Cloudflare rebuilds the site on every push to `main` with `npm run build`, which
 
 ```
 cmd/api/                  entry point
+cmd/bucketsizes/          the exporter of the bucket sizes, a second program in the same image
 internal/app/<module>/    rest (Fiber handlers), usecase (rules), repository (GORM)
 internal/domain/          entity (tables) and dto (payloads)
 internal/infra/           env, db and migrations, redis, jwt, s3, fiber, validation
