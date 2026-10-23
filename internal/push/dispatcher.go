@@ -16,8 +16,13 @@ const (
 	queueSize = 1000
 	// workers is how many wake-ups are sent at the same time
 	workers = 4
+	// sendsPerJob is how many calls to FCM one message makes at the same time. A call takes about a tenth of a second or more, so
+	// a class room of sixty parents with two phones each would need most of jobTimeout one after the other.
+	sendsPerJob = 8
 	// jobTimeout bounds the work for one message, the lookup of the tokens and every call to FCM
 	jobTimeout = 30 * time.Second
+	// cleanupTimeout bounds the removal of the tokens that Firebase does not know any more
+	cleanupTimeout = 5 * time.Second
 	// stopTimeout is how long the shutdown waits for the wake-ups that are under way
 	stopTimeout = 10 * time.Second
 )
@@ -142,6 +147,11 @@ func (d *Dispatcher) deliver(next job) {
 	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	defer cancel()
 
+	d.deliverWith(ctx, next)
+}
+
+// deliverWith does the work of a message inside the time that the context allows
+func (d *Dispatcher) deliverWith(ctx context.Context, next job) {
 	tokens, err := d.store.TokensOf(ctx, next.recipients)
 	if err != nil {
 		log.Printf("the push tokens could not be read %v", err)
@@ -150,29 +160,58 @@ func (d *Dispatcher) deliver(next job) {
 		return
 	}
 
-	var stale []string
+	var (
+		staleMu sync.Mutex
+		stale   []string
+		sends   sync.WaitGroup
+		slots   = make(chan struct{}, sendsPerJob)
+	)
 
-	for _, row := range tokens {
-		err = d.sender.Send(ctx, Message{Token: row.Token, ConversationID: next.conversationID.String(), MessageID: next.messageID})
+	for i, row := range tokens {
+		// the time of the job is over, so the rest would fail at once, one log line each, and they are counted together
+		if ctx.Err() != nil {
+			d.results.WithLabelValues("failed").Add(float64(len(tokens) - i))
+			log.Printf("the time for a push is over, %d wake-ups were not sent", len(tokens)-i)
 
-		switch {
-		case err == nil:
-			d.results.WithLabelValues("sent").Inc()
-		case isUnregistered(err):
-			d.results.WithLabelValues("unregistered").Inc()
-
-			stale = append(stale, row.Token)
-		default:
-			d.results.WithLabelValues("failed").Inc()
-			log.Printf("a push could not be sent %v", err)
+			break
 		}
+
+		slots <- struct{}{}
+
+		sends.Go(func() {
+			defer func() { <-slots }()
+
+			err := d.sender.Send(ctx, Message{Token: row.Token, ConversationID: next.conversationID.String(), MessageID: next.messageID})
+
+			switch {
+			case err == nil:
+				d.results.WithLabelValues("sent").Inc()
+			case isUnregistered(err):
+				d.results.WithLabelValues("unregistered").Inc()
+
+				staleMu.Lock()
+
+				stale = append(stale, row.Token)
+
+				staleMu.Unlock()
+			default:
+				d.results.WithLabelValues("failed").Inc()
+				log.Printf("a push could not be sent %v", err)
+			}
+		})
 	}
+
+	sends.Wait()
 
 	if len(stale) == 0 {
 		return
 	}
 
-	err = d.store.DeleteTokenValues(ctx, stale)
+	// the tokens that were found stale are removed even when the sends used up the time of the job
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
+	defer cancel()
+
+	err = d.store.DeleteTokenValues(cleanup, stale)
 	if err != nil {
 		log.Printf("the stale push tokens could not be removed %v", err)
 	}

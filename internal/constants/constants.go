@@ -102,7 +102,6 @@ const (
 	DefaultGradeLevel = "Class A"
 	DefaultAcademicYr = "2026/2027"
 
-	RefreshKeyPrefix     = "refresh:"
 	LeaderboardKeyPrefix = "leaderboard:"
 
 	AvatarMaxBytes     = 2 * 1024 * 1024

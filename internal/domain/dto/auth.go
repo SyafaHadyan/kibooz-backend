@@ -22,7 +22,7 @@ type RegisterStudent struct {
 // RegisterRequest creates a GURU together with a new class, or a WALI together with a child who joins a class by code
 type RegisterRequest struct {
 	Email          string           `json:"email" validate:"required,email,max=255"`
-	Password       string           `json:"password" validate:"required,min=8,max=72"`
+	Password       string           `json:"password" validate:"required,min=8,max=72,notcommon"`
 	FullName       string           `json:"fullName" validate:"required,min=2,max=150"`
 	Role           constants.Role   `json:"role" validate:"required,oneof=GURU WALI"`
 	PhoneNumber    string           `json:"phoneNumber" validate:"omitempty,max=30"`
