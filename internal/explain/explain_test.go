@@ -179,7 +179,7 @@ func TestExplainThePlansOfTheQueriesToWatch(t *testing.T) {
 	t.Logf("the plans are in %s", out)
 }
 
-// runCalls calls every repository method that reads, and the ones that write through a statement worth a plan, with the ids of
+// runCalls calls every exported repository method, the reads and the writes, with the ids of
 // one class of the seed. The class is the second one, because the child of the first parent and the first conversation belong to
 // it, so a teacher, a parent, a child and a conversation are linked.
 func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, children int) {
@@ -408,6 +408,157 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		}
 
 		return drop(guruRepo.CreateMoodLogs(ctx, class, logs, gururepository.MoodDay{From: now.Add(-time.Hour), To: now.Add(time.Hour), Limit: 3}))
+	})
+
+	// the writes that read before they change, take locks or renumber a class. The moves come first, because the join code of the class is
+	// rotated further down. Every call is the real method on the seeded rows, so the plan of each statement is the one of production.
+	tokenHash := func(label string) string {
+		return fmt.Sprintf("%x%x", md5.Sum([]byte(label)), md5.Sum([]byte("token")))
+	}
+	session2 := func(userID uuid.UUID, label string) *entity.RefreshToken {
+		return &entity.RefreshToken{
+			ID: uuid.New(), UserID: userID, TokenHash: tokenHash(label), ExpiresAt: now.Add(7 * 24 * time.Hour), FamilyID: uuid.New(),
+			SessionStartedAt: now,
+		}
+	}
+
+	var (
+		accepted, rejected, cancelled uuid.UUID
+		addedChild                    = uuid.New()
+		newVideo, newPost             = uuid.New(), uuid.New()
+		videoURL                      = "https://files.example.test/videos/explain-new.mp4"
+		extraTeacher                  = id("g6")
+		avatarURL                     = "https://files.example.test/avatars/explain.png"
+	)
+
+	call("auth, register a teacher", func(ctx context.Context) error {
+		user := &entity.User{ID: uuid.New(), Email: "explain-guru@example.test", PasswordHash: "x", Role: constants.RoleGuru, FullName: "Explain Guru"}
+		teacherRow := &entity.Guru{ID: uuid.New(), UserID: user.ID, SchoolName: "Explain School"}
+		newClass := &entity.Class{ID: uuid.New(), JoinCode: "EXPLAIN1", SchoolName: "Explain School", Name: "Explain", GradeLevel: "A", AcademicYear: "2026"}
+
+		return auth.CreateGuru(ctx, user, teacherRow, newClass, session2(user.ID, "register-guru"))
+	})
+	call("auth, register a parent", func(ctx context.Context) error {
+		user := &entity.User{ID: uuid.New(), Email: "explain-wali@example.test", PasswordHash: "x", Role: constants.RoleWali, FullName: "Explain Wali"}
+		parentRow := &entity.Wali{ID: uuid.New(), UserID: user.ID}
+		student := &entity.Student{ID: uuid.New(), NISN: "9000000001", FullName: "Explain Child"}
+
+		return drop(auth.CreateWali(ctx, user, parentRow, "00000002", student, session2(user.ID, "register-wali")))
+	})
+	call("parent, add a child", func(ctx context.Context) error {
+		return drop(waliRepo.AddChild(ctx, wali, "00000002", &entity.Student{ID: addedChild, NISN: "9000000002", FullName: "Explain Second"}, 10))
+	})
+	call("parent, change the name and the NISN of a child", func(ctx context.Context) error {
+		return drop2(waliRepo.UpdateStudent(ctx, wali, child, walirepository.StudentUpdate{SetName: true, FullName: "Renamed", SetNISN: true, NISN: "9000000003"}))
+	})
+	call("parent, update the profile", func(ctx context.Context) error {
+		phone := "+62 812 3456 7890"
+
+		return waliRepo.UpdateProfile(ctx, parent, wali, walirepository.ProfileUpdate{SetName: true, FullName: "Explain Parent", SetPhone: true, Phone: &phone})
+	})
+	call("parent, apply a guidance", func(ctx context.Context) error {
+		return waliRepo.CreateGuidanceApplication(ctx, &entity.GuidanceApplication{
+			ID: uuid.New(), StudentID: child, WaliID: wali, GuidanceID: "guidance-bingung-4step", AppliedAt: now,
+		})
+	})
+	call("parent, ask for a move", func(ctx context.Context) error {
+		row, err := waliRepo.RequestMove(ctx, id("w3"), id("s3"), "00000002")
+		accepted = row.ID
+
+		return err
+	})
+	call("parent, ask for a move to be rejected", func(ctx context.Context) error {
+		row, err := waliRepo.RequestMove(ctx, id("w7"), id("s7"), "00000002")
+		rejected = row.ID
+
+		return err
+	})
+	call("parent, ask for a move and take it back", func(ctx context.Context) error {
+		row, err := waliRepo.RequestMove(ctx, id("w9"), id("s9"), "00000002")
+		cancelled = row.ID
+
+		return err
+	})
+	call("parent, take a move request back", func(ctx context.Context) error {
+		return waliRepo.CancelMove(ctx, id("w9"), id("s9"), cancelled)
+	})
+	call("guru, accept a move", func(ctx context.Context) error { return drop(guruRepo.AcceptMove(ctx, class, accepted, guru)) })
+	call("guru, reject a move", func(ctx context.Context) error { return guruRepo.RejectMove(ctx, class, rejected, guru) })
+	call("guru, verify a NISN", func(ctx context.Context) error { return drop2(guruRepo.VerifyNISN(ctx, class, child)) })
+	call("guru, take a verification back", func(ctx context.Context) error { return drop(guruRepo.UnverifyNISN(ctx, class, child)) })
+	call("guru, update the profile", func(ctx context.Context) error {
+		phone := "+62 812 3456 7890"
+
+		return guruRepo.UpdateProfile(ctx, teacher, guru, gururepository.ProfileUpdate{SetName: true, FullName: "Explain Teacher", SetPhone: true, Phone: &phone})
+	})
+	call("guru, start a class", func(ctx context.Context) error {
+		return guruRepo.CreateClass(ctx, guru, &entity.Class{ID: uuid.New(), SchoolName: "Explain School", Name: "Second", GradeLevel: "B", AcademicYear: "2026"})
+	})
+	call("guru, add a teacher", func(ctx context.Context) error {
+		return drop(guruRepo.AddTeacher(ctx, class, guru, "guru6@example.test"))
+	})
+	call("guru, hand over the class", func(ctx context.Context) error {
+		return drop(guruRepo.TransferOwnership(ctx, class, guru, extraTeacher))
+	})
+	call("guru, take the class back", func(ctx context.Context) error {
+		return drop(guruRepo.TransferOwnership(ctx, class, extraTeacher, guru))
+	})
+	call("guru, remove a teacher", func(ctx context.Context) error { return guruRepo.RemoveTeacher(ctx, class, guru, extraTeacher) })
+	call("guru, close and open joining", func(ctx context.Context) error {
+		if err := guruRepo.SetJoining(ctx, class, false); err != nil {
+			return err
+		}
+
+		return guruRepo.SetJoining(ctx, class, true)
+	})
+	call("guru, rotate the join code", func(ctx context.Context) error { return drop(guruRepo.RotateJoinCode(ctx, class, guru)) })
+	call("guru, archive a class", func(ctx context.Context) error { return guruRepo.ArchiveClass(ctx, class, guru) })
+	call("guru, restore a class", func(ctx context.Context) error { return drop(guruRepo.RestoreClass(ctx, class, guru)) })
+	call("guru, remove a child", func(ctx context.Context) error { return drop(guruRepo.RemoveStudent(ctx, class, secondTwo)) })
+	call("parent, delete a child", func(ctx context.Context) error { return drop2(waliRepo.RemoveStudent(ctx, wali, addedChild)) })
+	call("classroom, add a video", func(ctx context.Context) error {
+		return classroom.CreateVideo(ctx, &entity.LearningVideo{ID: newVideo, ClassID: class, AddedByGuruID: guru, Title: "New", VideoURL: videoURL, CreatedAt: now})
+	})
+	call("classroom, change a video", func(ctx context.Context) error {
+		return drop(classroom.UpdateVideo(ctx, class, newVideo, func(video *entity.LearningVideo) error {
+			video.Title = "Changed"
+
+			return nil
+		}))
+	})
+	call("classroom, work under the lock of a video file", func(ctx context.Context) error {
+		return classroom.WithVideoFileLock(ctx, videoURL, func(repo classroomrepository.ClassroomDBItf) error {
+			return drop(repo.CountVideosByURL(ctx, videoURL))
+		})
+	})
+	call("classroom, delete a video", func(ctx context.Context) error { return drop(classroom.DeleteVideo(ctx, class, newVideo)) })
+	call("classroom, write a thread", func(ctx context.Context) error {
+		title := "Explain"
+
+		return classroom.CreatePost(ctx, &entity.ForumPost{ID: newPost, ClassID: class, AuthorUserID: teacher, Title: &title, Body: "Body", CreatedAt: now})
+	})
+	call("classroom, edit a post", func(ctx context.Context) error {
+		return drop(classroom.UpdatePost(ctx, newPost, func(post *entity.ForumPost) { post.Body = "Edited" }))
+	})
+	call("classroom, delete a post", func(ctx context.Context) error { return drop(classroom.DeletePost(ctx, newPost)) })
+	call("chat, delete a message", func(ctx context.Context) error { return chat.DeleteMessage(ctx, chatID, messageID, teacher, now) })
+	call("push, delete a token", func(ctx context.Context) error {
+		return pushRepo.DeleteToken(ctx, parent, fmt.Sprintf("%x%x", md5.Sum([]byte("p1")), md5.Sum([]byte("q1"))))
+	})
+	call("push, delete the tokens that Firebase refused", func(ctx context.Context) error {
+		return pushRepo.DeleteTokenValues(ctx, []string{
+			fmt.Sprintf("%x%x", md5.Sum([]byte("p2")), md5.Sum([]byte("q2"))), fmt.Sprintf("%x%x", md5.Sum([]byte("p3")), md5.Sum([]byte("q3"))),
+		})
+	})
+	call("user, set the avatar of an account", func(ctx context.Context) error { return drop2(userRepo.UpdateUserAvatar(ctx, parent, avatarURL)) })
+	call("user, set the avatar of a child", func(ctx context.Context) error {
+		return drop2(userRepo.UpdateStudentAvatar(ctx, wali, child, avatarURL))
+	})
+	call("user, read the avatar of an account", func(ctx context.Context) error { return drop2(userRepo.UserAvatar(ctx, parent)) })
+	call("user, read the avatar of a child", func(ctx context.Context) error { return drop3(userRepo.StudentAvatar(ctx, wali, child)) })
+	call("user, change the password", func(ctx context.Context) error { return drop(userRepo.UpdatePassword(ctx, parent, "x", "y")) })
+	call("user, take files off the cleanup queue", func(ctx context.Context) error {
+		return userRepo.UnqueueFileCleanups(ctx, []string{"old/1.jpg", "old/2.jpg", "old/3.jpg"})
 	})
 
 	// the jobs that run on their own
