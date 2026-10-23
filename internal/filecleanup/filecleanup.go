@@ -1,5 +1,6 @@
-// Package filecleanup retries the removal of files that a deleted account left in the bucket. A file is queued when the
-// first attempt failed, because the rows that pointed at it are gone and nothing else would find it again.
+// Package filecleanup retries the removal of files that no row points at any more, which are the files that a deleted account left
+// in the bucket and the files that a failed request uploaded. A file is queued when the first attempt failed, because nothing else
+// would find it again.
 package filecleanup
 
 import (
@@ -21,6 +22,8 @@ const (
 	Interval = 10 * time.Minute
 	// batch is how many files one sweep tries, so a long outage is worked off over several sweeps
 	batch = 100
+	// queueTimeout bounds the write of a failed delete to the queue
+	queueTimeout = 5 * time.Second
 	// attemptTimeout bounds the removal of one file
 	attemptTimeout = 5 * time.Second
 	// lease is how long a file that one copy took for a try is kept from the other copy. It is the time that a whole batch needs at
@@ -42,6 +45,9 @@ type Sweeper struct {
 // PrivatePrefix starts every key of the private bucket, which is how the sweeper tells which bucket a queued key is in
 const PrivatePrefix = "chat/"
 
+// pendingPrivatePrefix starts the keys of the chat uploads that wait for their message, which are in the private bucket as well
+const pendingPrivatePrefix = "pending/" + PrivatePrefix
+
 func New(db *gorm.DB, storage s3.StorageItf) *Sweeper {
 	return &Sweeper{db: db, storage: storage}
 }
@@ -56,7 +62,7 @@ func (s *Sweeper) WithPrivate(private s3.StorageItf) *Sweeper {
 
 // storageOf returns the bucket that holds the key
 func (s *Sweeper) storageOf(key string) s3.StorageItf {
-	if strings.HasPrefix(key, PrivatePrefix) && s.private != nil {
+	if (strings.HasPrefix(key, PrivatePrefix) || strings.HasPrefix(key, pendingPrivatePrefix)) && s.private != nil {
 		return s.private
 	}
 
@@ -243,4 +249,48 @@ func Queue(tx *gorm.DB, keys []string) error {
 
 	// attempts and queued_at are left to the defaults of the table
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+}
+
+// retryingStorage queues the key of every delete that the bucket refused, so the object does not stay for good
+type retryingStorage struct {
+	s3.StorageItf
+
+	db *gorm.DB
+}
+
+// RetryFailedDeletes returns a storage that behaves like the one that it wraps, and queues the key of a delete that failed for the
+// sweep to try again. A request that uploaded a file and then failed removes it again, and when the bucket is down at that moment
+// the file would stay for good, because nothing else points at it. Only the storages that the requests use are wrapped, and the
+// sweeper keeps the plain one, so a failed attempt of the sweep is not queued a second time.
+func RetryFailedDeletes(storage s3.StorageItf, db *gorm.DB) s3.StorageItf {
+	return &retryingStorage{StorageItf: storage, db: db}
+}
+
+// Plain returns the storage without the queueing of failed deletes, for a delete whose key must not be queued because a retry of the
+// request may write the same key again and the sweep would then remove a file that a row points at
+func Plain(storage s3.StorageItf) s3.StorageItf {
+	if wrapped, ok := storage.(*retryingStorage); ok {
+		return wrapped.StorageItf
+	}
+
+	return storage
+}
+
+func (r *retryingStorage) Delete(ctx context.Context, objectKey string) error {
+	err := r.StorageItf.Delete(ctx, objectKey)
+	if err == nil {
+		return nil
+	}
+
+	// the request may already be over, and the row still has to be written, but a database that is slow must not hold the request or a
+	// connection for ever, so the write has a time of its own
+	queueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
+	defer cancel()
+
+	queueErr := Queue(r.db.WithContext(queueCtx), []string{objectKey})
+	if queueErr != nil {
+		log.Printf("the file %s could not be queued for another try %v", objectKey, queueErr)
+	}
+
+	return err
 }
