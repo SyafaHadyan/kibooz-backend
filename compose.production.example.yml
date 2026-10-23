@@ -21,7 +21,10 @@ x-logging: &default-logging
     max-file: "5"
 
 x-api: &api
-  image: syafa/kibooz-backend:${IMAGE_TAG}
+  # an unset IMAGE_TAG stops compose with this message and not with an invalid image name
+  image: syafa/kibooz-backend:${IMAGE_TAG:?set IMAGE_TAG in .env to the version to run}
+  # compose restarts a container that stopped, and it does not restart one that the image healthcheck calls unhealthy, which only shows
+  # in docker ps and in the alerts, so a hung copy has to be restarted by hand
   restart: always
   # the API stops accepting requests and gives running ones 15 seconds, and then closes its push, metrics and error report work for
   # up to 17 more, so Docker has to wait longer than that
@@ -55,7 +58,10 @@ x-api: &api
   deploy:
     resources:
       limits:
+        # PASSWORD_HASH_CONCURRENCY=0 gives one hash slot for each CPU except one, so a copy with half a CPU hashes one password at a
+        # time. Raise that setting together with the CPU limit, because a sign in waits for a slot and is refused when none is free.
         cpus: "0.50"
+        # the Grafana alert "API memory is close to its limit" fires above 300 MiB, so change that threshold when this limit changes
         memory: ${API_MEMORY_LIMIT:-384m}
   logging: *default-logging
 
