@@ -365,6 +365,8 @@ type PreviousRow struct {
 	FinalSeason  int
 	FinalRank    int
 	FinalScans   int
+	// LastMood is the newest mood that a teacher of that class recorded for the child, and only ListEnded fills it
+	LastMood *MoodRow
 }
 
 // ListEnded returns the classes that the child of a parent left, the latest first. A child that was never moved has none.
@@ -380,7 +382,32 @@ func ListEnded(tx *gorm.DB, waliID uuid.UUID, studentID uuid.UUID) ([]PreviousRo
 		return nil, apperror.ErrStudentNotFound
 	}
 
-	return listEnded(tx, studentID)
+	rows, err := listEnded(tx, studentID)
+	if err != nil {
+		return nil, err
+	}
+
+	// the moods of a class are the ones dated from the day the child joined it until the day it left, as in History. A child has
+	// few earlier classes, so one query for each is cheaper than a join that has to rank the moods of all of them.
+	for i := range rows {
+		var logs []entity.MoodLog
+
+		err = tx.Where("student_id = ? AND recorded_at >= ? AND recorded_at < ?", studentID, rows[i].ActivatedAt, rows[i].EndedAt).
+			Order("recorded_at DESC, id DESC").
+			Limit(1).
+			Find(&logs).Error
+		if err != nil {
+			return nil, err
+		}
+
+		if len(logs) > 0 {
+			rows[i].LastMood = &MoodRow{
+				MoodType: logs[0].MoodType, ConfidenceScore: logs[0].ConfidenceScore, Notes: logs[0].Notes, RecordedAt: logs[0].RecordedAt,
+			}
+		}
+	}
+
+	return rows, nil
 }
 
 func listEnded(tx *gorm.DB, studentID uuid.UUID) ([]PreviousRow, error) {

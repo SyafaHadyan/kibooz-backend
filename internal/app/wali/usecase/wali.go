@@ -689,14 +689,23 @@ func (u *WaliUseCase) PreviousClasses(ctx context.Context, userID uuid.UUID, stu
 }
 
 func previousClasses(rows []enrollment.PreviousRow) dto.PreviousClassList {
-	res := dto.PreviousClassList{Classes: make([]dto.PreviousClass, 0, len(rows))}
+	res := dto.PreviousClassList{Classes: make([]dto.ParentPreviousClass, 0, len(rows))}
 
 	for i := range rows {
-		res.Classes = append(res.Classes, dto.PreviousClass{
+		item := dto.ParentPreviousClass{PreviousClass: dto.PreviousClass{
 			ClassID: rows[i].ClassID, ClassName: rows[i].ClassName, GradeLevel: rows[i].GradeLevel, SchoolName: rows[i].SchoolName,
 			AcademicYear: rows[i].AcademicYear, StartedAt: rows[i].ActivatedAt.UTC(), EndedAt: rows[i].EndedAt.UTC(),
 			TotalPoints: rows[i].FinalPoints, SeasonPoints: rows[i].FinalSeason, ClassRank: rows[i].FinalRank, TotalScans: rows[i].FinalScans,
-		})
+		}}
+
+		if mood := rows[i].LastMood; mood != nil {
+			item.LastMood = &dto.HistoryMood{
+				MoodType: mood.MoodType, Label: constants.MoodLabels[mood.MoodType], ConfidenceScore: mood.ConfidenceScore, Notes: mood.Notes,
+				RecordedAt: mood.RecordedAt.UTC(),
+			}
+		}
+
+		res.Classes = append(res.Classes, item)
 	}
 
 	return res

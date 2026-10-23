@@ -579,8 +579,10 @@ paths:
       description: |
         The classes that the child was in before its current one, the latest first. Each has the dates the child was in it and what
         the child had when it left, which are the points of all semesters, the points of the last semester, the rank and the number
-        of scans. These numbers are saved when a teacher accepts a move, and the child starts from zero in the next class. A child that
-        never moved has an empty list, and the list is complete and not paged.
+        of scans. These numbers are saved when a teacher accepts a move, and the child starts from zero in the next class. `lastMood`
+        is the newest mood that a teacher of that class recorded for the child, so a mood that was written shortly before the move is
+        kept here and does not show as the mood of today in the new class, and it is `null` when none was. A child that never moved
+        has an empty list, and the list is complete and not paged.
       parameters:
         - $ref: "#/components/parameters/StudentPath"
       responses:
@@ -3316,6 +3318,17 @@ components:
         totalScans:
           type: integer
           description: The scans that the child made in the class
+    ParentPreviousClass:
+      allOf:
+        - $ref: "#/components/schemas/PreviousClass"
+        - type: object
+          required: [lastMood]
+          properties:
+            lastMood:
+              allOf:
+                - $ref: "#/components/schemas/HistoryMood"
+              nullable: true
+              description: The newest mood that a teacher of that class recorded for the child while it was in the class, or `null` when none was
     PreviousClassList:
       type: object
       required: [classes]
@@ -3323,7 +3336,7 @@ components:
         classes:
           type: array
           items:
-            $ref: "#/components/schemas/PreviousClass"
+            $ref: "#/components/schemas/ParentPreviousClass"
     PreviousClassListEnvelope:
       type: object
       required: [success, data]
