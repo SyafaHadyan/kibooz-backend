@@ -126,7 +126,7 @@ The `File names` job runs [ls-lint](https://ls-lint.org/) with the rules of `.ls
 
 - A Go file is lowercase words with no separator, such as `childdelete_test.go`, and only `_test` may follow the words.
 - A migration is a six digit number and snake case words, then `.up.sql` or `.down.sql`.
-- A workflow ends with `.yaml` and never `.yml`.
+- A YAML file ends with `.yml`. The workflows end with `.yaml` and never `.yml`, because the name of a workflow file is part of the identity that signs an image. `openapi.yaml` keeps the name that the OpenAPI specification recommends, and `redocly.yaml`, `.redocly.lint-ignore.yaml` and `.trivyignore.yaml` keep the names that Redocly and Trivy document.
 - A folder is lowercase words joined by hyphens, and a leading dot marks the folder of a tool.
 - Every other file is lowercase words joined by hyphens, with dots for the extension and for a variant such as `.example.yml`. A Markdown file may also be in capitals such as `README.md`.
 - A file with no extension, such as `Dockerfile`, `LICENSE` and `CODEOWNERS`, has no rule, and the issue forms and the Vale styles are left out because GitHub and Vale name them.
