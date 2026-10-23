@@ -244,3 +244,33 @@ func Queue(tx *gorm.DB, keys []string) error {
 	// attempts and queued_at are left to the defaults of the table
 	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
+
+// retryingStorage queues the key of every delete that the bucket refused, so the object does not stay for good
+type retryingStorage struct {
+	s3.StorageItf
+
+	db *gorm.DB
+}
+
+// RetryFailedDeletes returns a storage that behaves like the one that it wraps, and queues the key of a delete that failed for the
+// sweep to try again. A request that uploaded a file and then failed removes it again, and when the bucket is down at that moment
+// the file would stay for good, because nothing else points at it. Only the storages that the requests use are wrapped, and the
+// sweeper keeps the plain one, so a failed attempt of the sweep is not queued a second time.
+func RetryFailedDeletes(storage s3.StorageItf, db *gorm.DB) s3.StorageItf {
+	return &retryingStorage{StorageItf: storage, db: db}
+}
+
+func (r *retryingStorage) Delete(ctx context.Context, objectKey string) error {
+	err := r.StorageItf.Delete(ctx, objectKey)
+	if err == nil {
+		return nil
+	}
+
+	// the request may already be over, and the row still has to be written
+	queueErr := Queue(r.db.WithContext(context.WithoutCancel(ctx)), []string{objectKey})
+	if queueErr != nil {
+		log.Printf("the file %s could not be queued for another try %v", objectKey, queueErr)
+	}
+
+	return err
+}
