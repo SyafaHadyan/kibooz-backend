@@ -3,3 +3,7 @@
 openapi.yaml:
   operation-4xx-response:
     - '#/paths/~1healthz/get/responses'
+  # the headers of an upload request are named by HTTP, so Content-Type cannot be camel case
+  rule/property-camel-case:
+    - '#/components/schemas/ChatVideoUpload/properties/headers/properties/Content-Type'
+    - '#/components/schemas/VideoUpload/properties/headers/properties/Content-Type'
