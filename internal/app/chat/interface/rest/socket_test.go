@@ -272,7 +272,12 @@ func TestASocketClosesWithItsOwnCodeWhenTheTokenEnds(t *testing.T) {
 	signed, err := golangjwt.NewWithClaims(golangjwt.SigningMethodHS256, claims).SignedString([]byte(testSecret))
 	require.NoError(t, err)
 
-	conn, _, err := f.dial(signed)
+	conn, res, err := f.dial(signed)
+	if err != nil && res != nil {
+		// a repeat of the flake then says which answer the handshake got, and not only that it was bad
+		t.Fatalf("the handshake answered %d, %v", res.StatusCode, err)
+	}
+
 	require.NoError(t, err)
 
 	defer func() { _ = conn.Close() }()
