@@ -13,7 +13,7 @@ Settings come from the environment
   SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
                          bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
-import atexit, base64, json, os, random, re, secrets, socket, ssl, subprocess, sys, time, uuid
+import atexit, base64, json, os, random, re, secrets, socket, ssl, subprocess, sys, time, traceback, uuid
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 
@@ -42,7 +42,7 @@ created = []  # every account of this run, so a crash can still clean up
 passed, failed = 0, []
 
 # a failed check prints the answer of the API, which can hold a session, so the values of these fields and every JWT are hidden
-SECRET_FIELD = re.compile(r"""(["'](?:token|refreshToken|deviceToken|accessToken|password|newPassword|currentPassword|uploadUrl|url)["']\s*:\s*["'])[^"']+""")
+SECRET_FIELD = re.compile(r"""(\\?["'](?:token|refreshToken|deviceToken|accessToken|password|newPassword|currentPassword|uploadUrl|url)\\?["']\s*:\s*\\?["'])[^"'\\]+""")
 JWT = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]+")
 
 
@@ -76,7 +76,8 @@ def finish():
 
 def crashed(kind, error, trace):
     failed.append(f"the script stopped with {kind.__name__} {redact(error)}")
-    sys.__excepthook__(kind, error, trace)
+    # the message of an exception can hold a piece of an answer, so the traceback is printed with the same redaction
+    sys.stderr.write(redact("".join(traceback.format_exception(kind, error, trace))))
 
 
 atexit.register(finish)
