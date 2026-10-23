@@ -211,6 +211,22 @@ func TestThePasswordHashCostHasToBeInTheRangeOfBcrypt(t *testing.T) {
 	}
 }
 
+func TestTheRequestTimeoutHasToFitTheTimeThatAStopWaits(t *testing.T) {
+	for _, seconds := range []int{0, -1, 15, 60} {
+		cfg := valid()
+		cfg.RequestTimeoutSeconds = seconds
+
+		require.ErrorContains(t, cfg.validate(), "REQUEST_TIMEOUT_SECONDS", "seconds %d", seconds)
+	}
+
+	for _, seconds := range []int{1, 10, 14} {
+		cfg := valid()
+		cfg.RequestTimeoutSeconds = seconds
+
+		require.NoError(t, cfg.validate(), "seconds %d", seconds)
+	}
+}
+
 func TestTheRefreshReuseLeewayIsAtMostAMinuteAndZeroSwitchesItOff(t *testing.T) {
 	for _, seconds := range []int{-1, 61} {
 		cfg := valid()

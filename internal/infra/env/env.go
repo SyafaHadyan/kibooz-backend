@@ -260,6 +260,12 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// a stop waits 15 seconds for the requests that are running (shutdownTimeout in cmd/api), so a request that may take longer than that
+	// would be cut off on every deploy
+	if e.RequestTimeoutSeconds > maxRequestTimeoutSeconds {
+		return fmt.Errorf("REQUEST_TIMEOUT_SECONDS must be between 1 and %d", maxRequestTimeoutSeconds)
+	}
+
 	// a leeway that is long gives a stolen token that much time to mint tokens of its own, and a negative one has no meaning
 	if e.RefreshReuseLeewaySeconds < 0 || e.RefreshReuseLeewaySeconds > maxRefreshReuseLeewaySeconds {
 		return fmt.Errorf("REFRESH_REUSE_LEEWAY_SECONDS must be between 0 and %d", maxRefreshReuseLeewaySeconds)
@@ -287,6 +293,10 @@ func (e *Env) validate() error {
 }
 
 const maxPort = 65535
+
+// maxRequestTimeoutSeconds is the longest REQUEST_TIMEOUT_SECONDS, one second under the 15 seconds that a stop waits for the requests
+// that are still running
+const maxRequestTimeoutSeconds = 14
 
 // maxRefreshReuseLeewaySeconds is the longest REFRESH_REUSE_LEEWAY_SECONDS. A thief who holds a used token can mint tokens of its own
 // only for this long after the owner used it, and a retry of an app that lost its answer needs seconds and not minutes.
