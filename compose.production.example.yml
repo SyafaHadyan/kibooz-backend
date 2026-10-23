@@ -23,8 +23,9 @@ x-logging: &default-logging
 x-api: &api
   image: syafa/kibooz-backend:${IMAGE_TAG}
   restart: always
-  # the API stops accepting requests and gives running ones 10 seconds, so Docker has to wait longer than that
-  stop_grace_period: 30s
+  # the API stops accepting requests and gives running ones 15 seconds, and then closes its push, metrics and error report work for
+  # up to 17 more, so Docker has to wait longer than that
+  stop_grace_period: 40s
   env_file: .env
   environment:
     REDIS_ADDRESS: redis
