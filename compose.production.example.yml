@@ -24,7 +24,7 @@ x-api: &api
   # an unset IMAGE_TAG stops compose with this message and not with an invalid image name
   image: syafa/kibooz-backend:${IMAGE_TAG:?set IMAGE_TAG in .env to the version to run}
   # compose restarts a container that stopped, and it does not restart one that the image healthcheck calls unhealthy, which only shows
-  # in docker ps and in the alerts, so a hung copy has to be restarted by hand
+  # in docker ps and, through the failed metrics scrape, in the alerts, so a hung copy has to be restarted by hand
   restart: always
   # the API stops accepting requests and gives running ones 15 seconds, and then closes its push, metrics and error report work for
   # up to 17 more, so Docker has to wait longer than that
