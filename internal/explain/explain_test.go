@@ -203,10 +203,11 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		spare     = fmt.Sprintf("%x%x", md5.Sum([]byte("t2")), md5.Sum([]byte("u2")))
 	)
 
-	require.NoError(t, logged.Session(&gorm.Session{Logger: gormlogger.Discard}).
-		Raw("SELECT id FROM learning_videos WHERE class_id = ? LIMIT 1", class).Scan(&video).Error)
-	require.NoError(t, logged.Session(&gorm.Session{Logger: gormlogger.Discard}).
-		Raw("SELECT MIN(id) FROM chat_messages WHERE conversation_id = ?", chatID).Scan(&messageID).Error)
+	// Row and Scan, because a uuid.UUID is an array of bytes that the plain scan of GORM cannot fill from the text of a uuid
+	quiet := logged.Session(&gorm.Session{Logger: gormlogger.Discard})
+
+	require.NoError(t, quiet.Raw("SELECT id FROM learning_videos WHERE class_id = ? LIMIT 1", class).Row().Scan(&video))
+	require.NoError(t, quiet.Raw("SELECT MIN(id) FROM chat_messages WHERE conversation_id = ?", chatID).Row().Scan(&messageID))
 
 	auth := authrepository.NewAuthDB(logged)
 	chat := chatrepository.NewChatDB(logged)
