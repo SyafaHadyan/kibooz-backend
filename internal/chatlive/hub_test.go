@@ -259,9 +259,19 @@ func TestABusThatFailsStillDeliversOnThisProcess(t *testing.T) {
 	client, err := hub.Register(user)
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go hub.Run(ctx)
+
 	hub.Publish([]uuid.UUID{user}, Event{Type: EventTyping, ConversationID: uuid.New()})
 
 	require.Equal(t, EventTyping, received(t, client).Type)
+
+	publishedBy(t, bus, 1)
+	require.Eventually(t, func() bool {
+		return counterValue(t, hub, "kibooz_chat_bus_publish_failed_total") == 1
+	}, time.Second, time.Millisecond, "the failing bus was reached and the failure was counted")
 }
 
 func TestPublishingToNobodyAndWithoutABusDoesNothing(t *testing.T) {
@@ -633,6 +643,7 @@ func TestRunPublishesAHeartbeatUntilTheContextEnds(t *testing.T) {
 // gatedBus holds every envelope until it is opened, and keeps the order in which they came
 type gatedBus struct {
 	fakeBus
+	once     sync.Once
 	gate     chan struct{}
 	entered  chan struct{}
 	payloads [][]byte
@@ -641,6 +652,9 @@ type gatedBus struct {
 func newGatedBus() *gatedBus {
 	return &gatedBus{gate: make(chan struct{}), entered: make(chan struct{}, publishQueue*2)}
 }
+
+// release opens the gate, and opening it twice changes nothing
+func (b *gatedBus) release() { b.once.Do(func() { close(b.gate) }) }
 
 func (b *gatedBus) Publish(ctx context.Context, payload []byte) error {
 	b.entered <- struct{}{}
@@ -661,6 +675,7 @@ func (b *gatedBus) Publish(ctx context.Context, payload []byte) error {
 func TestPublishDoesNotWaitForASlowBus(t *testing.T) {
 	bus := newGatedBus()
 	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.publishWait = time.Minute
 	user := uuid.New()
 
 	client, err := hub.Register(user)
@@ -668,7 +683,7 @@ func TestPublishDoesNotWaitForASlowBus(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	t.Cleanup(func() { close(bus.gate) })
+	t.Cleanup(bus.release)
 
 	go hub.Run(ctx)
 
@@ -678,7 +693,7 @@ func TestPublishDoesNotWaitForASlowBus(t *testing.T) {
 		hub.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: id})
 	}
 
-	require.Less(t, time.Since(started), publishTimeout/2, "the request is not held by a bus that does not answer")
+	require.Less(t, time.Since(started), time.Second, "the request is not held by a bus that does not answer")
 
 	for id := int64(1); id <= 5; id++ {
 		require.EqualValues(t, id, received(t, client).MessageID, "the sockets of this copy hear about it at once")
@@ -688,6 +703,7 @@ func TestPublishDoesNotWaitForASlowBus(t *testing.T) {
 func TestAFullQueueDropsItsOldestEnvelopesAndCountsThem(t *testing.T) {
 	bus := newGatedBus()
 	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.publishWait = time.Minute
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -698,6 +714,7 @@ func TestAFullQueueDropsItsOldestEnvelopesAndCountsThem(t *testing.T) {
 	}()
 
 	t.Cleanup(func() {
+		bus.release()
 		cancel()
 		<-done
 	})
@@ -722,7 +739,7 @@ func TestAFullQueueDropsItsOldestEnvelopesAndCountsThem(t *testing.T) {
 
 	require.EqualValues(t, extra, counterValue(t, hub, "kibooz_chat_bus_publish_dropped_total"))
 
-	close(bus.gate)
+	bus.release()
 
 	require.Eventually(t, func() bool {
 		bus.mu.Lock()
@@ -734,12 +751,26 @@ func TestAFullQueueDropsItsOldestEnvelopesAndCountsThem(t *testing.T) {
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
-	var first, second envelope
+	var last envelope
 
-	require.NoError(t, json.Unmarshal(bus.payloads[0], &first))
-	require.NoError(t, json.Unmarshal(bus.payloads[1], &second))
-	require.EqualValues(t, 1, first.Seq)
-	require.EqualValues(t, 2+extra, second.Seq, "the oldest numbers were dropped and the newest were kept")
+	for index, payload := range bus.payloads {
+		var next envelope
+
+		require.NoError(t, json.Unmarshal(payload, &next))
+
+		switch index {
+		case 0:
+			require.EqualValues(t, 1, next.Seq)
+		case 1:
+			require.EqualValues(t, 2+extra, next.Seq, "the oldest numbers were dropped and the newest were kept")
+		default:
+			require.EqualValues(t, last.Seq+1, next.Seq, "what was kept left in the order it was queued")
+		}
+
+		last = next
+	}
+
+	require.EqualValues(t, 1+publishQueue+extra, last.Seq)
 }
 
 func TestTheQueueIsEmptiedBeforeRunReturns(t *testing.T) {

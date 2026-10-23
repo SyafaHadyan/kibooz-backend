@@ -164,8 +164,9 @@ type Hub struct {
 	resyncTimer *time.Timer
 	resyncWait  time.Duration
 
-	// outbox holds the numbered envelopes that wait for the bus
-	outbox chan []byte
+	// outbox holds the numbered envelopes that wait for the bus, and publishWait is how long one may take, a field for the tests
+	outbox      chan []byte
+	publishWait time.Duration
 
 	gaps            prometheus.Counter
 	publishFailures prometheus.Counter
@@ -185,6 +186,8 @@ func NewHub(cfg Config) *Hub {
 		seen:    map[string]*originState{},
 		outbox:  make(chan []byte, publishQueue),
 
+		publishWait: publishTimeout,
+
 		gapWait:       gapWait,
 		heartbeatWait: heartbeatEvery,
 		resyncWait:    resyncEvery,
@@ -192,7 +195,7 @@ func NewHub(cfg Config) *Hub {
 			Namespace: "kibooz", Name: "chat_bus_publish_failed_total", Help: "Chat events that this copy could not publish to the bus.",
 		}),
 		publishDropped: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "kibooz", Name: "chat_bus_publish_dropped_total", Help: "Chat events that this copy dropped from a full queue before they reached the bus.",
+			Namespace: "kibooz", Name: "chat_bus_publish_dropped_total", Help: "Chat events that this copy dropped before they reached the bus, from a full queue or because the process stopped before they could leave.",
 		}),
 		gaps: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_event_gaps_total", Help: "Gaps found in the events that other copies published.",
@@ -371,19 +374,31 @@ func (h *Hub) publishLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			h.drain()
+			h.drain(nil)
 
 			return
 		case payload := <-h.outbox:
-			// an envelope that was taken is published even when the stop signal comes now, and the timeout of put still bounds it
-			h.put(context.WithoutCancel(ctx), payload)
+			// both cases can be ready when the stop signal comes, and then the envelope that was taken counts against the drain time
+			if ctx.Err() != nil {
+				h.drain(payload)
+
+				return
+			}
+
+			h.put(ctx, payload)
 		}
 	}
 }
 
-func (h *Hub) drain() {
+// drain publishes what waits in the queue, first the envelope that the loop had already taken if there is one, and drops what the
+// time does not allow
+func (h *Hub) drain(first []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
 	defer cancel()
+
+	if first != nil {
+		h.put(ctx, first)
+	}
 
 	for {
 		select {
@@ -402,7 +417,7 @@ func (h *Hub) drain() {
 }
 
 func (h *Hub) put(parent context.Context, payload []byte) {
-	ctx, cancel := context.WithTimeout(parent, publishTimeout)
+	ctx, cancel := context.WithTimeout(parent, h.publishWait)
 	defer cancel()
 
 	if err := h.cfg.Bus.Publish(ctx, payload); err != nil {
