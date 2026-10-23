@@ -374,13 +374,13 @@ func (h *Hub) publishLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			h.drain(nil)
+			h.drain(ctx, nil)
 
 			return
 		case payload := <-h.outbox:
 			// both cases can be ready when the stop signal comes, and then the envelope that was taken counts against the drain time
 			if ctx.Err() != nil {
-				h.drain(payload)
+				h.drain(ctx, payload)
 
 				return
 			}
@@ -392,8 +392,9 @@ func (h *Hub) publishLoop(ctx context.Context) {
 
 // drain publishes what waits in the queue, first the envelope that the loop had already taken if there is one, and drops what the
 // time does not allow
-func (h *Hub) drain(first []byte) {
-	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+func (h *Hub) drain(parent context.Context, first []byte) {
+	// the parent has ended, which is why this runs, so only its values are kept and the time is the drain time
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), drainTimeout)
 	defer cancel()
 
 	if first != nil {
