@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -194,7 +195,7 @@ func TestMoodBatch(t *testing.T) {
 }
 
 // A database failure halfway through a batch must leave none of the rows behind. The use case checks everything first, so the
-// only way to reach the transaction with a bad row is to call the repository, here with a child that does not exist.
+// only way to reach the transaction with a bad row is to call the repository, here with a mood that the database refuses.
 func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 	guru := registerGuru(t, "Dahlia")
 	classIDText, joinCode := classOf(t, guru)
@@ -215,17 +216,18 @@ func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 		MoodType: constants.MoodSenang, ConfidenceScore: 0.9, Source: constants.SourceAICamera, RecordedAt: now,
 	}
 	orphan := entity.MoodLog{
-		ID: uuid.New(), StudentID: uuid.New(), RecordedByGuruID: guruID,
-		MoodType: constants.MoodSedih, ConfidenceScore: 0.9, Source: constants.SourceAICamera, RecordedAt: now,
+		ID: uuid.New(), StudentID: valid.StudentID, RecordedByGuruID: guruID,
+		MoodType: constants.Mood("NOT_A_MOOD"), ConfidenceScore: 0.9, Source: constants.SourceAICamera, RecordedAt: now,
 	}
 
-	repo := repository.NewGuruDB(testDB, nil)
+	// one insert for each row, so the valid row is written first and the refused one fails after it, inside the transaction
+	repo := repository.NewGuruDB(testDB.Session(&gorm.Session{CreateBatchSize: 1}), nil)
 
 	classID := uuid.MustParse(classIDText)
 	day := repository.MoodDay{From: now.Add(-24 * time.Hour), To: now.Add(24 * time.Hour), Limit: constants.MoodLogsPerStudentPerDay}
 
 	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid, orphan}, day)
-	require.Error(t, err, "the second row breaks the student foreign key")
+	require.Error(t, err, "the second row has a mood that the database refuses")
 	require.Zero(t, moodLogCount(t, studentID), "the valid row %s must not stay behind", valid.ID)
 
 	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid}, day)
