@@ -353,13 +353,24 @@ func (h *Hub) send(recipients []uuid.UUID, event Event) {
 }
 
 // beat queues a heartbeat. It repeats the last number that was published and does not take a new one, because a heartbeat that fails to
-// reach the bus has lost nothing, and with a number of its own it would make the other copies resync for no reason.
+// reach the bus has lost nothing, and with a number of its own it would make the other copies resync for no reason. A queue that is
+// full has no room for it, and it is not worth the oldest event, so the next heartbeat comes instead.
 func (h *Hub) beat() {
 	if h.cfg.Bus == nil {
 		return
 	}
 
-	h.enqueue(envelope{Origin: h.origin, Seq: h.published.Load(), Beat: true})
+	payload, err := json.Marshal(envelope{Origin: h.origin, Seq: h.published.Load(), Beat: true})
+	if err != nil {
+		log.Printf("chat heartbeat could not be encoded for the bus %v", err)
+
+		return
+	}
+
+	select {
+	case h.outbox <- payload:
+	default:
+	}
 }
 
 // enqueue encodes the envelope and puts it in the queue for the bus, and drops the oldest one when the queue is full
@@ -559,7 +570,14 @@ func (h *Hub) track(received envelope) (skipped []uint64, lost bool) {
 		return nil, false
 	}
 
-	jump := received.Seq - state.last - 1
+	// an envelope with a number skips the numbers below it, and a heartbeat names the highest number that was published, so that number
+	// itself may be the one that did not arrive
+	end := received.Seq
+	if received.Beat {
+		end++
+	}
+
+	jump := end - state.last - 1
 	if jump > maxTrackedSkips {
 		state.last = received.Seq
 		clear(state.missing)
@@ -567,7 +585,7 @@ func (h *Hub) track(received envelope) (skipped []uint64, lost bool) {
 		return nil, true
 	}
 
-	for number := state.last + 1; number < received.Seq; number++ {
+	for number := state.last + 1; number < end; number++ {
 		state.missing[number] = struct{}{}
 		skipped = append(skipped, number)
 	}
