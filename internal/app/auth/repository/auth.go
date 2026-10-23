@@ -415,6 +415,18 @@ func answerReuse(tx *gorm.DB, tokenHash string, now time.Time, next *entity.Refr
 		return Rotation{Reused: true, UserID: seen[0].UserID}, sessions.EndFamily(tx, seen[0].FamilyID)
 	}
 
+	// A session that has reached its longest lifetime ends here and does not go on. Ending it takes the locks of the end of a
+	// session, and doing that while this request holds the share lock below would wait on a request that waits for this one, so
+	// it is decided before the lock is taken. The expiry is capped the same way as in continueSession.
+	expires := next.ExpiresAt
+	if limit := seen[0].SessionStartedAt.Add(policy.SessionMax); expires.After(limit) {
+		expires = limit
+	}
+
+	if !expires.After(now) {
+		return Rotation{}, sessions.EndFamily(tx, seen[0].FamilyID)
+	}
+
 	// A token that was used a moment ago belongs to a client that lost the answer, so it gets a new token of the same session.
 	// FOR SHARE makes a logout, a password change or a deletion that ends the family wait for this request, so the token that it
 	// stores is seen and removed by the second pass of that deletion, the same way as for a token that a refresh has just used.
