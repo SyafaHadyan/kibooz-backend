@@ -206,6 +206,22 @@ jobs:
         run: |
           set -euo pipefail
           read -r first rest <<< "$TAGS"
+          # Docker Hub now and then answers a call with a 500 that the next try does not get (seen on 2026-10-23), so each call that
+          # changes or reads it is tried up to three times with a longer wait before each new try. The calls are safe to repeat,
+          # because they set a tag to the same digest or only read.
+          retry() {
+            local attempt
+            for attempt in 1 2 3; do
+              if "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                echo "Try ${attempt} of ${*:1:3} failed, trying again" >&2
+                sleep $((attempt * 10))
+              fi
+            done
+            return 1
+          }
           verify() {
             cosign verify \
               --new-bundle-format=false \
@@ -218,19 +234,19 @@ jobs:
           if [ "$EVENT" != "pull_request" ]; then
             flags+=(--certificate-github-workflow-sha "$HEAD_SHA")
           fi
-          docker buildx imagetools create --tag "${HUB_IMAGE}:${first}" "${GHCR_IMAGE}@${DIGEST}"
+          retry docker buildx imagetools create --tag "${HUB_IMAGE}:${first}" "${GHCR_IMAGE}@${DIGEST}"
           # The signature stays the one that docker.yaml made, so the identity that the docs tell people to check does not
           # change. Docker Hub may already hold a signature of its own for this digest, and then the copy is not needed. When it
           # does not pass, the copy replaces whatever is there with the signature that was just checked on GitHub
           if ! verify 2> /dev/null; then
-            cosign copy --force --only=sig "${GHCR_IMAGE}@${DIGEST}" "${HUB_IMAGE}:${first}"
+            retry cosign copy --force --only=sig "${GHCR_IMAGE}@${DIGEST}" "${HUB_IMAGE}:${first}"
             verify
           fi
           for tag in $rest; do
-            docker buildx imagetools create --tag "${HUB_IMAGE}:${tag}" "${GHCR_IMAGE}@${DIGEST}"
+            retry docker buildx imagetools create --tag "${HUB_IMAGE}:${tag}" "${GHCR_IMAGE}@${DIGEST}"
           done
           for tag in $first $rest; do
-            held="$(docker buildx imagetools inspect "${HUB_IMAGE}:${tag}" --format '{{.Manifest.Digest}}')"
+            held="$(retry docker buildx imagetools inspect "${HUB_IMAGE}:${tag}" --format '{{.Manifest.Digest}}')"
             if [ "$held" != "$DIGEST" ]; then
               echo "Docker Hub holds ${held} for ${tag} and not ${DIGEST}" >&2
               exit 1
