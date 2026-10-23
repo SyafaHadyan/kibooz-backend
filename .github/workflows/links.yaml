@@ -35,6 +35,6 @@ jobs:
         with:
           args: >-
             --no-progress --include-fragments --max-retries 2 --exclude-loopback --exclude 'example\.(com|org|net)'
-            --exclude '^https://github\.com/ValentinusMarvel/kibooz-app(/|$)' --exclude '^https://kibooz-api\.syafahadyan\.com/api/v1$' --accept '200..=299,429'
+            --exclude '^https://github\.com/ValentinusMarvel/kibooz-app(/|$)' --accept '200..=299,429'
             './*.md' './docs/**/*.md'
           fail: true
