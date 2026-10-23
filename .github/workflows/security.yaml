@@ -89,9 +89,10 @@ jobs:
           go-version-file: go.mod
 
       # Dependency review only looks at the dependencies that a pull request adds or changes. This reads the licenses of every package
-      # that the service and its tests import, and fails on a license that go-licenses counts as forbidden, such as WTFPL or a
-      # license that restricts use. The GPL family is not forbidden here because the repository is under GPL-3.0 itself. The defaults do
-      # forbid AGPL, which GPL-3.0 could take in, so an AGPL dependency has to be allowed on purpose, for example with --allowed_licenses.
+      # that the service and its tests import, and fails on a license that go-licenses counts as forbidden or unknown, such as AGPL,
+      # WTFPL or SSPL, and on a package without a license file that it recognizes. The GPL family is not forbidden here because the
+      # repository is under GPL-3.0 itself. The defaults also forbid AGPL, which GPL-3.0 could take in, so to let an AGPL dependency
+      # through on purpose, narrow --disallowed_types to unknown. The tools module is not covered, because it ships nothing.
       - name: Check the licenses of the dependencies
         env:
           # renovate: datasource=go depName=github.com/google/go-licenses/v2
@@ -117,8 +118,9 @@ jobs:
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          # The repository is public and under GPL-3.0, so GPL and AGPL dependencies fit. SSPL does not, because it asks for the
-          # source of the whole service stack, so a dependency that is added or changed under it is refused
+          # The repository is public and under GPL-3.0, so GPL dependencies fit. SSPL does not, because it asks for the
+          # source of the whole service stack, so a dependency that is added or changed under it is refused. The Go licenses job reads
+          # the whole tree and refuses AGPL as well
           deny-licenses: SSPL-1.0
           comment-summary-in-pr: never
 
