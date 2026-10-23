@@ -97,3 +97,13 @@ func TestTheRefreshTokenSweepSkipsATokenThatIsLockedAndDoesNotWait(t *testing.T)
 	require.NoError(t, err)
 	require.Zero(t, tokenRows(t, account.RefreshToken), "the next run takes it")
 }
+
+// The purge reads two kinds of rows, so each has a partial index and the purge does not read the whole table in every batch.
+func TestTheRefreshTokenPurgeHasAnIndexForEachKindOfRow(t *testing.T) {
+	var names []string
+
+	require.NoError(t, testDB.Raw("SELECT indexname FROM pg_indexes WHERE tablename = 'refresh_tokens'").Scan(&names).Error)
+
+	require.Contains(t, names, "idx_refresh_tokens_unused_expiry")
+	require.Contains(t, names, "idx_refresh_tokens_used_session_start")
+}

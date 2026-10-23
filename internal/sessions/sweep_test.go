@@ -79,3 +79,20 @@ func TestTheSweepRunsOnEveryTickAndReportsEachResult(t *testing.T) {
 	require.NoError(t, first)
 	require.ErrorContains(t, second, "boom")
 }
+
+func TestTheFirstSweepComesSoonAfterTheStartAndNotAfterAWholeInterval(t *testing.T) {
+	results := make(chan error, 2)
+
+	sweeper := stub(rows(1)).Observe(func(err error) { results <- err })
+	sweeper.startAfter = 5 * time.Millisecond
+
+	stop := sweeper.Start(time.Hour)
+	defer stop()
+
+	select {
+	case err := <-results:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "the first sweep waited for the whole interval")
+	}
+}

@@ -14,6 +14,10 @@ const (
 	// Interval is how often the refresh tokens that no longer matter are deleted
 	Interval = time.Hour
 
+	// startDelay is how long after the start the first sweep runs, which is shorter than the interval so that a copy that is
+	// restarted more often than that still sweeps
+	startDelay = time.Minute
+
 	// sweepBatch is how many tokens one statement deletes, so a long backlog never holds a lock for long
 	sweepBatch = 1000
 )
@@ -29,12 +33,14 @@ type Sweeper struct {
 	db         *gorm.DB
 	sessionMax time.Duration
 	observe    func(error)
+	// startAfter is how long after the start the first sweep runs, a field for the tests
+	startAfter time.Duration
 	// batch deletes one batch and returns how many rows went, a field so that a test can run the loop without a database
 	batch func(ctx context.Context) (int64, error)
 }
 
 func NewSweeper(db *gorm.DB, sessionMax time.Duration) *Sweeper {
-	s := &Sweeper{db: db, sessionMax: sessionMax}
+	s := &Sweeper{db: db, sessionMax: sessionMax, startAfter: startDelay}
 	s.batch = s.deleteBatch
 
 	return s
@@ -82,6 +88,20 @@ func (s *Sweeper) deleteBatch(ctx context.Context) (int64, error) {
 	return res.RowsAffected, res.Error
 }
 
+// run is one sweep with its report to the observer and the log
+func (s *Sweeper) run(ctx context.Context) {
+	removed, err := s.Sweep(ctx)
+	if s.observe != nil && ctx.Err() == nil {
+		s.observe(err)
+	}
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		log.Printf("refresh token sweep failed %v", err)
+	} else if removed > 0 {
+		log.Printf("refresh token sweep removed %d tokens that no longer matter", removed)
+	}
+}
+
 // Start sweeps once per interval until the returned stop function is called, which waits for a sweep that is running.
 // A zero or negative interval disables it.
 func (s *Sweeper) Start(interval time.Duration) (stop func()) {
@@ -94,24 +114,17 @@ func (s *Sweeper) Start(interval time.Duration) (stop func()) {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		// the first sweep comes soon after the start, so a copy that is restarted more often than the interval still sweeps
+		timer := time.NewTimer(min(interval, s.startAfter))
+		defer timer.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				removed, err := s.Sweep(ctx)
-				if s.observe != nil && ctx.Err() == nil {
-					s.observe(err)
-				}
-
-				if err != nil && !errors.Is(err, context.Canceled) {
-					log.Printf("refresh token sweep failed %v", err)
-				} else if removed > 0 {
-					log.Printf("refresh token sweep removed %d tokens that no longer matter", removed)
-				}
+			case <-timer.C:
+				s.run(ctx)
+				timer.Reset(interval)
 			}
 		}
 	})
