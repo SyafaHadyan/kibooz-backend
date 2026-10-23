@@ -132,9 +132,17 @@ func (u *UserUseCase) UploadAvatar(
 
 	classID, previous, err := u.repo.UpdateStudentAvatar(ctx, waliID, *studentID, url)
 	if err != nil {
+		var committedClass uuid.UUID
+
 		if u.avatarCommitted(ctx, key, url, func(ctx context.Context) (string, bool, error) {
-			return u.repo.StudentAvatar(ctx, waliID, *studentID)
+			current, class, found, readErr := u.repo.StudentAvatar(ctx, waliID, *studentID)
+			committedClass = class
+
+			return current, found, readErr
 		}) {
+			// the cache is optional, entries also expire by themselves
+			_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+committedClass.String())
+
 			return dto.AvatarResponse{AvatarURL: url}, nil
 		}
 

@@ -29,8 +29,9 @@ type UserDBItf interface {
 	UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, string, error)
 	// UserAvatar returns the avatar URL of an active account, empty when it has none, and false when there is no such account
 	UserAvatar(ctx context.Context, userID uuid.UUID) (url string, found bool, err error)
-	// StudentAvatar returns the avatar URL of an active child of the parent, empty when it has none, and false when there is no such child
-	StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (url string, found bool, err error)
+	// StudentAvatar returns the avatar URL of an active child of the parent and the class of the child, the URL is empty when it has none,
+	// and found is false when there is no such child
+	StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (url string, classID uuid.UUID, found bool, err error)
 	// FindUserByID returns nil when the account does not exist or is already deleted
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	// SoftDeleteAccount hides the account with its profile and children, revokes every session and clears the
@@ -102,26 +103,38 @@ func (r *UserDB) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url str
 	return previous, found, nil
 }
 
+// UserAvatar and StudentAvatar read the row with a share lock, so a read that follows a failed update waits for an update that is
+// still being committed and does not see the old address while the new one is about to become live
 func (r *UserDB) UserAvatar(ctx context.Context, userID uuid.UUID) (string, bool, error) {
-	var urls []*string
+	var user entity.User
 
-	err := r.db.WithContext(ctx).Model(&entity.User{}).Where("id = ?", userID).Pluck("avatar_url", &urls).Error
-	if err != nil || len(urls) == 0 {
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		Select("id", "avatar_url").Where("id = ?", userID).Take(&user).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+
+	if err != nil {
 		return "", false, err
 	}
 
-	return derefURL(urls[0]), true, nil
+	return derefURL(user.AvatarURL), true, nil
 }
 
-func (r *UserDB) StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (string, bool, error) {
-	var urls []*string
+func (r *UserDB) StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (string, uuid.UUID, bool, error) {
+	var student entity.Student
 
-	err := r.db.WithContext(ctx).Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("avatar_url", &urls).Error
-	if err != nil || len(urls) == 0 {
-		return "", false, err
+	err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		Select("id", "class_id", "avatar_url").Where("id = ? AND wali_id = ?", studentID, waliID).Take(&student).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", uuid.Nil, false, nil
 	}
 
-	return derefURL(urls[0]), true, nil
+	if err != nil {
+		return "", uuid.Nil, false, err
+	}
+
+	return derefURL(student.AvatarURL), student.ClassID, true, nil
 }
 
 func derefURL(url *string) string {

@@ -68,6 +68,9 @@ type fakeRepo struct {
 	readURL  string
 	readGone bool
 	readErr  error
+	// readFor holds the ids that the read was asked about and readCtxErr the state of its context
+	readFor    []uuid.UUID
+	readCtxErr error
 
 	// passwordUpdates counts the password changes that were asked for, and passwordStale makes them find a hash that moved on
 	passwordUpdates int
@@ -86,12 +89,22 @@ func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) (string,
 	return f.previous, !f.userGone, f.updateErr
 }
 
-func (f *fakeRepo) UserAvatar(context.Context, uuid.UUID) (string, bool, error) {
+func (f *fakeRepo) UserAvatar(ctx context.Context, userID uuid.UUID) (string, bool, error) {
+	f.readFor = []uuid.UUID{userID}
+	f.readCtxErr = ctx.Err()
+
 	return f.readURL, !f.readGone, f.readErr
 }
 
-func (f *fakeRepo) StudentAvatar(context.Context, uuid.UUID, uuid.UUID) (string, bool, error) {
-	return f.readURL, !f.readGone, f.readErr
+func (f *fakeRepo) StudentAvatar(_ context.Context, waliID uuid.UUID, studentID uuid.UUID) (string, uuid.UUID, bool, error) {
+	f.readFor = []uuid.UUID{waliID, studentID}
+
+	var class uuid.UUID
+	if f.studentClass != nil {
+		class = *f.studentClass
+	}
+
+	return f.readURL, class, !f.readGone, f.readErr
 }
 
 func (f *fakeRepo) FindWaliIDByUserID(context.Context, uuid.UUID) (*uuid.UUID, error) {
@@ -498,13 +511,60 @@ func TestUploadAvatarKeepsTheNewFileWhenTheErrorCameAfterTheCommit(t *testing.T)
 				updateErr:    errors.New("the connection dropped while the commit was sent"),
 				readURL:      uploadedAvatar,
 			}
-			useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{}, hasher)
+			cache := &fakeCache{}
+			useCase := usecase.NewUserUseCase(repo, storage, cache, hasher)
 
 			res, err := call(repo, useCase)
 
 			require.NoError(t, err)
 			require.Equal(t, uploadedAvatar, res.AvatarURL)
 			require.Empty(t, storage.deleted, "the address is live, so its file must stay")
+
+			if name == "a child" {
+				require.Equal(t, []uuid.UUID{waliID, childID}, repo.readFor, "the read asks about this child of this parent")
+				require.Equal(t, []string{constants.LeaderboardKeyPrefix + classID.String()}, cache.deleted, "the leaderboard shows the new picture")
+			} else {
+				require.Equal(t, []uuid.UUID{repo.user.ID}, repo.readFor)
+			}
+		})
+	}
+}
+
+func TestUploadAvatarReadsAgainEvenWhenTheClientLeft(t *testing.T) {
+	storage := &fakeStorage{}
+	repo := &fakeRepo{
+		user:      accountOf(t, constants.RoleGuru, "any-password"),
+		updateErr: context.Canceled,
+		readURL:   uploadedAvatar,
+	}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{}, hasher)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	res, err := useCase.UploadAvatar(ctx, repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+	require.NoError(t, err)
+	require.Equal(t, uploadedAvatar, res.AvatarURL)
+	require.NoError(t, repo.readCtxErr, "the read does not inherit the cancellation of the request")
+	require.Empty(t, storage.deleted)
+}
+
+func TestUploadAvatarRemovesTheNewFileWhenTheUpdateDidNotHappen(t *testing.T) {
+	for name, repo := range map[string]*fakeRepo{
+		"another address is live": {readURL: "https://example.com/avatars/x/other.png"},
+		"the account is gone":     {readGone: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			storage := &fakeStorage{}
+			repo.user = accountOf(t, constants.RoleGuru, "any-password")
+			repo.updateErr = errors.New("boom")
+			useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{}, hasher)
+
+			_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+			require.Error(t, err)
+			require.Equal(t, storage.keys, storage.deleted)
 		})
 	}
 }
