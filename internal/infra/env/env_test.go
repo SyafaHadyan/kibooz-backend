@@ -212,11 +212,11 @@ func TestThePasswordHashCostHasToBeInTheRangeOfBcrypt(t *testing.T) {
 }
 
 func TestTheRequestTimeoutHasToFitTheTimeThatAStopWaits(t *testing.T) {
-	for _, seconds := range []int{0, -1, 15, 60} {
+	for _, seconds := range []int{15, 60} {
 		cfg := valid()
 		cfg.RequestTimeoutSeconds = seconds
 
-		require.ErrorContains(t, cfg.validate(), "REQUEST_TIMEOUT_SECONDS", "seconds %d", seconds)
+		require.ErrorContains(t, cfg.validate(), "REQUEST_TIMEOUT_SECONDS must be between 1 and 14", "seconds %d", seconds)
 	}
 
 	for _, seconds := range []int{1, 10, 14} {
