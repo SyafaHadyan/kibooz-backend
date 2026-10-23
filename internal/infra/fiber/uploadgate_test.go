@@ -217,7 +217,7 @@ func TestOneAccountCannotTakeEverySlotOfTheCopy(t *testing.T) {
 	close(release)
 
 	require.Equal(t, http.StatusOK, <-statuses)
-	require.Equal(t, http.StatusOK, <-statuses, "the refused upload of the first account kept no slot of the copy from the second")
+	require.Equal(t, http.StatusOK, <-statuses, "the cap of the first account does not hold back the second account")
 
 	t.Run("the account may upload again once its upload ended", func(t *testing.T) {
 		go func() { <-started }()
@@ -254,4 +254,67 @@ func TestTheLimitOfAnAccountIsGivenBackWhenTheHandlerPanics(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, second.StatusCode, "the account is not stuck at its limit after a panic")
 	_ = second.Body.Close()
+}
+
+// a refusal by the pool must give back the count of the account, or an account is stuck at its cap after a few busy refusals
+func TestARefusalByTheCopyLeavesTheLimitOfTheAccountFree(t *testing.T) {
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: 10, BodyLimitMB: 1, UploadConcurrency: 1, UploadConcurrencyPerAccount: 1}, nil)
+
+	started := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	server.Router.Post("/users/avatar", server.UploadGate(account), func(c gofiber.Ctx) error {
+		if c.Get("X-Account") == "holder" {
+			started <- struct{}{}
+			<-release
+		}
+
+		return c.SendStatus(http.StatusOK)
+	})
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		res, err := server.Fiber.Test(uploadOf("holder"), gofiber.TestConfig{Timeout: 10 * time.Second})
+		if err == nil {
+			_ = res.Body.Close()
+		}
+	}()
+
+	wait(t, started)
+
+	// the only slot of the copy is taken, so the pool refuses every try of this account and each one has to give its count back
+	for range 3 {
+		res, err := server.Fiber.Test(uploadOf("other"), gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusTooManyRequests, res.StatusCode)
+		require.NotContains(t, readMessage(t, res), "of this account", "the copy is busy, the account is not at its own limit")
+	}
+
+	close(release)
+	<-done
+
+	for range 2 {
+		res, err := server.Fiber.Test(uploadOf("other"), gofiber.TestConfig{Timeout: 10 * time.Second})
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, res.StatusCode, "the account is not stuck at its limit by the refusals of the copy")
+		_ = res.Body.Close()
+	}
+}
+
+// readMessage reads the message of an error answer and closes the body
+func readMessage(t *testing.T, res *http.Response) string {
+	t.Helper()
+
+	defer res.Body.Close()
+
+	var body map[string]any
+
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
+
+	message, _ := body["message"].(string)
+
+	return message
 }
