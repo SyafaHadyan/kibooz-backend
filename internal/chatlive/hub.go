@@ -171,7 +171,7 @@ func NewHub(cfg Config) *Hub {
 
 		gapWait:       gapWait,
 		heartbeatWait: heartbeatEvery,
-		resyncWait: resyncEvery,
+		resyncWait:    resyncEvery,
 		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_bus_publish_failed_total", Help: "Chat events that this copy could not publish to the bus.",
 		}),
