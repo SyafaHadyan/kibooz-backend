@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.20.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.19.0...v0.20.0) (2026-10-23)
+
+
+### Features
+
+* **upload:** cap the photo uploads that one account may run at once in a copy, 2 by default ([94585d5](https://github.com/SyafaHadyan/kibooz-backend/commit/94585d543cb4f1ae666f8be8857dd972bfdbea51))
+* **upload:** cap the photo uploads that one account may run at once in a copy, 2 by default ([#406](https://github.com/SyafaHadyan/kibooz-backend/issues/406)) ([790e664](https://github.com/SyafaHadyan/kibooz-backend/commit/790e664da7809a6009c10cca637a1abc5ead3771))
+* **wali:** keep the mood of a class that a child left as its last mood and hide it from today's mood ([3bf56c6](https://github.com/SyafaHadyan/kibooz-backend/commit/3bf56c69b3270a77879385d329117c6abf5c345b))
+* **wali:** keep the mood of a class that a child left as its last mood and hide it from today's mood ([#407](https://github.com/SyafaHadyan/kibooz-backend/issues/407)) ([11a3b0e](https://github.com/SyafaHadyan/kibooz-backend/commit/11a3b0ea8883129a4b62fadae0e2f22b001cc2b7))
+
+
+### Bug Fixes
+
+* **upload:** document the refusal of an account in every place and cover the release of its count ([e8165ed](https://github.com/SyafaHadyan/kibooz-backend/commit/e8165ed540836754274098737862c69538a57e1b))
+* **wali:** give lastMood a schema of its own and check the mood of today before the move ([4a82ff3](https://github.com/SyafaHadyan/kibooz-backend/commit/4a82ff3cf4f696b0aa484a2a9a616d6716e4e988))
+* **wali:** keep LastMood out of the scan of previous classes and give the nullable mood a type ([31ea51c](https://github.com/SyafaHadyan/kibooz-backend/commit/31ea51ce219ab208670b87f984c358b6714ef30c))
+
 ## [0.19.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.18.1...v0.19.0) (2026-10-23)
 
 
