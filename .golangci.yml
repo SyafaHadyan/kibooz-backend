@@ -50,6 +50,8 @@ linters:
         - -ST1021
         - -ST1022
     forbidigo:
+      # resolve the package behind a name, so an import under another name is found too
+      analyze-types: true
       forbid:
         - pattern: ^fmt\.(Print|Printf|Println)$
           msg: write to the log, and not to the standard output
