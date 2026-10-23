@@ -166,7 +166,7 @@ func TestReuseDetectionDuringARefreshEndsTheWholeSession(t *testing.T) {
 
 		rotation, err = repo.RotateRefreshToken(
 			ctx, refreshHash(guru.RefreshToken), time.Now(), &entity.RefreshToken{},
-			authrepository.RotationPolicy{SessionMax: 90 * 24 * time.Hour, ReuseGrace: time.Minute},
+			authrepository.RotationPolicy{SessionMax: 90 * 24 * time.Hour, ReuseLeeway: time.Minute},
 		)
 
 		return err
@@ -239,7 +239,7 @@ func TestARefreshDoesNotWaitForAnExpiredTokenThatSomeoneElseHolds(t *testing.T) 
 
 		rotation, err = repo.RotateRefreshToken(
 			context.Background(), refreshHash(second), time.Now(), next,
-			authrepository.RotationPolicy{SessionMax: 90 * 24 * time.Hour, ReuseGrace: time.Minute},
+			authrepository.RotationPolicy{SessionMax: 90 * 24 * time.Hour, ReuseLeeway: time.Minute},
 		)
 
 		done <- err

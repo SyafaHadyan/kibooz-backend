@@ -154,8 +154,9 @@ paths:
       summary: Exchange a refresh token for a new pair
       description: |
         The refresh token is single use, so the old one stops working as soon as this call succeeds. Send the new
-        token the next time and save it before anything else. An old token that is shown again more than a minute after
-        its use is taken for a stolen one, and the whole session ends, including the newest token. A session also
+        token the next time and save it before anything else. If the answer gets lost, the old token may be sent again
+        within `REFRESH_REUSE_LEEWAY_SECONDS` (10 by default) and gets a new token of the same session. An old token
+        that is shown again later is taken for a stolen one, and the whole session ends, including the newest token. A session also
         ends `JWT_SESSION_MAX_DAYS` days after the sign in, 90 by default, however often it is refreshed.
       security: []
       requestBody:
@@ -1753,7 +1754,8 @@ paths:
       description: |
         Only for the teachers of the class. Newest report first. A report is made when a parent records with
         `POST /wali/guidance/apply` that a guide for the emotion of a child is being followed, so a teacher can see that the
-        handling is under way. The notes are the ones the parent wrote and are `null` when there were none.
+        handling is under way. The notes are the ones the parent wrote and are `null` when there were none. A child that joined
+        the class by a move only shows the applications from the moment it joined, never the ones from an earlier class. A child that returns to a class it left starts again from the moment it came back.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
         - $ref: "#/components/parameters/Page"
@@ -2260,7 +2262,8 @@ paths:
         app that missed events catches up with its cursor.
 
         The server sends text frames of JSON. The first is `{"type":"ready","expiresAt":"..."}`. After that come `message` (a new
-        `ChatMessage`), `message.deleted`, `read` and `typing`, each with the `conversationId`. The only frame the app sends is
+        `ChatMessage`), `message.deleted`, `read` and `typing`, each with the `conversationId`, and `{"type":"resync"}`, which names no
+        conversation and tells the app that events may have been lost, so it asks for what it missed. The only frame the app sends is
         `{"type":"typing","conversationId":"...","typing":true}`, for a private conversation. The server pings every 25 seconds and closes a
         socket that does not answer within 60 seconds. It closes a socket with the code `4001` when the access token ends, and the app
         refreshes the token and connects again. An account keeps at most 5 sockets, and a new one closes the oldest.

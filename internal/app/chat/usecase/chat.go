@@ -462,12 +462,23 @@ func (u *ChatUseCase) Typing(ctx context.Context, userID uuid.UUID, conversation
 		peer = *conversation.UserHighID
 	}
 
-	view, err := u.viewOf(ctx, userID, conversationID)
+	// the same rule as CanSend of the conversation view, which is a peer that is still there and shares a class with the account.
+	// The view reads the last message and the unread count too, which a hint that comes every few seconds does not need.
+	account, err := u.repo.FindAccount(ctx, peer)
 	if err != nil {
-		return err
+		return apperror.Internal(err)
 	}
 
-	if !view.CanSend {
+	shared := false
+
+	if account != nil {
+		shared, err = u.repo.ShareClass(ctx, userID, peer)
+		if err != nil {
+			return apperror.Internal(err)
+		}
+	}
+
+	if !shared {
 		return apperror.ErrChatSendingClosed
 	}
 
