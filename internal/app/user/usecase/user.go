@@ -245,11 +245,11 @@ func (u *UserUseCase) ChangePassword(
 	}
 
 	if len([]byte(req.NewPassword)) > bcryptMaxBytes {
+		//nolint:gosec // this is a validation message and not a credential
 		return apperror.Validation(map[string]string{"newPassword": "too long, maximum 72 bytes"})
 	}
 
 	if req.NewPassword == req.CurrentPassword {
-		//nolint:gosec // this is a validation message and not a credential
 		return apperror.Validation(map[string]string{"newPassword": "must differ from the current password"})
 	}
 
