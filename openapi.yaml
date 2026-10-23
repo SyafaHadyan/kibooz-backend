@@ -3325,6 +3325,7 @@ components:
           required: [lastMood]
           properties:
             lastMood:
+              type: object
               allOf:
                 - $ref: "#/components/schemas/HistoryMood"
               nullable: true

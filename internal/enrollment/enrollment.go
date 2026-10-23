@@ -365,8 +365,9 @@ type PreviousRow struct {
 	FinalSeason  int
 	FinalRank    int
 	FinalScans   int
-	// LastMood is the newest mood that a teacher of that class recorded for the child, and only ListEnded fills it
-	LastMood *MoodRow
+	// LastMood is the newest mood that a teacher of that class recorded for the child, and only ListEnded fills it. It is not a column,
+	// so the query that scans into this struct has to be told to leave it out.
+	LastMood *MoodRow `gorm:"-"`
 }
 
 // ListEnded returns the classes that the child of a parent left, the latest first. A child that was never moved has none.
