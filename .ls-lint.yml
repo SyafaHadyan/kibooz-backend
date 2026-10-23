@@ -18,9 +18,13 @@ ls:
     .up.sql: regex:[0-9]{6}(_[a-z0-9]+)+
     .down.sql: regex:[0-9]{6}(_[a-z0-9]+)+
 
-  # a workflow ends with .yaml and not .yml
+  # a YAML file ends with .yml, and the files that keep .yaml are listed in the ignore list below
+  .yaml: exists:0
+
+  # a workflow ends with .yaml and not .yml, because the name of the workflow file is part of the identity that signs an image
   .github/workflows:
     .yml: exists:0
+    .yaml: kebab-case
 
 ignore:
   - .git
@@ -29,5 +33,11 @@ ignore:
   # GitHub names the issue forms by what the person sees, and Vale names a style after its folder
   - .github/ISSUE_TEMPLATE
   - .github/vale/styles
+  # kept as .yaml, openapi.yaml is the name that the OpenAPI specification recommends, and the others are names that Redocly and
+  # Trivy document
+  - openapi.yaml
+  - redocly.yaml
+  - .redocly.lint-ignore.yaml
+  - .trivyignore.yaml
   # made by a local run of Python and not tracked
   - "**/__pycache__"

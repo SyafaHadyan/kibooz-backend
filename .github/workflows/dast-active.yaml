@@ -65,7 +65,7 @@ jobs:
               method: .method,
               headers: ((if .token then ["Authorization: Bearer " + .token] else [] end) + (if .key then ["Idempotency-Key: " + .key] else [] end) + (if has("body") then ["Content-Type: application/json"] else [] end))
             } + (if has("body") then {data: (.body | tojson)} else {} end)]' zap-out/requests.json | sed 's/^/      /' > zap-out/requests.flow
-          sed -e '/@@REQUESTS@@/{r zap-out/requests.flow' -e 'd}' .zap/active.yaml > zap-out/plan.yaml
+          sed -e '/@@REQUESTS@@/{r zap-out/requests.flow' -e 'd}' .zap/active.yml > zap-out/plan.yaml
           # the container user is not the runner user, so it needs write access to the shared folder
           chmod -R a+rwX zap-out
 
