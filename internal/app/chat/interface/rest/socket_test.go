@@ -335,7 +335,7 @@ func TestAPlainRequestToTheSocketRouteNeedsAnUpgrade(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 
 	require.Equal(t, http.StatusUpgradeRequired, res.StatusCode)
-	require.True(t, strings.Contains(res.Header.Get("Content-Type"), "json"))
+	require.Contains(t, res.Header.Get("Content-Type"), "json")
 }
 
 func TestIsRefusalTellsAnAnswerFromAFailure(t *testing.T) {

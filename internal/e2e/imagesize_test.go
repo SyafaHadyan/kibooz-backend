@@ -13,15 +13,15 @@ import (
 // pngHeaderOfSize is a PNG whose header announces a size and that holds no pixels, which is all the API reads of it
 func pngHeaderOfSize(width int, height int) []byte {
 	chunk := func(kind string, payload []byte) []byte {
-		out := binary.BigEndian.AppendUint32(nil, uint32(len(payload))) //nolint:gosec // the payloads are a few bytes
+		out := binary.BigEndian.AppendUint32(nil, uint32(len(payload)))
 		out = append(out, kind...)
 		out = append(out, payload...)
 
 		return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(append([]byte(kind), payload...)))
 	}
 
-	header := binary.BigEndian.AppendUint32(nil, uint32(width))    //nolint:gosec // see above
-	header = binary.BigEndian.AppendUint32(header, uint32(height)) //nolint:gosec // see above
+	header := binary.BigEndian.AppendUint32(nil, uint32(width))
+	header = binary.BigEndian.AppendUint32(header, uint32(height))
 	header = append(header, 8, 2, 0, 0, 0)
 
 	out := []byte("\x89PNG\r\n\x1a\n")

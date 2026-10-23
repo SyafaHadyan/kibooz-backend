@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 	"testing"
@@ -43,7 +42,7 @@ func TestTheMigrationReplacesShortJoinCodes(t *testing.T) {
 	seen := map[string]bool{}
 
 	for _, code := range replaced {
-		require.Regexp(t, valid, code, fmt.Sprintf("replacement %s", code))
+		require.Regexp(t, valid, code, "replacement %s", code)
 		require.False(t, seen[code], "every class gets its own code")
 		seen[code] = true
 	}

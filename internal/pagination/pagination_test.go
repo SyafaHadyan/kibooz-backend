@@ -1,7 +1,6 @@
 package pagination
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -54,7 +53,7 @@ func TestParseReportsEveryInvalidValue(t *testing.T) {
 
 			var appErr *apperror.Error
 
-			require.True(t, errors.As(err, &appErr))
+			require.ErrorAs(t, err, &appErr)
 			require.Equal(t, "VALIDATION_ERROR", appErr.Code)
 			require.Len(t, appErr.Details, len(test.keys))
 

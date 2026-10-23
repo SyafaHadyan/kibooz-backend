@@ -1,7 +1,6 @@
 package db
 
 import (
-	"fmt"
 	"regexp"
 	"strconv"
 	"testing"
@@ -41,7 +40,7 @@ func TestMigrationNumbersAreUniqueAndWithoutGaps(t *testing.T) {
 	for number := 1; number <= len(directions); number++ {
 		pair, found := directions[number]
 		require.True(t, found, "migration number %06d is missing, numbers must run from 000001 without gaps", number)
-		require.Contains(t, pair, "up", fmt.Sprintf("migration %06d has no up file", number))
-		require.Contains(t, pair, "down", fmt.Sprintf("migration %06d has no down file", number))
+		require.Contains(t, pair, "up", "migration %06d has no up file", number)
+		require.Contains(t, pair, "down", "migration %06d has no down file", number)
 	}
 }

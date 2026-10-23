@@ -44,5 +44,5 @@ func TestAsMapsARawDeadlineToo(t *testing.T) {
 func TestTheSharedServerTimeoutErrorIsNeverChanged(t *testing.T) {
 	Internal(context.DeadlineExceeded)
 
-	require.Nil(t, ErrServerTimeout.Err, "WithErr works on a copy")
+	require.NoError(t, ErrServerTimeout.Err, "WithErr works on a copy")
 }

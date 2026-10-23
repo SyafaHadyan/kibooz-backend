@@ -40,7 +40,7 @@ func (m *Metrics) Serve(address string) (*Listener, error) {
 		return &Listener{}, nil
 	}
 
-	listener, err := net.Listen("tcp", address)
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("listen for metrics on %s: %w", address, err)
 	}

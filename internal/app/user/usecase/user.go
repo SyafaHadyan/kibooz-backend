@@ -250,7 +250,6 @@ func (u *UserUseCase) ChangePassword(
 	}
 
 	if req.NewPassword == req.CurrentPassword {
-		//nolint:gosec // this is a validation message and not a credential
 		return apperror.Validation(map[string]string{"newPassword": "must differ from the current password"})
 	}
 

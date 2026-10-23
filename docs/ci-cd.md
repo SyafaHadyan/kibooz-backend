@@ -150,6 +150,10 @@ The names inside the files are checked too, each by the tool that knows the lang
 
 The names of tables, columns and indexes in the migrations are snake case by habit and are not checked by any tool.
 
+## Other Go checks
+
+The `Lint` job runs golangci-lint with the standard set and the linters that `.golangci.yml` adds, each with the reason in a comment. `bodyclose`, `errorlint`, `gosec`, `misspell`, `nilerr`, `unconvert` and `usestdlibvars` catch common mistakes. `nolintlint` requires a `//nolint` comment to name the linter and give a reason. `errname` keeps the names of error values and types uniform. `testifylint` checks the use of testify. `noctx` and `contextcheck` catch a call that is built without the context of its caller, so it cannot be cancelled. `forbidigo` refuses `fmt.Print`, `log.Fatal` and `println` in the code of the API, and the tests and `cmd/` are left out.
+
 ## Releases
 
 Versions are decided by [release-please](https://github.com/googleapis/release-please) from the Conventional Commit messages that reach `main`. `fix` bumps the patch version, `feat` bumps the minor version, and `feat!` or a `BREAKING CHANGE` footer bumps the major version. While the version is below 1.0.0 a breaking change only bumps the minor version.
