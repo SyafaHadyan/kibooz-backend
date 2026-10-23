@@ -24,7 +24,7 @@ Every frame is one JSON text frame with a `type`. The `conversationId` is the co
 | `message.deleted` | A message was deleted, the first time only | `messageId` |
 | `read` | A person read a conversation up to a message. In a private conversation both people hear it, in a class room only the other devices of the reader | `userId` and `lastReadMessageId` |
 | `typing` | The other person of a private conversation started or stopped typing | `userId` and `typing` |
-| `resync` | The server noticed that events may have been lost on their way, for example while Redis was down. It comes with the event that revealed the gap, at most once every 5 seconds for a copy, and names no conversation | none |
+| `resync` | The server noticed that events may have been lost on their way, for example while Redis was down. It follows the event that revealed the gap by up to 400 milliseconds, or comes alone when the loss shows at a heartbeat, at most once every 5 seconds for a copy, and names no conversation | none |
 
 A `message` frame carries signed addresses for its photo or video, which work until `media.expiresAt`, like the ones of the REST routes.
 

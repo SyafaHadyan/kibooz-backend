@@ -144,6 +144,9 @@ type Hub struct {
 	stamp     uint64
 	gapWait   time.Duration
 
+	// heartbeatWait is how often Run publishes a heartbeat, a field for the tests
+	heartbeatWait time.Duration
+
 	// lastResync and resyncTimer keep the resync frames apart by resyncEvery, and resyncWait is that time, a field for the tests
 	resyncMu    sync.Mutex
 	lastResync  time.Time
@@ -166,7 +169,8 @@ func NewHub(cfg Config) *Hub {
 		clients: map[uuid.UUID]map[*Client]struct{}{},
 		seen:    map[string]*originState{},
 
-		gapWait:    gapWait,
+		gapWait:       gapWait,
+		heartbeatWait: heartbeatEvery,
 		resyncWait: resyncEvery,
 		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_bus_publish_failed_total", Help: "Chat events that this copy could not publish to the bus.",
@@ -346,7 +350,7 @@ func (h *Hub) Run(ctx context.Context) {
 }
 
 func (h *Hub) heartbeat(ctx context.Context) {
-	ticker := time.NewTicker(heartbeatEvery)
+	ticker := time.NewTicker(h.heartbeatWait)
 	defer ticker.Stop()
 
 	for {
@@ -386,6 +390,11 @@ func (h *Hub) receive(payload []byte) {
 				h.reportGap(received.Seq)
 			}
 		})
+	}
+
+	// a heartbeat only carries the number
+	if len(received.Recipients) == 0 {
+		return
 	}
 
 	h.deliver(received.Recipients, received.Event)
@@ -470,6 +479,7 @@ func (h *Hub) stillMissing(origin string, numbers []uint64) bool {
 	h.seenMu.Lock()
 	defer h.seenMu.Unlock()
 
+	// an origin that was forgotten in the meantime is not waited for, and the next heartbeat of its copy shows what is missing
 	state, known := h.seen[origin]
 	if !known {
 		return false

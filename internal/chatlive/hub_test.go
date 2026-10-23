@@ -16,14 +16,17 @@ import (
 
 // fakeBus connects hubs in memory, the way Redis connects API copies
 type fakeBus struct {
-	mu       sync.Mutex
-	handlers []func([]byte)
-	fail     bool
+	mu        sync.Mutex
+	handlers  []func([]byte)
+	fail      bool
+	published int
 }
 
 func (b *fakeBus) Publish(_ context.Context, payload []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	b.published++
 
 	if b.fail {
 		return context.DeadlineExceeded
@@ -571,4 +574,39 @@ func TestGapsInsideTheWaitCostOneResyncAtTheEnd(t *testing.T) {
 
 	require.Equal(t, EventResync, received(t, client).Type, "the gaps that came meanwhile are sent once when the time is over")
 	nothing(t, client)
+}
+
+func TestRunPublishesAHeartbeatUntilTheContextEnds(t *testing.T) {
+	bus := &fakeBus{}
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.heartbeatWait = 5 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		hub.Run(ctx)
+		close(done)
+	}()
+
+	count := func() int {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+
+		return bus.published
+	}
+
+	require.Eventually(t, func() bool { return count() >= 3 }, 2*time.Second, 5*time.Millisecond, "a heartbeat is published again and again")
+
+	cancel()
+	<-done
+
+	// one that was already on its way may still be counted
+	time.Sleep(30 * time.Millisecond)
+
+	stopped := count()
+
+	time.Sleep(50 * time.Millisecond)
+
+	require.Equal(t, stopped, count(), "no heartbeat after the context ended")
 }
