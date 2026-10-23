@@ -85,6 +85,9 @@ func TestAParentEditsAChild(t *testing.T) {
 	})
 
 	t.Run("a NISN of another active child is refused", func(t *testing.T) {
+		// the number is only taken once a teacher verified it
+		verifyNISN(t, guru, classID, otherChildID)
+
 		taken := nisnOf(other.Token, otherChildID)
 		current := nisnOf(parent.Token, childID)
 
