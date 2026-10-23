@@ -216,7 +216,7 @@ jobs:
                 return 0
               fi
               if [ "$attempt" -lt 3 ]; then
-                echo "Try ${attempt} of ${1} ${2} failed, trying again" >&2
+                echo "Try ${attempt} of ${*:1:3} failed, trying again" >&2
                 sleep $((attempt * 10))
               fi
             done
