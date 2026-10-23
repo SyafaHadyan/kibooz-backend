@@ -127,6 +127,9 @@ type envelope struct {
 	Seq        uint64      `json:"n"`
 	Recipients []uuid.UUID `json:"r"`
 	Event      Event       `json:"e"`
+	// Beat marks a heartbeat. It carries the highest number that the origin published so far and takes no number of its own, so a
+	// heartbeat that never reaches the bus is not seen as a loss by the other copies, and one that arrives shows a lost last envelope.
+	Beat bool `json:"b,omitempty"`
 }
 
 // originState is what a copy knows of another copy that publishes on the bus. last is the highest number seen, missing the numbers
@@ -165,7 +168,9 @@ type Hub struct {
 	resyncWait  time.Duration
 
 	// outbox holds the numbered envelopes that wait for the bus, and publishWait is how long one may take, a field for the tests
-	outbox      chan []byte
+	outbox chan []byte
+	// encode turns an envelope into the bytes for the bus, json.Marshal outside the tests
+	encode      func(any) ([]byte, error)
 	publishWait time.Duration
 
 	gaps            prometheus.Counter
@@ -185,6 +190,7 @@ func NewHub(cfg Config) *Hub {
 		clients: map[uuid.UUID]map[*Client]struct{}{},
 		seen:    map[string]*originState{},
 		outbox:  make(chan []byte, publishQueue),
+		encode:  json.Marshal,
 
 		publishWait: publishTimeout,
 
@@ -346,10 +352,44 @@ func (h *Hub) send(recipients []uuid.UUID, event Event) {
 		return
 	}
 
-	payload, err := json.Marshal(envelope{Origin: h.origin, Seq: h.published.Add(1), Recipients: recipients, Event: event})
+	h.enqueue(envelope{Origin: h.origin, Seq: h.published.Add(1), Recipients: recipients, Event: event})
+}
+
+// beat queues a heartbeat. It repeats the last number that was published and does not take a new one, because a heartbeat that fails to
+// reach the bus has lost nothing, and with a number of its own it would make the other copies resync for no reason. A queue that is
+// full has no room for it, and it is not worth the oldest event, so the next heartbeat comes instead.
+func (h *Hub) beat() {
+	if h.cfg.Bus == nil {
+		return
+	}
+
+	payload, ok := h.encodeEnvelope(envelope{Origin: h.origin, Seq: h.published.Load(), Beat: true})
+	if !ok {
+		return
+	}
+
+	select {
+	case h.outbox <- payload:
+	default:
+	}
+}
+
+// encodeEnvelope turns an envelope into the bytes for the bus, and says false after it logged why that was not possible
+func (h *Hub) encodeEnvelope(message envelope) ([]byte, bool) {
+	payload, err := h.encode(message)
 	if err != nil {
 		log.Printf("chat event could not be encoded for the bus %v", err)
 
+		return nil, false
+	}
+
+	return payload, true
+}
+
+// enqueue encodes the envelope and puts it in the queue for the bus, and drops the oldest one when the queue is full
+func (h *Hub) enqueue(message envelope) {
+	payload, ok := h.encodeEnvelope(message)
+	if !ok {
 		return
 	}
 
@@ -459,8 +499,7 @@ func (h *Hub) heartbeat(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// an envelope for nobody, which only carries the number
-			h.send(nil, Event{})
+			h.beat()
 		}
 	}
 }
@@ -534,12 +573,22 @@ func (h *Hub) track(received envelope) (skipped []uint64, lost bool) {
 	state.stamp = h.stamp
 
 	if received.Seq <= state.last {
-		delete(state.missing, received.Seq)
+		// a heartbeat repeats a number that its origin published before, so it says nothing about that number arriving
+		if !received.Beat {
+			delete(state.missing, received.Seq)
+		}
 
 		return nil, false
 	}
 
-	jump := received.Seq - state.last - 1
+	// an envelope with a number skips the numbers below it, and a heartbeat names the highest number that was published, so that number
+	// itself may be the one that did not arrive
+	end := received.Seq
+	if received.Beat {
+		end++
+	}
+
+	jump := end - state.last - 1
 	if jump > maxTrackedSkips {
 		state.last = received.Seq
 		clear(state.missing)
@@ -547,7 +596,7 @@ func (h *Hub) track(received envelope) (skipped []uint64, lost bool) {
 		return nil, true
 	}
 
-	for number := state.last + 1; number < received.Seq; number++ {
+	for number := state.last + 1; number < end; number++ {
 		state.missing[number] = struct{}{}
 		skipped = append(skipped, number)
 	}
