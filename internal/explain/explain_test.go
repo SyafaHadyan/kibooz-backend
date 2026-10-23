@@ -191,9 +191,11 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		reply     = id("reply2-1-1")
 		now       = time.Now()
 		from      = now.Add(-30 * 24 * time.Hour)
-		to        = now
-		utc       = time.UTC
-		keyOf     = func(string) (string, bool) { return "", false }
+		// the time that the account joined the class, because the zero time is not a date that PostgreSQL accepts in a written out statement
+		joined = now.AddDate(-1, 0, 0)
+		to     = now
+		utc    = time.UTC
+		keyOf  = func(string) (string, bool) { return "", false }
 	)
 
 	var (
@@ -267,12 +269,12 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("chat, conversations of a teacher", func(ctx context.Context) error { return drop2(chat.ListConversations(ctx, teacher, 20, 0)) })
 	call("chat, conversations of a parent", func(ctx context.Context) error { return drop2(chat.ListConversations(ctx, parent, 20, 0)) })
 	call("chat, latest messages", func(ctx context.Context) error {
-		return drop2(chat.ListMessages(ctx, chatID, time.Time{}, nil, nil, 50))
+		return drop2(chat.ListMessages(ctx, chatID, joined, nil, nil, 50))
 	})
 	call("chat, messages after one", func(ctx context.Context) error {
-		return drop2(chat.ListMessages(ctx, chatID, time.Time{}, &messageID, nil, 50))
+		return drop2(chat.ListMessages(ctx, chatID, joined, &messageID, nil, 50))
 	})
-	call("chat, find a message", func(ctx context.Context) error { return drop(chat.FindMessage(ctx, chatID, messageID, time.Time{})) })
+	call("chat, find a message", func(ctx context.Context) error { return drop(chat.FindMessage(ctx, chatID, messageID, joined)) })
 	call("classroom, teacher of a class", func(ctx context.Context) error { return drop(classroom.TeacherOfClass(ctx, teacher, class)) })
 	call("classroom, parent in a class", func(ctx context.Context) error { return drop(classroom.ParentInClass(ctx, parent, class)) })
 	call("classroom, videos", func(ctx context.Context) error { return drop2(classroom.ListVideos(ctx, class, 20, 0)) })
@@ -379,7 +381,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return chat.CreateMessage(ctx, &entity.ChatMessage{ConversationID: chatID, SenderID: teacher, Body: "hello", CreatedAt: now})
 	})
 	call("chat, mark as read", func(ctx context.Context) error {
-		return drop2(chat.MarkRead(ctx, chatID, parent, time.Time{}, messageID, now))
+		return drop2(chat.MarkRead(ctx, chatID, parent, joined, messageID, now))
 	})
 	call("push, save a token", func(ctx context.Context) error {
 		return pushRepo.SaveToken(ctx, parent, fmt.Sprintf("%x%x", md5.Sum([]byte("fresh")), md5.Sum([]byte("token"))), "android", now)
