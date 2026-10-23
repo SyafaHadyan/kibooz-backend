@@ -117,6 +117,20 @@ jobs:
             echo "Total statement coverage is $total" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # A floor under the total statement coverage, so it cannot slide down in steps that each stay inside the threshold of Codecov.
+      # Codecov never reports a project status for this repository, so the floor is checked here, in a required job.
+      - name: Coverage floor
+        env:
+          COVERAGE_FLOOR: "88"
+        run: |
+          total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')"
+          echo "Total statement coverage is $total percent and the floor is $COVERAGE_FLOOR percent."
+
+          if ! awk -v total="$total" -v floor="$COVERAGE_FLOOR" 'BEGIN { exit !(total + 0 >= floor + 0) }'; then
+            echo "::error title=Coverage floor::The total statement coverage of $total percent is under the floor of $COVERAGE_FLOOR percent"
+            exit 1
+          fi
+
       # A failed upload only fails the build
       # on main, because a Codecov outage must not block a pull request.
       - name: Upload coverage to Codecov
