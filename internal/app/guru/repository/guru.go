@@ -286,9 +286,10 @@ func (r *GuruDB) CreateMoodLogs(
 			return err
 		}
 
-		// The caller read each child and checked the teacher before this lock. A move that was accepted in between has taken a child
-		// out of the class, and then the mood would be written for a child of another class by a teacher who no longer teaches it,
-		// and its limit would be counted under the lock of the class that it left. So every child has to be in the class still.
+		// The caller read each child and checked the teacher before this lock. A move or a removal that was accepted in between has
+		// taken a child out of the class, and then the mood would be written for a child of another class, and its limit would be
+		// counted under the lock of the class that it left. So every child has to be in the class still. A teacher who was taken off
+		// the class in the same window is not found by this check.
 		wanted := make(map[uuid.UUID]struct{}, len(studentIDs))
 		for _, id := range studentIDs {
 			wanted[id] = struct{}{}

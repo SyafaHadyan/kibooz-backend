@@ -24,7 +24,7 @@ func TestAMoodIsNotWrittenForAChildThatMovedAfterTheTeacherWasChecked(t *testing
 	classB, codeB := classOf(t, teacherB)
 
 	parent, movedID := registerWali(t, codeA, "Anak Sudah Pindah")
-	_, stayingID := registerWali(t, codeA, "Anak Tetap")
+	stayingParent, stayingID := registerWali(t, codeA, "Anak Tetap")
 
 	asked := requestMove(t, parent.Token, movedID, codeB)
 	require.Equal(t, http.StatusCreated, asked.Status, "body %v", asked.Body)
@@ -63,8 +63,16 @@ func TestAMoodIsNotWrittenForAChildThatMovedAfterTheTeacherWasChecked(t *testing
 	require.ErrorIs(t, err, apperror.ErrStudentNotFound)
 	require.Zero(t, moodLogCount(t, stayingID))
 
-	// a child that is still in the class is not held back
-	_, err = repo.CreateMoodLogs(context.Background(), classA, []entity.MoodLog{moodFor(stayingID)}, day)
+	// a child that is still in the class is not held back, and one that is named twice counts once
+	_, err = repo.CreateMoodLogs(context.Background(), classA, []entity.MoodLog{moodFor(stayingID), moodFor(stayingID)}, day)
 	require.NoError(t, err)
-	require.EqualValues(t, 1, moodLogCount(t, stayingID))
+	require.EqualValues(t, 2, moodLogCount(t, stayingID))
+
+	// a child that the parent removed in the meantime is gone from the class as well
+	removed := call(t, http.MethodDelete, "/api/v1/wali/children/"+stayingID, stayingParent.Token, nil)
+	require.Equal(t, http.StatusOK, removed.Status, "body %v", removed.Body)
+
+	_, err = repo.CreateMoodLogs(context.Background(), classA, []entity.MoodLog{moodFor(stayingID)}, day)
+	require.ErrorIs(t, err, apperror.ErrStudentNotFound)
+	require.EqualValues(t, 2, moodLogCount(t, stayingID), "nothing was added after the removal")
 }
