@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 )
@@ -83,7 +84,8 @@ func ContainsIdentity(password string, identities ...string) bool {
 }
 
 // identityForm lowercases the text and keeps only its letters and digits, so the spaces, the commas of a title such as "S.Pd.", the
-// apostrophes and the signs of a phone number do not matter
+// apostrophes and the signs of a phone number do not matter. The text is composed first (NFC), so an accented letter that is written as
+// a letter and a combining mark matches the same letter in one piece, and the mark is not dropped from only one of them.
 func identityForm(text string) string {
 	return strings.Map(func(r rune) rune {
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
@@ -91,7 +93,7 @@ func identityForm(text string) string {
 		}
 
 		return unicode.ToLower(r)
-	}, text)
+	}, norm.NFC.String(text))
 }
 
 var (

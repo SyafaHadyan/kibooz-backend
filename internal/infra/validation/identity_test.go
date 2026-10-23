@@ -22,6 +22,8 @@ func TestAPasswordWithThePersonsOwnDetailsIsRefused(t *testing.T) {
 		{"a name with a title and commas", "SitiRahayuSPd1985!", []string{"Siti Rahayu, S.Pd."}},
 		{"a name with an apostrophe", "xx-OBrien-Mc9", []string{"O'Brien Mc"}},
 		{"a name with accents", "Zoë-Müller-77", []string{"Zoë Müller"}},
+		{"a decomposed password and a composed name", "Zoe\u0308-Mu\u0308ller-77", []string{"Zo\u00eb M\u00fcller"}},
+		{"a composed password and a decomposed name", "Zo\u00eb-M\u00fcller-77", []string{"Zoe\u0308 Mu\u0308ller"}},
 	}
 
 	for _, test := range cases {
