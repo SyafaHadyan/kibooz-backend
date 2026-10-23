@@ -102,6 +102,22 @@ jobs:
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
 
+  names:
+    name: File names
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # reads the list of tracked files and never opens one, so it needs no tools, the rules are in the script
+      - name: Check the names of the files
+        run: python3 -I scripts/check-file-names.py
+
   shell:
     name: Shell lint
     runs-on: ubuntu-latest

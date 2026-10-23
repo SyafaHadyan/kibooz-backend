@@ -4,7 +4,7 @@
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review (which also refuses a new dependency under SSPL, the one license here that does not fit the GPL-3.0 of the repository), gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
-| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, `docker compose config` for `compose.yml` and `compose.production.example.yml` in the `Compose config` job, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
+| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, `docker compose config` for `compose.yml` and `compose.production.example.yml` in the `Compose config` job, the names of every tracked file in the `File names` job, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
 | `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. It never cancels a run, skips an edit that changes neither the title nor the base branch, and reads the title from the pull request when it runs, so editing the body of a pull request cannot leave a cancelled required check behind and a rerun checks the current title. Merge commits are skipped, and the line lengths of the body and footer are not limited because Renovate and Release Please write long ones |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike, soak or chat socket test on demand) and fails when a container was killed or restarted |
@@ -90,7 +90,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | ZAP baseline scan | GitHub Actions |
 | k6 performance test | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
-| Actionlint, Zizmor, Hadolint, Compose config, Shell lint and OpenAPI lint | GitHub Actions |
+| Actionlint, Zizmor, Hadolint, Compose config, File names, Shell lint and OpenAPI lint | GitHub Actions |
 | OpenAPI breaking changes | GitHub Actions |
 | Renovate config | GitHub Actions |
 | Vale prose lint | GitHub Actions |
@@ -118,6 +118,19 @@ Vale reads `.vale.ini`, which combines the Vale and Google styles with the two r
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 sync
 docker run --rm -v "$PWD:/docs" -w /docs jdkato/vale:v3.24.0 README.md CONTRIBUTING.md SECURITY.md ACCESSIBILITY.md docs
 ```
+
+## File names
+
+The `File names` job runs `scripts/check-file-names.py` on every pull request. It reads the list of files that git tracks and fails with the files that break a rule, so a name is fixed before the merge and not renamed later. The first rule that applies to a path decides.
+
+- A Go file is lowercase words with no separator, such as `childdelete_test.go`, and only `_test` may follow the words.
+- A migration is a six digit number, snake case words and `.up.sql` or `.down.sql`.
+- A decision record is four digits, kebab case words and `.md`. A workflow is kebab case and ends with `.yaml`. A script is kebab case with `.sh`, `.py` or `.js`.
+- Any other file and every folder is lowercase words joined by hyphens, with dots for the extension and for a variant such as `.example.yml`. A name that starts with a dot is a tool setting.
+- A few names are fixed by the tool that reads them and are allowed as they are, the community files in capitals such as `README.md`, `LICENSE` and `Dockerfile`, the files of `.github` that GitHub looks for by name, the style folder of Vale, and `docs/_headers`.
+- Two names that differ only by case are refused, because they cannot live together on a case insensitive disk.
+
+A new tool that needs a name of its own is added to the `ALLOWED` list of the script, with the reason in the comment.
 
 ## Releases
 
