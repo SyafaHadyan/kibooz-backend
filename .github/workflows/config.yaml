@@ -102,6 +102,30 @@ jobs:
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
 
+  names:
+    name: File names
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      # ls-lint reads the names of the files and never opens one, the rules are in .ls-lint.yml
+      - name: Check the names of the files
+        env:
+          # renovate: datasource=npm depName=@ls-lint/ls-lint
+          version: 2.3.2
+        run: npx --yes "@ls-lint/ls-lint@${version}"
+
   shell:
     name: Shell lint
     runs-on: ubuntu-latest
