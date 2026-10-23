@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
@@ -15,14 +16,17 @@ import (
 
 // fakeBus connects hubs in memory, the way Redis connects API copies
 type fakeBus struct {
-	mu       sync.Mutex
-	handlers []func([]byte)
-	fail     bool
+	mu        sync.Mutex
+	handlers  []func([]byte)
+	fail      bool
+	published int
 }
 
 func (b *fakeBus) Publish(_ context.Context, payload []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	b.published++
 
 	if b.fail {
 		return context.DeadlineExceeded
@@ -203,6 +207,10 @@ func TestTwoCopiesOfTheAPIShareEventsThroughTheBus(t *testing.T) {
 	one := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
 	two := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
 
+	// a short wait, so a skipped number that never comes is found quickly
+	one.gapWait = 30 * time.Millisecond
+	two.gapWait = 30 * time.Millisecond
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -329,9 +337,130 @@ func TestAGapInWhatAnotherCopyPublishedMakesTheSocketsResync(t *testing.T) {
 
 	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 3})
 
-	require.Equal(t, EventResync, received(t, onTwo).Type, "the app is told that it missed something before the event that revealed it")
 	require.EqualValues(t, 3, received(t, onTwo).MessageID)
+	require.Equal(t, EventResync, received(t, onTwo).Type, "the app is told that it missed something once the skipped number did not come")
 	nothing(t, onTwo)
+}
+
+// envelopeOf is what another copy puts on the bus
+func envelopeOf(t *testing.T, origin string, seq uint64, recipients []uuid.UUID, event Event) []byte {
+	t.Helper()
+
+	payload, err := json.Marshal(envelope{Origin: origin, Seq: seq, Recipients: recipients, Event: event})
+	require.NoError(t, err)
+
+	return payload
+}
+
+func counterValue(t *testing.T, hub *Hub, name string) float64 {
+	t.Helper()
+
+	registry := prometheus.NewRegistry()
+
+	for _, collector := range hub.Collectors() {
+		require.NoError(t, registry.Register(collector))
+	}
+
+	families, err := registry.Gather()
+	require.NoError(t, err)
+
+	for _, family := range families {
+		if family.GetName() == name {
+			return family.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+
+	return 0
+}
+
+func TestNumbersThatReachTheBusOutOfOrderAreNoLoss(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.gapWait = 40 * time.Millisecond
+
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	event := Event{Type: EventTyping, ConversationID: uuid.New()}
+
+	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, event))
+	hub.receive(envelopeOf(t, "a", 3, []uuid.UUID{user}, event))
+	hub.receive(envelopeOf(t, "a", 2, []uuid.UUID{user}, event))
+
+	for range 3 {
+		require.Equal(t, EventTyping, received(t, client).Type)
+	}
+
+	time.Sleep(120 * time.Millisecond)
+
+	nothing(t, client)
+	require.Zero(t, counterValue(t, hub, "kibooz_chat_event_gaps_total"), "number 2 came inside the wait")
+}
+
+func TestANumberThatNeverComesIsALossAfterTheWait(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.gapWait = 40 * time.Millisecond
+
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	event := Event{Type: EventTyping, ConversationID: uuid.New()}
+
+	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, event))
+	hub.receive(envelopeOf(t, "a", 3, []uuid.UUID{user}, event))
+
+	require.Equal(t, EventTyping, received(t, client).Type)
+	require.Equal(t, EventTyping, received(t, client).Type, "the event is delivered at once and the loss is found later")
+	require.Equal(t, EventResync, received(t, client).Type)
+	require.EqualValues(t, 1, counterValue(t, hub, "kibooz_chat_event_gaps_total"))
+}
+
+func TestAJumpThatIsTooBigIsALossAtOnce(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.gapWait = time.Hour
+
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	event := Event{Type: EventTyping, ConversationID: uuid.New()}
+
+	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, event))
+	require.Equal(t, EventTyping, received(t, client).Type)
+
+	hub.receive(envelopeOf(t, "a", 2+maxTrackedSkips+1, []uuid.UUID{user}, event))
+
+	require.Equal(t, EventResync, received(t, client).Type, "the resync does not wait for the numbers of a jump that big")
+	require.Equal(t, EventTyping, received(t, client).Type)
+}
+
+func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
+	one, bus, user, onTwo := connected(t)
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 1})
+	require.EqualValues(t, 1, received(t, onTwo).MessageID)
+
+	// the bus is down for the last event, and no later event follows
+	bus.mu.Lock()
+	bus.fail = true
+	bus.mu.Unlock()
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 2})
+
+	bus.mu.Lock()
+	bus.fail = false
+	bus.mu.Unlock()
+
+	nothing(t, onTwo)
+
+	one.send(context.Background(), nil, Event{})
+
+	require.Equal(t, EventResync, received(t, onTwo).Type, "the number of the heartbeat comes after the one that was lost")
+	require.EqualValues(t, 1, counterValue(t, one, "kibooz_chat_bus_publish_failed_total"))
 }
 
 func TestNoResyncWhenNothingWasLostAndFirstEnvelopeOfACopyIsNeverALoss(t *testing.T) {
@@ -349,10 +478,29 @@ func TestTheNumbersOfOtherCopiesAreForgottenBeyondTheLimit(t *testing.T) {
 	hub := NewHub(Config{})
 
 	for range maxOrigins + 5 {
-		require.False(t, hub.lostBefore(envelope{Origin: uuid.NewString(), Seq: 1}))
+		skipped, lost := hub.track(envelope{Origin: uuid.NewString(), Seq: 1})
+		require.Empty(t, skipped)
+		require.False(t, lost)
 	}
 
 	require.LessOrEqual(t, len(hub.seen), maxOrigins)
+}
+
+func TestTheOriginThatWasHeardFromLongestAgoIsTheOneThatIsForgotten(t *testing.T) {
+	hub := NewHub(Config{})
+
+	for number := range maxOrigins {
+		hub.track(envelope{Origin: "copy-" + string(rune('A'+number)), Seq: 1})
+	}
+
+	// the first one is heard from again, so the second is the one that has been quiet longest
+	hub.track(envelope{Origin: "copy-A", Seq: 2})
+	hub.track(envelope{Origin: "new", Seq: 1})
+
+	require.Contains(t, hub.seen, "copy-A")
+	require.Contains(t, hub.seen, "new")
+	require.NotContains(t, hub.seen, "copy-B")
+	require.Len(t, hub.seen, maxOrigins)
 }
 
 func TestAResyncReachesEverySocketAndClosesASlowOne(t *testing.T) {
@@ -383,13 +531,32 @@ func TestAResyncReachesEverySocketAndClosesASlowOne(t *testing.T) {
 func TestALateEnvelopeIsNeitherALossNorAStepBack(t *testing.T) {
 	hub := NewHub(Config{})
 
-	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 1}))
-	require.True(t, hub.lostBefore(envelope{Origin: "a", Seq: 3}), "number 2 never came yet")
-	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 2}), "number 2 arrives late, which is no new loss")
-	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 4}), "the next number follows 3, and 2 did not move the count back")
-	require.False(t, hub.lostBefore(envelope{Origin: "a", Seq: 4}), "a number that comes twice is no loss either")
-	require.False(t, hub.lostBefore(envelope{Origin: "old", Seq: 0}), "a copy from before the numbers existed sends 0 every time")
-	require.False(t, hub.lostBefore(envelope{Origin: "old", Seq: 0}))
+	skipped, lost := hub.track(envelope{Origin: "a", Seq: 1})
+	require.Empty(t, skipped)
+	require.False(t, lost)
+
+	skipped, lost = hub.track(envelope{Origin: "a", Seq: 3})
+	require.Equal(t, []uint64{2}, skipped, "number 2 never came yet")
+	require.False(t, lost)
+
+	skipped, lost = hub.track(envelope{Origin: "a", Seq: 2})
+	require.Empty(t, skipped, "number 2 arrives late, which is no new loss")
+	require.False(t, lost)
+	require.False(t, hub.stillMissing("a", []uint64{2}), "and nothing is waited for any more")
+
+	skipped, lost = hub.track(envelope{Origin: "a", Seq: 4})
+	require.Empty(t, skipped, "the next number follows 3, and 2 did not move the count back")
+	require.False(t, lost)
+
+	skipped, lost = hub.track(envelope{Origin: "a", Seq: 4})
+	require.Empty(t, skipped, "a number that comes twice is no loss either")
+	require.False(t, lost)
+
+	for range 2 {
+		skipped, lost = hub.track(envelope{Origin: "old", Seq: 0})
+		require.Empty(t, skipped, "a copy from before the numbers existed sends 0 every time")
+		require.False(t, lost)
+	}
 }
 
 func TestGapsInsideTheWaitCostOneResyncAtTheEnd(t *testing.T) {
@@ -410,4 +577,39 @@ func TestGapsInsideTheWaitCostOneResyncAtTheEnd(t *testing.T) {
 
 	require.Equal(t, EventResync, received(t, client).Type, "the gaps that came meanwhile are sent once when the time is over")
 	nothing(t, client)
+}
+
+func TestRunPublishesAHeartbeatUntilTheContextEnds(t *testing.T) {
+	bus := &fakeBus{}
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.heartbeatWait = 5 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		hub.Run(ctx)
+		close(done)
+	}()
+
+	count := func() int {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+
+		return bus.published
+	}
+
+	require.Eventually(t, func() bool { return count() >= 3 }, 2*time.Second, 5*time.Millisecond, "a heartbeat is published again and again")
+
+	cancel()
+	<-done
+
+	// one that was already on its way may still be counted
+	time.Sleep(30 * time.Millisecond)
+
+	stopped := count()
+
+	time.Sleep(50 * time.Millisecond)
+
+	require.Equal(t, stopped, count(), "no heartbeat after the context ended")
 }
