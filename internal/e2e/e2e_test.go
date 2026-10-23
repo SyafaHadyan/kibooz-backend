@@ -370,7 +370,7 @@ func TestHealth(t *testing.T) {
 
 func TestRegistrationAndLogin(t *testing.T) {
 	guru := registerGuru(t, "Mawar")
-	_, joinCode := classOf(t, guru)
+	classID, joinCode := classOf(t, guru)
 	require.Len(t, joinCode, 8)
 
 	t.Run("duplicate email", func(t *testing.T) {
@@ -443,7 +443,13 @@ func TestRegistrationAndLogin(t *testing.T) {
 			}
 		}
 
-		require.Equal(t, http.StatusCreated, call(t, http.MethodPost, "/api/v1/auth/register", "", body()).Status)
+		first := call(t, http.MethodPost, "/api/v1/auth/register", "", body())
+		require.Equal(t, http.StatusCreated, first.Status)
+
+		// the number is only unique once a teacher verified it, until then it can be registered again
+		firstID := call(t, http.MethodGet, "/api/v1/wali/dashboard", first.data("token").(string), nil).data("student", "id").(string)
+		verifyNISN(t, guru, classID, firstID)
+
 		call(t, http.MethodPost, "/api/v1/auth/register", "", body()).requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")
 	})
 
@@ -1256,7 +1262,10 @@ func TestAccountSoftDelete(t *testing.T) {
 		first := registerWaliWith(t, reuseEmail, reuseNISN, joinCode, "First Child")
 		require.Equal(t, http.StatusCreated, first.Status, "body %v", first.Body)
 
-		// still unique among active accounts
+		// still unique among active accounts, and a NISN once a teacher verified it
+		firstID := call(t, http.MethodGet, "/api/v1/wali/dashboard", first.data("token").(string), nil).data("student", "id").(string)
+		verifyNISN(t, guru, classID, firstID)
+
 		registerWaliWith(t, reuseEmail, nisn(), joinCode, "Same Email").requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
 		registerWaliWith(t, fmt.Sprintf("wali.%s@example.com", suffix()), reuseNISN, joinCode, "Same NISN").
 			requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")

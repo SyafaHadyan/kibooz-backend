@@ -588,7 +588,7 @@ func TestMoreTeachersForOneClass(t *testing.T) {
 
 func TestMoreChildrenForOneParent(t *testing.T) {
 	guru := registerGuru(t, "Dahlia")
-	_, joinCode := classOf(t, guru)
+	classID, joinCode := classOf(t, guru)
 	otherGuru := registerGuru(t, "Edelweis")
 	otherClassID, otherCode := classOf(t, otherGuru)
 
@@ -641,6 +641,8 @@ func TestMoreChildrenForOneParent(t *testing.T) {
 
 	t.Run("refused requests", func(t *testing.T) {
 		addChild(parent.Token, "ZZZZZZZZ", "Nobody", nisn()).requireError(t, http.StatusNotFound, "CLASS_CODE_NOT_FOUND")
+		// only a verified NISN is unique, so a teacher vouches for the number of the first child before it is used again
+		verifyNISN(t, guru, classID, firstID)
 		addChild(parent.Token, joinCode, "Duplicate", firstNISN(t, parent.Token)).requireError(t, http.StatusConflict, "NISN_ALREADY_REGISTERED")
 		addChild(parent.Token, joinCode, "A", nisn()).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		addChild(guru.Token, joinCode, "Teacher Child", nisn()).requireError(t, http.StatusForbidden, "AUTH_FORBIDDEN")

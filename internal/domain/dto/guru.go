@@ -202,3 +202,10 @@ type TransferOwnershipRequest struct {
 type TeacherList struct {
 	Teachers []Teacher `json:"teachers"`
 }
+
+// NISNVerification answers a teacher who verified or unverified the NISN of a child
+type NISNVerification struct {
+	NISNVerified bool `json:"nisnVerified"`
+	// Displaced is how many other children lost the same number because they had not been verified
+	Displaced int64 `json:"displaced"`
+}

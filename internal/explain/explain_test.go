@@ -41,6 +41,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -297,6 +298,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, guidance reports", func(ctx context.Context) error { return drop2(classroom.ListGuidanceReports(ctx, class, 20, 0)) })
 	call("guru, move requests", func(ctx context.Context) error { return drop(guruRepo.ListMoveRequests(ctx, class)) })
 	call("guru, history of a child", func(ctx context.Context) error { return drop(guruRepo.StudentHistory(ctx, class, child)) })
+	call("nisn, verified holder", func(ctx context.Context) error {
+		return drop(nisn.VerifiedHolder(logged.WithContext(ctx), "1000000001", child))
+	})
 	call("guru, find a teacher", func(ctx context.Context) error { return drop(guruRepo.FindGuruByUserID(ctx, teacher)) })
 	call("guru, find the taught class", func(ctx context.Context) error { return drop(guruRepo.FindTaughtClass(ctx, guru, &class)) })
 	call("guru, find the first taught class", func(ctx context.Context) error { return drop(guruRepo.FindTaughtClass(ctx, guru, nil)) })

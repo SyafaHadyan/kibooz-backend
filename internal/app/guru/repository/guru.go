@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
@@ -142,6 +144,12 @@ type GuruDBItf interface {
 	// child and the photos of its trash scans for deletion in the same transaction. It returns false when the class has
 	// no such active child.
 	RemoveStudent(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error)
+	// VerifyNISN marks the NISN of the active child of the class as verified and takes the number from every unverified child that holds
+	// it. It returns false when the class has no such child and how many children lost the number. It answers
+	// apperror.ErrNISNNotSet for a child without a NISN and apperror.ErrNISNTaken when a verified child holds the number.
+	VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, int64, error)
+	// UnverifyNISN takes the verification off the NISN of the active child of the class. It returns false when the class has no such child.
+	UnverifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error)
 }
 
 type GuruDB struct {
@@ -728,6 +736,83 @@ func (r *GuruDB) RemoveStudent(ctx context.Context, classID uuid.UUID, studentID
 	})
 
 	return removed, err
+}
+
+func (r *GuruDB) VerifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, int64, error) {
+	var (
+		found     bool
+		displaced int64
+	)
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// a retried transaction starts from nothing
+		found, displaced = false, 0
+
+		var err error
+
+		found, err = lockChildOfClass(tx, classID, studentID)
+		if err != nil || !found {
+			return err
+		}
+
+		displaced, err = nisn.Verify(tx, studentID, time.Now())
+
+		return err
+	})
+	if err != nil {
+		return false, 0, mapVerifiedNISNTaken(err)
+	}
+
+	return found, displaced, nil
+}
+
+func (r *GuruDB) UnverifyNISN(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) (bool, error) {
+	var found bool
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+
+		found, err = lockChildOfClass(tx, classID, studentID)
+		if err != nil || !found {
+			return err
+		}
+
+		return nisn.Unverify(tx, studentID)
+	})
+
+	return found && err == nil, err
+}
+
+// mapVerifiedNISNTaken turns the violation of the unique index of the verified NISNs into its API error. The lock of the NISN keeps
+// it from happening, so it is the last line of defence.
+func mapVerifiedNISNTaken(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "students_nisn_verified_key" {
+		return apperror.ErrNISNTaken
+	}
+
+	return err
+}
+
+// lockChildOfClass takes the lock of the class and then looks for the active child in it, so a move or a removal that ran while the
+// request waited for the lock is seen. A class that was archived while the request waited is refused too. A parent changes the NISN of a child under the same lock, which keeps the number still while
+// the transaction of the teacher reads and marks it.
+func lockChildOfClass(tx *gorm.DB, classID uuid.UUID, studentID uuid.UUID) (bool, error) {
+	err := ranking.Lock(tx, classID)
+	if err != nil {
+		return false, err
+	}
+
+	err = classteam.CheckWritable(tx, classID)
+	if err != nil {
+		return false, err
+	}
+
+	var count int64
+
+	err = tx.Model(&entity.Student{}).Where("id = ? AND class_id = ?", studentID, classID).Count(&count).Error
+
+	return count > 0, err
 }
 
 func (r *GuruDB) TransferOwnership(ctx context.Context, classID uuid.UUID, actor uuid.UUID, target uuid.UUID) (*TeacherRow, error) {

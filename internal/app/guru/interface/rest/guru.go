@@ -41,6 +41,8 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Post("/classes/:classId/restore", handler.RestoreClass)
 	group.Delete("/classes/:classId/students/:studentId", handler.RemoveStudent)
 	group.Get("/classes/:classId/students/:studentId/history", handler.StudentHistory)
+	group.Post("/classes/:classId/students/:studentId/nisn-verification", handler.VerifyNISN)
+	group.Delete("/classes/:classId/students/:studentId/nisn-verification", handler.UnverifyNISN)
 	group.Get("/classes/:classId/move-requests", handler.MoveRequests)
 	group.Post("/classes/:classId/move-requests/:requestId/accept", handler.AcceptMove)
 	group.Post("/classes/:classId/move-requests/:requestId/reject", handler.RejectMove)
@@ -193,6 +195,48 @@ func (h *GuruHandler) RemoveStudent(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Student removed", nil)
+}
+
+func (h *GuruHandler) VerifyNISN(c fiber.Ctx) error {
+	classID, studentID, err := studentParams(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.VerifyNISN(c.Context(), middleware.UserIDFrom(c), classID, studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "NISN verified", res)
+}
+
+func (h *GuruHandler) UnverifyNISN(c fiber.Ctx) error {
+	classID, studentID, err := studentParams(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UnverifyNISN(c.Context(), middleware.UserIDFrom(c), classID, studentID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "NISN verification removed", res)
+}
+
+func studentParams(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
+	classID, err := uuid.Parse(c.Params("classId"))
+	if err != nil {
+		return uuid.Nil, uuid.Nil, apperror.Validation(map[string]string{"classId": "invalid UUID format"})
+	}
+
+	studentID, err := uuid.Parse(c.Params("studentId"))
+	if err != nil {
+		return uuid.Nil, uuid.Nil, apperror.Validation(map[string]string{"studentId": "invalid UUID format"})
+	}
+
+	return classID, studentID, nil
 }
 
 func (h *GuruHandler) Teachers(c fiber.Ctx) error {
