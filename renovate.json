@@ -64,6 +64,11 @@
       "addLabels": ["docker_compose"]
     },
     {
+      "description": "CI validates the Vector file with the image of .github/tools/Dockerfile and production runs the one of the compose file, so the two move together",
+      "matchPackageNames": ["timberio/vector"],
+      "groupName": "vector"
+    },
+    {
       "description": "the tools that CI starts from a workflow, golangci-lint, k6 and Vale, take the commit type of the workflows",
       "matchManagers": ["custom.regex"],
       "semanticCommitType": "ci",

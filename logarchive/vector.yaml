@@ -51,6 +51,10 @@ sinks:
     auth:
       access_key_id: "${LOG_ARCHIVE_ACCESS_KEY_ID:?set LOG_ARCHIVE_ACCESS_KEY_ID}"
       secret_access_key: "${LOG_ARCHIVE_ACCESS_KEY_SECRET:?set LOG_ARCHIVE_ACCESS_KEY_SECRET}"
+    # a rejected request (a wrong key, a bucket that does not exist yet, a wrong region) is tried again like an outage, so the lines wait in
+    # the buffer below until the owner fixes the setting, and the default strategy would drop the batch after the first 403 or 404
+    retry_strategy:
+      type: all
     # a key is logs/<host>/<year>/<month>/<day>/<time>-<id>.json.gz, so a day or a host is one prefix to list or to delete
     key_prefix: "logs/${LOG_ARCHIVE_HOST:-main}/%Y/%m/%d/"
     filename_extension: json.gz

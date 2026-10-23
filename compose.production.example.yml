@@ -166,13 +166,12 @@ services:
     command:
       - --config
       - /etc/vector/vector.yaml
+    # the bucket, the address, the region and the key are in a file of their own, and not in .env, because the API containers load the whole
+    # .env (x-api above) and must never hold the key of the archive. Vector refuses a missing or empty setting at the start.
+    env_file:
+      - path: ./logarchive/.env.archive
+        required: true
     environment:
-      # compose reads the whole file whatever the profile is, so these cannot be required here, and Vector refuses a missing or empty one at the start
-      LOG_ARCHIVE_BUCKET: ${LOG_ARCHIVE_BUCKET:-}
-      LOG_ARCHIVE_ENDPOINT: ${LOG_ARCHIVE_ENDPOINT:-}
-      LOG_ARCHIVE_ACCESS_KEY_ID: ${LOG_ARCHIVE_ACCESS_KEY_ID:-}
-      LOG_ARCHIVE_ACCESS_KEY_SECRET: ${LOG_ARCHIVE_ACCESS_KEY_SECRET:-}
-      LOG_ARCHIVE_REGION: ${LOG_ARCHIVE_REGION:-auto}
       LOG_ARCHIVE_HOST: ${LOG_ARCHIVE_HOST:-${GRAFANA_HOST:-main}}
     deploy:
       resources:
@@ -192,6 +191,8 @@ services:
     networks:
       - internal
       - docker-api
+    # root, because the volume of the buffer is created root owned from the image, and the read only file system, the empty capability set
+    # and no-new-privileges are what limit it
     read_only: true
     tmpfs:
       - /tmp
@@ -213,7 +214,8 @@ services:
     environment:
       CONTAINERS: 1
       NETWORKS: 1
-      # Vector follows the start and the stop of containers through the events, and asks the version and a ping before it does
+      # Vector follows the start and the stop of containers through the events and asks the version and a ping, and the proxy allows all
+      # three by default. They are written down so that a change of that default cannot break the archive without a trace.
       EVENTS: 1
       PING: 1
       VERSION: 1
