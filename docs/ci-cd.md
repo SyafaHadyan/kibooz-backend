@@ -4,7 +4,7 @@
 |:---|:---|:---|
 | `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review (which also refuses a new dependency under SSPL, the one license here that does not fit the GPL-3.0 of the repository), gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
-| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
+| `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, `docker compose config` for `compose.yml` and `compose.production.example.yml` in the `Compose config` job, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
 | `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. It never cancels a run, skips an edit that changes neither the title nor the base branch, and reads the title from the pull request when it runs, so editing the body of a pull request cannot leave a cancelled required check behind and a rerun checks the current title. Merge commits are skipped, and the line lengths of the body and footer are not limited because Renovate and Release Please write long ones |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
 | `perf.yaml` | pull requests, daily at 04:00 WIB, manual | Builds the compose stack from the pull request with a memory cap on every container, runs k6 (a 30 second smoke test on pull requests, a steady load test nightly and on demand, and a stress, spike, soak or chat socket test on demand) and fails when a container was killed or restarted |
@@ -87,7 +87,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | ZAP baseline scan | GitHub Actions |
 | k6 performance test | GitHub Actions |
 | Trivy filesystem scan | GitHub Actions |
-| Actionlint, Zizmor, Hadolint, Shell lint and OpenAPI lint | GitHub Actions |
+| Actionlint, Zizmor, Hadolint, Compose config, Shell lint and OpenAPI lint | GitHub Actions |
 | OpenAPI breaking changes | GitHub Actions |
 | Renovate config | GitHub Actions |
 | Vale prose lint | GitHub Actions |

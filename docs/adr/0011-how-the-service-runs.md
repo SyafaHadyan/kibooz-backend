@@ -23,5 +23,5 @@ A second copy is added by giving a service the labels of the first and a port of
 - A deploy can restart the copies one at a time, and nginx sends traffic to the one that is up.
 - Two copies share one CPU budget of a single VPS, so a big burst of logins is limited by the hash slots and not by the CPU, and the proxy limit stays the first defense against a flood.
 - Anything that needs to be in one place, such as a WebSocket fan-out, a job that must run once or a counter, needs PostgreSQL, Redis or a lock and cannot rely on memory. The chat design follows this ([0005](0005-chat-rest-and-websocket.md)).
-- The compose file in the repository starts one copy, and the second copy and the nginx configuration are part of the deployment on the host and not of the repository.
+- The compose file in the repository starts one copy. `compose.production.example.yml` shows the two copies with their caps and is checked by `docker compose config` in CI, and the nginx configuration is part of the deployment on the host and not of the repository.
 - A move to a bigger machine changes the numbers, and it should change them in the settings and this record together.
