@@ -10,9 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 )
@@ -47,6 +50,50 @@ func IsCommonPassword(password string) bool {
 	_, found := commonPasswords[strings.ToLower(password)]
 
 	return found
+}
+
+// OwnDetailsMessage is what a refused password is told, for the field that holds it
+const OwnDetailsMessage = "must not contain your email, name, phone number or ID number"
+
+// minIdentityRunes is the shortest piece of a person's own details that a password may not contain. A shorter piece, such as the
+// first letters of an email, would make the rule refuse passwords that have nothing to do with the person.
+const minIdentityRunes = 6
+
+// ContainsIdentity reports whether the password contains one of the details of the person who sets it, such as the email, the part of
+// the email before the at sign, a phone number, a NIP or a NISN. These are the first guesses of someone who knows the person, and a
+// parent may well use the NISN of the child. The whole detail has to be inside the password. The case, the spaces and the signs of
+// a name or a phone number do not matter, and the empty details and the ones shorter than six characters are left out.
+func ContainsIdentity(password string, identities ...string) bool {
+	plain := identityForm(password)
+
+	for _, identity := range identities {
+		candidates := []string{identity}
+		if local, _, found := strings.Cut(identity, "@"); found {
+			candidates = append(candidates, local)
+		}
+
+		for _, candidate := range candidates {
+			form := identityForm(candidate)
+			if utf8.RuneCountInString(form) >= minIdentityRunes && strings.Contains(plain, form) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// identityForm lowercases the text and keeps only its letters and digits, so the spaces, the commas of a title such as "S.Pd.", the
+// apostrophes and the signs of a phone number do not matter. The text is composed first (NFC), so an accented letter that is written as
+// a letter and a combining mark matches the same letter in one piece, and the mark is not dropped from only one of them.
+func identityForm(text string) string {
+	return strings.Map(func(r rune) rune {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return -1
+		}
+
+		return unicode.ToLower(r)
+	}, norm.NFC.String(text))
 }
 
 var (

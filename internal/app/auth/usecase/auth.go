@@ -24,6 +24,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
 )
 
 const (
@@ -95,6 +96,16 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	if len([]byte(req.Password)) > bcryptMaxBytes {
 		//nolint:gosec // this is a validation message and not a credential
 		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": "too long, maximum 72 bytes"})
+	}
+
+	// a password that holds the person's own details is refused before the hash too, like the names above
+	identities := []string{req.Email, req.PhoneNumber, req.WhatsappNumber, req.NIP, req.FullName}
+	if req.Student != nil {
+		identities = append(identities, req.Student.NISN, req.Student.FullName)
+	}
+
+	if validation.ContainsIdentity(req.Password, identities...) {
+		return dto.AuthResponse{}, apperror.Validation(map[string]string{"password": validation.OwnDetailsMessage})
 	}
 
 	// a code that no class uses is refused before the password hash, which costs far more than the lookup

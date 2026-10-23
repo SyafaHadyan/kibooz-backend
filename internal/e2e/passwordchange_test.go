@@ -177,3 +177,26 @@ func TestASignInThatWaitsForAPasswordChangeIsRefused(t *testing.T) {
 
 	require.Equal(t, before, tokensWhere(t, "user_id", userID), "the sign in must not leave a session behind")
 }
+
+// A password that holds the person's own email, name or phone number is refused when the account is made and when the password is
+// changed, before anything is hashed.
+func TestAPasswordThatHoldsTheOwnDetailsIsRefused(t *testing.T) {
+	local := "ownlocal" + suffix()
+	email := local + "@example.com"
+
+	res := call(t, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+		"email": email, "password": "Pw-" + local + "!", "fullName": "Sari Dewi Lestari",
+		"role": "GURU", "nip": suffix(), "class": map[string]any{"name": "Kelas Detail"},
+	})
+	res.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	require.Contains(t, res.Body["details"], "password")
+
+	guru := registerGuru(t, "Detail Sendiri")
+
+	t.Run("a change to a password with the own email is refused", func(t *testing.T) {
+		local, _, _ := strings.Cut(guru.Email, "@")
+		change := changePassword(t, guru.Token, guru.Password, "Pw-"+local+"!")
+		change.requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		require.Contains(t, change.Body["details"], "newPassword")
+	})
+}
