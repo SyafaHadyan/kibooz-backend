@@ -31,7 +31,7 @@ const (
 var (
 	specOnce sync.Once
 	specDoc  *openapi3.T
-	specErr  error
+	errSpec  error
 
 	exercisedMu sync.Mutex
 	exercised   = map[string]bool{}
@@ -43,19 +43,19 @@ func loadSpec() (*openapi3.T, error) {
 	specOnce.Do(func() {
 		doc, err := openapi3.NewLoader().LoadFromFile(specFile)
 		if err != nil {
-			specErr = err
+			errSpec = err
 
 			return
 		}
 
-		specErr = doc.Validate(context.Background())
+		errSpec = doc.Validate(context.Background())
 
 		forbidUnknownResponseFields(doc)
 
 		specDoc = doc
 	})
 
-	return specDoc, specErr
+	return specDoc, errSpec
 }
 
 func spec(t *testing.T) *openapi3.T {

@@ -1,7 +1,6 @@
 package usecase
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,7 @@ func TestProfileUpdateNeedsAtLeastOneField(t *testing.T) {
 
 	var appErr *apperror.Error
 
-	require.True(t, errors.As(err, &appErr))
+	require.ErrorAs(t, err, &appErr)
 	require.Equal(t, "VALIDATION_ERROR", appErr.Code)
 	require.Contains(t, appErr.Details, "body")
 }
@@ -56,7 +55,7 @@ func TestProfileUpdateRejectsAnInvalidPhoneNumber(t *testing.T) {
 
 		var appErr *apperror.Error
 
-		require.True(t, errors.As(err, &appErr), phone)
+		require.ErrorAs(t, err, &appErr, phone)
 		require.Contains(t, appErr.Details, "phoneNumber", phone)
 	}
 }

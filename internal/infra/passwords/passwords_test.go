@@ -187,7 +187,9 @@ func TestTheDummyHashHasTheCostOfTheConfiguredHashes(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, matches, "no real password matches the dummy hash")
 
-	require.Equal(t, hasher.DummyHash(), hasher.DummyHash(), "the hash is made once")
+	dummy := hasher.DummyHash()
+
+	require.Equal(t, dummy, hasher.DummyHash(), "the hash is made once")
 }
 
 func TestACostAboveTheLimitOfBcryptFallsBackToTheDefault(t *testing.T) {

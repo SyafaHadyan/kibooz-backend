@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -227,7 +226,7 @@ func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 
 	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid, orphan}, day)
 	require.Error(t, err, "the second row breaks the student foreign key")
-	require.Zero(t, moodLogCount(t, studentID), fmt.Sprintf("the valid row %s must not stay behind", valid.ID))
+	require.Zero(t, moodLogCount(t, studentID), "the valid row %s must not stay behind", valid.ID)
 
 	_, err = repo.CreateMoodLogs(context.Background(), classID, []entity.MoodLog{valid}, day)
 	require.NoError(t, err)

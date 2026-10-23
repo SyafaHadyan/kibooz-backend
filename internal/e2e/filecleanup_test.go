@@ -111,7 +111,7 @@ func TestFileCleanupSweep(t *testing.T) {
 
 		rows, attempts := queuedAttempts(t, stuck)
 		require.Equal(t, 1, rows)
-		require.Equal(t, 1, attempts, fmt.Sprintf("%s stays with its attempt counted", stuck))
+		require.Equal(t, 1, attempts, "%s stays with its attempt counted", stuck)
 	})
 
 	t.Run("a file that failed waits before the next try", func(t *testing.T) {

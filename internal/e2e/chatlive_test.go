@@ -210,7 +210,6 @@ func TestChatSocketDeliversMessagesDeletesReadMarksAndTyping(t *testing.T) {
 
 			require.Equal(t, "message", frame["type"])
 			require.Equal(t, roomID, frame["conversationId"])
-			require.Equal(t, "WALI", "WALI")
 			require.Equal(t, "Hello class", frame["message"].(map[string]any)["body"])
 		}
 	})

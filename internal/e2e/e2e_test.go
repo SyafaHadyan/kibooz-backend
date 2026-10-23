@@ -65,7 +65,7 @@ var (
 	once    sync.Once
 	testApp *fiber.App
 	testDB  *gorm.DB
-	initErr error
+	errInit error
 
 	storedMu      sync.Mutex
 	storedKeys    []string
@@ -195,7 +195,7 @@ func app(t *testing.T) *fiber.App {
 
 		started, err := bootstrap.Start("e2e")
 		if err != nil {
-			initErr = err
+			errInit = err
 
 			return
 		}
@@ -204,7 +204,7 @@ func app(t *testing.T) *fiber.App {
 		testDB = started.Database
 	})
 
-	require.NoError(t, initErr)
+	require.NoError(t, errInit)
 
 	return testApp
 }

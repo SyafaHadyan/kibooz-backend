@@ -65,13 +65,13 @@ func share(count int64, window time.Duration, total int64) time.Duration {
 		return 0
 	}
 
-	high, low := bits.Mul64(uint64(count), uint64(window)) //nolint:gosec // both are positive
+	high, low := bits.Mul64(uint64(count), uint64(window))
 	if high >= uint64(total) {
 		return window
 	}
 
 	quotient, _ := bits.Div64(high, low, uint64(total))
-	if quotient > uint64(window) { //nolint:gosec // the window is positive
+	if quotient > uint64(window) {
 		return window
 	}
 

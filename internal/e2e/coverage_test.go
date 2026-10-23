@@ -42,7 +42,7 @@ func TestAnOperationThatWasNeverExercisedIsReported(t *testing.T) {
 func TestNothingExercisedReportsEveryOperationInOrder(t *testing.T) {
 	missing := unexercised(spec(t), map[string]bool{})
 
-	require.Equal(t, len(allOperations(t)), len(missing))
+	require.Len(t, missing, len(allOperations(t)))
 	require.True(t, slices.IsSorted(missing))
 }
 
