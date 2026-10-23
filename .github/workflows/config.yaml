@@ -126,6 +126,24 @@ jobs:
           docker compose -f compose.yml config --quiet
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
+          LOG_ARCHIVE_BUCKET=ci LOG_ARCHIVE_ENDPOINT=https://example.invalid LOG_ARCHIVE_ACCESS_KEY_ID=ci LOG_ARCHIVE_ACCESS_KEY_SECRET=ci \
+            COMPOSE_PROFILES=monitoring,log-archive docker compose -f compose.production.example.yml config --quiet
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # validate reads the file, builds the pipeline and checks every option, and --no-environment skips the connections to Docker and
+      # to the bucket, which are not there on a runner. The values only have to exist for the file to be read.
+      - name: Validate the Vector pipeline of the log archive
+        run: |
+          docker run --rm -v "$PWD/logarchive:/etc/vector:ro" \
+            -e LOG_ARCHIVE_BUCKET=ci -e LOG_ARCHIVE_ENDPOINT=https://example.invalid \
+            -e LOG_ARCHIVE_ACCESS_KEY_ID=ci -e LOG_ARCHIVE_ACCESS_KEY_SECRET=ci \
+            "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh vector)")" \
+            validate --no-environment /etc/vector/vector.yaml
 
   names:
     name: File names

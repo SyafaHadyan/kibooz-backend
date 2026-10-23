@@ -48,6 +48,28 @@ The dashboards pick their data sources with two variables at the top (`Metrics` 
 
 Alloy keeps a small write-ahead log in the `kibooz-alloy` volume, so a short outage of the network does not lose samples.
 
+## Log archive
+
+Grafana Cloud keeps the logs for 14 days on the free plan and the host keeps a few hours, so the logs go to a bucket as well, where they stay for 90 days. A second container, `log-archive`, runs Vector (`logarchive/vector.yaml`). It reads the logs of the same containers as Alloy through the same socket proxy, and writes them to any S3 compatible store, so the store is a setting and not a choice of the code. It starts only with the `log-archive` profile, next to `monitoring` or alone.
+
+Every 10 minutes, or when 10 MB are ready, it writes one gzip file of JSON lines to `logs/<host>/<year>/<month>/<day>/<time>-<id>.json.gz`. A line has `timestamp`, `host`, `role` (`api`, `db` or `redis`), `instance` (the container name), `stream` and `message`, which is the line as the container wrote it. Nothing else of the container is archived. While the store cannot be reached the lines wait in a disk buffer of 512 MiB in the `kibooz-log-archive` volume, and when that is full the reading of the logs slows down and loses nothing, until Docker rotates its own files at 10 MB times 5.
+
+To set it up:
+
+1. Create a private bucket in the store. It must never be public, because the lines hold client addresses and the ids in the paths.
+2. Add a lifecycle rule that expires the objects under `logs/` after 90 days. Without it nothing ever deletes them, because the code does not. The rule is a setting of the store, such as a lifecycle rule on a Cloudflare R2 bucket, an expiration rule on an AWS S3 bucket or an ILM or `mc ilm` rule on MinIO.
+3. Create a key that may only write objects to that bucket, with no read and no list. The check at the start of Vector is off, because it asks for the bucket itself and a write only key is refused, so a wrong bucket or key shows at the first write, in `docker compose logs log-archive`.
+4. Add the `LOG_ARCHIVE_*` values to `.env`, as listed in `.env.example`, and add `log-archive` to `COMPOSE_PROFILES`. The address of the store is `LOG_ARCHIVE_ENDPOINT`, such as `https://<account>.r2.cloudflarestorage.com` for Cloudflare R2 or `https://s3.<region>.amazonaws.com` for AWS S3, and the region is `auto` for R2 and the region of the bucket for the others.
+5. Start it and check it. After about 10 minutes the bucket holds a first file.
+
+   ```sh
+   docker compose up -d
+   docker compose ps log-archive
+   docker compose logs --since 15m log-archive
+   ```
+
+Only the owner reads the archive, with a key of their own that can read the bucket and that is never given to the container. Deleting an account does not remove its lines from the archive, which keeps them for at most 90 days like the other copies of the access log.
+
 ## Errors in Sentry
 
 Grafana says that the API is unhealthy, and Sentry says what broke. The API sends a failure of the server, a 5xx or a panic, to Sentry when `SENTRY_DSN` is set. The report holds the error text, the stack, the route pattern, the request id and the id of the account, and the request id is how a report is matched to its line in the logs. A 4xx is part of the API and a 503 means that something such as the storage is not set up, so neither is sent. See [ADR 0006](adr/0006-sentry-error-reports.md) for what is sent and what never is.

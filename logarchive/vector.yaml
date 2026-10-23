@@ -1,0 +1,74 @@
+# Vector reads the logs of every container that carries the label `kibooz.role`, the same ones that Alloy ships to Grafana Cloud, and
+# writes them as gzip files of JSON lines to a bucket of any S3 compatible store (Cloudflare R2, AWS S3, MinIO, Backblaze B2, Wasabi
+# and the like). The bucket is where the 90 days of logs live, because Grafana Cloud keeps 14 days on the free plan and the host a few
+# hours. The expiry after 90 days is a lifecycle rule of the bucket and not of this file, see docs/monitoring.md. It runs only with the
+# `log-archive` profile of compose.production.example.yml.
+data_dir: /var/lib/vector
+
+# the health endpoint that the healthcheck of the container asks, on the loopback of the container only
+api:
+  enabled: true
+  address: 127.0.0.1:8686
+
+sources:
+  containers:
+    type: docker_logs
+    # the containers are listed through the socket proxy, which only answers read requests, so Vector never holds the Docker socket
+    docker_host: tcp://socket-proxy:2375
+    # only the containers that opt in with the label, anything else on the host is left alone
+    include_labels:
+      - kibooz.role
+    # Docker splits a line over 16 kB, and the pieces are put back together
+    auto_partial_merge: true
+
+transforms:
+  shape:
+    type: remap
+    inputs: [containers]
+    # the line stays as the container wrote it, in `message`. The rest is what tells the copies and the hosts apart, and nothing else
+    # of the container (its labels, its image, its id) is archived.
+    source: |
+      . = {
+        "timestamp": .timestamp,
+        "host": "${LOG_ARCHIVE_HOST:-main}",
+        "role": .label."kibooz.role",
+        "instance": .container_name,
+        "stream": .stream,
+        "message": .message
+      }
+
+sinks:
+  bucket:
+    type: aws_s3
+    inputs: [shape]
+    bucket: "${LOG_ARCHIVE_BUCKET}"
+    # the address of the store, such as https://<account>.r2.cloudflarestorage.com for Cloudflare R2 or https://s3.<region>.amazonaws.com
+    # for AWS S3
+    endpoint: "${LOG_ARCHIVE_ENDPOINT}"
+    region: "${LOG_ARCHIVE_REGION:-auto}"
+    # path style addresses work with every store, and a store that only takes virtual host addresses sets this to false
+    force_path_style: ${LOG_ARCHIVE_PATH_STYLE:-true}
+    auth:
+      access_key_id: "${LOG_ARCHIVE_ACCESS_KEY_ID}"
+      secret_access_key: "${LOG_ARCHIVE_ACCESS_KEY_SECRET}"
+    # a key is logs/<host>/<year>/<month>/<day>/<time>-<id>.json.gz, so a day or a host is one prefix to list or to delete
+    key_prefix: "logs/${LOG_ARCHIVE_HOST:-main}/%Y/%m/%d/"
+    filename_extension: json.gz
+    compression: gzip
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    # a file is written when it holds 10 MB or after 10 minutes, so a quiet host makes about 144 small files a day
+    batch:
+      max_bytes: 10485760
+      timeout_secs: 600
+    # lines wait on disk while the store cannot be reached, and the source slows down when the buffer is full and loses nothing
+    buffer:
+      type: disk
+      max_size: 536870912
+      when_full: block
+    # the check at the start asks for the bucket itself, which a token that may only write objects is refused. A wrong bucket or key
+    # shows at the first write.
+    healthcheck:
+      enabled: false
