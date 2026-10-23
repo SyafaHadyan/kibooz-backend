@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/enrollment"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 )
 
@@ -375,13 +376,37 @@ func (r *WaliDB) UpdateStudent(
 				fields["full_name"] = update.FullName
 			}
 
+			// a new number takes the verification off, because the teacher vouched for the old one, and the same number again is no
+			// change. A verified child elsewhere may hold the number, and then it is refused.
 			if update.SetNISN {
-				fields["nisn"] = update.NISN
+				var held []string
+
+				err = tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("nisn", &held).Error
+				if err != nil || len(held) == 0 {
+					return err
+				}
+
+				if held[0] != update.NISN {
+					err = nisn.Lock(tx, update.NISN)
+					if err != nil {
+						return err
+					}
+
+					err = nisn.RefuseVerifiedHolder(tx, update.NISN, studentID)
+					if err != nil {
+						return err
+					}
+
+					fields["nisn"] = update.NISN
+					fields["nisn_verified_at"] = nil
+				}
 			}
 
-			changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
-			if changed.Error != nil || changed.RowsAffected == 0 {
-				return changed.Error
+			if len(fields) > 0 {
+				changed := tx.Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Updates(fields)
+				if changed.Error != nil || changed.RowsAffected == 0 {
+					return changed.Error
+				}
 			}
 
 			if update.SetName {
@@ -518,6 +543,23 @@ func (r *WaliDB) AddChild(
 		student.WaliID = waliID
 		student.ClassID = class.ID
 
+		// the lock of the class comes before the lock of the NISN, the order that a verification and a change of the number take them in
+		err = ranking.Lock(tx, class.ID)
+		if err != nil {
+			return err
+		}
+
+		// only a verified child holds a NISN alone, so a number that an unverified child holds may be registered again
+		err = nisn.Lock(tx, student.NISN)
+		if err != nil {
+			return err
+		}
+
+		err = nisn.RefuseVerifiedHolder(tx, student.NISN, student.ID)
+		if err != nil {
+			return err
+		}
+
 		err = tx.Create(student).Error
 		if err != nil {
 			return err
@@ -532,7 +574,7 @@ func (r *WaliDB) AddChild(
 // mapNISNTaken turns the unique violation of the NISN into its API error and leaves any other error as it is
 func mapNISNTaken(err error) error {
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == "students_nisn_key" {
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation && pgErr.ConstraintName == "students_nisn_verified_key" {
 		return apperror.ErrNISNTaken
 	}
 

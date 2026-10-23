@@ -114,8 +114,8 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: |
-            The email, NIP or NISN is already registered (`EMAIL_ALREADY_REGISTERED`, `NIP_ALREADY_REGISTERED`,
-            `NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), its teachers closed joining
+            The email or NIP is already registered (`EMAIL_ALREADY_REGISTERED`, `NIP_ALREADY_REGISTERED`), a teacher verified the NISN
+            for another child (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`), its teachers closed joining
             (`CLASS_JOINING_CLOSED`), or the class already has 60 children (`CLASS_FULL`)
           content:
             application/json:
@@ -391,7 +391,7 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: |
-            The NISN is registered (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`),
+            A teacher verified the NISN for another child (`NISN_ALREADY_REGISTERED`), the class has no active teacher (`CLASS_NO_ACTIVE_TEACHER`),
             its teachers closed joining (`CLASS_JOINING_CLOSED`), the class already has 60 children (`CLASS_FULL`) or the parent already has 10 children (`CHILD_LIMIT_REACHED`), or a
             request with the same `Idempotency-Key` is still running (`IDEMPOTENCY_IN_PROGRESS`)
           content:
@@ -411,8 +411,9 @@ paths:
         Send `fullName`, `nisn` or both. A field that is missing stays as it is. The name has 2 to 150 characters and the NISN
         is a number of 5 to 30 digits, as at registration. The child stays in its class and keeps its points. A new name moves
         the child in the ranking, because children with the same points are ordered by name, and it is also written into the
-        standings of the semesters that ended, so an old leaderboard shows the new name. A NISN that another active child
-        already has is refused with `NISN_ALREADY_REGISTERED`. The answer is the child as `GET /wali/children` lists it.
+        standings of the semesters that ended, so an old leaderboard shows the new name. A NISN that a teacher verified for another
+        active child is refused with `NISN_ALREADY_REGISTERED`. A new NISN takes the verification off, because the teacher vouched
+        for the old number, and the same number again changes nothing. The answer is the child as `GET /wali/children` lists it.
       parameters:
         - $ref: "#/components/parameters/StudentPath"
       requestBody:
@@ -441,7 +442,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Failure"
         "409":
-          description: Another active child has the NISN (`NISN_ALREADY_REGISTERED`)
+          description: A teacher verified the NISN for another active child (`NISN_ALREADY_REGISTERED`)
           content:
             application/json:
               schema:
@@ -1132,6 +1133,91 @@ paths:
           description: |
             The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
             (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/classes/{classId}/students/{studentId}/nisn-verification:
+    post:
+      tags: [Teacher]
+      operationId: verifyStudentNISN
+      summary: Vouch for the NISN of a child
+      description: |
+        A teacher of the class checks the NISN of a child against the school records and marks it as verified. A NISN is unique only
+        among the verified children, so until then anyone can register the same number. Verifying takes the number from every other
+        child that holds it and is not verified, in any class. Those children keep their records, their `nisn` becomes empty and
+        `nisnNeedsUpdate` is true until the parent enters the right number. A number that is verified for a child is never taken.
+        Verifying a child that is verified already changes nothing. A new NISN that the parent sets takes the verification off.
+        `displaced` is how many children lost the number. A class that is archived is read only.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ClassStudentPath"
+      responses:
+        "200":
+          description: The NISN is verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NISNVerificationEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
+            (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: |
+            The child has no NISN to verify (`NISN_NOT_SET`), another child holds the number as a verified one
+            (`NISN_ALREADY_REGISTERED`), or the class is archived (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Teacher]
+      operationId: unverifyStudentNISN
+      summary: Take the verification of a NISN back
+      description: |
+        Takes the verified mark off the NISN of a child, for example after a wrong click. The number is not unique any more, and it is
+        not given back to the children that lost it when it was verified. Unverifying a child that is not verified changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ClassStudentPath"
+      responses:
+        "200":
+          description: The NISN is not verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NISNVerificationEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: |
+            The class is not one the signed in teacher teaches (`CLASS_NOT_FOUND`), or it has no active child with this id
+            (`STUDENT_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
           content:
             application/json:
               schema:
@@ -3162,7 +3248,7 @@ components:
           $ref: "#/components/schemas/RegisterStudent"
     ChildSummary:
       type: object
-      required: [id, fullName, nisn, avatarUrl, classId, className]
+      required: [id, fullName, nisn, avatarUrl, classId, className, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -3171,6 +3257,12 @@ components:
           type: string
         nisn:
           type: string
+        nisnVerified:
+          type: boolean
+          description: True while a teacher vouched for the NISN. Only a verified NISN is unique among the active children.
+        nisnNeedsUpdate:
+          type: boolean
+          description: True when `nisn` is empty because a teacher verified the same number for another child. The parent has to enter the right one.
         avatarUrl:
           type: string
           format: uri
@@ -3422,6 +3514,28 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/StudentHistory"
+    NISNVerification:
+      type: object
+      required: [nisnVerified, displaced]
+      properties:
+        nisnVerified:
+          type: boolean
+          description: True after a verification and false after the verification was taken back
+        displaced:
+          type: integer
+          minimum: 0
+          description: How many other children lost the number because they were not verified. Always 0 when the verification was taken back.
+    NISNVerificationEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/NISNVerification"
     ChildEnvelope:
       type: object
       required: [success, data]
@@ -3605,7 +3719,7 @@ components:
           $ref: "#/components/schemas/AuthData"
     WaliStudent:
       type: object
-      required: [id, fullName, classId, className, avatarUrl, nisn]
+      required: [id, fullName, classId, className, avatarUrl, nisn, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -3625,6 +3739,12 @@ components:
           nullable: true
         nisn:
           type: string
+        nisnVerified:
+          type: boolean
+          description: True while a teacher vouched for the NISN. Only a verified NISN is unique among the active children.
+        nisnNeedsUpdate:
+          type: boolean
+          description: True when `nisn` is empty because a teacher verified the same number for another child. The parent has to enter the right one.
         classArchivedAt:
           type: string
           format: date-time
@@ -5154,7 +5274,7 @@ components:
           $ref: "#/components/schemas/GuruProfileDetail"
     ClassStudent:
       type: object
-      required: [id, fullName, nisn, avatarUrl, currentPoints, seasonPoints, classRank, todayMood]
+      required: [id, fullName, nisn, avatarUrl, currentPoints, seasonPoints, classRank, todayMood, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -5163,6 +5283,12 @@ components:
           type: string
         nisn:
           type: string
+        nisnVerified:
+          type: boolean
+          description: True while a teacher vouched for the NISN. Only a verified NISN is unique among the active children.
+        nisnNeedsUpdate:
+          type: boolean
+          description: True when `nisn` is empty because a teacher verified the same number for another child. The parent has to enter the right one.
         avatarUrl:
           type: string
           format: uri
@@ -5348,7 +5474,7 @@ components:
           nullable: true
     ChildProfile:
       type: object
-      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, seasonPoints, classRank, guardian]
+      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, seasonPoints, classRank, guardian, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -5357,6 +5483,12 @@ components:
           type: string
         nisn:
           type: string
+        nisnVerified:
+          type: boolean
+          description: True while a teacher vouched for the NISN. Only a verified NISN is unique among the active children.
+        nisnNeedsUpdate:
+          type: boolean
+          description: True when `nisn` is empty because a teacher verified the same number for another child. The parent has to enter the right one.
         avatarUrl:
           type: string
           format: uri
