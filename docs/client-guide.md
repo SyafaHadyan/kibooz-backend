@@ -4,7 +4,7 @@ This page is for the people who build an app against the API. The full contract 
 
 ## Base URL
 
-The API is served over HTTPS at a host that the operator gives you, called the base URL here, such as `https://api.example.com`. Every route lives under `/api/v1`, for example `https://api.example.com/api/v1/auth/login`, and only the health probe `GET /healthz` lives at the root. Plain HTTP requests are redirected to HTTPS, so always configure the app with the `https://` address.
+The API is served over HTTPS at a host that the operator gives you, for example `https://api.example.com`. Every route lives under `/api/v1`, for example `https://api.example.com/api/v1/auth/login`, and only the health probe `GET /healthz` lives at the root. Plain HTTP requests are redirected to HTTPS, so always configure the app with the `https://` address.
 
 ## Sign in and keep the tokens
 
