@@ -123,9 +123,27 @@ jobs:
           IMAGE_TAG: ci
         run: |
           cp .env.example .env
+          cp logarchive/archive.env.example logarchive/.env.archive
           docker compose -f compose.yml config --quiet
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
+          COMPOSE_PROFILES=monitoring,log-archive docker compose -f compose.production.example.yml config --quiet
+
+      - name: Pull images through the Google mirror
+        uses: ./.github/actions/pull-images
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
+
+      # validate reads the file, compiles the remap, builds the source and the sink and checks the data directory. The checks of the
+      # connections to Docker and to the bucket are skipped, because neither is there on a runner. The values only have to exist.
+      - name: Validate the Vector pipeline of the log archive
+        run: |
+          docker run --rm -v "$PWD/logarchive:/etc/vector:ro" \
+            -e LOG_ARCHIVE_BUCKET=ci -e LOG_ARCHIVE_ENDPOINT=https://example.invalid \
+            -e LOG_ARCHIVE_ACCESS_KEY_ID=ci -e LOG_ARCHIVE_ACCESS_KEY_SECRET=ci \
+            "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh vector)")" \
+            validate --skip-healthchecks /etc/vector/vector.yaml
 
   names:
     name: File names

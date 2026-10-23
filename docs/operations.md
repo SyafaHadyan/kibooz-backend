@@ -6,7 +6,7 @@ This page is for whoever runs the stack. It covers deploying a version, what the
 
 The `compose.yml` file starts three containers on one host. `kibooz-api` is the image `syafa/kibooz-backend` and listens on `127.0.0.1:${APP_PORT}`, so only a reverse proxy on the same host reaches it. `kibooz-db` is PostgreSQL 18 and `kibooz-redis` is Redis 8. The API container has a read-only filesystem, drops every Linux capability and runs without new privileges. Each container keeps at most five log files of 10 MB. The API and Redis containers have a hard memory cap (`API_MEMORY_LIMIT`, `REDIS_MEMORY_LIMIT`) and the database has none, so a memory problem of the API kills the API and not the database. The API gets 40 seconds to stop, because it gives running requests 15 seconds and then up to 17 more to close the push, metrics and error report work, and the database gets 30 seconds because PostgreSQL ends with a checkpoint.
 
-Two more containers, `kibooz-alloy` and `kibooz-socket-proxy`, start only when `COMPOSE_PROFILES` holds `monitoring`. They ship the metrics and the logs to Grafana Cloud, see [Monitoring](monitoring.md).
+Two more containers, `kibooz-alloy` and `kibooz-socket-proxy`, start only when `COMPOSE_PROFILES` holds `monitoring`, and the socket proxy also starts with `log-archive`, which adds `kibooz-log-archive` to archive the logs to a bucket, see [Monitoring](monitoring.md#log-archive). They ship the metrics and the logs to Grafana Cloud, see [Monitoring](monitoring.md).
 
 A hosted PostgreSQL, Redis or bucket can replace the bundled ones by pointing `DB_*`, `REDIS_*` and `S3_*` at them. Redis and the bucket are optional, see [Redis is optional](design.md#redis-is-optional).
 

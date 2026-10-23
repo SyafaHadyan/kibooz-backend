@@ -6,7 +6,7 @@ This page explains how the metrics and the logs of the API reach Grafana Cloud, 
 
 The API serves its metrics on a second listener, `METRICS_ADDRESS`, which `compose.yml` sets to `:9100` and never publishes on the host. Alloy runs next to the API on the private network of the compose file. It finds the containers to watch by the label `kibooz.role` (`api`, `db` or `redis`), scrapes the metrics listener of each API container every minute and reads the logs of all of them. It sends both to Grafana Cloud. Because it goes by label and not by name, the containers can have any name, and a second copy of the API needs no change to the Alloy config. The metrics are described in [Operations](operations.md#metrics) and the log lines in [Operations](operations.md#logs).
 
-Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and networks and refuses everything else, and it sits on a network with no route out that only Alloy shares. The network list is there because the Docker discovery of Alloy asks for it and stops without it, and it adds the names and settings of the networks, never anything inside a container. A compromised Alloy therefore cannot start, stop or create a container. It can still read what a container shows when it is inspected, which includes the environment of the container with its secrets, because Alloy has to inspect a container to read its log through the Docker API. Alloy only talks to the Docker proxy, the API and Grafana Cloud, and it is trusted at the level of the other containers of the stack. Reading the log files of the containers from a read-only mount would avoid the inspection, at the cost of the labels that the dashboards use to tell the copies and hosts apart. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on.
+Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and networks and refuses everything else, and it sits on a network with no route out that only Alloy and, when the log archive runs, Vector share. The network list is there because the Docker discovery of Alloy asks for it and stops without it, and it adds the names and settings of the networks, never anything inside a container. A compromised Alloy therefore cannot start, stop or create a container. It can still read what a container shows when it is inspected, which includes the environment of the container with its secrets, because Alloy has to inspect a container to read its log through the Docker API. Alloy only talks to the Docker proxy, the API and Grafana Cloud, and it is trusted at the level of the other containers of the stack. The proxy lets a container read everything under `/containers`, which includes the files of a container through the export and archive routes and not only its environment, so the same trust holds for Vector when the log archive runs. Reading the log files of the containers from a read-only mount would avoid the inspection, at the cost of the labels that the dashboards use to tell the copies and hosts apart. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on, and the proxy also starts with the `log-archive` profile.
 
 The Postgres container writes statements that take longer than 500 ms and lock waits longer than one second to its log, and Alloy ships that log as well. The log holds the text of the statement and never the values that were bound to it, because `log_parameter_max_length` is 0.
 
@@ -25,6 +25,8 @@ The series count grows with every copy, because each one has its own set. The fr
 | Path | What it is |
 |:---|:---|
 | `grafana/alloy/config.alloy` | The Alloy pipeline for the metrics and the logs |
+| `logarchive/vector.yaml` | The Vector pipeline that archives the logs to a bucket, see [Log archive](#log-archive) |
+| `logarchive/archive.env.example` | The settings of the archive container, which go into `logarchive/.env.archive` |
 | `grafana/dashboards/*.json` | API overview, Routes, Dependencies and jobs, Logs and Product activity, each with the `Host` and `API copy` variables |
 | `grafana/alerts/rules.json` | The alert rules, as an array in the format of the alert rule provisioning API |
 
@@ -47,6 +49,30 @@ The dashboards pick their data sources with two variables at the top (`Metrics` 
 7. Create a contact point that reaches the owner and a notification policy that uses it, then create the alert rules. Replace `__PROMETHEUS_UID__` in `grafana/alerts/rules.json` with the id of the Prometheus data source and send each rule to the provisioning API. A folder with the id `kibooz` has to exist first.
 
 Alloy keeps a small write-ahead log in the `kibooz-alloy` volume, so a short outage of the network does not lose samples.
+
+## Log archive
+
+Grafana Cloud keeps the logs for 14 days on the free plan and the host keeps a few hours, so the logs go to a bucket as well, where they stay for 90 days. A second container, `log-archive`, runs Vector (`logarchive/vector.yaml`). It reads the logs of the same containers as Alloy through the same socket proxy, and writes them to any S3 compatible store, so the store is a setting and not a choice of the code. It starts only with the `log-archive` profile, next to `monitoring` or alone.
+
+The service exists in `compose.production.example.yml` only, so `COMPOSE_PROFILES=log-archive` with `compose.yml` starts nothing. Every 10 minutes, or when 10 MB are ready, it writes one gzip file of JSON lines to `logs/<host>/<year>/<month>/<day>/<time>-<id>.json.gz`, where the folders are the UTC date and not the date in Jakarta, and the time is in seconds since 1970 and the id is random. A line has `timestamp`, `host`, `role` (`api`, `db` or `redis`), `instance` (the container name), `stream` and `message`, which is the line as the container wrote it. Nothing else of the container is archived. The archive is best effort and not a complete record. While the store cannot be reached the lines that Vector already read wait in a disk buffer of 512 MiB in the `kibooz-log-archive` volume, and when that is full Vector stops reading until there is room. Vector keeps no read position of the Docker logs, so the lines that a container writes while Vector is stopped or restarting, or while the buffer is full for longer than Docker keeps its own files (five files of 10 MB), are never archived. Use the logs in Grafana Cloud for the hours around such a gap.
+
+To set it up:
+
+1. Create a private bucket in the store. It must never be public, because the lines hold client addresses and the ids in the paths.
+2. Add a lifecycle rule that expires the objects under `logs/` after 90 days. Without it nothing ever deletes them, because the code does not. The rule is a setting of the store, such as a lifecycle rule on a Cloudflare R2 bucket, an expiration rule on an AWS S3 bucket or an ILM or `mc ilm` rule on MinIO.
+3. Create a key that is limited to that bucket and give it the least that the store allows. On AWS S3 and MinIO that is a policy with `s3:PutObject` on `logs/*` and nothing else. Cloudflare R2 has no write only token, so use an Object Read and Write token that is scoped to this one bucket. A key that can read and delete can also read and delete the archive, so keep it out of `.env`, which every API container loads. The check at the start of Vector is off, because it asks for the bucket itself and a write only key is refused.
+4. Copy `logarchive/archive.env.example` to `logarchive/.env.archive`, which git ignores, and fill it in. The file is loaded by the archive container only. The address of the store is `LOG_ARCHIVE_ENDPOINT`, such as `https://<account>.r2.cloudflarestorage.com` for Cloudflare R2 or `https://s3.<region>.amazonaws.com` for AWS S3, and the region is `auto` for R2 and the region of the bucket for the others, because AWS refuses `auto`. Then add `log-archive` to `COMPOSE_PROFILES` in `.env`.
+5. Start it and check it. After about 10 minutes the bucket holds a first file. The health check of the container only shows that Vector runs and not that the bucket accepts the files, so read the log of the container after the first 10 minutes and after every change of the key.
+
+   ```sh
+   docker compose up -d
+   docker compose ps log-archive
+   docker compose logs --since 15m log-archive
+   ```
+
+   A request that the store refuses, such as a wrong key, a bucket that does not exist yet or a wrong region, is logged as an error and tried again, so the lines wait in the disk buffer until the setting is fixed and are not dropped. That buffer is bounded, so fix it within a few hours of a busy host.
+
+Only the owner reads the archive, with a key of their own that can read the bucket and that is never given to the container. Deleting an account does not remove its lines from the archive, which keeps them for at most 90 days like the other copies of the access log.
 
 ## Errors in Sentry
 

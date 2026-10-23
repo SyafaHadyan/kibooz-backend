@@ -155,17 +155,70 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # The logs go to a bucket of any S3 compatible store too, where the lifecycle rule of the bucket keeps them for 90 days. It only
+  # starts with the `log-archive` profile and the LOG_ARCHIVE_* settings of .env, see docs/monitoring.md.
+  log-archive:
+    image: timberio/vector:0.60.0-alpine
+    container_name: kibooz-log-archive
+    restart: always
+    profiles:
+      - log-archive
+    command:
+      - --config
+      - /etc/vector/vector.yaml
+    # the bucket, the address, the region and the key are in a file of their own, and not in .env, because the API containers load the whole
+    # .env (x-api above) and must never hold the key of the archive. Vector refuses a missing or empty setting at the start.
+    env_file:
+      - path: ./logarchive/.env.archive
+        required: true
+    environment:
+      LOG_ARCHIVE_HOST: ${LOG_ARCHIVE_HOST:-${GRAFANA_HOST:-main}}
+    deploy:
+      resources:
+        limits:
+          memory: ${LOG_ARCHIVE_MEMORY_LIMIT:-128m}
+    volumes:
+      - ./logarchive/vector.yaml:/etc/vector/vector.yaml:ro
+      - kibooz-log-archive:/var/lib/vector
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8686/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - socket-proxy
+    networks:
+      - internal
+      - docker-api
+    # root, because the volume of the buffer is created root owned from the image, and the read only file system, the empty capability set
+    # and no-new-privileges are what limit it
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
   # The only container that touches the Docker socket. It answers read requests for containers and networks and refuses
-  # everything else, so Alloy cannot start, stop or create a container even if it is compromised.
+  # everything else, so Alloy and Vector cannot start, stop or create a container even if one of them is compromised.
   socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: kibooz-socket-proxy
     restart: always
     profiles:
       - monitoring
+      - log-archive
     environment:
       CONTAINERS: 1
       NETWORKS: 1
+      # Vector follows the start and the stop of containers through the events and asks the version and a ping, and the proxy allows all
+      # three by default. They are written down so that a change of that default cannot break the archive without a trace.
+      EVENTS: 1
+      PING: 1
+      VERSION: 1
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -177,7 +230,7 @@ services:
 
 networks:
   internal:
-  # no route out and shared by the socket proxy and Alloy only, so nothing else can reach the Docker API
+  # no route out and shared by the socket proxy, Alloy and Vector only, so nothing else can reach the Docker API
   docker-api:
     internal: true
   # the network of the PostgreSQL stack of the host, which has to exist before this file starts
@@ -187,3 +240,4 @@ networks:
 volumes:
   kibooz-redis:
   kibooz-alloy:
+  kibooz-log-archive:
