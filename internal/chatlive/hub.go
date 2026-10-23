@@ -385,7 +385,8 @@ func (h *Hub) publishLoop(ctx context.Context) {
 				return
 			}
 
-			h.put(ctx, payload)
+			// a publish that has started is not cut off by the stop signal, and publishWait still bounds it
+			h.put(context.WithoutCancel(ctx), payload)
 		}
 	}
 }
