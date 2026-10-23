@@ -6,6 +6,7 @@ rules:
       - config.yaml
       - dast-active.yaml
       - dast.yaml
+      - migrations.yaml
       - openapi-diff.yaml
       - perf.yaml
       - pentest-target.yaml

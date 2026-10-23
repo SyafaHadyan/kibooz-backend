@@ -48,6 +48,11 @@ func TestATeacherRemovesAChildFromTheClass(t *testing.T) {
 
 	avatarKey := bucketKey(t, avatar.data("avatarUrl").(string))
 
+	// the sweep test counts every key in the queue, so what this test queues must not outlive it
+	t.Cleanup(func() {
+		_ = testDB.Exec("DELETE FROM file_cleanups WHERE object_key LIKE ? OR object_key LIKE ?", avatarKey+"%", "trash-scans/"+removedID+"/%").Error
+	})
+
 	claim := call(t, http.MethodPost, "/api/v1/trash/scan-claim", removedParent.Token, map[string]any{
 		"studentId": removedID, "trashType": "B3", "confidenceScore": 0.8, "photoBase64": "data:image/png;base64," + tinyPNG,
 	})
