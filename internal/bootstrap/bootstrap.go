@@ -120,6 +120,10 @@ func Start(version string) (*Bootstrap, error) {
 		log.Println("the private bucket is not configured, chat photos and videos are disabled")
 	}
 
+	// the requests that remove a file again after a failure use these, so a delete that the bucket refused is queued for the sweep
+	retrying := filecleanup.RetryFailedDeletes(storage, database)
+	retryingPrivate := filecleanup.RetryFailedDeletes(privateStorage, database)
+
 	jwtService := jwt.New(cfg)
 	// the metrics middleware runs inside the access log and ahead of every check and route, so each request is measured,
 	// the ones that the body checks refuse too, and a refusal is counted by its route
@@ -168,10 +172,10 @@ func Start(version string) (*Bootstrap, error) {
 		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
 	))
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
-		trashrepository.NewTrashDB(database), cache, storage, cfg,
+		trashrepository.NewTrashDB(database), cache, retrying, cfg,
 	))
 	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
-		classroomrepository.NewClassroomDB(database), storage, cfg,
+		classroomrepository.NewClassroomDB(database), retrying, cfg,
 	))
 	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
 	hub := chatlive.NewHub(chatlive.Config{
@@ -232,10 +236,10 @@ func Start(version string) (*Bootstrap, error) {
 	}
 
 	chathandler.NewChatHandler(
-		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), privateStorage, cfg, hub, pusher), hub, cfg,
+		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), retryingPrivate, cfg, hub, pusher), hub, cfg,
 	)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), storage, cache, hasher,
+		userrepository.NewUserDB(database), retrying, cache, hasher,
 	))
 
 	stats.AllowRoutes(app.Fiber.GetRoutes())

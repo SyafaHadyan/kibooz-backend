@@ -203,3 +203,28 @@ func TestTwoSweepsAtOnceNeverTryTheSameFile(t *testing.T) {
 		require.Equal(t, 1, count, "%s was tried twice", key)
 	}
 }
+
+// A request that removes a file again after it failed does not leave the file behind for good when the bucket refuses the delete.
+func TestADeleteThatTheBucketRefusesIsQueuedForTheSweep(t *testing.T) {
+	_ = app(t)
+
+	refused := "avatars/" + uuid.NewString() + "/refused.jpg"
+	removed := "avatars/" + uuid.NewString() + "/removed.jpg"
+
+	t.Cleanup(func() {
+		_ = testDB.Exec("DELETE FROM file_cleanups WHERE object_key IN (?, ?)", refused, removed).Error
+	})
+
+	bucket := &bucketStub{refused: map[string]bool{refused: true}}
+	storage := filecleanup.RetryFailedDeletes(bucket, testDB)
+
+	require.Error(t, storage.Delete(t.Context(), refused), "the caller still hears about the failure")
+	require.NoError(t, storage.Delete(t.Context(), removed))
+
+	rows, attempts := queuedAttempts(t, refused)
+	require.Equal(t, 1, rows, "the refused key waits for the sweep")
+	require.Zero(t, attempts)
+
+	rows, _ = queuedAttempts(t, removed)
+	require.Zero(t, rows, "a key that was removed is not queued")
+}
