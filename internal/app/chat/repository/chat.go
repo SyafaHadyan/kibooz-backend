@@ -119,6 +119,27 @@ func sharedClass(peer string) string {
 		WHERE (g.user_id = @user AND w.user_id = ` + peer + `) OR (g.user_id = ` + peer + ` AND w.user_id = @user))`
 }
 
+// contactPeers is a common table expression with the accounts that share a class with the account named by the argument user, the
+// parents of the children of the classes of a teacher, or the teachers of the classes of the children of a parent. It starts from
+// that one account and walks outward, so the work follows the classes of the account and not the size of the table of users. The
+// same rule as sharedClass asks account by account would compare every account in the table with every link of the school.
+// An archived class still counts, as it does in sharedClass.
+const contactPeers = `peers AS (
+	SELECT w.user_id AS id FROM gurus AS g
+		JOIN class_teachers AS ct ON ct.guru_id = g.id
+		JOIN classes AS c ON c.id = ct.class_id
+		JOIN students AS s ON s.class_id = c.id AND s.deleted_at IS NULL
+		JOIN walis AS w ON w.id = s.wali_id AND w.deleted_at IS NULL
+		WHERE g.user_id = @user AND g.deleted_at IS NULL
+	UNION
+	SELECT g.user_id AS id FROM walis AS w
+		JOIN students AS s ON s.wali_id = w.id AND s.deleted_at IS NULL
+		JOIN classes AS c ON c.id = s.class_id
+		JOIN class_teachers AS ct ON ct.class_id = c.id
+		JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
+		WHERE w.user_id = @user AND w.deleted_at IS NULL
+)`
+
 // memberClasses is a common table expression with the classes the account belongs to, as a teacher or as a parent with an
 // active child, and the time it joined each of them. A class that was archived is still there, so its room stays readable.
 const memberClasses = `mem AS (
@@ -239,13 +260,13 @@ func (r *ChatDB) ShareClass(ctx context.Context, a uuid.UUID, b uuid.UUID) (bool
 func (r *ChatDB) ListContacts(
 	ctx context.Context, userID uuid.UUID, peerRole constants.Role, limit int, offset int,
 ) ([]ContactRow, int, error) {
-	filter := "u.deleted_at IS NULL AND u.role = @role AND " + sharedClass("u.id")
+	filter := "u.deleted_at IS NULL AND u.role = @role AND u.id IN (SELECT id FROM peers)"
 	user, role := sql.Named("user", userID), sql.Named("role", peerRole)
 
 	var total int64
 
 	err := r.db.WithContext(ctx).
-		Raw("SELECT COUNT(*) FROM users AS u WHERE "+filter, user, role).
+		Raw("WITH "+contactPeers+" SELECT COUNT(*) FROM users AS u WHERE "+filter, user, role).
 		Scan(&total).Error
 	if err != nil {
 		return nil, 0, err
@@ -255,7 +276,7 @@ func (r *ChatDB) ListContacts(
 
 	err = r.db.WithContext(ctx).
 		Raw(
-			"SELECT u.id AS user_id, u.full_name, u.role, u.avatar_url FROM users AS u WHERE "+filter+
+			"WITH "+contactPeers+" SELECT u.id AS user_id, u.full_name, u.role, u.avatar_url FROM users AS u WHERE "+filter+
 				" ORDER BY u.full_name ASC, u.id ASC LIMIT @limit OFFSET @offset",
 			user, role, sql.Named("limit", limit), sql.Named("offset", offset),
 		).
