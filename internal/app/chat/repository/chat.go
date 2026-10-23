@@ -1,4 +1,4 @@
-// Package repository handles the database operations of the chat
+// Package repository handles the database operations of the chat in a throwaway test of the Query plans check
 package repository
 
 import (
