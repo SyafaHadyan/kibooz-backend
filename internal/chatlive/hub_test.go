@@ -481,12 +481,91 @@ func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
 
 	nothing(t, onTwo)
 
-	one.send(nil, Event{})
+	one.beat()
 
-	require.Equal(t, EventResync, received(t, onTwo).Type, "the number of the heartbeat comes after the one that was lost")
+	require.Equal(t, EventResync, received(t, onTwo).Type, "the heartbeat names a number above the last one that arrived")
 	require.Eventually(t, func() bool {
 		return counterValue(t, one, "kibooz_chat_bus_publish_failed_total") == 1
 	}, time.Second, time.Millisecond)
+}
+
+func TestAHeartbeatThatNeverReachesTheBusIsNoLoss(t *testing.T) {
+	one, bus, user, onTwo := connected(t)
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 1})
+	require.EqualValues(t, 1, received(t, onTwo).MessageID)
+
+	bus.mu.Lock()
+	bus.fail = true
+	bus.mu.Unlock()
+
+	one.beat()
+	publishedBy(t, bus, 2)
+
+	bus.mu.Lock()
+	bus.fail = false
+	bus.mu.Unlock()
+
+	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 2})
+
+	require.EqualValues(t, 2, received(t, onTwo).MessageID)
+
+	time.Sleep(120 * time.Millisecond)
+
+	nothing(t, onTwo)
+	require.Zero(t, counterValue(t, one, "kibooz_chat_event_gaps_total"))
+	require.EqualValues(t, 2, one.published.Load(), "the heartbeat took no number, the two events did")
+}
+
+func TestAHeartbeatDoesNotMakeAMissingNumberArrive(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.gapWait = 40 * time.Millisecond
+
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	event := Event{Type: EventTyping, ConversationID: uuid.New()}
+
+	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, event))
+	hub.receive(envelopeOf(t, "a", 3, []uuid.UUID{user}, event))
+
+	for range 2 {
+		require.Equal(t, EventTyping, received(t, client).Type)
+	}
+
+	// the heartbeat repeats number 2 of its origin, and that says nothing about number 2 having reached this copy
+	beat, err := json.Marshal(envelope{Origin: "a", Seq: 2, Beat: true})
+	require.NoError(t, err)
+
+	hub.receive(beat)
+
+	require.Equal(t, EventResync, received(t, client).Type, "number 2 never came")
+}
+
+func TestAHeartbeatThatRepeatsTheLastNumberChangesNothing(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	hub.gapWait = 40 * time.Millisecond
+
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, Event{Type: EventTyping, ConversationID: uuid.New()}))
+	require.Equal(t, EventTyping, received(t, client).Type)
+
+	beat, err := json.Marshal(envelope{Origin: "a", Seq: 1, Beat: true})
+	require.NoError(t, err)
+
+	hub.receive(beat)
+	hub.receive(beat)
+
+	time.Sleep(120 * time.Millisecond)
+
+	nothing(t, client)
+	require.Zero(t, counterValue(t, hub, "kibooz_chat_event_gaps_total"))
 }
 
 func TestNoResyncWhenNothingWasLostAndFirstEnvelopeOfACopyIsNeverALoss(t *testing.T) {
