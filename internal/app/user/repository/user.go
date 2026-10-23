@@ -27,6 +27,10 @@ type UserDBItf interface {
 	// UpdateStudentAvatar returns the class of the child and the avatar URL it replaced, or a nil class when the
 	// wali has no such child
 	UpdateStudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID, url string) (*uuid.UUID, string, error)
+	// UserAvatar returns the avatar URL of an active account, empty when it has none, and false when there is no such account
+	UserAvatar(ctx context.Context, userID uuid.UUID) (url string, found bool, err error)
+	// StudentAvatar returns the avatar URL of an active child of the parent, empty when it has none, and false when there is no such child
+	StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (url string, found bool, err error)
 	// FindUserByID returns nil when the account does not exist or is already deleted
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	// SoftDeleteAccount hides the account with its profile and children, revokes every session and clears the
@@ -96,6 +100,36 @@ func (r *UserDB) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, url str
 	}
 
 	return previous, found, nil
+}
+
+func (r *UserDB) UserAvatar(ctx context.Context, userID uuid.UUID) (string, bool, error) {
+	var urls []*string
+
+	err := r.db.WithContext(ctx).Model(&entity.User{}).Where("id = ?", userID).Pluck("avatar_url", &urls).Error
+	if err != nil || len(urls) == 0 {
+		return "", false, err
+	}
+
+	return derefURL(urls[0]), true, nil
+}
+
+func (r *UserDB) StudentAvatar(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (string, bool, error) {
+	var urls []*string
+
+	err := r.db.WithContext(ctx).Model(&entity.Student{}).Where("id = ? AND wali_id = ?", studentID, waliID).Pluck("avatar_url", &urls).Error
+	if err != nil || len(urls) == 0 {
+		return "", false, err
+	}
+
+	return derefURL(urls[0]), true, nil
+}
+
+func derefURL(url *string) string {
+	if url == nil {
+		return ""
+	}
+
+	return *url
 }
 
 func (r *UserDB) FindWaliIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error) {

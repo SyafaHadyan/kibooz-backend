@@ -63,6 +63,12 @@ type fakeRepo struct {
 	userGone  bool
 	updateErr error
 
+	// readURL is the avatar address that a read after a failed update finds, readGone means there is no such row any more, and readErr
+	// makes the read fail
+	readURL  string
+	readGone bool
+	readErr  error
+
 	// passwordUpdates counts the password changes that were asked for, and passwordStale makes them find a hash that moved on
 	passwordUpdates int
 	passwordStale   bool
@@ -78,6 +84,14 @@ func (f *fakeRepo) UpdatePassword(_ context.Context, _ uuid.UUID, _ string, newH
 
 func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) (string, bool, error) {
 	return f.previous, !f.userGone, f.updateErr
+}
+
+func (f *fakeRepo) UserAvatar(context.Context, uuid.UUID) (string, bool, error) {
+	return f.readURL, !f.readGone, f.readErr
+}
+
+func (f *fakeRepo) StudentAvatar(context.Context, uuid.UUID, uuid.UUID) (string, bool, error) {
+	return f.readURL, !f.readGone, f.readErr
 }
 
 func (f *fakeRepo) FindWaliIDByUserID(context.Context, uuid.UUID) (*uuid.UUID, error) {
@@ -457,6 +471,57 @@ func TestUploadAvatarKeepsTheOldFileWhenTheUpdateFails(t *testing.T) {
 
 	require.Error(t, err)
 	require.Equal(t, storage.keys, storage.deleted, "only the new file is removed again")
+}
+
+// the address that fakeStorage hands out for every upload
+const uploadedAvatar = "https://example.com/avatar.png"
+
+func TestUploadAvatarKeepsTheNewFileWhenTheErrorCameAfterTheCommit(t *testing.T) {
+	childID := uuid.New()
+	classID := uuid.New()
+
+	for name, call := range map[string]func(repo *fakeRepo, useCase usecase.UserUseCaseItf) (dto.AvatarResponse, error){
+		"an account": func(repo *fakeRepo, useCase usecase.UserUseCaseItf) (dto.AvatarResponse, error) {
+			return useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+		},
+		"a child": func(repo *fakeRepo, useCase usecase.UserUseCaseItf) (dto.AvatarResponse, error) {
+			return useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleWali, &childID, tinyPNG)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			storage := &fakeStorage{}
+			waliID := uuid.New()
+			repo := &fakeRepo{
+				user:         accountOf(t, constants.RoleGuru, "any-password"),
+				waliID:       &waliID,
+				studentClass: &classID,
+				updateErr:    errors.New("the connection dropped while the commit was sent"),
+				readURL:      uploadedAvatar,
+			}
+			useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{}, hasher)
+
+			res, err := call(repo, useCase)
+
+			require.NoError(t, err)
+			require.Equal(t, uploadedAvatar, res.AvatarURL)
+			require.Empty(t, storage.deleted, "the address is live, so its file must stay")
+		})
+	}
+}
+
+func TestUploadAvatarKeepsTheNewFileWhenItCannotTellWhatHappened(t *testing.T) {
+	storage := &fakeStorage{}
+	repo := &fakeRepo{
+		user:      accountOf(t, constants.RoleGuru, "any-password"),
+		updateErr: errors.New("the connection dropped while the commit was sent"),
+		readErr:   errors.New("the database is gone"),
+	}
+	useCase := usecase.NewUserUseCase(repo, storage, &fakeCache{}, hasher)
+
+	_, err := useCase.UploadAvatar(context.Background(), repo.user.ID, constants.RoleGuru, nil, tinyPNG)
+
+	require.Error(t, err)
+	require.Empty(t, storage.deleted, "a leaked file is cheaper than a deleted live picture")
 }
 
 func TestUploadAvatarForAnAccountDeletedMeanwhileLeavesNoFile(t *testing.T) {
