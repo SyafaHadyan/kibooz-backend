@@ -10,6 +10,66 @@ import (
 	"gorm.io/gorm"
 )
 
+// the size of the seed, which the workflow can lower with EXPLAIN_CLASSES for a quick try
+const (
+	defaultClasses   = 4000
+	childrenPerClass = 49
+)
+
+// seed fills the database with classes of 49 children, a teacher for each class, a direct conversation between the teacher and the
+// parent of every second child with messages in it, and guidance applications, and then fills every other table through seedOtherTables. The ids come from md5 so that a query can
+// name them.
+func seed(t *testing.T, database *gorm.DB, classes int) int {
+	t.Helper()
+
+	children := classes * childrenPerClass
+	conversations := children / 2
+
+	steps := []struct {
+		name string
+		sql  string
+		args []any
+	}{
+		{"classes", `INSERT INTO classes (id, join_code, name)
+			SELECT md5('class' || i)::uuid, lpad(to_hex(i), 8, '0'), 'Class ' || i FROM generate_series(1, ?::int) AS i`, []any{classes}},
+		{"teacher users", `INSERT INTO users (id, email, password_hash, role, full_name)
+			SELECT md5('guru' || i)::uuid, 'guru' || i || '@example.test', 'x', 'GURU', 'Guru ' || i FROM generate_series(1, ?::int) AS i`, []any{classes}},
+		{"parent users", `INSERT INTO users (id, email, password_hash, role, full_name)
+			SELECT md5('wali' || i)::uuid, 'wali' || i || '@example.test', 'x', 'WALI', 'Wali ' || i FROM generate_series(1, ?::int) AS i`, []any{children}},
+		{"gurus", `INSERT INTO gurus (id, user_id) SELECT md5('g' || i)::uuid, md5('guru' || i)::uuid FROM generate_series(1, ?::int) AS i`, []any{classes}},
+		{"walis", `INSERT INTO walis (id, user_id) SELECT md5('w' || i)::uuid, md5('wali' || i)::uuid FROM generate_series(1, ?::int) AS i`, []any{children}},
+		{"class teachers", `INSERT INTO class_teachers (class_id, guru_id, is_owner)
+			SELECT md5('class' || i)::uuid, md5('g' || i)::uuid, true FROM generate_series(1, ?::int) AS i`, []any{classes}},
+		{"children", `INSERT INTO students (id, wali_id, class_id, nisn, full_name, current_points, season_points)
+			SELECT md5('s' || i)::uuid, md5('w' || i)::uuid, md5('class' || (1 + i % ?::int))::uuid, lpad(i::text, 10, '0'), 'Child ' || i,
+				(i * 7) % 500, (i * 3) % 200 FROM generate_series(1, ?::int) AS i`, []any{classes, children}},
+		{"conversations", `INSERT INTO chat_conversations (id, user_low_id, user_high_id, kind)
+			SELECT md5('conv' || i)::uuid, LEAST(md5('guru' || (1 + i % ?::int))::uuid, md5('wali' || i)::uuid),
+				GREATEST(md5('guru' || (1 + i % ?::int))::uuid, md5('wali' || i)::uuid), 'direct'
+			FROM generate_series(1, ?::int) AS i`, []any{classes, classes, conversations}},
+		{"messages", `INSERT INTO chat_messages (conversation_id, sender_id, body, created_at)
+			SELECT md5('conv' || (1 + i % ?::int))::uuid, CASE WHEN i % 2 = 0 THEN md5('guru' || (1 + (1 + i % ?::int) % ?::int))::uuid
+				ELSE md5('wali' || (1 + i % ?::int))::uuid END,
+				'Message ' || i, now() - make_interval(secs => i) FROM generate_series(1, ?::int) AS i`, []any{conversations, conversations, classes, conversations, conversations * 10}},
+		{"reads", `INSERT INTO chat_reads (conversation_id, user_id, last_read_message_id)
+			SELECT c.id, c.user_low_id, 0 FROM chat_conversations AS c`, nil},
+		{"guidance applications", `INSERT INTO guidance_applications (student_id, wali_id, guidance_id, parent_notes, applied_at)
+			SELECT md5('s' || (1 + i % ?::int))::uuid, md5('w' || (1 + i % ?::int))::uuid, 'guidance-bingung-4step', 'Note ' || i,
+				now() - make_interval(secs => i * 60) FROM generate_series(1, ?::int) AS i`, []any{children, children, children * 2}},
+	}
+
+	for _, step := range steps {
+		started := time.Now()
+
+		require.NoError(t, database.Exec(step.sql, step.args...).Error, step.name)
+		t.Logf("seeded %s in %s", step.name, time.Since(started).Round(time.Millisecond))
+	}
+
+	seedOtherTables(t, database, classes, children)
+
+	return children
+}
+
 // seedOtherTables fills the tables that the first seed leaves empty, so that the queries on moods, scans, the forum, videos, the
 // leaderboard history, sessions, push tokens, the file cleanup queue and idempotency keys run against rows and not against an
 // empty table, where every plan would look cheap.
