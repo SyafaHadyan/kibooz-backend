@@ -52,7 +52,9 @@ Names are checked in the pull request, so it is quicker to follow them from the 
 
 - The title is a Conventional Commit, such as `fix(auth): keep refresh retryable after a database error`. The "Conventional commits" check blocks the merge when the title or any commit does not follow it.
 - The body is only the list of commits in the pull request, one bullet per commit.
-- Add one label, `bug` for fixes, `enhancement` for features and `documentation` for documentation only.
+- Name the branch `type/short-description`, with the type of the commits, such as `fix/refresh-retry`.
+- Add one label, `bug` for fixes, `enhancement` for features and `documentation` for documentation only, and assign the pull request to yourself.
+- The "PR format" check blocks the merge when the branch name, the label, the assignee or the body does not follow this. Add what is missing and rerun the failed check from the checks tab.
 - Pull requests are merged with a merge commit, never squashed or rebased.
 - Every required check must pass. They are listed in the repository rules and described in [docs/ci-cd.md](docs/ci-cd.md).
 - Read the bot comments on your pull request. DeepSource and code scanning report findings there.
