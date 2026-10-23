@@ -46,8 +46,8 @@ sinks:
     # for AWS S3
     endpoint: "${LOG_ARCHIVE_ENDPOINT:?set LOG_ARCHIVE_ENDPOINT to the address of the store}"
     region: "${LOG_ARCHIVE_REGION:-auto}"
-    # path style addresses work with every store, and a store that only takes virtual host addresses sets this to false
-    force_path_style: ${LOG_ARCHIVE_PATH_STYLE:-true}
+    # path style addresses work with every store that this is meant for, such as R2, MinIO, B2, Wasabi and the existing buckets of AWS S3
+    force_path_style: true
     auth:
       access_key_id: "${LOG_ARCHIVE_ACCESS_KEY_ID:?set LOG_ARCHIVE_ACCESS_KEY_ID}"
       secret_access_key: "${LOG_ARCHIVE_ACCESS_KEY_SECRET:?set LOG_ARCHIVE_ACCESS_KEY_SECRET}"
