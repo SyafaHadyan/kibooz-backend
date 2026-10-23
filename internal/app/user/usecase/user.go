@@ -109,7 +109,11 @@ func (u *UserUseCase) UploadAvatar(
 	if studentID == nil {
 		previous, found, err := u.repo.UpdateUserAvatar(ctx, userID, url)
 		if err != nil {
-			s3.Discard(ctx, u.storage, key)
+			if u.avatarCommitted(ctx, key, url, func(ctx context.Context) (string, bool, error) {
+				return u.repo.UserAvatar(ctx, userID)
+			}) {
+				return dto.AvatarResponse{AvatarURL: url}, nil
+			}
 
 			return dto.AvatarResponse{}, apperror.Internal(err)
 		}
@@ -128,7 +132,19 @@ func (u *UserUseCase) UploadAvatar(
 
 	classID, previous, err := u.repo.UpdateStudentAvatar(ctx, waliID, *studentID, url)
 	if err != nil {
-		s3.Discard(ctx, u.storage, key)
+		var committedClass uuid.UUID
+
+		if u.avatarCommitted(ctx, key, url, func(ctx context.Context) (string, bool, error) {
+			current, class, found, readErr := u.repo.StudentAvatar(ctx, waliID, *studentID)
+			committedClass = class
+
+			return current, found, readErr
+		}) {
+			// the cache is optional, entries also expire by themselves
+			_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+committedClass.String())
+
+			return dto.AvatarResponse{AvatarURL: url}, nil
+		}
 
 		return dto.AvatarResponse{}, apperror.Internal(err)
 	}
@@ -146,6 +162,39 @@ func (u *UserUseCase) UploadAvatar(
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
 
 	return dto.AvatarResponse{AvatarURL: url}, nil
+}
+
+// avatarSettleTimeout bounds the read that tells whether a failed avatar update was committed after all
+const avatarSettleTimeout = 3 * time.Second
+
+// avatarCommitted is for an avatar update that returned an error. The error of a transaction can come from its commit, after the database
+// already made the change, for example when the connection drops on the way back, and then the address of the new file is live. So the
+// address is read again, and the new file is deleted only when the read shows another address. When the read fails too, the file stays,
+// because a leaked file costs a few kilobytes and a deleted file under a live address costs a person the picture. It returns true when
+// the update did happen. The file that it replaced is not known then and stays in the bucket.
+func (u *UserUseCase) avatarCommitted(
+	ctx context.Context, key string, url string, read func(ctx context.Context) (string, bool, error),
+) bool {
+	// the request may be the reason for the error, for example a client that left, and the read still has to run
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), avatarSettleTimeout)
+	defer cancel()
+
+	current, found, err := read(ctx)
+	if err != nil {
+		log.Printf("the avatar update of %s failed and the address could not be read again, the file stays %v", key, err)
+
+		return false
+	}
+
+	if found && current == url {
+		log.Printf("the avatar update of %s reported an error but was committed, the file it replaced stays", key)
+
+		return true
+	}
+
+	s3.Discard(ctx, u.storage, key)
+
+	return false
 }
 
 // discardReplaced removes the file an avatar update replaced. It only touches files this storage serves under the

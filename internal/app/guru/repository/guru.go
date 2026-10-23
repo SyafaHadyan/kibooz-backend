@@ -294,6 +294,28 @@ func (r *GuruDB) CreateMoodLogs(
 			return err
 		}
 
+		// The caller read each child and checked the teacher before this lock. A move or a removal that was accepted in between has
+		// taken a child out of the class, and then the mood would be written for a child of another class, and its limit would be
+		// counted under the lock of the class that it left. So every child has to be in the class still. A teacher who was taken off
+		// the class in the same window is not found by this check.
+		wanted := make(map[uuid.UUID]struct{}, len(studentIDs))
+		for _, id := range studentIDs {
+			wanted[id] = struct{}{}
+		}
+
+		var present int64
+
+		err = tx.Table("students").
+			Where("id IN ? AND class_id = ? AND deleted_at IS NULL", studentIDs, classID).
+			Count(&present).Error
+		if err != nil {
+			return err
+		}
+
+		if present != int64(len(wanted)) {
+			return apperror.ErrStudentNotFound
+		}
+
 		// A mood is told apart from the moods of an earlier class by its date, so a child that moved cannot get a mood that is dated
 		// before it joined its class. A child that never moved has no earlier class, and its moods may be dated as before.
 		var joined []struct {
