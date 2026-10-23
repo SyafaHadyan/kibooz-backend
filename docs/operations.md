@@ -24,7 +24,7 @@ A hosted PostgreSQL, Redis or bucket can replace the bundled ones by pointing `D
 4. Check that the new version answers.
 
    ```sh
-   curl -s https://kibooz-api.syafahadyan.com/healthz
+   curl -s https://<api host>/healthz
    ```
 
    The body has `status` `ok` and the `version` of the release. `degraded` means Redis is down or the bucket refuses writes, and the API still serves. `down` comes with a `503` and means the database does not answer.
@@ -127,7 +127,7 @@ The health check uses a database connection of its own. The requests share a poo
 
 ## Uptime monitoring
 
-Better Stack checks `https://kibooz-api.syafahadyan.com/healthz` and the documentation site every 3 minutes, from Europe, North America, Asia and Australia. A failure that lasts about 3 minutes opens an incident and sends an email and a push notification to the owner. The public page at <https://status.syafahadyan.com/> shows both monitors, and the badges at the top of the README read from them.
+Better Stack checks the `/healthz` route of the API and the documentation site every 3 minutes, from Europe, North America, Asia and Australia. A failure that lasts about 3 minutes opens an incident and sends an email and a push notification to the owner. The public page at <https://status.syafahadyan.com/> shows both monitors, and the badge of the documentation site at the top of the README reads from the monitor of the documentation site.
 
 The free plan only looks at the status code. `/healthz` answers `503` when the database is down, so that raises an incident. It answers `200` with `degraded` when only Redis or the bucket is down, so that does not, and the log lines in the table below are the way to notice it. A deploy restarts the API for a few seconds, which is shorter than the confirmation period, so it does not page anyone. Pause the monitor in Better Stack before a longer planned stop.
 

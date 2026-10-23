@@ -204,7 +204,7 @@ func TestScrubTextCasesOneByOne(t *testing.T) {
 func TestScrubEventDropsTheRequestTheBreadcrumbsAndTheContactsOfTheUser(t *testing.T) {
 	event := &sentry.Event{
 		Message:     "failed for ana@example.com",
-		Request:     &sentry.Request{URL: "https://kibooz-api.syafahadyan.com/api/v1/x?token=abc", Cookies: "session=abc"},
+		Request:     &sentry.Request{URL: "https://api.example.com/api/v1/x?token=abc", Cookies: "session=abc"},
 		Breadcrumbs: []*sentry.Breadcrumb{{Message: "log line"}},
 		User:        sentry.User{ID: "u1", Email: "ana@example.com", IPAddress: "10.0.0.1", Username: "ana"},
 		Tags:        map[string]string{"route": "/x", "other": "ana@example.com"},
