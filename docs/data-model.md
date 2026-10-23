@@ -26,7 +26,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |
 | `leaderboard_history` | The final standings of a class for a semester that ended, one row for each class, child and semester (unique key `leaderboard_history_unique`), so a second save of the same semester is skipped and not stored again |
-| `file_cleanups` | A bucket file that waits to be removed again after a failed try |
+| `file_cleanups` | A bucket file that waits to be removed again after a failed try. A sweep takes its files with a lease in `next_try_at` (`FOR UPDATE SKIP LOCKED`), so two copies of the API do not try the same file at the same time |
 | `idempotency_keys` | A remembered `Idempotency-Key` with the response of the request |
 
 The enum types are `user_role`, `mood_enum` (`SENANG`, `SEDIH`, `MARAH`, `BINGUNG`), `input_source_enum` (`AI_CAMERA`, `MANUAL_INPUT`) and `trash_category_enum` (`ORGANIK`, `ANORGANIK`, `B3`).

@@ -52,14 +52,17 @@ type Env struct {
 	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
 	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
 	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
-	DeviceTokenTTLDays      int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
-	S3Endpoint              string `env:"S3_ENDPOINT"`
-	S3AccountID             string `env:"S3_ACCOUNT_ID"`
-	S3Region                string `env:"S3_REGION" envDefault:"auto"`
-	S3PublicBucketName      string `env:"S3_PUBLIC_BUCKET_NAME"`
-	S3AccessKeyID           string `env:"S3_ACCESS_KEY_ID"`
-	S3AccessKeySecret       string `env:"S3_ACCESS_KEY_SECRET"`
-	S3PublicURL             string `env:"S3_PUBLIC_URL"`
+	// RefreshReuseLeewaySeconds is how long after its use a refresh token can be shown again and get a new token of the same
+	// session, for a client that lost the answer to its first call. 0 switches it off, and any reuse ends the session.
+	RefreshReuseLeewaySeconds int    `env:"REFRESH_REUSE_LEEWAY_SECONDS" envDefault:"10"`
+	DeviceTokenTTLDays        int    `env:"DEVICE_TOKEN_TTL_DAYS" envDefault:"90"`
+	S3Endpoint                string `env:"S3_ENDPOINT"`
+	S3AccountID               string `env:"S3_ACCOUNT_ID"`
+	S3Region                  string `env:"S3_REGION" envDefault:"auto"`
+	S3PublicBucketName        string `env:"S3_PUBLIC_BUCKET_NAME"`
+	S3AccessKeyID             string `env:"S3_ACCESS_KEY_ID"`
+	S3AccessKeySecret         string `env:"S3_ACCESS_KEY_SECRET"`
+	S3PublicURL               string `env:"S3_PUBLIC_URL"`
 	// S3PrivateBucketName is the bucket of the chat media, which is never public. Empty switches chat media off.
 	S3PrivateBucketName string `env:"S3_PRIVATE_BUCKET_NAME"`
 	ChatPhotoMaxMB      int    `env:"CHAT_PHOTO_MAX_MB" envDefault:"4"`
@@ -84,7 +87,8 @@ type Env struct {
 	SentryServerName      string `env:"SENTRY_SERVER_NAME"`
 	SentryEventsPerMinute int    `env:"SENTRY_EVENTS_PER_MINUTE" envDefault:"30"`
 	// PasswordHashConcurrency is how many passwords the process hashes or checks at the same time, and 0 means one for each
-	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again.
+	// CPU. A request that finds every slot taken waits PasswordHashWaitMilliseconds and is then told to try again, at once when the
+	// line in front of it already needs longer than that.
 	PasswordHashConcurrency int `env:"PASSWORD_HASH_CONCURRENCY" envDefault:"0"`
 	// PasswordHashCost is the bcrypt cost of new hashes. 10 is the default of bcrypt and the lowest that OWASP accepts. A lower
 	// value is for tests only, and every cost up to 14 is allowed because the time of a hash doubles with each step.
@@ -256,6 +260,11 @@ func (e *Env) validate() error {
 		}
 	}
 
+	// a leeway that is long gives a stolen token that much time to mint tokens of its own, and a negative one has no meaning
+	if e.RefreshReuseLeewaySeconds < 0 || e.RefreshReuseLeewaySeconds > maxRefreshReuseLeewaySeconds {
+		return fmt.Errorf("REFRESH_REUSE_LEEWAY_SECONDS must be between 0 and %d", maxRefreshReuseLeewaySeconds)
+	}
+
 	// below 4 bcrypt would not hash at all, and above 14 a single sign in would take seconds of a whole CPU
 	if e.PasswordHashCost < minPasswordHashCost || e.PasswordHashCost > maxPasswordHashCost {
 		return fmt.Errorf("PASSWORD_HASH_COST must be between %d and %d", minPasswordHashCost, maxPasswordHashCost)
@@ -278,6 +287,10 @@ func (e *Env) validate() error {
 }
 
 const maxPort = 65535
+
+// maxRefreshReuseLeewaySeconds is the longest REFRESH_REUSE_LEEWAY_SECONDS. A thief who holds a used token can mint tokens of its own
+// only for this long after the owner used it, and a retry of an app that lost its answer needs seconds and not minutes.
+const maxRefreshReuseLeewaySeconds = 60
 
 // minBodyLimitMB is the smallest BODY_LIMIT_MB. The trash photo is 4 MiB at most and travels as base64 inside a JSON body, which is
 // about 5.4 MiB with the keys around it, so a smaller limit would answer 413 to a photo that the route allows.

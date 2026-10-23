@@ -1,0 +1,183 @@
+# An example of how a small production host can run Kibooz. It is not what the repository tests, `compose.yml` is that. It shows
+# the choices that the maintainer made on one 2 vCPU host, so another operator can start from a file that is known to work and
+# not from a blank page, see docs/operations.md. CI only checks that the file is still valid compose (`docker compose config`),
+# so a renamed setting cannot leave it behind.
+#
+# What differs from compose.yml
+#   - two copies of the API behind the reverse proxy of the host, each with its own port, and a rolling update that replaces them one
+#     after the other (scripts/rolling-update.sh), so a deploy never leaves the site without a copy
+#   - each copy is capped at half a CPU, so a flood of work cannot starve the database that shares the host
+#   - PostgreSQL is not in this file. It runs as its own stack on the host and the copies join its network
+#   - the image tag is always written down (IMAGE_TAG), because the update script changes it and `latest` would hide what runs
+#
+# Copy it to compose.yml on the host and copy .env.example to .env. In .env set IMAGE_TAG to the version to run (the file has no default
+# on purpose), DB_HOST to the name of the PostgreSQL container on the network of the database stack, which has to exist before this
+# file starts, and the other values that .env.example asks for.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-api: &api
+  image: syafa/kibooz-backend:${IMAGE_TAG}
+  restart: always
+  # the API stops accepting requests and gives running ones 15 seconds, and then closes its push, metrics and error report work for
+  # up to 17 more, so Docker has to wait longer than that
+  stop_grace_period: 40s
+  env_file: .env
+  environment:
+    REDIS_ADDRESS: redis
+    REDIS_PORT: 6379
+    GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
+    METRICS_ADDRESS: ":9100"
+  # For the push wake ups, mount the key of the Firebase service account read only and set FIREBASE_CREDENTIALS_FILE in .env to
+  # /run/secrets/firebase.json. Create the file first, because Docker makes a directory of that name when it is missing, and make it
+  # readable by the user of the container (65532), for example with chmod 0644.
+  # volumes:
+  #   - ./secrets/firebase.json:/run/secrets/firebase.json:ro
+  depends_on:
+    redis:
+      condition: service_healthy
+      required: false
+  networks:
+    - internal
+    - postgres_postgres
+  labels:
+    kibooz.role: api
+    kibooz.metrics_port: "9100"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: ${API_MEMORY_LIMIT:-384m}
+  logging: *default-logging
+
+services:
+  api-1:
+    <<: *api
+    container_name: kibooz-api-1
+    ports:
+      # only the reverse proxy of this host reaches the copies, so they are never exposed on a public address by accident
+      - "127.0.0.1:8000:${APP_PORT}"
+
+  api-2:
+    <<: *api
+    container_name: kibooz-api-2
+    ports:
+      - "127.0.0.1:8001:${APP_PORT}"
+
+  redis:
+    image: redis:8-alpine
+    container_name: kibooz-redis
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: ${REDIS_MEMORY_LIMIT:-192m}
+    command:
+      - sh
+      - -c
+      - |
+        set -- --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory "$$REDIS_MAXMEMORY" --maxmemory-policy volatile-lru
+        if [ -n "$$REDIS_USERNAME" ]; then
+          set -- "$$@" --user "$$REDIS_USERNAME" on ">$$REDIS_PASSWORD" "~*" "&*" "+@all"
+        fi
+        exec redis-server "$$@"
+    environment:
+      REDIS_USERNAME: ${REDIS_USERNAME:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_MAXMEMORY: ${REDIS_MAXMEMORY:-96mb}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - kibooz-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+    labels:
+      kibooz.role: redis
+    user: redis
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # Metrics and logs go to Grafana Cloud. These two services only start with the `monitoring` profile, see docs/monitoring.md.
+  alloy:
+    image: grafana/alloy:v1.21.0
+    container_name: kibooz-alloy
+    restart: always
+    profiles:
+      - monitoring
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - --server.http.listen-addr=127.0.0.1:12345
+      - /etc/alloy/config.alloy
+    environment:
+      GRAFANA_CLOUD_PROMETHEUS_URL: ${GRAFANA_CLOUD_PROMETHEUS_URL:-}
+      GRAFANA_CLOUD_PROMETHEUS_USER: ${GRAFANA_CLOUD_PROMETHEUS_USER:-}
+      GRAFANA_CLOUD_LOKI_URL: ${GRAFANA_CLOUD_LOKI_URL:-}
+      GRAFANA_CLOUD_LOKI_USER: ${GRAFANA_CLOUD_LOKI_USER:-}
+      GRAFANA_CLOUD_TOKEN: ${GRAFANA_CLOUD_TOKEN:-}
+      GRAFANA_HOST: ${GRAFANA_HOST:-main}
+    deploy:
+      resources:
+        limits:
+          memory: ${ALLOY_MEMORY_LIMIT:-256m}
+    volumes:
+      - ./grafana/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - kibooz-alloy:/var/lib/alloy/data
+    depends_on:
+      - socket-proxy
+    networks:
+      - internal
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # The only container that touches the Docker socket. It answers read requests for containers and networks and refuses
+  # everything else, so Alloy cannot start, stop or create a container even if it is compromised.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: kibooz-socket-proxy
+    restart: always
+    profiles:
+      - monitoring
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-api
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+networks:
+  internal:
+  # no route out and shared by the socket proxy and Alloy only, so nothing else can reach the Docker API
+  docker-api:
+    internal: true
+  # the network of the PostgreSQL stack of the host, which has to exist before this file starts
+  postgres_postgres:
+    external: true
+
+volumes:
+  kibooz-redis:
+  kibooz-alloy:

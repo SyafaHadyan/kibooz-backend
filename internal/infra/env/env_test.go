@@ -211,6 +211,22 @@ func TestThePasswordHashCostHasToBeInTheRangeOfBcrypt(t *testing.T) {
 	}
 }
 
+func TestTheRefreshReuseLeewayIsAtMostAMinuteAndZeroSwitchesItOff(t *testing.T) {
+	for _, seconds := range []int{-1, 61} {
+		cfg := valid()
+		cfg.RefreshReuseLeewaySeconds = seconds
+
+		require.ErrorContains(t, cfg.validate(), "REFRESH_REUSE_LEEWAY_SECONDS", "seconds %d", seconds)
+	}
+
+	for _, seconds := range []int{0, 10, 60} {
+		cfg := valid()
+		cfg.RefreshReuseLeewaySeconds = seconds
+
+		require.NoError(t, cfg.validate(), "seconds %d", seconds)
+	}
+}
+
 func TestAKeepaliveOfZeroAndZeroPointsAreAllowed(t *testing.T) {
 	cfg := valid()
 	cfg.KeepaliveSeconds = 0
