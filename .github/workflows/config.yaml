@@ -79,6 +79,29 @@ jobs:
         run: |
           docker run --rm -i "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh hadolint)")" < Dockerfile
 
+  compose:
+    name: Compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # docker compose config reads the files and builds nothing and starts nothing. The example file is not used by any other job,
+      # so this is what keeps it from drifting away from the settings of the API.
+      - name: Check the compose files
+        env:
+          IMAGE_TAG: ci
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yml config --quiet
+          docker compose -f compose.production.example.yml config --quiet
+          COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
+
   shell:
     name: Shell lint
     runs-on: ubuntu-latest
