@@ -4,9 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -27,10 +25,11 @@ var noPlanNeeded = map[string]string{}
 
 // Every exported method of a repository runs a statement against the database, and the Explain plans workflow writes the plan of
 // each one on a database of the size of production. A method that the test does not call has no plan, so a slow query or a missing
-// index in it is found only in production. This test fails for such a method.
+// index in it is found only in production. This test fails for such a method. It looks at the methods of the types whose name ends in
+// DB under internal/app/*/repository. The packages with queries of their own, such as ranking and classteam, are reached through those
+// methods, and a new package of that kind needs its own call in the Explain test.
 func TestEveryRepositoryMethodHasAPlanInTheExplainTest(t *testing.T) {
-	explain, err := os.ReadFile("../explain/explain_test.go")
-	require.NoError(t, err)
+	called := calledInExplainTest(t)
 
 	files, err := filepath.Glob("../app/*/repository/*.go")
 	require.NoError(t, err)
@@ -38,7 +37,9 @@ func TestEveryRepositoryMethodHasAPlanInTheExplainTest(t *testing.T) {
 
 	var missing []string
 
-	called := 0
+	found := map[string]bool{}
+
+	covered := 0
 
 	for _, file := range files {
 		if strings.HasSuffix(file, "_test.go") {
@@ -59,14 +60,16 @@ func TestEveryRepositoryMethodHasAPlanInTheExplainTest(t *testing.T) {
 			}
 
 			key := pkg + "." + function.Name.Name
+			found[key] = true
+
 			if reason, skipped := noPlanNeeded[key]; skipped {
 				require.NotEmpty(t, reason, "%s is listed without a reason", key)
 
 				continue
 			}
 
-			if regexp.MustCompile(`\b` + variable + `\.` + function.Name.Name + `\(`).Match(explain) {
-				called++
+			if called[variable+"."+function.Name.Name] {
+				covered++
 
 				continue
 			}
@@ -77,12 +80,44 @@ func TestEveryRepositoryMethodHasAPlanInTheExplainTest(t *testing.T) {
 
 	sort.Strings(missing)
 
-	require.NotZero(t, called, "no repository method was found, the test would pass without checking anything")
+	require.NotZero(t, covered, "no repository method was found, the test would pass without checking anything")
 	require.Empty(t, missing, "these repository methods are not called in internal/explain/explain_test.go, so their queries have no plan")
 
 	for key := range noPlanNeeded {
-		require.Contains(t, key, ".", "a key of noPlanNeeded is package.Method")
+		require.True(t, found[key], "%s in noPlanNeeded is not an exported method of a repository, remove it", key)
 	}
+}
+
+// calledInExplainTest lists the calls of the form variable.Method( in the Explain plans test, read from its syntax and not from its
+// text, so a call in a comment or in a title does not count. The file has a build tag that only keeps it out of a normal build, and
+// the parser reads it anyway.
+func calledInExplainTest(t *testing.T) map[string]bool {
+	t.Helper()
+
+	parsed, err := parser.ParseFile(token.NewFileSet(), "../explain/explain_test.go", nil, 0)
+	require.NoError(t, err)
+
+	calls := map[string]bool{}
+
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+
+		if variable, ok := selector.X.(*ast.Ident); ok {
+			calls[variable.Name+"."+selector.Sel.Name] = true
+		}
+
+		return true
+	})
+
+	return calls
 }
 
 // receiverName is the type name of the receiver of a method, without the pointer

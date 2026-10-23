@@ -112,7 +112,7 @@ func (l *planLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 	// on a connection of its own while the transaction of the caller is still open, so running it would wait for that
 	// transaction, or change the rows a second time.
 	if read && !strings.Contains(upper, " FOR UPDATE") && !strings.Contains(upper, " FOR SHARE") &&
-		!strings.Contains(upper, " FOR NO KEY UPDATE") && !strings.Contains(upper, "ADVISORY") && !strings.Contains(upper, "RETURNING") {
+		!strings.Contains(upper, " FOR NO KEY UPDATE") && !strings.Contains(upper, " FOR KEY SHARE") && !strings.Contains(upper, "ADVISORY") && !strings.Contains(upper, "RETURNING") {
 		l.write(ctx, "EXPLAIN (ANALYZE, BUFFERS)", statement, planTimeout)
 	}
 }
@@ -141,6 +141,43 @@ func drop[T any](_ T, err error) error { return err }
 func drop2[A any, B any](_ A, _ B, err error) error { return err }
 
 func drop3[A any, B any, C any](_ A, _ B, _ C, err error) error { return err }
+
+// errNothingMatched is what a write that found no row to change answers, because the method itself answers nil then and the plan of its
+// statements would be missing without a word
+var errNothingMatched = errors.New("the call matched no row, so its statements did not run")
+
+// matched answers an error when the second result, which says that a row was found, is false
+func matched[A any](_ A, ok bool, err error) error {
+	if err == nil && !ok {
+		return errNothingMatched
+	}
+
+	return err
+}
+
+// okOnly is matched for a method that answers the flag and the error only
+func okOnly(ok bool, err error) error {
+	if err == nil && !ok {
+		return errNothingMatched
+	}
+
+	return err
+}
+
+// verified is matched for VerifyNISN, which answers the flag first and then how many children lost the number
+func verified(ok bool, _ int64, err error) error { return okOnly(ok, err) }
+
+// present answers an error when the method found nothing and said so with a nil result
+func present[T any](found *T, err error) error {
+	if err == nil && found == nil {
+		return errNothingMatched
+	}
+
+	return err
+}
+
+// presentWith is present for a method that answers a text after the pointer
+func presentWith[T any](found *T, _ string, err error) error { return present(found, err) }
 
 func TestExplainThePlansOfTheQueriesToWatch(t *testing.T) {
 	cfg := config()
@@ -185,6 +222,9 @@ func TestExplainThePlansOfTheQueriesToWatch(t *testing.T) {
 func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, children int) {
 	t.Helper()
 
+	// the writes name the teachers g6, the children s3, s7 and s9 and the class 00000002, which only fit together from ten classes up
+	require.GreaterOrEqual(t, classes, 10, "EXPLAIN_CLASSES has to be 10 or more, or the writes run on rows that do not fit together")
+
 	var (
 		teacher   = id("guru2")
 		guru      = id("g2")
@@ -227,6 +267,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	userRepo := userrepository.NewUserDB(logged)
 	waliRepo := walirepository.NewWaliDB(logged, keyOf)
 
+	// strict is on while the writes run, and then a call that answers any error fails the test, because every one of them is meant to run
+	// its statements on the seed. A refusal of the code is what the reads and the jobs around them may show.
+	strict := false
+
 	call := func(title string, run func(ctx context.Context) error) {
 		fmt.Fprintf(plans, "==== %s\n\n", title)
 
@@ -243,6 +287,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		default:
 			// a not found or a refusal is an answer of the code, and the plans of its statements are above
 			fmt.Fprintf(plans, "returned %v\n\n", err)
+
+			if strict {
+				t.Errorf("%s returned %v, so the plan of its statements is missing or incomplete", title, err)
+			}
 		}
 	}
 
@@ -431,6 +479,8 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		avatarURL                     = "https://files.example.test/avatars/explain.png"
 	)
 
+	strict = true
+
 	call("auth, register a teacher", func(ctx context.Context) error {
 		user := &entity.User{ID: uuid.New(), Email: "explain-guru@example.test", PasswordHash: "x", Role: constants.RoleGuru, FullName: "Explain Guru"}
 		teacherRow := &entity.Guru{ID: uuid.New(), UserID: user.ID, SchoolName: "Explain School"}
@@ -449,12 +499,16 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return drop(waliRepo.AddChild(ctx, wali, "00000002", &entity.Student{ID: addedChild, NISN: "9000000002", FullName: "Explain Second"}, 10))
 	})
 	call("parent, change the name and the NISN of a child", func(ctx context.Context) error {
-		return drop2(waliRepo.UpdateStudent(ctx, wali, child, walirepository.StudentUpdate{SetName: true, FullName: "Renamed", SetNISN: true, NISN: "9000000003"}))
+		return matched(waliRepo.UpdateStudent(ctx, wali, child, walirepository.StudentUpdate{SetName: true, FullName: "Renamed", SetNISN: true, NISN: "9000000003"}))
 	})
 	call("parent, update the profile", func(ctx context.Context) error {
 		phone := "+62 812 3456 7890"
 
-		return waliRepo.UpdateProfile(ctx, parent, wali, walirepository.ProfileUpdate{SetName: true, FullName: "Explain Parent", SetPhone: true, Phone: &phone})
+		address := "Explain Street 1"
+
+		return waliRepo.UpdateProfile(ctx, parent, wali, walirepository.ProfileUpdate{
+			SetName: true, FullName: "Explain Parent", SetPhone: true, Phone: &phone, SetWhatsapp: true, Whatsapp: &phone, SetAddress: true, Address: &address,
+		})
 	})
 	call("parent, apply a guidance", func(ctx context.Context) error {
 		return waliRepo.CreateGuidanceApplication(ctx, &entity.GuidanceApplication{
@@ -484,24 +538,28 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 	call("guru, accept a move", func(ctx context.Context) error { return drop(guruRepo.AcceptMove(ctx, class, accepted, guru)) })
 	call("guru, reject a move", func(ctx context.Context) error { return guruRepo.RejectMove(ctx, class, rejected, guru) })
-	call("guru, verify a NISN", func(ctx context.Context) error { return drop2(guruRepo.VerifyNISN(ctx, class, child)) })
-	call("guru, take a verification back", func(ctx context.Context) error { return drop(guruRepo.UnverifyNISN(ctx, class, child)) })
+	call("guru, verify a NISN", func(ctx context.Context) error { return verified(guruRepo.VerifyNISN(ctx, class, child)) })
+	call("guru, take a verification back", func(ctx context.Context) error { return okOnly(guruRepo.UnverifyNISN(ctx, class, child)) })
 	call("guru, update the profile", func(ctx context.Context) error {
 		phone := "+62 812 3456 7890"
 
-		return guruRepo.UpdateProfile(ctx, teacher, guru, gururepository.ProfileUpdate{SetName: true, FullName: "Explain Teacher", SetPhone: true, Phone: &phone})
+		address := "Explain Street 2"
+
+		return guruRepo.UpdateProfile(ctx, teacher, guru, gururepository.ProfileUpdate{
+			SetName: true, FullName: "Explain Teacher", SetPhone: true, Phone: &phone, SetAddress: true, Address: &address,
+		})
 	})
 	call("guru, start a class", func(ctx context.Context) error {
 		return guruRepo.CreateClass(ctx, guru, &entity.Class{ID: uuid.New(), SchoolName: "Explain School", Name: "Second", GradeLevel: "B", AcademicYear: "2026"})
 	})
 	call("guru, add a teacher", func(ctx context.Context) error {
-		return drop(guruRepo.AddTeacher(ctx, class, guru, "guru6@example.test"))
+		return present(guruRepo.AddTeacher(ctx, class, guru, "guru6@example.test"))
 	})
 	call("guru, hand over the class", func(ctx context.Context) error {
-		return drop(guruRepo.TransferOwnership(ctx, class, guru, extraTeacher))
+		return present(guruRepo.TransferOwnership(ctx, class, guru, extraTeacher))
 	})
 	call("guru, take the class back", func(ctx context.Context) error {
-		return drop(guruRepo.TransferOwnership(ctx, class, extraTeacher, guru))
+		return present(guruRepo.TransferOwnership(ctx, class, extraTeacher, guru))
 	})
 	call("guru, remove a teacher", func(ctx context.Context) error { return guruRepo.RemoveTeacher(ctx, class, guru, extraTeacher) })
 	call("guru, close and open joining", func(ctx context.Context) error {
@@ -514,13 +572,16 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("guru, rotate the join code", func(ctx context.Context) error { return drop(guruRepo.RotateJoinCode(ctx, class, guru)) })
 	call("guru, archive a class", func(ctx context.Context) error { return guruRepo.ArchiveClass(ctx, class, guru) })
 	call("guru, restore a class", func(ctx context.Context) error { return drop(guruRepo.RestoreClass(ctx, class, guru)) })
-	call("guru, remove a child", func(ctx context.Context) error { return drop(guruRepo.RemoveStudent(ctx, class, secondTwo)) })
-	call("parent, delete a child", func(ctx context.Context) error { return drop2(waliRepo.RemoveStudent(ctx, wali, addedChild)) })
+	call("guru, remove a child", func(ctx context.Context) error { return okOnly(guruRepo.RemoveStudent(ctx, class, secondTwo)) })
+	call("user, set the avatar of the child that is deleted next", func(ctx context.Context) error {
+		return presentWith(userRepo.UpdateStudentAvatar(ctx, wali, addedChild, avatarURL))
+	})
+	call("parent, delete a child", func(ctx context.Context) error { return matched(waliRepo.RemoveStudent(ctx, wali, addedChild)) })
 	call("classroom, add a video", func(ctx context.Context) error {
 		return classroom.CreateVideo(ctx, &entity.LearningVideo{ID: newVideo, ClassID: class, AddedByGuruID: guru, Title: "New", VideoURL: videoURL, CreatedAt: now})
 	})
 	call("classroom, change a video", func(ctx context.Context) error {
-		return drop(classroom.UpdateVideo(ctx, class, newVideo, func(video *entity.LearningVideo) error {
+		return present(classroom.UpdateVideo(ctx, class, newVideo, func(video *entity.LearningVideo) error {
 			video.Title = "Changed"
 
 			return nil
@@ -531,16 +592,16 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 			return drop(repo.CountVideosByURL(ctx, videoURL))
 		})
 	})
-	call("classroom, delete a video", func(ctx context.Context) error { return drop(classroom.DeleteVideo(ctx, class, newVideo)) })
+	call("classroom, delete a video", func(ctx context.Context) error { return okOnly(classroom.DeleteVideo(ctx, class, newVideo)) })
 	call("classroom, write a thread", func(ctx context.Context) error {
 		title := "Explain"
 
 		return classroom.CreatePost(ctx, &entity.ForumPost{ID: newPost, ClassID: class, AuthorUserID: teacher, Title: &title, Body: "Body", CreatedAt: now})
 	})
 	call("classroom, edit a post", func(ctx context.Context) error {
-		return drop(classroom.UpdatePost(ctx, newPost, func(post *entity.ForumPost) { post.Body = "Edited" }))
+		return okOnly(classroom.UpdatePost(ctx, newPost, func(post *entity.ForumPost) { post.Body = "Edited" }))
 	})
-	call("classroom, delete a post", func(ctx context.Context) error { return drop(classroom.DeletePost(ctx, newPost)) })
+	call("classroom, delete a post", func(ctx context.Context) error { return okOnly(classroom.DeletePost(ctx, newPost)) })
 	call("chat, delete a message", func(ctx context.Context) error { return chat.DeleteMessage(ctx, chatID, messageID, teacher, now) })
 	call("push, delete a token", func(ctx context.Context) error {
 		return pushRepo.DeleteToken(ctx, parent, fmt.Sprintf("%x%x", md5.Sum([]byte("p1")), md5.Sum([]byte("q1"))))
@@ -550,16 +611,22 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 			fmt.Sprintf("%x%x", md5.Sum([]byte("p2")), md5.Sum([]byte("q2"))), fmt.Sprintf("%x%x", md5.Sum([]byte("p3")), md5.Sum([]byte("q3"))),
 		})
 	})
-	call("user, set the avatar of an account", func(ctx context.Context) error { return drop2(userRepo.UpdateUserAvatar(ctx, parent, avatarURL)) })
+	call("user, set the avatar of an account", func(ctx context.Context) error { return matched(userRepo.UpdateUserAvatar(ctx, parent, avatarURL)) })
 	call("user, set the avatar of a child", func(ctx context.Context) error {
-		return drop2(userRepo.UpdateStudentAvatar(ctx, wali, child, avatarURL))
+		return presentWith(userRepo.UpdateStudentAvatar(ctx, wali, child, avatarURL))
 	})
-	call("user, read the avatar of an account", func(ctx context.Context) error { return drop2(userRepo.UserAvatar(ctx, parent)) })
-	call("user, read the avatar of a child", func(ctx context.Context) error { return drop3(userRepo.StudentAvatar(ctx, wali, child)) })
-	call("user, change the password", func(ctx context.Context) error { return drop(userRepo.UpdatePassword(ctx, parent, "x", "y")) })
+	call("user, read the avatar of an account", func(ctx context.Context) error { return matched(userRepo.UserAvatar(ctx, parent)) })
+	call("user, read the avatar of a child", func(ctx context.Context) error {
+		_, _, found, err := userRepo.StudentAvatar(ctx, wali, child)
+
+		return okOnly(found, err)
+	})
+	call("user, change the password", func(ctx context.Context) error { return okOnly(userRepo.UpdatePassword(ctx, parent, "x", "y")) })
 	call("user, take files off the cleanup queue", func(ctx context.Context) error {
 		return userRepo.UnqueueFileCleanups(ctx, []string{"old/1.jpg", "old/2.jpg", "old/3.jpg"})
 	})
+
+	strict = false
 
 	// the jobs that run on their own
 	call("job, sweep the refresh tokens", func(ctx context.Context) error {
