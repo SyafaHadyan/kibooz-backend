@@ -23,7 +23,7 @@ var PhonePattern = regexp.MustCompile(`^\+?\(?[0-9][0-9 ()-]{4,26}[0-9]$`)
 // notCommonTag is the validator tag that refuses a password from the list of common passwords
 const notCommonTag = "notcommon"
 
-//go:embed common_passwords.txt
+//go:embed common-passwords.txt
 var commonPasswordList string
 
 var (
