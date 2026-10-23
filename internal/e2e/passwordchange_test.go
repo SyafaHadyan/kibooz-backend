@@ -120,7 +120,8 @@ func TestChangingThePasswordWhileDeletingTheAccountNeverDeadlocks(t *testing.T) 
 
 		wg.Wait()
 
-		require.Equal(t, http.StatusOK, removed.Status, "round %d, body %v", round, removed.Body)
+		// the change can commit first, and then the deletion with the old password is refused, which is as right as the other order
+		require.Contains(t, []int{http.StatusOK, http.StatusForbidden}, removed.Status, "round %d, body %v", round, removed.Body)
 		require.NotEqual(t, http.StatusInternalServerError, changed.Status, "round %d, body %v", round, changed.Body)
 		require.NotEqual(t, http.StatusInternalServerError, signedIn.Status, "round %d, body %v", round, signedIn.Body)
 	}
