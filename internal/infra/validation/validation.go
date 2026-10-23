@@ -60,8 +60,8 @@ const minIdentityRunes = 6
 
 // ContainsIdentity reports whether the password contains one of the details of the person who sets it, such as the email, the part of
 // the email before the at sign, a phone number, a NIP or a NISN. These are the first guesses of someone who knows the person, and a
-// parent may well use the NISN of the child. The case, the spaces and the signs of a phone number do not matter, and the empty
-// details and the ones shorter than six characters are left out.
+// parent may well use the NISN of the child. The whole detail has to be inside the password. The case, the spaces and the signs of
+// a name or a phone number do not matter, and the empty details and the ones shorter than six characters are left out.
 func ContainsIdentity(password string, identities ...string) bool {
 	plain := identityForm(password)
 
@@ -82,11 +82,11 @@ func ContainsIdentity(password string, identities ...string) bool {
 	return false
 }
 
-// identityForm lowercases the text and drops the spaces and the signs that people put in names and phone numbers
+// identityForm lowercases the text and keeps only its letters and digits, so the spaces, the commas of a title such as "S.Pd.", the
+// apostrophes and the signs of a phone number do not matter
 func identityForm(text string) string {
 	return strings.Map(func(r rune) rune {
-		switch r {
-		case ' ', '-', '(', ')', '+', '.', '_':
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			return -1
 		}
 

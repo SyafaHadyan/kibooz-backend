@@ -3448,8 +3448,9 @@ components:
           minLength: 8
           maxLength: 72
           description: >-
-            At most 72 bytes, which is the limit of bcrypt, not on the list of common passwords, and without the email, the name, a phone
-            number, the NIP or the NISN of the request, six characters or more of it (`400` with `VALIDATION_ERROR` on this field).
+            At most 72 bytes, which is the limit of bcrypt, not on the list of common passwords, and not containing the whole email, the part
+            before the at sign, the name, a phone number, the NIP or the NISN of the request, nor the name of the child. A detail shorter
+            than six characters is ignored (`400` with `VALIDATION_ERROR` on this field).
         fullName:
           type: string
           minLength: 2
@@ -3502,7 +3503,7 @@ components:
           type: string
           format: password
           maxLength: 72
-          description: A login only checks the password against the account, and never applies the rule of the common passwords
+          description: A login only checks the password against the account, and never applies the rules of the common passwords or of the own details
         role:
           $ref: "#/components/schemas/Role"
         deviceToken:
@@ -4120,8 +4121,8 @@ components:
           maxLength: 72
           description: >-
             At most 72 bytes, because the hash only reads that much, different from the current password, not on the list of common
-            passwords, and without the email, the name or the phone number of the account, six characters or more of it (`400` with
-            `VALIDATION_ERROR` on this field).
+            passwords, and not containing the whole email, the part before the at sign, the name or the phone number of the account. A
+            detail shorter than six characters is ignored (`400` with `VALIDATION_ERROR` on this field).
     PageInfo:
       type: object
       required: [page, limit, total]
