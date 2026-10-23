@@ -397,30 +397,43 @@ func continueSession(tx *gorm.DB, used sessionRow, now time.Time, next *entity.R
 // that was used a moment ago, within the leeway, belongs to a client that lost the answer, so it gets a new token of the same
 // session, unless it has expired since. A token that was used earlier is taken for a theft and its whole session ends.
 func answerReuse(tx *gorm.DB, tokenHash string, now time.Time, next *entity.RefreshToken, policy RotationPolicy) (Rotation, error) {
+	const columns = "SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ?"
+
 	var seen []sessionRow
 
-	// FOR SHARE makes a logout, a password change or a deletion that ends the family wait for this request, so the token that it
-	// stores is seen and removed by the second pass of that deletion, the same way as for a token that a refresh has just used
-	err := tx.Raw(
-		"SELECT user_id, family_id, session_started_at, used_at, expires_at FROM refresh_tokens WHERE token_hash = ? FOR SHARE", tokenHash,
-	).Scan(&seen).Error
+	// This first read takes no lock. A token that was used before the leeway is a theft, nothing is stored for it, and ending the
+	// session takes the locks that it needs. Two requests that show the same stale token would otherwise both hold a share lock on
+	// it and both wait for the other to let go when the session is deleted, which PostgreSQL ends as a deadlock after a second.
+	// The time of use never changes once it is set, so a decision on this read cannot be undone by a request in between.
+	err := tx.Raw(columns, tokenHash).Scan(&seen).Error
 	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil {
 		return Rotation{}, err
 	}
 
 	// a leeway of 0 means none, even for a request whose clock is a little behind the one that used the token
-	if policy.ReuseLeeway > 0 && now.Sub(*seen[0].UsedAt) <= policy.ReuseLeeway {
-		if !seen[0].ExpiresAt.After(now) {
-			// a client that retries after its token expired has nothing to be taken for a thief, it signs in again
-			return Rotation{}, nil
-		}
-
-		user, err := continueSession(tx, seen[0], now, next, policy)
-
-		return Rotation{User: user, Replayed: user != nil}, err
+	if policy.ReuseLeeway <= 0 || now.Sub(*seen[0].UsedAt) > policy.ReuseLeeway {
+		return Rotation{Reused: true, UserID: seen[0].UserID}, sessions.EndFamily(tx, seen[0].FamilyID)
 	}
 
-	return Rotation{Reused: true, UserID: seen[0].UserID}, sessions.EndFamily(tx, seen[0].FamilyID)
+	// A token that was used a moment ago belongs to a client that lost the answer, so it gets a new token of the same session.
+	// FOR SHARE makes a logout, a password change or a deletion that ends the family wait for this request, so the token that it
+	// stores is seen and removed by the second pass of that deletion, the same way as for a token that a refresh has just used.
+	// The row is read again, because a request that ended the session may have removed it since the first read.
+	seen = nil
+
+	err = tx.Raw(columns+" FOR SHARE", tokenHash).Scan(&seen).Error
+	if err != nil || len(seen) == 0 || seen[0].UsedAt == nil {
+		return Rotation{}, err
+	}
+
+	if !seen[0].ExpiresAt.After(now) {
+		// a client that retries after its token expired has nothing to be taken for a thief, it signs in again
+		return Rotation{}, nil
+	}
+
+	user, err := continueSession(tx, seen[0], now, next, policy)
+
+	return Rotation{User: user, Replayed: user != nil}, err
 }
 
 func (r *AuthDB) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
