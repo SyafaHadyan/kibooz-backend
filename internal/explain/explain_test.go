@@ -49,10 +49,16 @@ import (
 // the time that one query of a section and one EXPLAIN may take. A query that needs more than this at the size of the seed is the
 // finding, and the run goes on to the next section with what it has, so one slow plan cannot cost the others or the job.
 const (
-	queryTimeout   = 3 * time.Minute
-	planTimeout    = 3 * time.Minute
 	costOnlyBudget = time.Minute
 	seasonLabel    = "2099-01-01"
+)
+
+// queryTimeout is how long one call may take, and a plan with real timings gets the same time. The manual run keeps the 3
+// minutes. The check of a pull request sets EXPLAIN_QUERY_TIMEOUT_SECONDS to a few seconds on a smaller seed, so a query that
+// grows with the square of the data fails there before it reaches the full size.
+var (
+	queryTimeout = time.Duration(envInt("EXPLAIN_QUERY_TIMEOUT_SECONDS", 180)) * time.Second
+	planTimeout  = queryTimeout
 )
 
 func envInt(name string, fallback int) int {

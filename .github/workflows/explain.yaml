@@ -1,10 +1,16 @@
 name: Explain plans
 
-# Seeds a throwaway PostgreSQL 18 on the runner with about 200000 accounts (4000 classes of 49 children, a chat of every second
-# child with its teacher, about a million messages and guidance applications) and writes the EXPLAIN (ANALYZE, BUFFERS) plans of
-# the queries that the scale review marked as the ones to watch. It runs by hand only, because the seed takes minutes. The
-# database is a container of the job and never the one of the VPS, and nothing here touches production.
+# Seeds a throwaway PostgreSQL 18 on the runner with accounts, classes, chats and rows in every table, calls every method of every
+# repository that reads and the jobs that run on their own, and writes the EXPLAIN plans. The database is a container of the job
+# and never the one of the VPS, and nothing here touches production.
+#
+# A pull request that changes code that talks to the database runs it on a small seed with a time cap of a few seconds for every
+# call, so a query that grows with the square of the data fails the pull request. Any other pull request ends the job at once
+# with a green result, which is why the job runs on every pull request and is a required check. The full run with about 200000
+# accounts is started by hand.
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       classes:
@@ -21,9 +27,9 @@ permissions: {}
 
 jobs:
   explain:
-    name: Explain the queries
+    name: Query plans
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 20 || 150 }}
     permissions:
       contents: read
     services:
@@ -45,15 +51,46 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # the list of changed files is the difference with the base branch
+          fetch-depth: 0
+
+      # A run by hand always goes on. A pull request goes on only when it changes code that talks to the database, which is the
+      # repositories, the packages with queries of their own, the migrations, the database setup and this check itself.
+      - name: Find out whether the change touches the database
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          pattern='^(internal/app/[^/]+/repository/|internal/(ranking|classteam|enrollment|season|sessions|filecleanup|idempotency|childremoval|classcode|explain)/|internal/infra/db/|\.github/workflows/explain\.yaml$)'
+
+          if git diff --name-only "origin/${BASE_REF}...HEAD" | grep -E -q "$pattern"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No file that talks to the database changed, so the query plans are not checked." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Set up Go
+        if: ${{ steps.changes.outputs.run == 'true' }}
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
 
       - name: Seed the database and explain the queries
+        if: ${{ steps.changes.outputs.run == 'true' }}
         env:
-          CLASSES: ${{ inputs.classes }}
+          # about 25000 accounts on a pull request, which is a minute of seeding, and the full size when started by hand
+          CLASSES: ${{ inputs.classes || '500' }}
+          QUERY_SECONDS: ${{ github.event_name == 'pull_request' && '10' || '180' }}
+          TEST_TIMEOUT: ${{ github.event_name == 'pull_request' && '15m' || '130m' }}
           DB_HOST: 127.0.0.1
           DB_PORT: "5432"
           DB_NAME: kibooz_explain
@@ -68,11 +105,12 @@ jobs:
           fi
 
           export EXPLAIN_CLASSES="$CLASSES"
+          export EXPLAIN_QUERY_TIMEOUT_SECONDS="$QUERY_SECONDS"
           export EXPLAIN_OUT="$RUNNER_TEMP/explain-plans.txt"
 
           # the summary is written even when the test failed, because the plans that exist are the point of the run
           status=0
-          go test -tags explain -run TestExplainThePlansOfTheQueriesToWatch -count=1 -timeout 130m -v ./internal/explain/ | tee "$RUNNER_TEMP/explain-log.txt" || status=$?
+          go test -tags explain -run TestExplainThePlansOfTheQueriesToWatch -count=1 -timeout "$TEST_TIMEOUT" -v ./internal/explain/ | tee "$RUNNER_TEMP/explain-log.txt" || status=$?
 
           {
             echo "### Plans of the queries to watch, $CLASSES classes"
@@ -85,7 +123,7 @@ jobs:
           exit "$status"
 
       - name: Keep the plans
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.changes.outputs.run == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: explain-plans
