@@ -164,17 +164,6 @@ func (f *fakeCache) Del(ctx context.Context, keys ...string) error {
 	return nil
 }
 
-func (f *fakeCache) MarkUsed(_ context.Context, key string, _ time.Duration) (bool, error) {
-	value, ok := f.keys[key]
-	if !ok {
-		return false, nil
-	}
-
-	f.keys[key] = "used"
-
-	return value == "used", nil
-}
-
 func (f *fakeCache) Available() bool { return true }
 
 func (f *fakeCache) Ping(context.Context) error { return nil }

@@ -134,8 +134,6 @@ func (f *fakeCache) Del(_ context.Context, keys ...string) error {
 	return nil
 }
 
-func (f *fakeCache) MarkUsed(context.Context, string, time.Duration) (bool, error) { return false, nil }
-
 func (f *fakeCache) Available() bool { return true }
 
 func (f *fakeCache) Ping(context.Context) error { return nil }

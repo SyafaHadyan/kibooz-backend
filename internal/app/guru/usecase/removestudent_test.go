@@ -51,10 +51,6 @@ func (d *deletedKeys) Del(_ context.Context, keys ...string) error {
 	return nil
 }
 
-func (d *deletedKeys) MarkUsed(context.Context, string, time.Duration) (bool, error) {
-	return false, nil
-}
-
 func (d *deletedKeys) Available() bool { return true }
 
 func (d *deletedKeys) Ping(context.Context) error { return nil }

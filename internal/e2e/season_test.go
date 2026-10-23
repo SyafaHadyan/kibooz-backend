@@ -25,10 +25,6 @@ func (c *recordingCache) Del(_ context.Context, keys ...string) error {
 	return nil
 }
 
-func (c *recordingCache) MarkUsed(context.Context, string, time.Duration) (bool, error) {
-	return false, nil
-}
-
 func (c *recordingCache) Available() bool { return true }
 
 func (c *recordingCache) Ping(context.Context) error { return nil }

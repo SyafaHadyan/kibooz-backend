@@ -26,23 +26,7 @@ const (
 
 	// rejectionLogEvery is how often a command that Redis answers with an error is logged
 	rejectionLogEvery = time.Minute
-
-	usedMarker = "used"
 )
-
-// markUsed flags an existing key as used and gives it the deadline only on the first call, so a key that is shown again keeps
-// the deadline it already has. The reply is nil for a missing key, 0 for the first use and 1 for a key that was used before.
-var markUsed = redis.NewScript(`
-local previous = redis.call('GET', KEYS[1])
-if not previous then
-	return nil
-end
-if previous == ARGV[1] then
-	return 1
-end
-redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
-return 0
-`)
 
 // ErrUnavailable is returned without touching the network while Redis is considered down
 var ErrUnavailable = errors.New("redis unavailable")
@@ -52,9 +36,6 @@ type CacheItf interface {
 	// Get returns found=false when the key does not exist
 	Get(ctx context.Context, key string) (value string, found bool, err error)
 	Del(ctx context.Context, keys ...string) error
-	// MarkUsed atomically flags an existing key as used for ttl and reports whether it was already flagged.
-	// The ttl starts at the first use, and asking again does not renew it. A missing key is left missing and reports false.
-	MarkUsed(ctx context.Context, key string, ttl time.Duration) (alreadyUsed bool, err error)
 	// Available reports whether Redis is currently reachable
 	Available() bool
 	Ping(ctx context.Context) error
@@ -269,23 +250,6 @@ func (r *Redis) Del(ctx context.Context, keys ...string) error {
 	}
 
 	return r.record(ctx, r.Client.Del(ctx, prefixed...).Err())
-}
-
-func (r *Redis) MarkUsed(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	if err := r.allow(); err != nil {
-		return false, err
-	}
-
-	previous, err := markUsed.Run(ctx, r.Client, []string{r.key(key)}, usedMarker, ttl.Milliseconds()).Int()
-	if errors.Is(err, redis.Nil) {
-		return false, r.record(ctx, nil)
-	}
-
-	if err != nil {
-		return false, r.record(ctx, err)
-	}
-
-	return previous == 1, r.record(ctx, nil)
 }
 
 func (r *Redis) Ping(ctx context.Context) error {
