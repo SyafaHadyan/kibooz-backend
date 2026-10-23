@@ -84,7 +84,7 @@ func New(cfg *env.Env) (*gorm.DB, error) {
 
 	sqlDB.SetMaxOpenConns(25)
 	// a burst of requests opens connections, and a pool that keeps only 5 of the 25 would close and open them again with every burst,
-	// which costs a login of PostgreSQL each time. Ten idle ones per copy of two is far below max_connections.
+	// which costs a login of PostgreSQL each time. Ten idle ones in each of two copies is far below max_connections.
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)

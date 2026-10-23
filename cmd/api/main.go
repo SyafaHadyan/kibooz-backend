@@ -76,8 +76,8 @@ func main() {
 		log.Println("gracefully shutting down")
 	}
 
-	// a request may use its whole REQUEST_TIMEOUT_SECONDS (10 by default), so the shutdown waits longer than that, and Docker waits
-	// longer still (stop_grace_period of 30 seconds)
+	// a request may use its whole REQUEST_TIMEOUT_SECONDS (10 by default, and it has to stay under 15), so the shutdown waits longer
+	// than that, and Docker waits longer still (stop_grace_period of 40 seconds)
 	err = app.App.Fiber.ShutdownWithTimeout(shutdownTimeout)
 	if err != nil {
 		log.Printf("graceful shutdown failed %v", err)
