@@ -32,7 +32,7 @@ The API contract includes JSON field names and enum values such as `SENANG` or `
 ```sh
 gofmt -l .
 go vet ./...
-go test ./... -race -count=1
+go test ./... -race -count=1 -shuffle=on
 docker run --rm -v "$PWD:/app" -w /app golangci/golangci-lint:v2.14.0 golangci-lint run
 ```
 
