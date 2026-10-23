@@ -18,6 +18,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
 	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
@@ -186,8 +187,9 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 
 		createErr := repo.CreateVideo(ctx, video)
 		if createErr != nil {
-			// nothing points at the copy, and the staged file expires by itself
-			s3.Discard(ctx, u.storage, permanentKey)
+			// nothing points at the copy, and the staged file expires by itself. The key is not queued for another try, because a retry of the
+			// same staged address copies to the same key, and a queued key would then be removed under the video that points at it.
+			s3.Discard(ctx, filecleanup.Plain(u.storage), permanentKey)
 		}
 
 		return createErr
