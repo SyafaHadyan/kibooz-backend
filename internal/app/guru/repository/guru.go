@@ -216,7 +216,8 @@ func (r *GuruDB) ListMoodRecords(
 	var records []MoodRecord
 
 	// Only the newest log of a child for a day is read, so a child with many logs in a day costs one row. A uuid compares
-	// byte by byte in Postgres, like bytes.Compare in the use case.
+	// byte by byte in Postgres, like bytes.Compare in the use case. A child that moved only shows the moods that are dated since it joined
+	// this class, and a child that never moved has no earlier class, so all its moods show, as the write side lets them be dated before.
 	err := r.db.WithContext(ctx).Raw(`
 SELECT DISTINCT ON (t.student_id, t.local_day) t.id, t.student_id, t.mood_type, t.recorded_at
 FROM (
@@ -224,7 +225,7 @@ FROM (
   FROM mood_logs AS m
   JOIN students AS s ON s.id = m.student_id
   JOIN enrollments AS e ON e.student_id = s.id AND e.class_id = s.class_id AND e.status = 'active'
-  WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ? AND m.recorded_at >= e.activated_at
+  WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ? AND (m.recorded_at >= e.activated_at OR NOT EXISTS (SELECT 1 FROM enrollments AS p WHERE p.student_id = s.id AND p.status = 'ended'))
 ) AS t
 ORDER BY t.student_id, t.local_day, t.recorded_at DESC, t.id DESC`,
 		loc.String(), classID, from, to,
