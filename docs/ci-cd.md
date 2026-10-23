@@ -103,7 +103,6 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | Smoke test on a throwaway stack | GitHub Actions |
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
 | codecov/patch | Codecov |
-| codecov/project/floor | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
 
 OSSF Scorecard is not required because it only runs on `main`, and the Cloudflare docs build is not required because it can be missing on pull requests from forks. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
