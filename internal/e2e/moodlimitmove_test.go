@@ -26,7 +26,7 @@ func TestTheMoodLimitOfADayStartsAgainInTheNewClass(t *testing.T) {
 	// the old class used the whole day of the child, written into the table because the limit has its own test
 	require.NoError(t, testDB.Exec(
 		`INSERT INTO mood_logs (student_id, recorded_by_guru_id, mood_type, recorded_at)
-		SELECT ?::uuid, ?::uuid, 'SENANG'::mood_enum, now() - interval '1 second' * n FROM generate_series(1, ?) AS n`,
+		SELECT ?::uuid, ?::uuid, 'SENANG'::mood_enum, now() - interval '1 millisecond' * n FROM generate_series(1, ?) AS n`,
 		childID, guruID, constants.MoodLogsPerStudentPerDay,
 	).Error)
 
@@ -38,10 +38,13 @@ func TestTheMoodLimitOfADayStartsAgainInTheNewClass(t *testing.T) {
 	accepted := call(t, http.MethodPost, "/api/v1/guru/classes/"+classB+"/move-requests/"+asked.data("id").(string)+"/accept", teacherB.Token, nil)
 	require.Equal(t, http.StatusOK, accepted.Status, "body %v", accepted.Body)
 
-	t.Run("the new teacher can still write the moods of the day", func(t *testing.T) {
-		for i := 0; i < 2; i++ {
+	t.Run("the new class gets a whole day of its own and then the limit holds", func(t *testing.T) {
+		for i := 0; i < constants.MoodLogsPerStudentPerDay; i++ {
 			res := call(t, http.MethodPost, moodLogRoute, teacherB.Token, map[string]any{"studentId": childID, "moodType": "SEDIH"})
 			require.Equal(t, http.StatusCreated, res.Status, "log %d, body %v", i+1, res.Body)
 		}
+
+		call(t, http.MethodPost, moodLogRoute, teacherB.Token, map[string]any{"studentId": childID, "moodType": "SEDIH"}).
+			requireError(t, http.StatusConflict, "MOOD_LOG_LIMIT_REACHED")
 	})
 }
