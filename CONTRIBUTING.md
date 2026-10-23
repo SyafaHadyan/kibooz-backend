@@ -44,6 +44,10 @@ E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... REDIS_PA
 
 Add tests with every behaviour change. A bug fix should come with a test that fails without the fix.
 
+## Names
+
+Names are checked in the pull request, so it is quicker to follow them from the start. Go files are lowercase words with no separator, such as `childdelete_test.go`. YAML files end with `.yml`, except the workflows, which end with `.yaml`. Go identifiers follow the Go style with `ID` and `URL` in capitals, the `json` tags and the fields of the API are camelCase, and the environment variables are `UPPER_SNAKE_CASE`. The full list of rules, the tool that checks each one and the few files that are allowed to break them are in [docs/ci-cd.md](docs/ci-cd.md#file-names).
+
 ## Pull requests
 
 - The title is a Conventional Commit, such as `fix(auth): keep refresh retryable after a database error`. The "Conventional commits" check blocks the merge when the title or any commit does not follow it.
