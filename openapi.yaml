@@ -3326,11 +3326,27 @@ components:
           required: [lastMood]
           properties:
             lastMood:
-              type: object
-              allOf:
-                - $ref: "#/components/schemas/HistoryMood"
-              nullable: true
-              description: The newest mood that a teacher of that class recorded for the child while it was in the class, or `null` when none was
+              $ref: "#/components/schemas/ParentLastMood"
+    ParentLastMood:
+      type: object
+      nullable: true
+      description: The newest mood that a teacher of that class recorded for the child while it was in the class, or `null` when none was
+      required: [moodType, label, confidenceScore, notes, recordedAt]
+      properties:
+        moodType:
+          type: string
+          enum: [SENANG, SEDIH, MARAH, BINGUNG]
+        label:
+          type: string
+        confidenceScore:
+          type: number
+        notes:
+          type: string
+          nullable: true
+          description: The note that the teacher of that class wrote
+        recordedAt:
+          type: string
+          format: date-time
     PreviousClassList:
       type: object
       required: [classes]

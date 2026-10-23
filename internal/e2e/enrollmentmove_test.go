@@ -171,6 +171,7 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 
 		before := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
 		require.EqualValues(t, 25, before.data("pointsSummary", "totalPoints"))
+		require.Equal(t, "SENANG", before.data("todayMood", "moodType"), "the old mood shows as the mood of today until the move")
 		require.EqualValues(t, 1, before.data("pointsSummary", "classRank"))
 
 		boardA := call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classA, teacherA.Token, nil)
