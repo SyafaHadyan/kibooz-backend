@@ -110,6 +110,7 @@ type ConversationRow struct {
 // sharedClass is a condition that holds when a teacher and a parent have an active child in the same class, in either order.
 // An archived class still counts, so a direct conversation stays open after the archive and only the room is closed.
 // It reads the account from the named argument user and takes the column or argument of the second account.
+// The contact list asks the same question for every account at once through contactPeers, so a change to the rule is made in both.
 func sharedClass(peer string) string {
 	return `EXISTS (SELECT 1 FROM class_teachers AS ct
 		JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL
