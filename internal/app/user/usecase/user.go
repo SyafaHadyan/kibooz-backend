@@ -20,6 +20,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
 )
 
 const (
@@ -251,6 +252,15 @@ func (u *UserUseCase) ChangePassword(
 
 	if req.NewPassword == req.CurrentPassword {
 		return apperror.Validation(map[string]string{"newPassword": "must differ from the current password"})
+	}
+
+	identities := []string{user.Email, user.FullName}
+	if user.PhoneNumber != nil {
+		identities = append(identities, *user.PhoneNumber)
+	}
+
+	if validation.ContainsIdentity(req.NewPassword, identities...) {
+		return apperror.Validation(map[string]string{"newPassword": validation.OwnDetailsMessage})
 	}
 
 	hash, err := u.hasher.Hash(ctx, req.NewPassword)
