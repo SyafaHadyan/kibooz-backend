@@ -7,7 +7,7 @@ go test ./...                 # unit tests, end to end tests are skipped
 The end to end suite drives the real HTTP stack against PostgreSQL and Redis, with an in-process mock for object storage. Point it at a disposable PostgreSQL and Redis and enable it explicitly, because the tests create data and empty the logical Redis database in `REDIS_DATABASE`. The suite refuses to run unless `DB_NAME` ends in `_test`, and `E2E_ALLOW_ANY_DB=true` overrides that for a database that you can lose.
 
 ```sh
-E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... go test ./... -race -count=1
+E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... go test ./... -race -count=1 -shuffle=on
 ```
 
 The suite sets `PASSWORD_HASH_COST` to 4, the lowest cost of bcrypt, because it signs up hundreds of accounts and bcrypt at the default cost under the race detector was nearly all of its running time. The unit tests of `internal/infra/passwords` still check that the default cost is 10. The CI step runs `go test` with `-timeout 15m` and not the default of 10 minutes, so the end to end suite has room to grow, and a hung test still ends with a dump of the goroutines before the job limit of 20 minutes cuts it off.

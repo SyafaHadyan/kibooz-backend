@@ -2,8 +2,9 @@
 
 | Workflow | Trigger | What it does |
 |:---|:---|:---|
-| `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests with PostgreSQL and Redis services, coverage upload to Codecov |
+| `ci.yaml` | push to main, pull requests | gofmt, tidy check, vet, golangci-lint, build, race tests in a shuffled order (a failing package prints `-test.shuffle <seed>` in its output, so a failure can be repeated with `-shuffle=<seed>`) with PostgreSQL and Redis services, coverage upload to Codecov |
 | `security.yaml` | push, pull requests, daily at 03:00 WIB | CodeQL, govulncheck, dependency review (which also refuses a new dependency under SSPL, the one license here that does not fit the GPL-3.0 of the repository), gitleaks secret scan, Trivy filesystem scan, OSSF Scorecard (not on pull requests) |
+| `migrations.yaml` | pull requests, manual | squawk lints the `.up.sql` migrations that a pull request adds or changes, with the settings of `.squawk.toml`, for the operations that lock a table or break the copy that still runs during a rolling update. Any other pull request ends the job at once with a green result, so `Migration lint` can be a required check. A change of the workflow or of the settings, and a run by hand, also print the findings for every migration in the summary, for information |
 | `config.yaml` | push to main, pull requests | actionlint and zizmor for the workflows, hadolint for the Dockerfile, `docker compose config` for `compose.yml` and `compose.production.example.yml` in the `Compose config` job, dotenv-linter for `.env.example` in the `Dotenv lint` job, ruff with the naming rules of PEP 8 for the Python scripts in the `Python lint` job, the names of every tracked file in the `File names` job, ShellCheck and shfmt for the shell scripts in the `Shell lint` job, Redocly lint for `openapi.yaml` with the naming rules of `redocly.yaml` (paths in kebab case, operation ids, properties and the parameters of the path and the query in camel case) and a build of the documentation site, both in the `OpenAPI lint` job, and the Renovate validator in strict mode for `renovate.json` in the `Renovate config` job |
 | `commits.yaml` | pull requests | Lints the commits of the pull request with commitlint and its Conventional Commits rules, which are set in `commitlint.config.mjs`, and checks the pull request title against the same types. It never cancels a run, skips an edit that changes neither the title nor the base branch, and reads the title from the pull request when it runs, so editing the body of a pull request cannot leave a cancelled required check behind and a rerun checks the current title. Merge commits are skipped, and the line lengths of the body and footer are not limited because Renovate and Release Please write long ones |
 | `vale.yaml` | push to main, pull requests | Vale prose lint of the README, the contributing, security and accessibility guides and the `docs/` folder. It fails on an em dash or a semicolon in prose, and the rest of the Google style only reports locally |
@@ -94,6 +95,7 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | OpenAPI breaking changes | GitHub Actions |
 | Renovate config | GitHub Actions |
 | Query plans | GitHub Actions |
+| Migration lint | GitHub Actions |
 | Vale prose lint | GitHub Actions |
 | Conventional commits | GitHub Actions |
 | Smoke test on a throwaway stack | GitHub Actions |
