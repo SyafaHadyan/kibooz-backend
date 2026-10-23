@@ -86,6 +86,7 @@ The API counts what it does and shows it in the Prometheus text format. The page
 | `kibooz_chat_sockets` | none | Chat sockets that are open on this copy, which stays below `CHAT_MAX_SOCKETS` |
 | `kibooz_chat_events_delivered_total` | `type` | Events written to the chat sockets of this copy, by type |
 | `kibooz_chat_event_gaps_total` | none | Gaps that this copy found in the numbered events that another copy published, each one makes the sockets of this copy resync |
+| `kibooz_chat_bus_publish_failed_total` | none | Chat events that this copy could not publish to Redis, the sockets of the other copies then hear about them only from the app that asks again |
 | `kibooz_chat_sockets_dropped_total` | `reason` | Sockets that the server closed, because a socket was `slow` to read or was `replaced` by a newer one of the account |
 | `kibooz_chat_sockets_refused_total` | none | Sockets that were turned away because the copy was full or shutting down |
 | `kibooz_push_messages_total` | `result` | Wake-up pushes, by `sent`, `failed`, `unregistered` (a token that Firebase dropped, which is deleted) and `dropped` (the queue was full or the server was stopping) |

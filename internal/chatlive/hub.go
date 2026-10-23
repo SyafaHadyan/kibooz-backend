@@ -35,6 +35,18 @@ var resyncFrame = []byte(`{"type":"resync"}`)
 // maxOrigins bounds the memory of the sequence numbers that other copies were last seen at, one entry for each start of a copy
 const maxOrigins = 64
 
+// gapWait is how long a number that was skipped may take to arrive before it counts as lost. Two requests of one copy number their
+// envelopes before they send them, so the later number can reach Redis first, and that is no loss.
+const gapWait = 400 * time.Millisecond
+
+// maxTrackedSkips is the most skipped numbers that one jump is followed number by number. A bigger jump is a loss at once, and it
+// bounds the memory of the numbers that are waited for.
+const maxTrackedSkips = 256
+
+// heartbeatEvery is how often a copy publishes an envelope without an event. The loss of the last envelope of a burst is only seen
+// when the next one arrives, so this makes that next one come within a bounded time.
+const heartbeatEvery = 30 * time.Second
+
 // resyncEvery is the shortest time between two resync frames of one process. A bus that flaps would otherwise make every app refetch
 // its conversations again and again, so a gap that is found inside the time is sent once when it is over.
 const resyncEvery = 5 * time.Second
@@ -106,6 +118,14 @@ type envelope struct {
 	Event      Event       `json:"e"`
 }
 
+// originState is what a copy knows of another copy that publishes on the bus. last is the highest number seen, missing the numbers
+// below it that have not arrived yet, and stamp tells which origin was heard from longest ago.
+type originState struct {
+	last    uint64
+	missing map[uint64]struct{}
+	stamp   uint64
+}
+
 // Hub keeps the open sockets of the process by account
 type Hub struct {
 	cfg    Config
@@ -117,10 +137,12 @@ type Hub struct {
 	counter uint64
 	closed  bool
 
-	// published numbers the envelopes of this process, and seen holds the last number of every other origin
+	// published numbers the envelopes of this process, and seen holds what is known of every other origin
 	published atomic.Uint64
 	seenMu    sync.Mutex
-	seen      map[string]uint64
+	seen      map[string]*originState
+	stamp     uint64
+	gapWait   time.Duration
 
 	// lastResync and resyncTimer keep the resync frames apart by resyncEvery, and resyncWait is that time, a field for the tests
 	resyncMu    sync.Mutex
@@ -128,7 +150,8 @@ type Hub struct {
 	resyncTimer *time.Timer
 	resyncWait  time.Duration
 
-	gaps prometheus.Counter
+	gaps            prometheus.Counter
+	publishFailures prometheus.Counter
 
 	sockets  prometheus.Gauge
 	events   *prometheus.CounterVec
@@ -141,9 +164,13 @@ func NewHub(cfg Config) *Hub {
 		cfg:     cfg,
 		origin:  uuid.NewString(),
 		clients: map[uuid.UUID]map[*Client]struct{}{},
-		seen:    map[string]uint64{},
+		seen:    map[string]*originState{},
 
+		gapWait:    gapWait,
 		resyncWait: resyncEvery,
+		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "kibooz", Name: "chat_bus_publish_failed_total", Help: "Chat events that this copy could not publish to the bus.",
+		}),
 		gaps: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_event_gaps_total", Help: "Gaps found in the events that other copies published.",
 		}),
@@ -173,7 +200,7 @@ func (h *Hub) Collectors() []prometheus.Collector {
 		h.dropped.WithLabelValues(reason)
 	}
 
-	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals, h.gaps}
+	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals, h.gaps, h.publishFailures}
 }
 
 // Full reports whether the process has no room for another socket, or is shutting down
@@ -281,6 +308,12 @@ func (h *Hub) Publish(recipients []uuid.UUID, event Event) {
 
 	h.deliver(recipients, event)
 
+	h.send(recipients, event)
+}
+
+// send numbers an envelope and puts it on the bus, which only means that the sockets of the other copies hear about it from the app
+// that polls when the bus is down, so a failure is counted and not returned
+func (h *Hub) send(recipients []uuid.UUID, event Event) {
 	if h.cfg.Bus == nil {
 		return
 	}
@@ -295,65 +328,164 @@ func (h *Hub) Publish(recipients []uuid.UUID, event Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	// a bus that is down only means that the sockets of the other copies hear about it from the app that polls
-	_ = h.cfg.Bus.Publish(ctx, payload)
+	if err = h.cfg.Bus.Publish(ctx, payload); err != nil {
+		h.publishFailures.Inc()
+	}
 }
 
-// Run takes the events that other copies publish until the context ends. Without a bus it returns at once.
+// Run takes the events that other copies publish until the context ends, and publishes a heartbeat now and then so that a loss at
+// the end of a burst shows too. Without a bus it returns at once.
 func (h *Hub) Run(ctx context.Context) {
 	if h.cfg.Bus == nil {
 		return
 	}
 
-	h.cfg.Bus.Run(ctx, func(payload []byte) {
-		var received envelope
+	go h.heartbeat(ctx)
 
-		if err := json.Unmarshal(payload, &received); err != nil {
-			log.Printf("a chat event from the bus could not be read %v", err)
-
-			return
-		}
-
-		if received.Origin == h.origin {
-			return
-		}
-
-		if h.lostBefore(received) {
-			h.gaps.Inc()
-			log.Printf("chat events of another copy are missing before number %d, the sockets are told to resync", received.Seq)
-
-			h.requestResync()
-		}
-
-		h.deliver(received.Recipients, received.Event)
-	})
+	h.cfg.Bus.Run(ctx, h.receive)
 }
 
-// lostBefore remembers the number of the envelope and tells whether the ones before it did not all arrive. The first envelope
-// of an origin never counts as a loss, because a socket that this process holds was opened after the copy that sent it started,
-// or it asks for what it missed when it connects, and a copy that started while this one could not hear the bus is a blind spot
-// that the next gap makes up for. A number that is not above the last one is a late arrival of an envelope that the publisher
-// numbered before another one but sent after it, and it is neither a loss nor a reason to go back.
-func (h *Hub) lostBefore(received envelope) bool {
+func (h *Hub) heartbeat(ctx context.Context) {
+	ticker := time.NewTicker(heartbeatEvery)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// an envelope for nobody, which only carries the number
+			h.send(nil, Event{})
+		}
+	}
+}
+
+// receive handles one envelope of the bus. The events are delivered at once, and a number that was skipped is waited for a moment
+// before it counts as lost.
+func (h *Hub) receive(payload []byte) {
+	var received envelope
+
+	if err := json.Unmarshal(payload, &received); err != nil {
+		log.Printf("a chat event from the bus could not be read %v", err)
+
+		return
+	}
+
+	if received.Origin == h.origin {
+		return
+	}
+
+	skipped, lost := h.track(received)
+
+	switch {
+	case lost:
+		h.reportGap(received.Seq)
+	case len(skipped) > 0:
+		time.AfterFunc(h.gapWait, func() {
+			if h.stillMissing(received.Origin, skipped) {
+				h.reportGap(received.Seq)
+			}
+		})
+	}
+
+	h.deliver(received.Recipients, received.Event)
+}
+
+func (h *Hub) reportGap(seq uint64) {
+	h.gaps.Inc()
+	log.Printf("chat events of another copy are missing before number %d, the sockets are told to resync", seq)
+
+	h.requestResync()
+}
+
+// track remembers the number of the envelope. It returns the numbers that were skipped by it, which may still arrive, and whether a
+// jump was too big to follow, which counts as a loss at once. The first envelope of an origin never counts as a loss, because a socket
+// that this process holds was opened after the copy that sent it started, or it asks for what it missed when it connects, and a
+// copy that started while this one could not hear the bus is a blind spot that the next gap makes up for. A number that is not above
+// the last one is a late arrival of an envelope that the publisher numbered before another one but sent after it, and it is neither
+// a loss nor a reason to go back.
+func (h *Hub) track(received envelope) (skipped []uint64, lost bool) {
 	h.seenMu.Lock()
 	defer h.seenMu.Unlock()
 
-	last, known := h.seen[received.Origin]
+	h.stamp++
 
-	if !known && len(h.seen) >= maxOrigins {
-		// the copies that were restarted long ago are not coming back, so one entry makes room, and the others stay
-		for origin := range h.seen {
-			delete(h.seen, origin)
+	state, known := h.seen[received.Origin]
+	if !known {
+		if len(h.seen) >= maxOrigins {
+			h.forgetOldestOrigin()
+		}
 
-			break
+		h.seen[received.Origin] = &originState{last: received.Seq, missing: map[uint64]struct{}{}, stamp: h.stamp}
+
+		return nil, false
+	}
+
+	state.stamp = h.stamp
+
+	if received.Seq <= state.last {
+		delete(state.missing, received.Seq)
+
+		return nil, false
+	}
+
+	jump := received.Seq - state.last - 1
+	if jump > maxTrackedSkips {
+		state.last = received.Seq
+		clear(state.missing)
+
+		return nil, true
+	}
+
+	for number := state.last + 1; number < received.Seq; number++ {
+		state.missing[number] = struct{}{}
+		skipped = append(skipped, number)
+	}
+
+	state.last = received.Seq
+
+	return skipped, false
+}
+
+// forgetOldestOrigin makes room for a new origin, and the one that was heard from longest ago goes, because the copies that were
+// restarted long ago are not coming back
+func (h *Hub) forgetOldestOrigin() {
+	var (
+		oldest string
+		stamp  uint64
+		found  bool
+	)
+
+	for origin, state := range h.seen {
+		if !found || state.stamp < stamp {
+			oldest, stamp, found = origin, state.stamp, true
 		}
 	}
 
-	if received.Seq > last {
-		h.seen[received.Origin] = received.Seq
+	delete(h.seen, oldest)
+}
+
+// stillMissing reports whether any of the numbers has not arrived since track skipped it, and stops waiting for them
+func (h *Hub) stillMissing(origin string, numbers []uint64) bool {
+	h.seenMu.Lock()
+	defer h.seenMu.Unlock()
+
+	state, known := h.seen[origin]
+	if !known {
+		return false
 	}
 
-	return known && received.Seq > last+1
+	lost := false
+
+	for _, number := range numbers {
+		if _, waiting := state.missing[number]; waiting {
+			delete(state.missing, number)
+
+			lost = true
+		}
+	}
+
+	return lost
 }
 
 // requestResync sends a resync to the sockets of this process, at once when the last one was long enough ago, and otherwise
