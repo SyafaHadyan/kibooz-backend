@@ -56,8 +56,15 @@ type PreviousClass struct {
 	TotalScans   int       `json:"totalScans"`
 }
 
+// ParentPreviousClass is a class that a child left as its parent reads it, with the last mood that a teacher of that class recorded
+// for the child, or null when none was
+type ParentPreviousClass struct {
+	PreviousClass
+	LastMood *HistoryMood `json:"lastMood"`
+}
+
 type PreviousClassList struct {
-	Classes []PreviousClass `json:"classes"`
+	Classes []ParentPreviousClass `json:"classes"`
 }
 
 // HistoryClass is a class that a child left, as a teacher of its new class reads it. It adds what the child collected per category and

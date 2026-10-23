@@ -171,6 +171,7 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 
 		before := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
 		require.EqualValues(t, 25, before.data("pointsSummary", "totalPoints"))
+		require.Equal(t, "SENANG", before.data("todayMood", "moodType"), "the old mood shows as the mood of today until the move")
 		require.EqualValues(t, 1, before.data("pointsSummary", "classRank"))
 
 		boardA := call(t, http.MethodGet, "/api/v1/leaderboard?classId="+classA, teacherA.Token, nil)
@@ -194,6 +195,8 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.EqualValues(t, 0, after.data("pointsSummary", "seasonPoints"))
 		require.EqualValues(t, 2, after.data("pointsSummary", "classRank"), "with no points the other child of the class comes first by name")
 		require.EqualValues(t, 0, after.data("pointsSummary", "organicCount"))
+		require.Nil(t, after.data("todayMood"), "the mood that the old teacher wrote today belongs to the class that the child left")
+		require.Nil(t, after.data("recommendedGuidance"))
 
 		stats := call(t, http.MethodGet, "/api/v1/trash/stats?studentId="+childID, parent.Token, nil)
 		require.Equal(t, http.StatusOK, stats.Status, "body %v", stats.Body)
@@ -252,6 +255,10 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 		require.NotEmpty(t, dig(classes[0], "className"))
 		require.NotEmpty(t, dig(classes[0], "startedAt"))
 		require.NotEmpty(t, dig(classes[0], "endedAt"))
+		require.Equal(t, "SENANG", dig(classes[0], "lastMood", "moodType"), "the mood is kept with the class where it was written")
+		require.Equal(t, "Suka menggambar", dig(classes[0], "lastMood", "notes"))
+		require.NotEmpty(t, dig(classes[0], "lastMood", "label"))
+		require.NotEmpty(t, dig(classes[0], "lastMood", "recordedAt"))
 
 		history := func(teacher account, class string, student string) result {
 			return call(t, http.MethodGet, "/api/v1/guru/classes/"+class+"/students/"+student+"/history", teacher.Token, nil)
@@ -281,6 +288,9 @@ func TestAParentAsksForAMoveAndATeacherOfTheNewClassDecides(t *testing.T) {
 			"studentId": childID, "moodType": "SEDIH", "confidenceScore": 0.8, "notes": "Hari pertama di kelas baru",
 		})
 		require.Equal(t, http.StatusCreated, newMood.Status, "body %v", newMood.Body)
+
+		today := call(t, http.MethodGet, "/api/v1/wali/dashboard?studentId="+childID, parent.Token, nil)
+		require.Equal(t, "SEDIH", today.data("todayMood", "moodType"), "the mood of the new class is the mood of today")
 
 		seen := history(teacherB, classB, childID)
 		require.Equal(t, http.StatusOK, seen.Status, "body %v", seen.Body)

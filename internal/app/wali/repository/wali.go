@@ -161,8 +161,16 @@ func (r *WaliDB) FindStudent(ctx context.Context, waliID uuid.UUID, studentID *u
 func (r *WaliDB) LatestMood(ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time) (*entity.MoodLog, error) {
 	var logs []entity.MoodLog
 
+	// A child that moved shows no mood of the class that it left as the mood of today, even when the teacher of that class wrote it a
+	// moment before the move. It is kept as the last mood of that class in the list of previous classes. A child that never moved has
+	// no earlier class, so its moods count as they were dated.
 	err := r.db.WithContext(ctx).
 		Where("student_id = ? AND recorded_at >= ? AND recorded_at < ?", studentID, from, to).
+		Where(`recorded_at >= COALESCE((
+			SELECT e.activated_at FROM enrollments AS e
+			WHERE e.student_id = mood_logs.student_id AND e.status = 'active'
+				AND EXISTS (SELECT 1 FROM enrollments AS p WHERE p.student_id = e.student_id AND p.status = 'ended')
+		), '-infinity'::timestamptz)`).
 		Order("recorded_at DESC, id DESC").
 		Limit(1).
 		Find(&logs).Error

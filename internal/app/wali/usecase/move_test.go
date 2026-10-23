@@ -127,9 +127,13 @@ func TestPreviousClassesShowWhatTheChildHadWhenItLeft(t *testing.T) {
 	childID, classID := uuid.New(), uuid.New()
 	started := time.Date(2026, 7, 13, 0, 0, 0, 0, time.FixedZone("WIB", 7*3600))
 	ended := started.AddDate(0, 3, 0)
+	note := "Suka menggambar"
 	repo.previous = []enrollment.PreviousRow{{
 		ID: uuid.New(), ClassID: classID, ClassName: "Kelas Melati", GradeLevel: "Class A", SchoolName: "TK Pertiwi", AcademicYear: "2026/2027",
 		ActivatedAt: started, EndedAt: ended, FinalPoints: 120, FinalSeason: 45, FinalRank: 3, FinalScans: 17,
+	}, {
+		ID: uuid.New(), ClassID: uuid.New(), ClassName: "Kelas Mawar", ActivatedAt: started.AddDate(-1, 0, 0), EndedAt: started,
+		LastMood: &enrollment.MoodRow{MoodType: constants.MoodSedih, ConfidenceScore: 0.7, Notes: &note, RecordedAt: started.Add(-time.Hour)},
 	}}
 
 	res, err := newUseCase(repo, &fakeCache{}).PreviousClasses(context.Background(), uuid.New(), childID)
@@ -137,10 +141,18 @@ func TestPreviousClassesShowWhatTheChildHadWhenItLeft(t *testing.T) {
 
 	require.Equal(t, childID, repo.moveChild)
 	require.Equal(t, repo.wali.ID, repo.moveParent)
-	require.Equal(t, []dto.PreviousClass{{
+	require.Len(t, res.Classes, 2)
+	require.Equal(t, dto.PreviousClass{
 		ClassID: classID, ClassName: "Kelas Melati", GradeLevel: "Class A", SchoolName: "TK Pertiwi", AcademicYear: "2026/2027",
 		StartedAt: started.UTC(), EndedAt: ended.UTC(), TotalPoints: 120, SeasonPoints: 45, ClassRank: 3, TotalScans: 17,
-	}}, res.Classes)
+	}, res.Classes[0].PreviousClass)
+	require.Nil(t, res.Classes[0].LastMood, "a class with no mood has null")
+
+	require.NotNil(t, res.Classes[1].LastMood)
+	require.Equal(t, constants.MoodSedih, res.Classes[1].LastMood.MoodType)
+	require.Equal(t, constants.MoodLabels[constants.MoodSedih], res.Classes[1].LastMood.Label)
+	require.Equal(t, note, *res.Classes[1].LastMood.Notes)
+	require.Equal(t, started.Add(-time.Hour).UTC(), res.Classes[1].LastMood.RecordedAt)
 
 	repo.previous = nil
 
