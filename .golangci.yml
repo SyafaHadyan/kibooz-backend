@@ -33,6 +33,10 @@ linters:
           json: camel
   exclusions:
     rules:
+      # the key file of a Google service account and the FCM API name their fields in snake case, and those names are not ours to change
+      - path: internal/push/fcm\.go
+        linters:
+          - tagliatelle
       - path: _test\.go
         linters:
           - gosec
