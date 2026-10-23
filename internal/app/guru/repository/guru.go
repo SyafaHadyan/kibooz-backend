@@ -223,7 +223,8 @@ FROM (
   SELECT m.id, m.student_id, m.mood_type, m.recorded_at, (m.recorded_at AT TIME ZONE ?)::date AS local_day
   FROM mood_logs AS m
   JOIN students AS s ON s.id = m.student_id
-  WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ?
+  JOIN enrollments AS e ON e.student_id = s.id AND e.class_id = s.class_id AND e.status = 'active'
+  WHERE s.class_id = ? AND s.deleted_at IS NULL AND m.recorded_at >= ? AND m.recorded_at < ? AND m.recorded_at >= e.activated_at
 ) AS t
 ORDER BY t.student_id, t.local_day, t.recorded_at DESC, t.id DESC`,
 		loc.String(), classID, from, to,
