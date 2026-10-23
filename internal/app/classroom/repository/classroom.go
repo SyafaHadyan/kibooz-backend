@@ -380,7 +380,8 @@ func (r *ClassroomDB) ListStudents(
 		Table("students AS s").
 		Select(`s.*, (SELECT m.mood_type FROM mood_logs AS m
 			WHERE m.student_id = s.id AND m.recorded_at >= ? AND m.recorded_at < ?
-			AND m.recorded_at >= (SELECT e.activated_at FROM enrollments AS e WHERE e.student_id = s.id AND e.status = 'active')
+			AND (m.recorded_at >= (SELECT e.activated_at FROM enrollments AS e WHERE e.student_id = s.id AND e.status = 'active')
+				OR NOT EXISTS (SELECT 1 FROM enrollments AS p WHERE p.student_id = s.id AND p.status = 'ended'))
 			ORDER BY m.recorded_at DESC, m.id DESC LIMIT 1) AS today_mood`, from, to).
 		Where("s.class_id = ? AND s.deleted_at IS NULL", classID).
 		Order("s.full_name ASC, s.id ASC").
