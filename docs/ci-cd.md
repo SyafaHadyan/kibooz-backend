@@ -126,12 +126,27 @@ The `File names` job runs [ls-lint](https://ls-lint.org/) with the rules of `.ls
 
 - A Go file is lowercase words with no separator, such as `childdelete_test.go`, and only `_test` may follow the words.
 - A migration is a six digit number and snake case words, then `.up.sql` or `.down.sql`.
-- A YAML file ends with `.yml`. The workflows end with `.yaml` and never `.yml`, because the name of a workflow file is part of the identity that signs an image. `openapi.yaml` keeps the name that the OpenAPI specification recommends, and `redocly.yaml`, `.redocly.lint-ignore.yaml` and `.trivyignore.yaml` keep the names that Redocly and Trivy document.
+- A YAML file ends with `.yml`. The workflows end with `.yaml` and never `.yml`, because the name of a workflow file is part of the identity that signs an image. `openapi.yaml` keeps the name that the OpenAPI specification recommends, and `redocly.yaml`, `.redocly.lint-ignore.yaml` and `.trivyignore.yaml` keep the names that Redocly and Trivy document. The files that a tool reads by the name `.yml` stay as they are, which are the issue forms and the template chooser of GitHub, the rules of Vale, `codecov.yml` and `.ls-lint.yml`.
 - A folder is lowercase words joined by hyphens, and a leading dot marks the folder of a tool.
 - Every other file is lowercase words joined by hyphens, with dots for the extension and for a variant such as `.example.yml`. A Markdown file may also be in capitals such as `README.md`.
 - A file with no extension, such as `Dockerfile`, `LICENSE` and `CODEOWNERS`, has no rule, and the issue forms and the Vale styles are left out because GitHub and Vale name them.
 
 Two names that differ only by case are not checked, because the tool does not do it. A new tool that needs a name of its own is added to the `ignore` list of `.ls-lint.yml`, with the reason in a comment.
+
+## Names in code and settings
+
+The names inside the files are checked too, each by the tool that knows the language. A new exception goes next to the rule that it relaxes, with the reason in a comment.
+
+| What | Rule | Checked by |
+| --- | --- | --- |
+| Go identifiers | Go naming, such as `ID` and `URL` in capitals for an initialism, mixed caps and no underscore in a name | `staticcheck` with the check ST1003 turned on in `.golangci.yml`, in the `Lint` job |
+| `json` tags of the Go structs | camelCase, as in the API | `tagliatelle` with `json: camel`. `internal/push/fcm.go` is left out, because Google and the FCM API name those fields in snake case |
+| `env` tags of the settings | capital words with underscores, such as `BODY_LIMIT_MB` | `tagliatelle` with `env: upperSnake` |
+| The example env file | the checks of dotenv-linter, such as no lowercase key and no duplicate key, without the order of the keys, because `.env.example` is grouped by topic | the `Dotenv lint` job |
+| Paths, operation ids, properties and the parameters of the path and the query in `openapi.yaml` | paths in kebab case and the others in camelCase. The headers of a request have the name that HTTP gives them, so they are left out | `redocly.yaml` in the `OpenAPI lint` job, and the two `Content-Type` properties of the upload schemas are in `.redocly.lint-ignore.yaml` |
+| Python scripts | the naming rules of PEP 8 | ruff with `select = ["N"]` in `ruff.toml`, in the `Python lint` job |
+
+The names of tables, columns and indexes in the migrations are snake case by habit and are not checked by any tool.
 
 ## Releases
 
