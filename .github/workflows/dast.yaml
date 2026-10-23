@@ -54,7 +54,7 @@ jobs:
           } > .env
 
       - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --build --wait --wait-timeout 240
 
       # The scan runs the ZAP image directly, pinned by digest, because it only needs the container and the report files
       - name: Run the ZAP baseline scan
@@ -87,8 +87,8 @@ jobs:
 
       - name: Collect container logs
         if: ${{ failure() }}
-        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+        run: docker compose -f compose.yaml -f compose.ci.yaml logs --no-color --tail 200
 
       - name: Stop the stack
         if: ${{ always() }}
-        run: docker compose -f compose.yml -f compose.ci.yml down -v
+        run: docker compose -f compose.yaml -f compose.ci.yaml down -v

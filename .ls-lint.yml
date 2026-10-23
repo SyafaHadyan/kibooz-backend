@@ -4,7 +4,7 @@ ls:
   # a folder is lowercase words joined by hyphens, and a leading dot marks the folder of a tool
   .dir: regex:\.?[a-z0-9]+(-[a-z0-9]+)*
 
-  # every other file is the same, with dots for a variant such as compose.production.example.yml
+  # every other file is the same, with dots for a variant such as compose.production.example.yaml
   .*: kebab-case
 
   # a Go file is lowercase words with no separator, and only _test may follow them
@@ -18,16 +18,19 @@ ls:
     .up.sql: regex:[0-9]{6}(_[a-z0-9]+)+
     .down.sql: regex:[0-9]{6}(_[a-z0-9]+)+
 
-  # a workflow ends with .yaml and not .yml
-  .github/workflows:
-    .yml: exists:0
+  # a YAML file ends with .yaml and not .yml, and the few files that a tool reads by the name .yml are in the ignore list below
+  .yml: exists:0
 
 ignore:
   - .git
   - node_modules
   - dist
-  # GitHub names the issue forms by what the person sees, and Vale names a style after its folder
+  # GitHub needs the .yml ending for the issue forms and the template chooser, and Vale names a style after its folder and reads
+  # only rule files that end in .yml
   - .github/ISSUE_TEMPLATE
   - .github/vale/styles
+  # the file names that these tools look for, ls-lint reads .ls-lint.yml by that name and Codecov documents codecov.yml
+  - .ls-lint.yml
+  - codecov.yml
   # made by a local run of Python and not tracked
   - "**/__pycache__"

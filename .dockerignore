@@ -5,7 +5,7 @@
 !.env.example
 bin
 *.md
-compose.yml
+compose.yaml
 k6
 smoke
 compose.*.yml

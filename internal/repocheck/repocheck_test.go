@@ -20,11 +20,11 @@ func TestTheCIComposeFileTakesTheGoImageFromGOIMAGE(t *testing.T) {
 	dockerfile, err := os.ReadFile("../../Dockerfile")
 	require.NoError(t, err)
 
-	compose, err := os.ReadFile("../../compose.ci.yml")
+	compose, err := os.ReadFile("../../compose.ci.yaml")
 	require.NoError(t, err)
 
 	require.NotEmpty(t, goImage.FindString(string(dockerfile)), "the Dockerfile has to name its Go image with a digest")
-	require.Empty(t, goImage.FindAllString(string(compose), -1), "compose.ci.yml must not carry a digest of its own, use GO_IMAGE")
+	require.Empty(t, goImage.FindAllString(string(compose), -1), "compose.ci.yaml must not carry a digest of its own, use GO_IMAGE")
 	require.Equal(t, 2, strings.Count(string(compose), "${GO_IMAGE"), "GO_IMAGE names the image to replace and the copy on the mirror")
 }
 
@@ -37,17 +37,17 @@ func TestEveryWorkflowThatUsesTheCIComposeFileSetsGOIMAGE(t *testing.T) {
 		body, err := os.ReadFile(file)
 		require.NoError(t, err)
 
-		if !strings.Contains(string(body), "compose.ci.yml") {
+		if !strings.Contains(string(body), "compose.ci.yaml") {
 			continue
 		}
 
 		users++
 
 		require.Contains(t, string(body), `echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"`,
-			"%s uses compose.ci.yml and has to write GO_IMAGE to its .env", file)
+			"%s uses compose.ci.yaml and has to write GO_IMAGE to its .env", file)
 	}
 
-	require.NotZero(t, users, "no workflow uses compose.ci.yml, so this test checks nothing")
+	require.NotZero(t, users, "no workflow uses compose.ci.yaml, so this test checks nothing")
 }
 
 func workflowFiles(t *testing.T) []string {

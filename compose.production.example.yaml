@@ -1,16 +1,16 @@
-# An example of how a small production host can run Kibooz. It is not what the repository tests, `compose.yml` is that. It shows
+# An example of how a small production host can run Kibooz. It is not what the repository tests, `compose.yaml` is that. It shows
 # the choices that the maintainer made on one 2 vCPU host, so another operator can start from a file that is known to work and
 # not from a blank page, see docs/operations.md. CI only checks that the file is still valid compose (`docker compose config`),
 # so a renamed setting cannot leave it behind.
 #
-# What differs from compose.yml
+# What differs from compose.yaml
 #   - two copies of the API behind the reverse proxy of the host, each with its own port, and a rolling update that replaces them one
 #     after the other (scripts/rolling-update.sh), so a deploy never leaves the site without a copy
 #   - each copy is capped at half a CPU, so a flood of work cannot starve the database that shares the host
 #   - PostgreSQL is not in this file. It runs as its own stack on the host and the copies join its network
 #   - the image tag is always written down (IMAGE_TAG), because the update script changes it and `latest` would hide what runs
 #
-# Copy it to compose.yml on the host and copy .env.example to .env. In .env set IMAGE_TAG to the version to run (the file has no default
+# Copy it to compose.yaml on the host and copy .env.example to .env. In .env set IMAGE_TAG to the version to run (the file has no default
 # on purpose), DB_HOST to the name of the PostgreSQL container on the network of the database stack, which has to exist before this
 # file starts, and the other values that .env.example asks for.
 

@@ -52,7 +52,7 @@ jobs:
           } > .env
 
       - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --build --wait --wait-timeout 240
 
       - name: Build the scan plan
         run: |
@@ -94,7 +94,7 @@ jobs:
       - name: Count the requests the scan sent
         if: ${{ !cancelled() }}
         run: |
-          docker compose -f compose.yml -f compose.ci.yml logs api --no-log-prefix --no-color > zap-out/api.log || true
+          docker compose -f compose.yaml -f compose.ci.yaml logs api --no-log-prefix --no-color > zap-out/api.log || true
           # the API writes one JSON object for each line, and jq skips whatever is not one, such as a line of the container runtime
           jq -R -c 'fromjson? | select(type == "object")' zap-out/api.log > zap-out/api.jsonl || true
           jq -c 'select(.msg == "request")' zap-out/api.jsonl > zap-out/requests.jsonl || true
@@ -140,8 +140,8 @@ jobs:
 
       - name: Collect container logs
         if: ${{ failure() }}
-        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color --tail 200
+        run: docker compose -f compose.yaml -f compose.ci.yaml logs --no-color --tail 200
 
       - name: Stop the stack
         if: ${{ always() }}
-        run: docker compose -f compose.yml -f compose.ci.yml down -v
+        run: docker compose -f compose.yaml -f compose.ci.yaml down -v

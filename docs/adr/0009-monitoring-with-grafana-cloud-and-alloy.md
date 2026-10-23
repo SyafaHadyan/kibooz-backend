@@ -8,7 +8,7 @@ The API runs on one small VPS, and later it may run on more than one host or as 
 
 ## Decision
 
-The API serves Prometheus metrics on a second listener, `METRICS_ADDRESS`, which `compose.yml` sets to `:9100` on the private network and never publishes on the host. The access log and every other line are JSON, with a request id, a level, the route and the reason of each failure.
+The API serves Prometheus metrics on a second listener, `METRICS_ADDRESS`, which `compose.yaml` sets to `:9100` on the private network and never publishes on the host. The access log and every other line are JSON, with a request id, a level, the route and the reason of each failure.
 
 Grafana Alloy runs next to the API and sends the metrics and the logs to Grafana Cloud, on the free plan. It finds the containers by the Docker labels `kibooz.role` (api, db or redis) and `kibooz.metrics_port` and not by name, so a container can have any name. A second copy on the same host needs the same two labels, the `internal` network of the compose file and a port of its own. A copy on another host also needs the monitoring profile and its own `GRAFANA_HOST`. Every series and log line carries `host` (from `GRAFANA_HOST`) and `instance` (the name of the container), so copies never collide.
 

@@ -1,7 +1,7 @@
 // Alloy reads the metrics endpoint and the logs of every container that carries the label `kibooz.role`, and sends both to
 // Grafana Cloud. It finds them by label and not by name, so any number of copies of the API can run on this host under any
 // container name, and the same file runs on every other host. `GRAFANA_HOST` names the host on every series and every log
-// line, so the copies of two hosts never collide. It runs only with the `monitoring` profile of compose.yml, see
+// line, so the copies of two hosts never collide. It runs only with the `monitoring` profile of compose.yaml, see
 // docs/monitoring.md.
 
 // ---- discovery ----
@@ -41,7 +41,7 @@ discovery.relabel "api_metrics" {
   }
 
   // a container can be on other networks besides the one of this compose file, such as a network that it shares with a database
-  // from another stack, and Alloy only reaches the network that compose made from the `internal` entry of compose.yml. Compose
+  // from another stack, and Alloy only reaches the network that compose made from the `internal` entry of compose.yaml. Compose
   // labels a network with the name of that entry, so only the target on a network with that name is kept. A target on another
   // network would be scraped at an address that Alloy cannot reach and would report the copy as down. A network of another
   // stack that has an entry of the same name would pass as well, so do not give one to a container of this stack.

@@ -123,9 +123,9 @@ jobs:
           IMAGE_TAG: ci
         run: |
           cp .env.example .env
-          docker compose -f compose.yml config --quiet
-          docker compose -f compose.production.example.yml config --quiet
-          COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.production.example.yaml config --quiet
+          COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yaml config --quiet
 
   names:
     name: File names

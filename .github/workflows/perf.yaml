@@ -66,9 +66,9 @@ jobs:
             echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"
           } > .env
 
-      # compose.ci.yml builds the image from this pull request and caps the memory of every container
+      # compose.ci.yaml builds the image from this pull request and caps the memory of every container
       - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml up -d --build --wait --wait-timeout 240
+        run: docker compose -f compose.yaml -f compose.ci.yaml up -d --build --wait --wait-timeout 240
 
       - name: Set up k6
         uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
@@ -139,7 +139,7 @@ jobs:
 
       - name: Collect container logs
         if: ${{ !cancelled() }}
-        run: docker compose -f compose.yml -f compose.ci.yml logs --no-color > compose.log
+        run: docker compose -f compose.yaml -f compose.ci.yaml logs --no-color > compose.log
 
       - name: Upload the results
         if: ${{ !cancelled() }}
@@ -155,4 +155,4 @@ jobs:
 
       - name: Stop the stack
         if: ${{ always() }}
-        run: docker compose -f compose.yml -f compose.ci.yml down -v
+        run: docker compose -f compose.yaml -f compose.ci.yaml down -v

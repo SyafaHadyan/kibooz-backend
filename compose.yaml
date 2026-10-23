@@ -13,7 +13,7 @@ services:
     # up to 17 more, so Docker has to wait longer than that
     stop_grace_period: 40s
     # a hard cap above GOMEMLIMIT, so a memory problem of the API kills this container and not the database next to it.
-    # It is written as deploy.resources, because compose.ci.yml sets its caps there and the two keys cannot be mixed.
+    # It is written as deploy.resources, because compose.ci.yaml sets its caps there and the two keys cannot be mixed.
     deploy:
       resources:
         limits:

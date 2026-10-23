@@ -2,7 +2,7 @@ name: Smoke stack
 
 # Runs the same script as the Smoke workflow, but against a throwaway stack that is built from the pull request, so the
 # routes of a branch are exercised end to end before they are merged. The Smoke workflow tests the deployed API after a deploy.
-# The stack has a throwaway S3 compatible server with a public and a private bucket, see compose.storage.yml, so the upload
+# The stack has a throwaway S3 compatible server with a public and a private bucket, see compose.storage.yaml, so the upload
 # checks, the signed addresses and the chat photos and videos run for real.
 on:
   pull_request:
@@ -78,7 +78,7 @@ jobs:
         run: |
           # the image is the only one of the stack that the Google mirror may not have, so a pull that Docker Hub refuses is tried again
           for attempt in 1 2 3 4; do
-            if docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml pull storage; then
+            if docker compose -f compose.yaml -f compose.ci.yaml -f compose.storage.yaml pull storage; then
               break
             fi
             if [ "$attempt" = "4" ]; then
@@ -87,7 +87,7 @@ jobs:
             fi
             sleep 10
           done
-          docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d storage
+          docker compose -f compose.yaml -f compose.ci.yaml -f compose.storage.yaml up -d storage
 
       - name: Create the buckets
         run: |
@@ -115,7 +115,7 @@ jobs:
           done
 
       - name: Start the stack
-        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml up -d --build --wait --wait-timeout 240
+        run: docker compose -f compose.yaml -f compose.ci.yaml -f compose.storage.yaml up -d --build --wait --wait-timeout 240
 
       # The keeper teacher is registered by the script on its first run, and the password only lives in this job
       - name: Run the smoke test
@@ -132,8 +132,8 @@ jobs:
 
       - name: Collect container logs
         if: ${{ failure() }}
-        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml logs --no-color --tail 200
+        run: docker compose -f compose.yaml -f compose.ci.yaml -f compose.storage.yaml logs --no-color --tail 200
 
       - name: Stop the stack
         if: ${{ always() }}
-        run: docker compose -f compose.yml -f compose.ci.yml -f compose.storage.yml down -v
+        run: docker compose -f compose.yaml -f compose.ci.yaml -f compose.storage.yaml down -v

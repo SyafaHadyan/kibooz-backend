@@ -1,4 +1,4 @@
-# Used with compose.yml by the Performance workflow, it builds the image from the pull request
+# Used with compose.yaml by the Performance workflow, it builds the image from the pull request
 # and caps every service so a memory problem shows up as a killed container.
 services:
   api:
