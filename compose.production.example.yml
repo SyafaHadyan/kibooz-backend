@@ -167,10 +167,11 @@ services:
       - --config
       - /etc/vector/vector.yaml
     environment:
-      LOG_ARCHIVE_BUCKET: ${LOG_ARCHIVE_BUCKET:?set LOG_ARCHIVE_BUCKET to the bucket that takes the logs}
-      LOG_ARCHIVE_ENDPOINT: ${LOG_ARCHIVE_ENDPOINT:?set LOG_ARCHIVE_ENDPOINT to the address of the S3 compatible store}
-      LOG_ARCHIVE_ACCESS_KEY_ID: ${LOG_ARCHIVE_ACCESS_KEY_ID:?set LOG_ARCHIVE_ACCESS_KEY_ID}
-      LOG_ARCHIVE_ACCESS_KEY_SECRET: ${LOG_ARCHIVE_ACCESS_KEY_SECRET:?set LOG_ARCHIVE_ACCESS_KEY_SECRET}
+      # compose reads the whole file whatever the profile is, so these cannot be required here, and Vector refuses a missing or empty one at the start
+      LOG_ARCHIVE_BUCKET: ${LOG_ARCHIVE_BUCKET:-}
+      LOG_ARCHIVE_ENDPOINT: ${LOG_ARCHIVE_ENDPOINT:-}
+      LOG_ARCHIVE_ACCESS_KEY_ID: ${LOG_ARCHIVE_ACCESS_KEY_ID:-}
+      LOG_ARCHIVE_ACCESS_KEY_SECRET: ${LOG_ARCHIVE_ACCESS_KEY_SECRET:-}
       LOG_ARCHIVE_REGION: ${LOG_ARCHIVE_REGION:-auto}
       LOG_ARCHIVE_PATH_STYLE: ${LOG_ARCHIVE_PATH_STYLE:-true}
       LOG_ARCHIVE_HOST: ${LOG_ARCHIVE_HOST:-${GRAFANA_HOST:-main}}

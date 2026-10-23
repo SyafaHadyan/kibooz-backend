@@ -41,16 +41,16 @@ sinks:
   bucket:
     type: aws_s3
     inputs: [shape]
-    bucket: "${LOG_ARCHIVE_BUCKET}"
+    bucket: "${LOG_ARCHIVE_BUCKET:?set LOG_ARCHIVE_BUCKET to the bucket that takes the logs}"
     # the address of the store, such as https://<account>.r2.cloudflarestorage.com for Cloudflare R2 or https://s3.<region>.amazonaws.com
     # for AWS S3
-    endpoint: "${LOG_ARCHIVE_ENDPOINT}"
+    endpoint: "${LOG_ARCHIVE_ENDPOINT:?set LOG_ARCHIVE_ENDPOINT to the address of the store}"
     region: "${LOG_ARCHIVE_REGION:-auto}"
     # path style addresses work with every store, and a store that only takes virtual host addresses sets this to false
     force_path_style: ${LOG_ARCHIVE_PATH_STYLE:-true}
     auth:
-      access_key_id: "${LOG_ARCHIVE_ACCESS_KEY_ID}"
-      secret_access_key: "${LOG_ARCHIVE_ACCESS_KEY_SECRET}"
+      access_key_id: "${LOG_ARCHIVE_ACCESS_KEY_ID:?set LOG_ARCHIVE_ACCESS_KEY_ID}"
+      secret_access_key: "${LOG_ARCHIVE_ACCESS_KEY_SECRET:?set LOG_ARCHIVE_ACCESS_KEY_SECRET}"
     # a key is logs/<host>/<year>/<month>/<day>/<time>-<id>.json.gz, so a day or a host is one prefix to list or to delete
     key_prefix: "logs/${LOG_ARCHIVE_HOST:-main}/%Y/%m/%d/"
     filename_extension: json.gz

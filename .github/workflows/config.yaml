@@ -126,8 +126,7 @@ jobs:
           docker compose -f compose.yml config --quiet
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
-          LOG_ARCHIVE_BUCKET=ci LOG_ARCHIVE_ENDPOINT=https://example.invalid LOG_ARCHIVE_ACCESS_KEY_ID=ci LOG_ARCHIVE_ACCESS_KEY_SECRET=ci \
-            COMPOSE_PROFILES=monitoring,log-archive docker compose -f compose.production.example.yml config --quiet
+          COMPOSE_PROFILES=monitoring,log-archive docker compose -f compose.production.example.yml config --quiet
 
       - name: Pull images through the Google mirror
         uses: ./.github/actions/pull-images
