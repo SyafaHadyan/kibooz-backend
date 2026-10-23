@@ -36,6 +36,7 @@ func TestChangePassword(t *testing.T) {
 		changePassword(t, wali.Token, "not-the-password", next).requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
 		changePassword(t, wali.Token, wali.Password, wali.Password).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		changePassword(t, wali.Token, wali.Password, "short").requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		changePassword(t, wali.Token, wali.Password, "Password123").requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		changePassword(t, wali.Token, wali.Password, strings.Repeat("é", 40)).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		call(t, http.MethodPut, changePasswordPath, wali.Token, map[string]any{"newPassword": next}).
 			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")

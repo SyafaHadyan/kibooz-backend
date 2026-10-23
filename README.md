@@ -84,7 +84,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
 | `MOOD_BATCH_LIMITER_MAX` | `30` | Requests per user and window for `POST /guru/mood/log/batch`, on top of `USER_LIMITER_MAX`, at least 1 |
 | `CLASS_CODE_LIMITER_MAX` | `60` | Requests per window that name a class code, counted for each route (register and adding a child) and shared by every caller of that route, at least 1. It limits guessing a join code, so raise it only when many parents sign up at the same time |
-| `PASSWORD_HASH_CONCURRENCY`, `PASSWORD_HASH_WAIT_MILLISECONDS` | `0`, `1000` | How many passwords the server hashes or checks at the same time, and `0` means one for each CPU except one, with at least one. A request that finds every slot taken waits this many milliseconds, at least 1, and is then refused with `429` and a `Retry-After` |
+| `PASSWORD_HASH_CONCURRENCY`, `PASSWORD_HASH_WAIT_MILLISECONDS` | `0`, `1000` | How many passwords the server hashes or checks at the same time, and `0` means one for each CPU except one, with at least one. A request that finds every slot taken waits this many milliseconds, at least 1, and is then refused with `429` and a `Retry-After`, and one that cannot get a slot in that time by the length of the line is refused at once |
 | `PASSWORD_HASH_COST` | `10` | The bcrypt cost of new password hashes, from 4 to 14, and every step doubles the time of a hash. 10 is the bcrypt default and the lowest value that OWASP accepts, so a lower one is for tests only and logs a warning. Existing hashes keep their cost |
 | `TRUST_PROXY`, `PROXY_HEADER` | `false`, `X-Forwarded-For` | Read the client IP from a proxy header, it is only used in the access log because no rate limit looks at the IP |
 | `DB_*` | see example | PostgreSQL connection, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD` are required |
@@ -95,6 +95,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `KEEPALIVE_SECONDS` | `60` | Seconds between a `SELECT 1` on the database and a `PING` on Redis, so hosted instances that pause when idle stay awake. `0` disables it |
 | `JWT_SECRET_KEY` | required | At least 32 characters, and the sample value of `.env.example` is refused |
 | `JWT_ACCESS_EXPIRED_MINUTES`, `JWT_REFRESH_EXPIRED_DAYS` | `15`, `30` | Token lifetimes |
+| `REFRESH_REUSE_LEEWAY_SECONDS` | `10` | How long after its use a refresh token can be shown again and get a new token of the same session, for an app that lost the answer to its first call. Later the reuse ends the whole session. `0` switches it off and the highest value is `60` |
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |

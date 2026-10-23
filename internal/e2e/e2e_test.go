@@ -499,15 +499,26 @@ func TestRefreshTokenRotationAndLogout(t *testing.T) {
 	newRefresh := refreshed.data("refreshToken").(string)
 	require.NotEqual(t, guru.RefreshToken, newRefresh)
 
-	// the consumed token cannot be replayed
-	call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": guru.RefreshToken}).
-		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
-
 	// the new access token works
 	require.Equal(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/guru/dashboard", refreshed.data("token").(string), nil).Status)
 
-	require.Equal(t, http.StatusOK, call(t, http.MethodPost, "/api/v1/auth/logout", "", map[string]any{"refreshToken": newRefresh}).Status)
+	// the consumed token cannot be replayed after the leeway, and the replay ends the session
+	ageUse(t, guru.RefreshToken, 2*time.Minute)
+
+	call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": guru.RefreshToken}).
+		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": newRefresh}).
+		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+
+	// a session that goes on can be ended with a logout
+	again := registerGuru(t, "Anggrek Dua")
+	next := refresh(t, again.RefreshToken)
+	require.Equal(t, http.StatusOK, next.Status, "body %v", next.Body)
+
+	live := next.data("refreshToken").(string)
+
+	require.Equal(t, http.StatusOK, call(t, http.MethodPost, "/api/v1/auth/logout", "", map[string]any{"refreshToken": live}).Status)
+	call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": live}).
 		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 }
 
@@ -1033,22 +1044,9 @@ func TestRefreshTokensDoNotDependOnRedis(t *testing.T) {
 		res := refresh(t, guru.RefreshToken)
 		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
 
-		// the old token is gone from Postgres, so it cannot be replayed even though Redis forgot it
+		// the old token is only a used row in Postgres, so it cannot be replayed once the leeway is over, whatever Redis holds
+		ageUse(t, guru.RefreshToken, 2*time.Minute)
 		require.NoError(t, client.FlushDB(ctx).Err())
-		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
-	})
-
-	t.Run("a replay is rejected while Redis remembers the token", func(t *testing.T) {
-		guru := registerGuru(t, "Replay")
-
-		first := refresh(t, guru.RefreshToken)
-		require.Equal(t, http.StatusOK, first.Status)
-
-		sum := sha256.Sum256([]byte(guru.RefreshToken))
-		used, err := client.Get(ctx, "refresh:"+hex.EncodeToString(sum[:])).Result()
-		require.NoError(t, err)
-		require.Equal(t, "used", used)
-
 		refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 	})
 
@@ -1116,6 +1114,8 @@ func TestAPIWorksWithoutRedis(t *testing.T) {
 
 	rotated := callApp(t, noRedis, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": refreshToken})
 	require.Equal(t, http.StatusOK, rotated.Status, "body %v", rotated.Body)
+
+	ageUse(t, refreshToken, 2*time.Minute)
 
 	callApp(t, noRedis, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": refreshToken}).
 		requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")

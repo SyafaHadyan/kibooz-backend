@@ -30,7 +30,9 @@ type fakeRepo struct {
 	repository.ChatDBItf
 
 	account       *repository.AccountRow
+	accountErr    error
 	shared        bool
+	sharedErr     error
 	conversations map[uuid.UUID]*entity.ChatConversation
 	links         []repository.ConversationLinkRow
 	views         map[uuid.UUID]*repository.ConversationRow
@@ -54,11 +56,11 @@ type fakeRepo struct {
 }
 
 func (f *fakeRepo) FindAccount(context.Context, uuid.UUID) (*repository.AccountRow, error) {
-	return f.account, nil
+	return f.account, f.accountErr
 }
 
 func (f *fakeRepo) ShareClass(context.Context, uuid.UUID, uuid.UUID) (bool, error) {
-	return f.shared, nil
+	return f.shared, f.sharedErr
 }
 
 func (f *fakeRepo) ConversationLinks(context.Context, uuid.UUID, []uuid.UUID) ([]repository.ConversationLinkRow, error) {
@@ -1088,7 +1090,9 @@ func TestAReadMarkIsPushedToBothOfADirectPairAndOnlyToTheReaderInARoom(t *testin
 func TestTypingGoesToTheOtherPersonOfAnOpenDirectConversationOnly(t *testing.T) {
 	me, other := uuid.New(), uuid.New()
 	conversation, id := conversationOf(me, other)
-	repo := &fakeRepo{conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}}
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}, account: &repository.AccountRow{}, shared: true,
+	}
 	useCase := newUseCase(repo)
 	notifier := withNotifier(useCase)
 	ctx := context.Background()
@@ -1104,9 +1108,29 @@ func TestTypingGoesToTheOtherPersonOfAnOpenDirectConversationOnly(t *testing.T) 
 
 	requireAppError(t, useCase.Typing(ctx, uuid.New(), id, true), apperror.ErrChatConversationNotFound)
 
-	repo.views = map[uuid.UUID]*repository.ConversationRow{id: {ID: id, Kind: constants.ChatKindDirect, CanSend: false}}
+	// two people who no longer share a class, and a peer whose account is gone, both close the conversation
+	repo.shared = false
+	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.ErrChatSendingClosed)
+
+	repo.shared, repo.account = true, nil
 	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.ErrChatSendingClosed)
 	require.Len(t, notifier.events, 2, "a closed conversation shows no typing")
+}
+
+func TestTypingFailsWhenTheLightCheckCannotReadTheDatabase(t *testing.T) {
+	me, other := uuid.New(), uuid.New()
+	conversation, id := conversationOf(me, other)
+	repo := &fakeRepo{
+		conversations: map[uuid.UUID]*entity.ChatConversation{id: conversation}, account: &repository.AccountRow{}, shared: true,
+	}
+	useCase := newUseCase(repo)
+	ctx := context.Background()
+
+	repo.accountErr = errors.New("connection reset")
+	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.Internal(nil))
+
+	repo.accountErr, repo.sharedErr = nil, errors.New("connection reset")
+	requireAppError(t, useCase.Typing(ctx, me, id, true), apperror.Internal(nil))
 }
 
 func TestTypingIsNotForARoom(t *testing.T) {

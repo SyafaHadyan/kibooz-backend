@@ -8,6 +8,7 @@ import (
 	"context"
 	"log"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -25,6 +26,11 @@ type Hasher struct {
 	// dummy is a hash of the configured cost for a sign in with an email that nobody registered, so that it takes as long as one
 	// with a known email
 	dummy string
+
+	// waiters counts the callers that wait for a slot, and typical is the recent time of one hash in nanoseconds, which together
+	// tell a caller that arrives whether it could get a slot before its wait is over
+	waiters atomic.Int64
+	typical atomic.Int64
 }
 
 // New sizes the pool from PASSWORD_HASH_CONCURRENCY. When that is 0 it leaves one CPU free for everything else, so a flood of
@@ -47,17 +53,24 @@ func New(cfg *env.Env) *Hasher {
 
 	// made here and not on the first sign in, so no sign in is slower than another and the dummy never goes missing. A fixed
 	// short password and a cost in the range of bcrypt cannot fail, so a failure is a bug and the server must not start
+	started := time.Now()
+
 	dummy, err := bcrypt.GenerateFromPassword([]byte("kibooz-dummy-password"), cost)
 	if err != nil {
 		panic("passwords: the dummy hash could not be made: " + err.Error())
 	}
 
-	return &Hasher{
+	hasher := &Hasher{
 		slots: make(chan struct{}, slots),
 		wait:  time.Duration(cfg.PasswordHashWaitMilliseconds) * time.Millisecond,
 		cost:  cost,
 		dummy: string(dummy),
 	}
+
+	// the first hash of the process is the first estimate of how long one takes
+	hasher.typical.Store(int64(time.Since(started)))
+
+	return hasher
 }
 
 // DummyHash returns a hash that no password matches and that costs as much to check as a real one.
@@ -80,6 +93,15 @@ func (h *Hasher) Acquire(ctx context.Context) (release func(), err error) {
 	default:
 	}
 
+	// a caller that cannot get a slot before its wait is over is refused now and not after the wait, so a flood does not keep a
+	// goroutine, a connection and a request for the whole wait each
+	queued := h.waiters.Add(1)
+	defer h.waiters.Add(-1)
+
+	if h.cannotWaitThatLong(queued) {
+		return nil, apperror.ErrBusy
+	}
+
 	timer := time.NewTimer(h.wait)
 	defer timer.Stop()
 
@@ -93,6 +115,32 @@ func (h *Hasher) Acquire(ctx context.Context) (release func(), err error) {
 	}
 }
 
+// cannotWaitThatLong tells whether the callers that wait, this one included, need more time than the wait allows. Each round of
+// the slots takes about the typical time of one hash, and the caller at the back of the line needs one round for every
+// slots-sized group before it and its own, less half a round because the hash that holds a slot is half done on average.
+// Before the first estimate exists nobody is refused early.
+func (h *Hasher) cannotWaitThatLong(queued int64) bool {
+	typical := h.typical.Load()
+	if typical <= 0 {
+		return false
+	}
+
+	rounds := (queued + int64(cap(h.slots)) - 1) / int64(cap(h.slots))
+
+	return time.Duration(rounds*typical-typical/2) > h.wait
+}
+
+// took folds the time of a hash into the typical time, so the estimate follows a loaded machine and a changed cost
+func (h *Hasher) took(started time.Time) {
+	sample := int64(time.Since(started))
+	if sample <= 0 {
+		return
+	}
+
+	// a lost update under a race only makes the estimate a little late, so there is no loop
+	h.typical.Store((h.typical.Load()*7 + sample) / 8)
+}
+
 // Hash returns the bcrypt hash of the password. The error is apperror.ErrBusy when no slot was free in time.
 func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
 	release, err := h.Acquire(ctx)
@@ -100,6 +148,8 @@ func (h *Hasher) Hash(ctx context.Context, password string) (string, error) {
 		return "", err
 	}
 	defer release()
+
+	defer h.took(time.Now())
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), h.cost)
 	if err != nil {
@@ -117,6 +167,8 @@ func (h *Hasher) Matches(ctx context.Context, hash string, password string) (boo
 		return false, err
 	}
 	defer release()
+
+	defer h.took(time.Now())
 
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil, nil
 }
