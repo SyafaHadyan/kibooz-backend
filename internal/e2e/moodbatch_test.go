@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -219,7 +220,8 @@ func TestCreateMoodLogsRollsBackTheWholeBatch(t *testing.T) {
 		MoodType: constants.Mood("NOT_A_MOOD"), ConfidenceScore: 0.9, Source: constants.SourceAICamera, RecordedAt: now,
 	}
 
-	repo := repository.NewGuruDB(testDB, nil)
+	// one insert for each row, so the valid row is written first and the refused one fails after it, inside the transaction
+	repo := repository.NewGuruDB(testDB.Session(&gorm.Session{CreateBatchSize: 1}), nil)
 
 	classID := uuid.MustParse(classIDText)
 	day := repository.MoodDay{From: now.Add(-24 * time.Hour), To: now.Add(24 * time.Hour), Limit: constants.MoodLogsPerStudentPerDay}
