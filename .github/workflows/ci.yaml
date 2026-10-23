@@ -121,7 +121,7 @@ jobs:
       # Codecov never reports a project status for this repository, so the floor is checked here, in a required job.
       - name: Coverage floor
         env:
-          COVERAGE_FLOOR: "0"
+          COVERAGE_FLOOR: "88"
         run: |
           total="$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')"
           echo "Total statement coverage is $total percent and the floor is $COVERAGE_FLOOR percent."
