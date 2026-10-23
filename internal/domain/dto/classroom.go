@@ -116,14 +116,18 @@ type ForumReplyList struct {
 }
 
 type ClassStudent struct {
-	ID            uuid.UUID       `json:"id"`
-	FullName      string          `json:"fullName"`
-	NISN          string          `json:"nisn"`
-	AvatarURL     *string         `json:"avatarUrl"`
-	CurrentPoints int             `json:"currentPoints"`
-	SeasonPoints  int             `json:"seasonPoints"`
-	ClassRank     int             `json:"classRank"`
-	TodayMood     *constants.Mood `json:"todayMood"`
+	ID       uuid.UUID `json:"id"`
+	FullName string    `json:"fullName"`
+	NISN     string    `json:"nisn"`
+	// NISNVerified is true while a teacher vouched for the NISN
+	NISNVerified bool `json:"nisnVerified"`
+	// NISNNeedsUpdate is true when the NISN is empty because another child was verified with it, so the parent has to enter the right one
+	NISNNeedsUpdate bool            `json:"nisnNeedsUpdate"`
+	AvatarURL       *string         `json:"avatarUrl"`
+	CurrentPoints   int             `json:"currentPoints"`
+	SeasonPoints    int             `json:"seasonPoints"`
+	ClassRank       int             `json:"classRank"`
+	TodayMood       *constants.Mood `json:"todayMood"`
 }
 
 // GuidanceReport tells a teacher that a parent applied a guide for a child

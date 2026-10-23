@@ -829,14 +829,16 @@ func (u *ClassroomUseCase) ListStudents(
 
 	for i := range rows {
 		res.Students = append(res.Students, dto.ClassStudent{
-			ID:            rows[i].ID,
-			FullName:      rows[i].FullName,
-			NISN:          rows[i].NISN,
-			AvatarURL:     rows[i].AvatarURL,
-			CurrentPoints: rows[i].CurrentPoints,
-			SeasonPoints:  rows[i].SeasonPoints,
-			ClassRank:     rows[i].RankPosition,
-			TodayMood:     rows[i].TodayMood,
+			ID:              rows[i].ID,
+			FullName:        rows[i].FullName,
+			NISN:            rows[i].NISN,
+			NISNVerified:    rows[i].NISNVerified(),
+			NISNNeedsUpdate: rows[i].NISNNeedsUpdate(),
+			AvatarURL:       rows[i].AvatarURL,
+			CurrentPoints:   rows[i].CurrentPoints,
+			SeasonPoints:    rows[i].SeasonPoints,
+			ClassRank:       rows[i].RankPosition,
+			TodayMood:       rows[i].TodayMood,
 		})
 	}
 

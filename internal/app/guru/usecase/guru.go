@@ -45,6 +45,11 @@ type GuruUseCaseItf interface {
 	SetJoining(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.SetJoiningRequest) (dto.JoiningResponse, error)
 	// RemoveStudent lets a teacher of the class take a child out of it, which hides the child like a deleted account does
 	RemoveStudent(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) error
+	// VerifyNISN lets a teacher of the class vouch for the NISN of a child, and every other child that holds the number unverified
+	// loses it and has to enter the right one
+	VerifyNISN(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) (dto.NISNVerification, error)
+	// UnverifyNISN lets a teacher of the class take the verification back, for example after a wrong click
+	UnverifyNISN(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) (dto.NISNVerification, error)
 	// MoveRequests lists the requests to move a child into the class that wait for a teacher
 	MoveRequests(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassMoveRequestList, error)
 	// AcceptMove moves the child of a request into the class, where it starts from zero, and clears the leaderboards of both classes
@@ -570,6 +575,46 @@ func (u *GuruUseCase) RemoveStudent(ctx context.Context, userID uuid.UUID, class
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
 
 	return nil
+}
+
+func (u *GuruUseCase) VerifyNISN(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID,
+) (dto.NISNVerification, error) {
+	_, class, err := u.resolveWritableClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.NISNVerification{}, err
+	}
+
+	found, displaced, err := u.repo.VerifyNISN(ctx, class.ID, studentID)
+	if err != nil {
+		return dto.NISNVerification{}, appOrInternal(err)
+	}
+
+	if !found {
+		return dto.NISNVerification{}, apperror.ErrStudentNotFound
+	}
+
+	return dto.NISNVerification{NISNVerified: true, Displaced: displaced}, nil
+}
+
+func (u *GuruUseCase) UnverifyNISN(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID,
+) (dto.NISNVerification, error) {
+	_, class, err := u.resolveWritableClass(ctx, userID, &classID)
+	if err != nil {
+		return dto.NISNVerification{}, err
+	}
+
+	found, err := u.repo.UnverifyNISN(ctx, class.ID, studentID)
+	if err != nil {
+		return dto.NISNVerification{}, apperror.Internal(err)
+	}
+
+	if !found {
+		return dto.NISNVerification{}, apperror.ErrStudentNotFound
+	}
+
+	return dto.NISNVerification{}, nil
 }
 
 func (u *GuruUseCase) Teachers(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.TeacherList, error) {

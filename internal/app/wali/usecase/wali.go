@@ -97,6 +97,8 @@ func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID
 			AvatarURL: student.AvatarURL,
 			NISN:      student.NISN,
 
+			NISNVerified:    student.NISNVerified(),
+			NISNNeedsUpdate: student.NISNNeedsUpdate(),
 			ClassArchivedAt: archivedAt(student.ClassArchivedAt),
 		},
 		PointsSummary: dto.PointsSummary{
@@ -179,19 +181,21 @@ func (u *WaliUseCase) Child(ctx context.Context, userID uuid.UUID, studentID uui
 	}
 
 	return dto.ChildProfile{
-		ID:            student.ID,
-		FullName:      student.FullName,
-		NISN:          student.NISN,
-		AvatarURL:     student.AvatarURL,
-		ClassID:       student.ClassID,
-		ClassName:     student.ClassName,
-		GradeLevel:    student.GradeLevel,
-		SchoolName:    student.SchoolName,
-		AcademicYear:  student.AcademicYear,
-		CurrentPoints: student.CurrentPoints,
-		SeasonPoints:  student.SeasonPoints,
-		ClassRank:     student.RankPosition,
-		Guardian:      guardianOf(guardian),
+		ID:              student.ID,
+		FullName:        student.FullName,
+		NISN:            student.NISN,
+		NISNVerified:    student.NISNVerified(),
+		NISNNeedsUpdate: student.NISNNeedsUpdate(),
+		AvatarURL:       student.AvatarURL,
+		ClassID:         student.ClassID,
+		ClassName:       student.ClassName,
+		GradeLevel:      student.GradeLevel,
+		SchoolName:      student.SchoolName,
+		AcademicYear:    student.AcademicYear,
+		CurrentPoints:   student.CurrentPoints,
+		SeasonPoints:    student.SeasonPoints,
+		ClassRank:       student.RankPosition,
+		Guardian:        guardianOf(guardian),
 	}, nil
 }
 
@@ -544,6 +548,8 @@ func childSummary(row *repository.StudentRow) dto.ChildSummary {
 		ClassID:   row.ClassID,
 		ClassName: row.ClassName,
 
+		NISNVerified:    row.NISNVerified(),
+		NISNNeedsUpdate: row.NISNNeedsUpdate(),
 		ClassArchivedAt: archivedAt(row.ClassArchivedAt),
 	}
 }

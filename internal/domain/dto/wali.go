@@ -15,6 +15,10 @@ type WaliStudent struct {
 	ClassName string    `json:"className"`
 	AvatarURL *string   `json:"avatarUrl"`
 	NISN      string    `json:"nisn"`
+	// NISNVerified is true while a teacher vouched for the NISN
+	NISNVerified bool `json:"nisnVerified"`
+	// NISNNeedsUpdate is true when the NISN is empty because another child was verified with it, so the parent has to enter the right one
+	NISNNeedsUpdate bool `json:"nisnNeedsUpdate"`
 	// ClassArchivedAt is set while the class of the child is archived and read only, so the app can hide what the child cannot do
 	ClassArchivedAt *time.Time `json:"classArchivedAt,omitempty"`
 }
@@ -73,19 +77,23 @@ type Guardian struct {
 }
 
 type ChildProfile struct {
-	ID            uuid.UUID `json:"id"`
-	FullName      string    `json:"fullName"`
-	NISN          string    `json:"nisn"`
-	AvatarURL     *string   `json:"avatarUrl"`
-	ClassID       uuid.UUID `json:"classId"`
-	ClassName     string    `json:"className"`
-	GradeLevel    string    `json:"gradeLevel"`
-	SchoolName    string    `json:"schoolName"`
-	AcademicYear  string    `json:"academicYear"`
-	CurrentPoints int       `json:"currentPoints"`
-	SeasonPoints  int       `json:"seasonPoints"`
-	ClassRank     int       `json:"classRank"`
-	Guardian      Guardian  `json:"guardian"`
+	ID       uuid.UUID `json:"id"`
+	FullName string    `json:"fullName"`
+	NISN     string    `json:"nisn"`
+	// NISNVerified is true while a teacher vouched for the NISN
+	NISNVerified bool `json:"nisnVerified"`
+	// NISNNeedsUpdate is true when the NISN is empty because another child was verified with it, so the parent has to enter the right one
+	NISNNeedsUpdate bool      `json:"nisnNeedsUpdate"`
+	AvatarURL       *string   `json:"avatarUrl"`
+	ClassID         uuid.UUID `json:"classId"`
+	ClassName       string    `json:"className"`
+	GradeLevel      string    `json:"gradeLevel"`
+	SchoolName      string    `json:"schoolName"`
+	AcademicYear    string    `json:"academicYear"`
+	CurrentPoints   int       `json:"currentPoints"`
+	SeasonPoints    int       `json:"seasonPoints"`
+	ClassRank       int       `json:"classRank"`
+	Guardian        Guardian  `json:"guardian"`
 }
 
 // AddChildRequest registers one more child of a parent in the class that owns classCode
@@ -102,12 +110,16 @@ type UpdateChildRequest struct {
 
 // ChildSummary is a child of the parent with the class the child is in
 type ChildSummary struct {
-	ID        uuid.UUID `json:"id"`
-	FullName  string    `json:"fullName"`
-	NISN      string    `json:"nisn"`
-	AvatarURL *string   `json:"avatarUrl"`
-	ClassID   uuid.UUID `json:"classId"`
-	ClassName string    `json:"className"`
+	ID       uuid.UUID `json:"id"`
+	FullName string    `json:"fullName"`
+	NISN     string    `json:"nisn"`
+	// NISNVerified is true while a teacher vouched for the NISN
+	NISNVerified bool `json:"nisnVerified"`
+	// NISNNeedsUpdate is true when the NISN is empty because another child was verified with it, so the parent has to enter the right one
+	NISNNeedsUpdate bool      `json:"nisnNeedsUpdate"`
+	AvatarURL       *string   `json:"avatarUrl"`
+	ClassID         uuid.UUID `json:"classId"`
+	ClassName       string    `json:"className"`
 	// ClassArchivedAt is set while the class of the child is archived and read only
 	ClassArchivedAt *time.Time `json:"classArchivedAt,omitempty"`
 }
