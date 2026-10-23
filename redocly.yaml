@@ -1,0 +1,41 @@
+extends:
+  - recommended
+
+rules:
+  # the paths are lowercase words joined by hyphens, and a parameter in braces is left out
+  paths-kebab-case: error
+
+  rule/operation-id-camel-case:
+    subject:
+      type: Operation
+      property: operationId
+    assertions:
+      casing: camelCase
+    message: The operationId must be camelCase
+    severity: error
+
+  rule/property-camel-case:
+    subject:
+      type: SchemaProperties
+    assertions:
+      casing: camelCase
+    message: A property of a schema must be camelCase
+    severity: error
+
+  # a header has the name that HTTP gives it, such as Idempotency-Key, so only the parameters of the path and the query count
+  rule/parameter-camel-case:
+    where:
+      - subject:
+          type: Parameter
+          property: in
+        assertions:
+          enum:
+            - path
+            - query
+    subject:
+      type: Parameter
+      property: name
+    assertions:
+      casing: camelCase
+    message: The name of a parameter of the path or the query must be camelCase
+    severity: error
