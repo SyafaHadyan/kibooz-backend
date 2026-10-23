@@ -7,7 +7,7 @@ on:
 
 # Like commits.yaml, a run is never cancelled and every run has a group of its own, because GitHub keeps a cancelled run of a required
 # check as unmet. The pull request is read when the run starts and not from the event, so a rerun checks what the pull request looks
-# like now. A label or an assignee that was added after the last run is picked up by a rerun, an edit of the body or a push.
+# like now. A label or an assignee that was added after the last run is picked up by a rerun of the failed run.
 concurrency:
   group: prformat-${{ github.run_id }}
   cancel-in-progress: false
@@ -22,20 +22,33 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      # The rules are in CONTRIBUTING.md. The pull requests of Renovate and Release Please are written by the bots, so they are skipped.
+      # The rules are in CONTRIBUTING.md. The pull requests that a bot opens from its own branches (Renovate, Dependabot and Release Please) are skipped.
       - name: Branch, label, assignee and body
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: |
-          pr="$(gh pr view "$PULL_REQUEST" --json headRefName,body,labels,assignees)"
+          # gh adds the labels and the assignee of a new pull request in a call after it created the pull request, so a missing one is read
+          # again a few times before it counts
+          for attempt in 1 2 3; do
+            pr="$(gh pr view "$PULL_REQUEST" --json headRefName,body,labels,assignees,author)"
+            if [ "$(jq '(.labels | length) > 0 and (.assignees | length) > 0' <<<"$pr")" = true ]; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              sleep 10
+            fi
+          done
           branch="$(jq -r .headRefName <<<"$pr")"
+          bot="$(jq -r .author.is_bot <<<"$pr")"
 
           case "$branch" in
             renovate/* | dependabot/* | release-please--*)
-              echo "The branch $branch belongs to a bot, so the format is not checked."
-              exit 0
+              if [ "$bot" = true ]; then
+                echo "The branch $branch belongs to a bot, so the format is not checked."
+                exit 0
+              fi
               ;;
           esac
 
