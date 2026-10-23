@@ -313,8 +313,14 @@ func (r *GuruDB) CreateMoodLogs(
 			Total     int
 		}
 
-		err = tx.Raw(
-			"SELECT student_id, COUNT(*) AS total FROM mood_logs WHERE student_id IN ? AND recorded_at >= ? AND recorded_at < ? GROUP BY student_id",
+		// The limit is for one class. A child that moved starts its day again in the new class, so the moods of the class that it left,
+		// which are dated before it joined, do not count. A child that never moved has no earlier class and every mood counts.
+		err = tx.Raw(`SELECT m.student_id, COUNT(*) AS total
+			FROM mood_logs AS m
+			LEFT JOIN enrollments AS e ON e.student_id = m.student_id AND e.status = 'active'
+				AND EXISTS (SELECT 1 FROM enrollments AS p WHERE p.student_id = e.student_id AND p.status = 'ended')
+			WHERE m.student_id IN ? AND m.recorded_at >= ? AND m.recorded_at < ? AND (e.activated_at IS NULL OR m.recorded_at >= e.activated_at)
+			GROUP BY m.student_id`,
 			studentIDs, day.From, day.To,
 		).Scan(&counts).Error
 		if err != nil {

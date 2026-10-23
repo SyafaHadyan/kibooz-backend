@@ -3,7 +3,9 @@ package e2e
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -213,4 +215,81 @@ func TestAUsedTokenThatExpiredWithinTheLeewayIsRefusedAndTheSessionGoesOn(t *tes
 	refresh(t, guru.RefreshToken).requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
 
 	require.Equal(t, http.StatusOK, refresh(t, second).Status, "the session was not ended")
+}
+
+// Requests that show the same stale token at once all end the session, and none of them may wait on another until PostgreSQL
+// ends one as a deadlock, which the caller would see as a 500.
+func TestRequestsThatShowTheSameStaleRefreshTokenAtOnceNeverDeadlock(t *testing.T) {
+	for round := range 4 {
+		guru := registerGuru(t, fmt.Sprintf("Stale Together %d", round))
+
+		first := refresh(t, guru.RefreshToken)
+		require.Equal(t, http.StatusOK, first.Status, "round %d, body %v", round, first.Body)
+
+		family := familyOf(t, first.data("refreshToken").(string))
+
+		ageUse(t, guru.RefreshToken, 2*time.Minute)
+
+		var wg sync.WaitGroup
+
+		answers := make([]result, 4)
+
+		for i := range answers {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				answers[i] = refresh(t, guru.RefreshToken)
+			}()
+		}
+
+		wg.Wait()
+
+		for i, answer := range answers {
+			answer.requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+			require.NotEqual(t, http.StatusInternalServerError, answer.Status, "round %d, request %d, body %v", round, i, answer.Body)
+		}
+
+		require.Zero(t, tokensWhere(t, "family_id", family), "round %d, the session has to be gone", round)
+	}
+}
+
+// A replay within the leeway of a session that has reached its longest lifetime ends the session, which takes the same locks as
+// a logout, and requests that do it at once must not wait on each other either.
+func TestRequestsThatReplayATokenOfAnOverlongSessionAtOnceNeverDeadlock(t *testing.T) {
+	for round := range 4 {
+		guru := registerGuru(t, fmt.Sprintf("Overlong Together %d", round))
+
+		first := refresh(t, guru.RefreshToken)
+		require.Equal(t, http.StatusOK, first.Status, "round %d, body %v", round, first.Body)
+
+		family := familyOf(t, first.data("refreshToken").(string))
+
+		// the session started so long ago that it is over its longest lifetime, while the token was used a moment ago
+		require.NoError(t, testDB.Exec("UPDATE refresh_tokens SET session_started_at = now() - interval '3650 days' WHERE family_id = ?::uuid", family).Error)
+
+		var wg sync.WaitGroup
+
+		answers := make([]result, 4)
+
+		for i := range answers {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+
+				answers[i] = refresh(t, guru.RefreshToken)
+			}()
+		}
+
+		wg.Wait()
+
+		for i, answer := range answers {
+			answer.requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+			require.NotEqual(t, http.StatusInternalServerError, answer.Status, "round %d, request %d, body %v", round, i, answer.Body)
+		}
+
+		require.Zero(t, tokensWhere(t, "family_id", family), "round %d, the session has to be gone", round)
+	}
 }
