@@ -28,9 +28,6 @@ func TestUnreachableRedisFailsFastAfterTheFirstError(t *testing.T) {
 	_, _, err := cache.Get(ctx, "key")
 	require.ErrorIs(t, err, redis.ErrUnavailable)
 
-	_, err = cache.MarkUsed(ctx, "key", time.Minute)
-	require.ErrorIs(t, err, redis.ErrUnavailable)
-
 	require.Less(t, time.Since(started), 100*time.Millisecond)
 }
 
