@@ -12,8 +12,25 @@ linters:
     - gosec
     - misspell
     - nilerr
+    # the json tags of the API are camelCase, see docs/client-guide.md
+    - tagliatelle
     - unconvert
     - usestdlibvars
+  settings:
+    staticcheck:
+      # the default leaves out the style checks, and this one brings back ST1003, the names of Go, such as ID and URL in capitals and
+      # no underscore in a name. The other style checks stay out as they are by default.
+      checks:
+        - all
+        - -ST1000
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+    tagliatelle:
+      case:
+        rules:
+          json: camel
   exclusions:
     rules:
       - path: _test\.go
