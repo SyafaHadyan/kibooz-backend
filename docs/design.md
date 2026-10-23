@@ -81,6 +81,27 @@ location / {
 - **A request that nginx limits gets a plain `429`** without the `RATE_LIMITED` body, so the apps treat any `429` as a signal to wait.
 - **Set `client_max_body_size` once, at the server level, to the value of `BODY_LIMIT_MB`.** nginx refuses a larger body before the API sees it, and its default is `1m`, which would cut every photo of more than 1 MiB. With `BODY_LIMIT_MB` at its default of 8, `8m` is right. A server level value is inherited by every `location`, so a new one cannot fall back to the default by accident. The API keeps its own limits whatever nginx allows, which are 64 KB for a JSON body, 2 MiB for an avatar, 4 MiB for a trash photo and `CHAT_PHOTO_MAX_MB` for a chat photo, so a higher value in nginx only costs some buffering. A request that nginx refuses gets a plain `413` without a JSON body, so the apps treat any `413` as a file that is too large. If you raise `BODY_LIMIT_MB`, raise the value in nginx with it.
 
+#### A stricter limit on register
+
+Registering is the only route where a stranger can try many new emails, NIPs and NISNs at once, and a real person registers once, so it can take a much lower ceiling than login. The zone below allows each address an average of 4 requests a second and a burst of 64, which is still enough for a whole school network of parents who sign up in the same minute. Put the location before the shared one, because nginx uses the first matching regular expression. Both `limit_req` lines apply to a request, so register also stays inside the zone of the shared limit, and the stricter zone is the one that rejects first.
+
+```nginx
+# http block
+limit_req_zone $binary_remote_addr zone=kibooz_signup:10m rate=4r/s;
+
+# server block, before the shared auth location
+location ~* ^/api/v1/auth/register/?$ {
+    limit_req zone=kibooz_signup burst=64 nodelay;
+    limit_req zone=kibooz_hash burst=128 nodelay;
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The numbers are a starting point and not a measured limit. Raise the burst when a school reports refused sign ups, and run `nginx -t` before a reload, because a `limit_req` that names a zone nginx does not know stops it from loading the configuration.
+
 If a CDN or load balancer sits in front of nginx, restore the visitor address first. With Cloudflare, set `real_ip_header CF-Connecting-IP;` and add one `set_real_ip_from` line for each range that Cloudflare publishes at `cloudflare.com/ips`. nginx only trusts the header on a connection from a listed range, so a client that reaches the server directly cannot forge it. Without this step every request arrives from the address of the CDN, all visitors share one budget and the limit blocks everyone at once. The ranges change rarely, so compare them with the published list now and then. A request that reaches the server directly skips the CDN and its rules, so allow port 443 only from the CDN if you can. A CDN rule on the same two routes works the same way and stops the flood before it reaches your server.
 
 ## Redis is optional
