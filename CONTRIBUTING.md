@@ -39,7 +39,7 @@ docker run --rm -v "$PWD:/app" -w /app golangci/golangci-lint:v2.14.0 golangci-l
 The end to end tests are skipped unless you enable them. They create data in PostgreSQL and some tests empty the Redis database that `REDIS_DATABASE` names with `FLUSHDB`, so only point them at a disposable PostgreSQL and Redis, never at a database or cache you care about. The tests refuse a `DB_NAME` that does not end in `_test`, unless `E2E_ALLOW_ANY_DB=true` is set for a database that you can lose.
 
 ```sh
-E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... REDIS_PASSWORD=... go test ./internal/e2e/ -race -count=1
+E2E_ENABLED=true DB_NAME=kibooz_test DB_USERNAME=kibooz DB_PASSWORD=... REDIS_PASSWORD=... go test ./internal/e2e/ -race -count=1 -shuffle=on
 ```
 
 Add tests with every behaviour change. A bug fix should come with a test that fails without the fix.
