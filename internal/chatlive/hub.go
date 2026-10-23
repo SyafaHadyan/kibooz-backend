@@ -168,7 +168,9 @@ type Hub struct {
 	resyncWait  time.Duration
 
 	// outbox holds the numbered envelopes that wait for the bus, and publishWait is how long one may take, a field for the tests
-	outbox      chan []byte
+	outbox chan []byte
+	// encode turns an envelope into the bytes for the bus, json.Marshal outside the tests
+	encode      func(any) ([]byte, error)
 	publishWait time.Duration
 
 	gaps            prometheus.Counter
@@ -188,6 +190,7 @@ func NewHub(cfg Config) *Hub {
 		clients: map[uuid.UUID]map[*Client]struct{}{},
 		seen:    map[string]*originState{},
 		outbox:  make(chan []byte, publishQueue),
+		encode:  json.Marshal,
 
 		publishWait: publishTimeout,
 
@@ -360,10 +363,8 @@ func (h *Hub) beat() {
 		return
 	}
 
-	payload, err := json.Marshal(envelope{Origin: h.origin, Seq: h.published.Load(), Beat: true})
-	if err != nil {
-		log.Printf("chat heartbeat could not be encoded for the bus %v", err)
-
+	payload, ok := h.encodeEnvelope(envelope{Origin: h.origin, Seq: h.published.Load(), Beat: true})
+	if !ok {
 		return
 	}
 
@@ -373,12 +374,22 @@ func (h *Hub) beat() {
 	}
 }
 
-// enqueue encodes the envelope and puts it in the queue for the bus, and drops the oldest one when the queue is full
-func (h *Hub) enqueue(message envelope) {
-	payload, err := json.Marshal(message)
+// encodeEnvelope turns an envelope into the bytes for the bus, and says false after it logged why that was not possible
+func (h *Hub) encodeEnvelope(message envelope) ([]byte, bool) {
+	payload, err := h.encode(message)
 	if err != nil {
 		log.Printf("chat event could not be encoded for the bus %v", err)
 
+		return nil, false
+	}
+
+	return payload, true
+}
+
+// enqueue encodes the envelope and puts it in the queue for the bus, and drops the oldest one when the queue is full
+func (h *Hub) enqueue(message envelope) {
+	payload, ok := h.encodeEnvelope(message)
+	if !ok {
 		return
 	}
 

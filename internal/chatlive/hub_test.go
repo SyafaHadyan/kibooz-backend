@@ -3,6 +3,7 @@ package chatlive
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -574,6 +575,39 @@ func TestAHeartbeatNamingANumberThatNeverCameIsALoss(t *testing.T) {
 
 	require.Equal(t, EventResync, received(t, client).Type, "the last number of the burst is missing")
 	require.EqualValues(t, 1, counterValue(t, hub, "kibooz_chat_event_gaps_total"))
+}
+
+func TestAHeartbeatNeverEvictsAnEventFromAFullQueue(t *testing.T) {
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: &fakeBus{}})
+
+	// nothing runs the queue, so it fills up with the envelopes of events
+	for range publishQueue {
+		hub.send([]uuid.UUID{uuid.New()}, Event{Type: EventTyping, ConversationID: uuid.New()})
+	}
+
+	require.Len(t, hub.outbox, publishQueue)
+
+	hub.beat()
+
+	require.Len(t, hub.outbox, publishQueue, "the heartbeat found no room and was left out")
+	require.Zero(t, counterValue(t, hub, "kibooz_chat_bus_publish_dropped_total"), "no event was dropped for it")
+
+	var first envelope
+
+	require.NoError(t, json.Unmarshal(<-hub.outbox, &first))
+	require.EqualValues(t, 1, first.Seq, "the oldest event is still the first in the queue")
+}
+
+func TestAHeartbeatWithoutABusOrWithoutAnEncodingQueuesNothing(t *testing.T) {
+	alone := NewHub(Config{MaxSockets: 10, MaxPerUser: 3})
+	alone.beat()
+	require.Empty(t, alone.outbox)
+
+	broken := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: &fakeBus{}})
+	broken.encode = func(any) ([]byte, error) { return nil, errors.New("cannot encode") }
+	broken.beat()
+	broken.send([]uuid.UUID{uuid.New()}, Event{Type: EventTyping})
+	require.Empty(t, broken.outbox)
 }
 
 func TestAHeartbeatThatRepeatsTheLastNumberChangesNothing(t *testing.T) {
