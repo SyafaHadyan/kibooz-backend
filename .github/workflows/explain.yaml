@@ -70,15 +70,19 @@ jobs:
           export EXPLAIN_CLASSES="$CLASSES"
           export EXPLAIN_OUT="$RUNNER_TEMP/explain-plans.txt"
 
-          go test -tags explain -run TestExplainThePlansOfTheQueriesToWatch -count=1 -timeout 50m -v ./internal/explain/ | tee "$RUNNER_TEMP/explain-log.txt"
+          # the summary is written even when the test failed, because the plans that exist are the point of the run
+          status=0
+          go test -tags explain -run TestExplainThePlansOfTheQueriesToWatch -count=1 -timeout 50m -v ./internal/explain/ | tee "$RUNNER_TEMP/explain-log.txt" || status=$?
 
           {
             echo "### Plans of the queries to watch, $CLASSES classes"
             echo
             echo '```'
-            grep -E '^(====|Execution Time|Planning Time)' "$EXPLAIN_OUT"
+            grep -E '^(====|-- [0-9]+ rows|Execution Time|Planning Time|EXPLAIN.* failed)' "$EXPLAIN_OUT" || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$status"
 
       - name: Keep the plans
         if: ${{ !cancelled() }}

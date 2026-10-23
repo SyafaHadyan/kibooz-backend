@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -33,6 +35,15 @@ import (
 const (
 	defaultClasses   = 4000
 	childrenPerClass = 49
+)
+
+// the time that one query of a section and one EXPLAIN may take. A query that needs more than this at the size of the seed is the
+// finding, and the run goes on to the next section with what it has, so one slow plan cannot cost the others or the job.
+const (
+	queryTimeout   = 3 * time.Minute
+	planTimeout    = 3 * time.Minute
+	costOnlyBudget = time.Minute
+	seasonLabel    = "2099-01-01"
 )
 
 func envInt(name string, fallback int) int {
@@ -106,12 +117,13 @@ func seed(t *testing.T, database *gorm.DB, classes int) int {
 	return children
 }
 
-// planLogger runs EXPLAIN (ANALYZE, BUFFERS) for every select that the repositories run, with the values filled in
+// planLogger writes the plan of every select that the repositories run, with the values filled in. It first writes the plan without
+// running the query, so a query that is too slow to run still leaves its plan, and then the plan with the real timings.
 type planLogger struct {
 	gormlogger.Interface
 
 	explain *gorm.DB
-	plans   *strings.Builder
+	plans   io.Writer
 }
 
 func (l *planLogger) LogMode(gormlogger.LogLevel) gormlogger.Interface { return l }
@@ -124,14 +136,22 @@ func (l *planLogger) Trace(ctx context.Context, begin time.Time, fc func() (stri
 		return
 	}
 
-	var lines []string
-
-	err := l.explain.WithContext(ctx).Raw("EXPLAIN (ANALYZE, BUFFERS) " + statement).Scan(&lines).Error
-
 	fmt.Fprintf(l.plans, "-- %d rows in %s\n%s\n", rows, time.Since(begin).Round(time.Microsecond), statement)
 
+	// the caller may have used up its own deadline, so the plans run on a context of their own
+	l.write(ctx, "EXPLAIN", statement, costOnlyBudget)
+	l.write(ctx, "EXPLAIN (ANALYZE, BUFFERS)", statement, planTimeout)
+}
+
+func (l *planLogger) write(parent context.Context, command string, statement string, limit time.Duration) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), limit)
+	defer cancel()
+
+	var lines []string
+
+	err := l.explain.WithContext(ctx).Raw(command + " " + statement).Scan(&lines).Error
 	if err != nil {
-		fmt.Fprintf(l.plans, "explain failed %v\n\n", err)
+		fmt.Fprintf(l.plans, "%s failed %v\n\n", command, err)
 
 		return
 	}
@@ -158,9 +178,21 @@ func TestExplainThePlansOfTheQueriesToWatch(t *testing.T) {
 	explainDB, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{Logger: gormlogger.Discard})
 	require.NoError(t, err)
 
-	var plans strings.Builder
+	out := os.Getenv("EXPLAIN_OUT")
+	if out == "" {
+		out = "explain-plans.txt"
+	}
 
-	logged := database.Session(&gorm.Session{Logger: &planLogger{Interface: gormlogger.Discard, explain: explainDB, plans: &plans}})
+	// the file is written as the plans come, so a failure or a timeout later keeps the ones that exist
+	plans, err := os.OpenFile(out, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	require.NoError(t, err)
+
+	t.Cleanup(func() { _ = plans.Close() })
+
+	logged := database.Session(&gorm.Session{Logger: &planLogger{Interface: gormlogger.Discard, explain: explainDB, plans: plans}})
+
+	// every class carries the label of the semester, which is what the season job finds on every minute but the first one
+	require.NoError(t, database.Exec("UPDATE class_seasons SET season_label = ?", seasonLabel).Error)
 
 	ctx := context.Background()
 	teacher := uuid.MustParse(fmt.Sprintf("%x", md5sum("guru1")))
@@ -170,45 +202,42 @@ func TestExplainThePlansOfTheQueriesToWatch(t *testing.T) {
 	chat := chatrepository.NewChatDB(logged)
 	classroom := classroomrepository.NewClassroomDB(logged)
 
-	section := func(title string, run func()) {
-		fmt.Fprintf(&plans, "==== %s\n\n", title)
+	section := func(title string, run func(ctx context.Context)) {
+		fmt.Fprintf(plans, "==== %s\n\n", title)
 
-		run()
+		ctx, cancel := context.WithTimeout(ctx, queryTimeout)
+		defer cancel()
+
+		run(ctx)
 	}
 
-	section("chat contacts of a teacher", func() {
+	section("chat contacts of a teacher", func(ctx context.Context) {
 		_, _, err := chat.ListContacts(ctx, teacher, constants.RoleWali, 20, 0)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	})
-	section("chat conversations of a teacher", func() {
+	section("chat conversations of a teacher", func(ctx context.Context) {
 		_, _, err := chat.ListConversations(ctx, teacher, 20, 0)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	})
-	section("chat conversations of a parent", func() {
+	section("chat conversations of a parent", func(ctx context.Context) {
 		_, _, err := chat.ListConversations(ctx, parent, 20, 0)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	})
-	section("guidance reports of a class", func() {
+	section("guidance reports of a class", func(ctx context.Context) {
 		_, _, err := classroom.ListGuidanceReports(ctx, class, 20, 0)
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	})
-	section("season job, the classes that are not in the semester yet", func() {
-		// the text of the query of internal/season startClasses, with a label that no class has, which is the first minute of a semester
+	section("season job, every class already in the semester", func(ctx context.Context) {
+		// the text of the query of internal/season startClasses, with the label that every class has, so it scans all of them and finds none
 		var ids []uuid.UUID
 
-		require.NoError(t, logged.WithContext(ctx).Raw(
+		assert.NoError(t, logged.WithContext(ctx).Raw(
 			"SELECT c.id FROM classes AS c LEFT JOIN class_seasons AS s ON s.class_id = c.id "+
 				"WHERE s.season_label IS DISTINCT FROM ? AND c.id > ? ORDER BY c.id LIMIT ?",
-			"2099-01-01", uuid.Nil, 50,
+			seasonLabel, uuid.Nil, 50,
 		).Scan(&ids).Error)
 	})
 
-	out := os.Getenv("EXPLAIN_OUT")
-	if out == "" {
-		out = "explain-plans.txt"
-	}
-
-	require.NoError(t, os.WriteFile(out, []byte(plans.String()), 0o600))
 	t.Logf("the plans are in %s", out)
 }
 
