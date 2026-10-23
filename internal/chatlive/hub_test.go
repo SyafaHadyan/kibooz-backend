@@ -47,6 +47,18 @@ func (b *fakeBus) Run(ctx context.Context, handle func([]byte)) {
 	<-ctx.Done()
 }
 
+// publishedBy waits until the bus has been offered n envelopes, because the hub puts them on the bus from a worker and not from Publish
+func publishedBy(t *testing.T, bus *fakeBus, n int) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+
+		return bus.published >= n
+	}, 2*time.Second, time.Millisecond)
+}
+
 func received(t *testing.T, client *Client) Event {
 	t.Helper()
 
@@ -247,9 +259,19 @@ func TestABusThatFailsStillDeliversOnThisProcess(t *testing.T) {
 	client, err := hub.Register(user)
 	require.NoError(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go hub.Run(ctx)
+
 	hub.Publish([]uuid.UUID{user}, Event{Type: EventTyping, ConversationID: uuid.New()})
 
 	require.Equal(t, EventTyping, received(t, client).Type)
+
+	publishedBy(t, bus, 1)
+	require.Eventually(t, func() bool {
+		return counterValue(t, hub, "kibooz_chat_bus_publish_failed_total") == 1
+	}, time.Second, time.Millisecond, "the failing bus was reached and the failure was counted")
 }
 
 func TestPublishingToNobodyAndWithoutABusDoesNothing(t *testing.T) {
@@ -330,6 +352,7 @@ func TestAGapInWhatAnotherCopyPublishedMakesTheSocketsResync(t *testing.T) {
 	bus.mu.Unlock()
 
 	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 2})
+	publishedBy(t, bus, 2)
 
 	bus.mu.Lock()
 	bus.fail = false
@@ -450,6 +473,7 @@ func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
 	bus.mu.Unlock()
 
 	one.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: 2})
+	publishedBy(t, bus, 2)
 
 	bus.mu.Lock()
 	bus.fail = false
@@ -457,10 +481,12 @@ func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
 
 	nothing(t, onTwo)
 
-	one.send(context.Background(), nil, Event{})
+	one.send(nil, Event{})
 
 	require.Equal(t, EventResync, received(t, onTwo).Type, "the number of the heartbeat comes after the one that was lost")
-	require.EqualValues(t, 1, counterValue(t, one, "kibooz_chat_bus_publish_failed_total"))
+	require.Eventually(t, func() bool {
+		return counterValue(t, one, "kibooz_chat_bus_publish_failed_total") == 1
+	}, time.Second, time.Millisecond)
 }
 
 func TestNoResyncWhenNothingWasLostAndFirstEnvelopeOfACopyIsNeverALoss(t *testing.T) {
@@ -612,4 +638,159 @@ func TestRunPublishesAHeartbeatUntilTheContextEnds(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	require.Equal(t, stopped, count(), "no heartbeat after the context ended")
+}
+
+// gatedBus holds every envelope until it is opened, and keeps the order in which they came
+type gatedBus struct {
+	fakeBus
+	once     sync.Once
+	gate     chan struct{}
+	entered  chan struct{}
+	payloads [][]byte
+}
+
+func newGatedBus() *gatedBus {
+	return &gatedBus{gate: make(chan struct{}), entered: make(chan struct{}, publishQueue*2)}
+}
+
+// release opens the gate, and opening it twice changes nothing
+func (b *gatedBus) release() { b.once.Do(func() { close(b.gate) }) }
+
+func (b *gatedBus) Publish(ctx context.Context, payload []byte) error {
+	b.entered <- struct{}{}
+
+	select {
+	case <-b.gate:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	b.mu.Lock()
+	b.payloads = append(b.payloads, payload)
+	b.mu.Unlock()
+
+	return nil
+}
+
+func TestPublishDoesNotWaitForASlowBus(t *testing.T) {
+	bus := newGatedBus()
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.publishWait = time.Minute
+	user := uuid.New()
+
+	client, err := hub.Register(user)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	t.Cleanup(bus.release)
+
+	go hub.Run(ctx)
+
+	started := time.Now()
+
+	for id := int64(1); id <= 5; id++ {
+		hub.Publish([]uuid.UUID{user}, Event{Type: EventMessageDeleted, ConversationID: uuid.New(), MessageID: id})
+	}
+
+	require.Less(t, time.Since(started), time.Second, "the request is not held by a bus that does not answer")
+
+	for id := int64(1); id <= 5; id++ {
+		require.EqualValues(t, id, received(t, client).MessageID, "the sockets of this copy hear about it at once")
+	}
+}
+
+func TestAFullQueueDropsItsOldestEnvelopesAndCountsThem(t *testing.T) {
+	bus := newGatedBus()
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+	hub.publishWait = time.Minute
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		hub.Run(ctx)
+		close(done)
+	}()
+
+	t.Cleanup(func() {
+		bus.release()
+		cancel()
+		<-done
+	})
+
+	user := uuid.New()
+	event := Event{Type: EventMessageDeleted, ConversationID: uuid.New()}
+
+	// the worker holds the first envelope at the gate, so the queue starts empty
+	hub.Publish([]uuid.UUID{user}, event)
+
+	select {
+	case <-bus.entered:
+	case <-time.After(time.Second):
+		t.Fatal("the worker did not take the first envelope")
+	}
+
+	const extra = 20
+
+	for range publishQueue + extra {
+		hub.Publish([]uuid.UUID{user}, event)
+	}
+
+	require.EqualValues(t, extra, counterValue(t, hub, "kibooz_chat_bus_publish_dropped_total"))
+
+	bus.release()
+
+	require.Eventually(t, func() bool {
+		bus.mu.Lock()
+		defer bus.mu.Unlock()
+
+		return len(bus.payloads) == 1+publishQueue
+	}, 2*time.Second, time.Millisecond)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+
+	var last envelope
+
+	for index, payload := range bus.payloads {
+		var next envelope
+
+		require.NoError(t, json.Unmarshal(payload, &next))
+
+		switch index {
+		case 0:
+			require.EqualValues(t, 1, next.Seq)
+		case 1:
+			require.EqualValues(t, 2+extra, next.Seq, "the oldest numbers were dropped and the newest were kept")
+		default:
+			require.EqualValues(t, last.Seq+1, next.Seq, "what was kept left in the order it was queued")
+		}
+
+		last = next
+	}
+
+	require.EqualValues(t, 1+publishQueue+extra, last.Seq)
+}
+
+func TestTheQueueIsEmptiedBeforeRunReturns(t *testing.T) {
+	bus := &fakeBus{}
+	hub := NewHub(Config{MaxSockets: 10, MaxPerUser: 3, Bus: bus})
+
+	hub.heartbeatWait = time.Hour
+
+	for range 10 {
+		hub.Publish([]uuid.UUID{uuid.New()}, Event{Type: EventMessageDeleted, ConversationID: uuid.New()})
+	}
+
+	// the context has ended before Run starts, so only the drain can publish what is waiting
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	hub.Run(ctx)
+
+	bus.mu.Lock()
+	defer bus.mu.Unlock()
+
+	require.Equal(t, 10, bus.published)
 }

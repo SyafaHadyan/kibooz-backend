@@ -47,6 +47,17 @@ const maxTrackedSkips = 256
 // when the next one arrives, so this makes that next one come within a bounded time.
 const heartbeatEvery = 30 * time.Second
 
+// publishQueue is how many envelopes wait for the bus. Publishing is done by one worker and not by the request that sent the message, so
+// a slow Redis costs the request nothing, and a queue that is full drops its oldest envelope, which the other copies see as a gap.
+const publishQueue = 256
+
+// publishTimeout is how long one envelope may take to reach the bus, and drainTimeout is the time that the envelopes still waiting get
+// when the process stops
+const (
+	publishTimeout = time.Second
+	drainTimeout   = 2 * time.Second
+)
+
 // resyncEvery is the shortest time between two resync frames of one process. A bus that flaps would otherwise make every app refetch
 // its conversations again and again, so a gap that is found inside the time is sent once when it is over.
 const resyncEvery = 5 * time.Second
@@ -153,8 +164,13 @@ type Hub struct {
 	resyncTimer *time.Timer
 	resyncWait  time.Duration
 
+	// outbox holds the numbered envelopes that wait for the bus, and publishWait is how long one may take, a field for the tests
+	outbox      chan []byte
+	publishWait time.Duration
+
 	gaps            prometheus.Counter
 	publishFailures prometheus.Counter
+	publishDropped  prometheus.Counter
 
 	sockets  prometheus.Gauge
 	events   *prometheus.CounterVec
@@ -168,12 +184,18 @@ func NewHub(cfg Config) *Hub {
 		origin:  uuid.NewString(),
 		clients: map[uuid.UUID]map[*Client]struct{}{},
 		seen:    map[string]*originState{},
+		outbox:  make(chan []byte, publishQueue),
+
+		publishWait: publishTimeout,
 
 		gapWait:       gapWait,
 		heartbeatWait: heartbeatEvery,
 		resyncWait:    resyncEvery,
 		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_bus_publish_failed_total", Help: "Chat events that this copy could not publish to the bus.",
+		}),
+		publishDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "kibooz", Name: "chat_bus_publish_dropped_total", Help: "Chat events that this copy dropped before they reached the bus, from a full queue or because the process stopped before they could leave.",
 		}),
 		gaps: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "chat_event_gaps_total", Help: "Gaps found in the events that other copies published.",
@@ -204,7 +226,7 @@ func (h *Hub) Collectors() []prometheus.Collector {
 		h.dropped.WithLabelValues(reason)
 	}
 
-	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals, h.gaps, h.publishFailures}
+	return []prometheus.Collector{h.sockets, h.events, h.dropped, h.refusals, h.gaps, h.publishFailures, h.publishDropped}
 }
 
 // Full reports whether the process has no room for another socket, or is shutting down
@@ -304,7 +326,8 @@ func (h *Hub) Unregister(client *Client) {
 	h.sockets.Set(float64(h.total))
 }
 
-// Publish delivers the event to the sockets of the recipients on this process and tells the other copies through the bus
+// Publish delivers the event to the sockets of the recipients on this process and queues it for the other copies, so the request that
+// sent it never waits for Redis
 func (h *Hub) Publish(recipients []uuid.UUID, event Event) {
 	if len(recipients) == 0 {
 		return
@@ -312,12 +335,13 @@ func (h *Hub) Publish(recipients []uuid.UUID, event Event) {
 
 	h.deliver(recipients, event)
 
-	h.send(context.Background(), recipients, event)
+	h.send(recipients, event)
 }
 
-// send numbers an envelope and puts it on the bus, which only means that the sockets of the other copies hear about it from the app
-// that polls when the bus is down, so a failure is counted and not returned
-func (h *Hub) send(parent context.Context, recipients []uuid.UUID, event Event) {
+// send numbers an envelope and queues it for the bus. When the queue is full the oldest envelope is dropped and counted, and the other
+// copies find the skipped number and resync. The sockets of the other copies hear about an event that never left from the app that
+// polls, so nothing is returned.
+func (h *Hub) send(recipients []uuid.UUID, event Event) {
 	if h.cfg.Bus == nil {
 		return
 	}
@@ -329,24 +353,101 @@ func (h *Hub) send(parent context.Context, recipients []uuid.UUID, event Event) 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(parent, time.Second)
+	for {
+		select {
+		case h.outbox <- payload:
+			return
+		default:
+		}
+
+		select {
+		case <-h.outbox:
+			h.publishDropped.Inc()
+		default:
+		}
+	}
+}
+
+// publishLoop puts the queued envelopes on the bus one at a time, in the order they were queued, until the context ends. Then the ones
+// that still wait get drainTimeout in all, so a copy that is replaced loses as little as it can.
+func (h *Hub) publishLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			h.drain(ctx, nil)
+
+			return
+		case payload := <-h.outbox:
+			// both cases can be ready when the stop signal comes, and then the envelope that was taken counts against the drain time
+			if ctx.Err() != nil {
+				h.drain(ctx, payload)
+
+				return
+			}
+
+			// a publish that has started is not cut off by the stop signal, and publishWait still bounds it
+			h.put(context.WithoutCancel(ctx), payload)
+		}
+	}
+}
+
+// drain publishes what waits in the queue, first the envelope that the loop had already taken if there is one, and drops what the
+// time does not allow
+func (h *Hub) drain(parent context.Context, first []byte) {
+	// the parent has ended, which is why this runs, so only its values are kept and the time is the drain time
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), drainTimeout)
 	defer cancel()
 
-	if err = h.cfg.Bus.Publish(ctx, payload); err != nil {
+	if first != nil {
+		h.put(ctx, first)
+	}
+
+	for {
+		select {
+		case payload := <-h.outbox:
+			if ctx.Err() != nil {
+				h.publishDropped.Inc()
+
+				continue
+			}
+
+			h.put(ctx, payload)
+		default:
+			return
+		}
+	}
+}
+
+func (h *Hub) put(parent context.Context, payload []byte) {
+	ctx, cancel := context.WithTimeout(parent, h.publishWait)
+	defer cancel()
+
+	if err := h.cfg.Bus.Publish(ctx, payload); err != nil {
 		h.publishFailures.Inc()
 	}
 }
 
-// Run takes the events that other copies publish until the context ends, and publishes a heartbeat now and then so that a loss at
-// the end of a burst shows too. Without a bus it returns at once.
+// Run takes the events that other copies publish until the context ends, puts the queued events on the bus, and publishes a heartbeat
+// now and then so that a loss at the end of a burst shows too. Without a bus it returns at once.
 func (h *Hub) Run(ctx context.Context) {
 	if h.cfg.Bus == nil {
 		return
 	}
 
+	worker := make(chan struct{})
+
+	go func() {
+		defer close(worker)
+
+		h.publishLoop(ctx)
+	}()
+
 	go h.heartbeat(ctx)
 
 	h.cfg.Bus.Run(ctx, h.receive)
+
+	// the queue is emptied before Run returns, so the process does not stop with envelopes in it
+	<-worker
 }
 
 func (h *Hub) heartbeat(ctx context.Context) {
@@ -359,7 +460,7 @@ func (h *Hub) heartbeat(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// an envelope for nobody, which only carries the number
-			h.send(ctx, nil, Event{})
+			h.send(nil, Event{})
 		}
 	}
 }
