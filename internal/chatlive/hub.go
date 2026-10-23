@@ -312,12 +312,12 @@ func (h *Hub) Publish(recipients []uuid.UUID, event Event) {
 
 	h.deliver(recipients, event)
 
-	h.send(recipients, event)
+	h.send(context.Background(), recipients, event)
 }
 
 // send numbers an envelope and puts it on the bus, which only means that the sockets of the other copies hear about it from the app
 // that polls when the bus is down, so a failure is counted and not returned
-func (h *Hub) send(recipients []uuid.UUID, event Event) {
+func (h *Hub) send(parent context.Context, recipients []uuid.UUID, event Event) {
 	if h.cfg.Bus == nil {
 		return
 	}
@@ -329,7 +329,7 @@ func (h *Hub) send(recipients []uuid.UUID, event Event) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(parent, time.Second)
 	defer cancel()
 
 	if err = h.cfg.Bus.Publish(ctx, payload); err != nil {
@@ -359,7 +359,7 @@ func (h *Hub) heartbeat(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// an envelope for nobody, which only carries the number
-			h.send(nil, Event{})
+			h.send(ctx, nil, Event{})
 		}
 	}
 }

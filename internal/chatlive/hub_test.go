@@ -430,9 +430,12 @@ func TestAJumpThatIsTooBigIsALossAtOnce(t *testing.T) {
 	event := Event{Type: EventTyping, ConversationID: uuid.New()}
 
 	hub.receive(envelopeOf(t, "a", 1, []uuid.UUID{user}, event))
+	require.Equal(t, EventTyping, received(t, client).Type)
+
 	hub.receive(envelopeOf(t, "a", 2+maxTrackedSkips+1, []uuid.UUID{user}, event))
 
 	require.Equal(t, EventResync, received(t, client).Type, "the resync does not wait for the numbers of a jump that big")
+	require.Equal(t, EventTyping, received(t, client).Type)
 }
 
 func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
@@ -454,7 +457,7 @@ func TestAHeartbeatShowsTheLossOfTheLastEnvelopeOfABurst(t *testing.T) {
 
 	nothing(t, onTwo)
 
-	one.send(nil, Event{})
+	one.send(context.Background(), nil, Event{})
 
 	require.Equal(t, EventResync, received(t, onTwo).Type, "the number of the heartbeat comes after the one that was lost")
 	require.EqualValues(t, 1, counterValue(t, one, "kibooz_chat_bus_publish_failed_total"))
