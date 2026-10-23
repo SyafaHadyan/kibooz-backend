@@ -16,7 +16,7 @@ info:
     header, because it ends at midnight of the local day. Login, registration, changing the password and deleting the account
     also answer `429` with `RATE_LIMITED` and `Retry-After: 1` when the server is busy checking passwords, and the three photo
     uploads (the avatar, a trash claim and a chat photo) answer the same when the server is already receiving as many photos as
-    it may. A client can send the same request once more after that second.
+    it may, or when the same account already has as many uploads running as one account may. A client can send the same request once more after that second.
 
     Every operation can also fail with `500` and `INTERNAL_ERROR` when the server breaks, or with `503` and `SERVER_TIMEOUT`
     and a `Retry-After` header when a request did not finish within the time the server gives it. A path that does not exist answers

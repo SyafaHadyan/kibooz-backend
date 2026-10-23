@@ -39,9 +39,10 @@ type Fiber struct {
 	classCodeMax int
 	// moodBatchMax is the allowance of each user for the batch mood route, see MoodBatchLimiter
 	moodBatchMax int
-	// uploadSlots is how many photo uploads are handled at once, see UploadGate
-	uploadSlots int
-	devices     *devicetoken.Tokens
+	// uploadSlots is how many photo uploads are handled at once, and uploadPerAccount how many of them one account may hold, see UploadGate
+	uploadSlots      int
+	uploadPerAccount int
+	devices          *devicetoken.Tokens
 }
 
 // New builds the server. limits counts the requests for the rate limiters, and a nil store counts in the memory of the process.
@@ -107,6 +108,8 @@ func New(cfg *env.Env, limits ratelimit.Store, measure ...fiber.Handler) *Fiber 
 		moodBatchMax: cfg.MoodBatchLimiterMax,
 		uploadSlots:  cfg.UploadConcurrency,
 		devices:      devicetoken.New(cfg),
+
+		uploadPerAccount: cfg.UploadConcurrencyPerAccount,
 	}
 }
 

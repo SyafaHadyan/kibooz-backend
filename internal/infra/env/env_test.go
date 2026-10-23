@@ -25,6 +25,7 @@ func valid() *Env {
 		ChatMaxSockets:               1000,
 		ChatMaxSocketsPerUser:        5,
 		UploadConcurrency:            4,
+		UploadConcurrencyPerAccount:  2,
 
 		RequestTimeoutSeconds: 10,
 
@@ -185,6 +186,7 @@ func TestValuesThatBreakTheServiceAreRejected(t *testing.T) {
 		"PASSWORD_HASH_WAIT_MILLISECONDS": func(e *Env) { e.PasswordHashWaitMilliseconds = 0 },
 		"PASSWORD_HASH_CONCURRENCY":       func(e *Env) { e.PasswordHashConcurrency = -1 },
 		"UPLOAD_CONCURRENCY":              func(e *Env) { e.UploadConcurrency = 0 },
+		"UPLOAD_CONCURRENCY_PER_ACCOUNT":  func(e *Env) { e.UploadConcurrencyPerAccount = 0 },
 	}
 
 	for name, change := range tests {
