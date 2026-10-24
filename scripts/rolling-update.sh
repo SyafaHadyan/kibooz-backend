@@ -26,7 +26,10 @@
 # compose file whose image is IMAGE:version, and whose profile is in COMPOSE_PROFILES of the env file, or the script stops before
 # anything is changed, so a mistyped name cannot recreate the database. EXTRAS=all stands alone and takes every service of the
 # compose file, other than the copies, whose image is IMAGE:version and whose profile is active, so a new service of the image is
-# included without an edit and a service with another image never is.
+# included without an edit and a service with another image never is. The compare of the image is exact, so a service of the same
+# repository with a digest, a registry prefix or another tag is named as left out. All takes every other service of the image, also
+# a copy of the API that COPIES does not name and a one-shot service, and these only get the check of the Docker state, so list every
+# copy in COPIES. The word all is reserved.
 #
 # Going back. When the version is older than the one that runs now, the script warns that this is only safe while no migration ran
 # since that version, and lists the migration files of both versions on GitHub. When the newer one has files that the older one lacks, or GitHub cannot
@@ -38,7 +41,7 @@
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
 #   ENV_FILE      the env file that holds IMAGE_TAG, default .env, and it is passed to every compose command
 #   COPIES        the services and the host port of each, in update order, default api-1 and api-2 on API_1_HOST_PORT and API_2_HOST_PORT of the env file, which are 8000 and 8001 when unset
-#   EXTRAS        services that run the same image and are recreated after all copies are healthy, default none, for example "bucket-sizes"
+#   EXTRAS        services that run the same image and are recreated after all copies are healthy, default none, for example "bucket-sizes", or all for every service of the image, see Extra services above
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy or one extra to become healthy, default 120
 #   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
@@ -110,11 +113,14 @@ extras=()
 extras_all=0
 # read splits the words and does not expand a glob against the folder that the script runs in
 read -r -a extras_list <<<"$extras_text"
-if [ "${#extras_list[@]}" -gt 0 ] && [ "${extras_list[0]}" = "all" ]; then
-  [ "${#extras_list[@]}" -eq 1 ] || die "EXTRAS=all stands alone, it cannot be mixed with names, got $extras_text"
-  extras_all=1
-  extras_list=()
-fi
+for word in ${extras_list[@]+"${extras_list[@]}"}; do
+  if [ "$word" = "all" ]; then
+    [ "${#extras_list[@]}" -eq 1 ] || die "EXTRAS=all stands alone, it cannot be mixed with names, got $extras_text. The word all is reserved and cannot be the name of a service in EXTRAS"
+    extras_all=1
+    extras_list=()
+    break
+  fi
+done
 for extra in ${extras_list[@]+"${extras_list[@]}"}; do
   [[ "$extra" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Every entry of EXTRAS must be a service name, got $extra"
   [[ " ${services[*]} " != *" $extra "* ]] || die "The service $extra is in COPIES and in EXTRAS"
@@ -198,11 +204,25 @@ known="$(compose config --services)"
 # COMPOSE_PROFILES are not in the configuration and are left out, and so is every service with another image
 if [ "$extras_all" = "1" ]; then
   all_json="$(compose config --format json)" || die "The compose file could not be read, nothing was changed"
+  # the list is read into a variable first, because the status of a process substitution is not seen, and a jq that failed would
+  # look like a compose file with no extras
+  found_list="$(jq -r --arg i "$image:$version" '.services | to_entries | map(select(.value.image == $i)) | map(.key) | sort | .[]' <<<"$all_json")" ||
+    die "The services of the compose file could not be listed, nothing was changed"
   while IFS= read -r found; do
     [ -n "$found" ] || continue
     [[ " ${services[*]} " != *" $found "* ]] || continue
+    [[ "$found" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "The service name $found cannot be used as an extra, it has to start with a letter or a digit, nothing was changed"
     extras+=("$found")
-  done < <(jq -r --arg i "$image:$version" '.services | to_entries | map(select(.value.image == $i)) | map(.key) | sort | .[]' <<<"$all_json")
+  done <<<"$found_list"
+
+  # a service of the same repository with another spelling or tag is not taken, because the compare is exact, so it is named here
+  skipped="$(jq -r --arg i "$image:$version" --arg r "$image" '.services | to_entries | map(select((.value.image // "") as $v | $v != $i and ($v | contains($r)))) | map("\(.key) (\(.value.image))") | .[]' <<<"$all_json")" || skipped=""
+  if [ -n "$skipped" ]; then
+    echo "EXTRAS=all leaves out, because the image is not exactly $image:$version" >&2
+    while IFS= read -r line; do
+      echo "  $line" >&2
+    done <<<"$skipped"
+  fi
 
   if [ "${#extras[@]}" -gt 0 ]; then
     echo "EXTRAS=all found ${extras[*]}"
