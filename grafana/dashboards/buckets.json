@@ -25,14 +25,6 @@
         "hide": 0
       },
       {
-        "name": "ds_loki",
-        "label": "Logs",
-        "type": "datasource",
-        "query": "loki",
-        "current": {},
-        "hide": 0
-      },
-      {
         "type": "query",
         "refresh": 2,
         "includeAll": true,
@@ -56,7 +48,7 @@
           "uid": "${ds_prom}"
         },
         "query": {
-          "query": "label_values(kibooz_bucket_size_bytes{service=\"kibooz-bucket-sizes\"}, host)",
+          "query": "label_values(kibooz_bucket_scan_success{service=\"kibooz-bucket-sizes\"}, host)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         }
       },
@@ -84,7 +76,7 @@
           "uid": "${ds_prom}"
         },
         "query": {
-          "query": "label_values(kibooz_bucket_size_bytes{service=\"kibooz-bucket-sizes\", host=~\"$host\"}, bucket)",
+          "query": "label_values(kibooz_bucket_scan_success{service=\"kibooz-bucket-sizes\", host=~\"$host\"}, bucket)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         }
       }
@@ -114,7 +106,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "bytes"
+                "value": "decbytes"
               }
             ]
           },
@@ -126,7 +118,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "bytes"
+                "value": "decbytes"
               }
             ]
           },
@@ -259,11 +251,8 @@
       ],
       "transformations": [
         {
-          "id": "joinByField",
-          "options": {
-            "byField": "bucket",
-            "mode": "outer"
-          }
+          "id": "merge",
+          "options": {}
         },
         {
           "id": "organize",
@@ -300,7 +289,7 @@
             },
             "renameByName": {
               "bucket": "Bucket",
-              "host 1": "Host",
+              "host": "Host",
               "Value #A": "Size",
               "Value #B": "Objects",
               "Value #C": "Limit",
@@ -328,7 +317,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "decbytes",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,
@@ -434,14 +423,14 @@
     {
       "type": "timeseries",
       "title": "Growth over a day",
-      "description": "How much a bucket grew in a day, which shows a bucket that fills faster than the limit allows",
+      "description": "A rough trend of how much a bucket grew in a day. A line that is younger than a day, or a short dashboard range, overstates it",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "decbytes",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 1,

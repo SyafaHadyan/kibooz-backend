@@ -1105,7 +1105,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "kibooz_bucket_size_bytes{service=\"kibooz-bucket-sizes\"} / on (host, bucket) kibooz_bucket_limit_bytes{service=\"kibooz-bucket-sizes\"}",
+          "expr": "last_over_time(kibooz_bucket_size_bytes{service=\"kibooz-bucket-sizes\"}[3h]) / on (host, bucket) kibooz_bucket_limit_bytes{service=\"kibooz-bucket-sizes\"}",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -1166,7 +1166,7 @@
     "ruleGroup": "kibooz",
     "folderUID": "kibooz",
     "orgID": 1,
-    "for": "30m",
+    "for": "10m",
     "condition": "C",
     "noDataState": "OK",
     "execErrState": "Error",
@@ -1176,7 +1176,7 @@
       "service": "kibooz-bucket-sizes"
     },
     "annotations": {
-      "summary": "The last scan of the bucket {{ $labels.bucket }} on {{ $labels.host }} did not work for 30 minutes. A wrong key, a missing bucket or a listing that takes longer than BUCKET_SIZES_SCAN_TIMEOUT shows here, and the log of the exporter says which"
+      "summary": "No scan of the bucket {{ $labels.bucket }} on {{ $labels.host }} worked in the last 2 hours. A wrong key, a missing bucket or a listing that takes longer than BUCKET_SIZES_SCAN_TIMEOUT shows here, and the log of the exporter says which"
     },
     "data": [
       {
@@ -1188,7 +1188,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "min by (host, bucket) (kibooz_bucket_scan_success{service=\"kibooz-bucket-sizes\"})",
+          "expr": "max by (host, bucket) (max_over_time(kibooz_bucket_scan_success{service=\"kibooz-bucket-sizes\"}[2h]))",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -1259,7 +1259,7 @@
       "service": "kibooz-bucket-sizes"
     },
     "annotations": {
-      "summary": "The size of the bucket {{ $labels.bucket }} on {{ $labels.host }} was last measured more than 3 hours ago, so the size and the share of the limit are out of date"
+      "summary": "The size of the bucket {{ $labels.bucket }} on {{ $labels.host }} was last measured more than 3 hours ago, so the size and the share of the limit are out of date. A stopped exporter ends up here too, and the alert stays for a day after its last scan"
     },
     "data": [
       {
@@ -1271,7 +1271,7 @@
         "datasourceUid": "__PROMETHEUS_UID__",
         "model": {
           "refId": "A",
-          "expr": "time() - kibooz_bucket_scan_timestamp_seconds{service=\"kibooz-bucket-sizes\"}",
+          "expr": "time() - max by (host, bucket) (last_over_time(kibooz_bucket_scan_timestamp_seconds{service=\"kibooz-bucket-sizes\"}[1d]))",
           "instant": true,
           "intervalMs": 60000,
           "maxDataPoints": 43200
@@ -1328,7 +1328,7 @@
     ]
   },
   {
-    "title": "The bucket size exporter is down",
+    "title": "The bucket size exporter does not answer",
     "ruleGroup": "kibooz",
     "folderUID": "kibooz",
     "orgID": 1,
@@ -1342,7 +1342,7 @@
       "service": "kibooz-bucket-sizes"
     },
     "annotations": {
-      "summary": "The metrics of the bucket size exporter {{ $labels.instance }} on {{ $labels.host }} have not been scraped for 10 minutes, so no bucket size is measured"
+      "summary": "The metrics of the bucket size exporter {{ $labels.instance }} on {{ $labels.host }} have not been scraped for 10 minutes although its container still runs, so no bucket size is measured"
     },
     "data": [
       {
