@@ -96,11 +96,13 @@ func Verify(tx *gorm.DB, studentID uuid.UUID, guruID uuid.UUID, now time.Time) (
 		return 0, moved.Error
 	}
 
-	// a child that is verified already keeps the time and the teacher of the first verification
-	err = tx.Exec(
-		"UPDATE students SET nisn_verified_at = COALESCE(nisn_verified_at, ?), nisn_verified_by = COALESCE(nisn_verified_by, ?) WHERE id = ?",
-		now, guruID, studentID,
-	).Error
+	// a child that is verified already keeps the time and the teacher of the first verification, and a teacher is only written together
+	// with a new time, so a row that has a time and no teacher stays as it is. The right side of a SET reads the row as it was.
+	err = tx.Exec(`
+		UPDATE students SET
+			nisn_verified_by = CASE WHEN nisn_verified_at IS NULL THEN ?::uuid ELSE nisn_verified_by END,
+			nisn_verified_at = COALESCE(nisn_verified_at, ?)
+		WHERE id = ?`, guruID, now, studentID).Error
 
 	return moved.RowsAffected, err
 }

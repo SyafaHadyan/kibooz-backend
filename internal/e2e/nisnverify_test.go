@@ -335,6 +335,23 @@ func TestTheTeacherWhoVerifiedANISNIsRecorded(t *testing.T) {
 	require.Equal(t, http.StatusOK, patch.Status, "body %v", patch.Body)
 	require.Empty(t, recorded(), "a new number from the parent clears the teacher with the verification")
 
-	body := call(t, http.MethodGet, "/api/v1/wali/child/"+childID, parent.Token, nil)
-	require.NotContains(t, fmt.Sprint(body.Body), teacherID(colleague), "the parent never sees who verified")
+	// a row that has a time and no teacher, as one that predates the column would, keeps no teacher when another one verifies it
+	require.NoError(t, testDB.Exec("UPDATE students SET nisn_verified_at = now(), nisn_verified_by = NULL WHERE id = ?::uuid", childID).Error)
+	verifyNISN(t, guru, classID, childID)
+	require.Empty(t, recorded(), "the first verification is unknown, and a later click does not claim it")
+
+	verifyNISN(t, colleague, classID, childID)
+	require.NoError(t, testDB.Exec("UPDATE students SET nisn_verified_at = NULL, nisn_verified_by = NULL WHERE id = ?::uuid", childID).Error)
+
+	// nothing that the API answers holds the id of the teacher
+	for name, res := range map[string]result{
+		"the child of the parent":    call(t, http.MethodGet, "/api/v1/wali/child/"+childID, parent.Token, nil),
+		"the children of the parent": call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil),
+		"the roster":                 call(t, http.MethodGet, "/api/v1/classes/"+classID+"/students", guru.Token, nil),
+		"a verification":             call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/students/"+childID+"/nisn-verification", guru.Token, nil),
+	} {
+		require.Equal(t, http.StatusOK, res.Status, "%s, body %v", name, res.Body)
+		require.NotContains(t, fmt.Sprint(res.Body), teacherID(guru), name)
+		require.NotContains(t, fmt.Sprint(res.Body), teacherID(colleague), name)
+	}
 }
