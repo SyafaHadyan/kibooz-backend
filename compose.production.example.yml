@@ -17,8 +17,8 @@
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "5"
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-5}"
 
 x-api: &api
   # an unset IMAGE_TAG stops compose with this message and not with an invalid image name
@@ -28,13 +28,13 @@ x-api: &api
   restart: always
   # the API stops accepting requests and gives running ones 15 seconds, and then closes its push, metrics and error report work for
   # up to 17 more, so Docker has to wait longer than that
-  stop_grace_period: 40s
+  stop_grace_period: ${API_STOP_GRACE_PERIOD:-40s}
   env_file: .env
   environment:
     REDIS_ADDRESS: redis
     REDIS_PORT: 6379
     GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
-    METRICS_ADDRESS: ":9100"
+    METRICS_ADDRESS: ":${METRICS_PORT:-9100}"
   # For the push wake ups, mount the key of the Firebase service account read only and set FIREBASE_CREDENTIALS_FILE in .env to
   # /run/secrets/firebase.json. Create the file first, because Docker makes a directory of that name when it is missing, and make it
   # readable by the user of the container (65532), for example with chmod 0644.
@@ -49,7 +49,7 @@ x-api: &api
     - postgres_postgres
   labels:
     kibooz.role: api
-    kibooz.metrics_port: "9100"
+    kibooz.metrics_port: "${METRICS_PORT:-9100}"
   read_only: true
   cap_drop:
     - ALL
@@ -60,7 +60,7 @@ x-api: &api
       limits:
         # PASSWORD_HASH_CONCURRENCY=0 gives one hash slot for each CPU except one, so a copy with half a CPU hashes one password at a
         # time. Raise that setting together with the CPU limit, because a sign in waits for a slot and is refused when none is free.
-        cpus: "0.50"
+        cpus: "${API_CPUS:-0.50}"
         # the Grafana alert "API memory is close to its limit" fires above 300 MiB, so change that threshold when this limit changes
         memory: ${API_MEMORY_LIMIT:-384m}
   logging: *default-logging
@@ -71,13 +71,13 @@ services:
     container_name: kibooz-api-1
     ports:
       # only the reverse proxy of this host reaches the copies, so they are never exposed on a public address by accident
-      - "127.0.0.1:8000:${APP_PORT}"
+      - "127.0.0.1:${API_1_HOST_PORT:-8000}:${APP_PORT}"
 
   api-2:
     <<: *api
     container_name: kibooz-api-2
     ports:
-      - "127.0.0.1:8001:${APP_PORT}"
+      - "127.0.0.1:${API_2_HOST_PORT:-8001}:${APP_PORT}"
 
   redis:
     image: redis:8-alpine
@@ -86,7 +86,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.50"
+          cpus: "${REDIS_CPUS:-0.50}"
           memory: ${REDIS_MEMORY_LIMIT:-192m}
     command:
       - sh
@@ -226,7 +226,9 @@ services:
       start_period: 20s
     environment:
       # the program holds little, and the soft limit keeps the collector away from the cap of the container
-      GOMEMLIMIT: 48MiB
+      GOMEMLIMIT: ${BUCKET_SIZES_GOMEMLIMIT:-48MiB}
+      # the port of the metrics listener and of the label below come from the same setting
+      BUCKET_SIZES_PORT: ${BUCKET_SIZES_PORT:-9101}
     deploy:
       resources:
         limits:
@@ -235,7 +237,7 @@ services:
       - internal
     labels:
       kibooz.role: bucket-sizes
-      kibooz.metrics_port: "9101"
+      kibooz.metrics_port: "${BUCKET_SIZES_PORT:-9101}"
     read_only: true
     cap_drop:
       - ALL
