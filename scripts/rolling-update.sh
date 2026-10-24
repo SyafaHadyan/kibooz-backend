@@ -24,7 +24,9 @@
 # twice in a row when it has no health check, within TIMEOUT. A failed extra never stops or undoes the update of the API. The
 # script says so at the end and exits with 1, and the copies stay on the new version. Every extra has to be a service of the
 # compose file whose image is IMAGE:version, and whose profile is in COMPOSE_PROFILES of the env file, or the script stops before
-# anything is changed, so a mistyped name cannot recreate the database.
+# anything is changed, so a mistyped name cannot recreate the database. EXTRAS=all stands alone and takes every service of the
+# compose file, other than the copies, whose image is IMAGE:version and whose profile is active, so a new service of the image is
+# included without an edit and a service with another image never is.
 #
 # Going back. When the version is older than the one that runs now, the script warns that this is only safe while no migration ran
 # since that version, and lists the migration files of both versions on GitHub. When the newer one has files that the older one lacks, or GitHub cannot
@@ -104,8 +106,15 @@ done
 
 extras_text="${EXTRAS:-}"
 extras=()
+# EXTRAS=all means every service of the compose file that runs the image of the version, found below once compose can be asked
+extras_all=0
 # read splits the words and does not expand a glob against the folder that the script runs in
 read -r -a extras_list <<<"$extras_text"
+if [ "${#extras_list[@]}" -gt 0 ] && [ "${extras_list[0]}" = "all" ]; then
+  [ "${#extras_list[@]}" -eq 1 ] || die "EXTRAS=all stands alone, it cannot be mixed with names, got $extras_text"
+  extras_all=1
+  extras_list=()
+fi
 for extra in ${extras_list[@]+"${extras_list[@]}"}; do
   [[ "$extra" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "Every entry of EXTRAS must be a service name, got $extra"
   [[ " ${services[*]} " != *" $extra "* ]] || die "The service $extra is in COPIES and in EXTRAS"
@@ -184,6 +193,23 @@ trap on_signal INT TERM HUP
 
 echo "Checking that the services exist"
 known="$(compose config --services)"
+
+# EXTRAS=all takes every other service whose image is the image of the version. The services of a profile that is not in
+# COMPOSE_PROFILES are not in the configuration and are left out, and so is every service with another image
+if [ "$extras_all" = "1" ]; then
+  all_json="$(compose config --format json)" || die "The compose file could not be read, nothing was changed"
+  while IFS= read -r found; do
+    [ -n "$found" ] || continue
+    [[ " ${services[*]} " != *" $found "* ]] || continue
+    extras+=("$found")
+  done < <(jq -r --arg i "$image:$version" '.services | to_entries | map(select(.value.image == $i)) | map(.key) | sort | .[]' <<<"$all_json")
+
+  if [ "${#extras[@]}" -gt 0 ]; then
+    echo "EXTRAS=all found ${extras[*]}"
+  else
+    echo "EXTRAS=all found no service besides the copies that runs $image:$version, so there are no extras"
+  fi
+fi
 for service in "${services[@]}" ${extras[@]+"${extras[@]}"}; do
   grep -qxF -- "$service" <<<"$known" || die "The service $service is not in the compose file or its profile is not in COMPOSE_PROFILES of $env_file, nothing was changed. The services are $(echo "$known" | tr '\n' ' ')"
 done
