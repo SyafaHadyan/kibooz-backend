@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.21.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.20.0...v0.21.0) (2026-10-24)
+
+
+### Features
+
+* **buckets:** add a Grafana dashboard and four alert rules for the bucket sizes ([fd2e7ef](https://github.com/SyafaHadyan/kibooz-backend/commit/fd2e7efd7d26c52e347d978bfd497d09c1d4a3df))
+* **buckets:** add a Grafana dashboard and four alert rules for the bucket sizes ([#422](https://github.com/SyafaHadyan/kibooz-backend/issues/422)) ([0d70595](https://github.com/SyafaHadyan/kibooz-backend/commit/0d70595dc6d39d130e1194bcb99c53bea060a9f4))
+* **buckets:** measure the size of S3 compatible buckets and serve it as metrics with a small exporter ([a857361](https://github.com/SyafaHadyan/kibooz-backend/commit/a85736175116d9de1945e9bd424c6266619ff3e9))
+* **buckets:** measure the size of S3 compatible buckets and serve it as metrics with a small exporter ([#419](https://github.com/SyafaHadyan/kibooz-backend/issues/419)) ([61c05c4](https://github.com/SyafaHadyan/kibooz-backend/commit/61c05c406da8e896647a75f5fddf0a88e03e842a))
+* **deploy:** let EXTRAS=all take every other service that runs the image of the version ([1d9f42f](https://github.com/SyafaHadyan/kibooz-backend/commit/1d9f42fe8924624cab1c9dc362a4f6767d242e3f))
+* **deploy:** let EXTRAS=all take every other service that runs the image of the version ([#427](https://github.com/SyafaHadyan/kibooz-backend/issues/427)) ([b840d27](https://github.com/SyafaHadyan/kibooz-backend/commit/b840d273c04c3a490441a70f0e7390a1d3e2a822))
+* **deploy:** let the rolling update also recreate extra services such as the bucket size exporter ([62f01a7](https://github.com/SyafaHadyan/kibooz-backend/commit/62f01a71e654af5fdac7daf79dd0d2c82aba99d3))
+* **deploy:** let the rolling update also recreate extra services such as the bucket size exporter ([#425](https://github.com/SyafaHadyan/kibooz-backend/issues/425)) ([f0b8422](https://github.com/SyafaHadyan/kibooz-backend/commit/f0b8422b1788e7064e0bc066381a9ba760d4b130))
+* **guru:** let a teacher verify or unverify the NISN of a child and show the state in every child object ([33a5332](https://github.com/SyafaHadyan/kibooz-backend/commit/33a5332410d2f1fd9eaa5105b6cb70337b3ce2d0))
+* **logs:** archive the container logs to any S3 compatible bucket with Vector ([3e1c4b9](https://github.com/SyafaHadyan/kibooz-backend/commit/3e1c4b9113893c1073beff3578b92f50ec3bf43f))
+* **logs:** archive the container logs to any S3 compatible bucket with Vector ([#418](https://github.com/SyafaHadyan/kibooz-backend/issues/418)) ([68488e7](https://github.com/SyafaHadyan/kibooz-backend/commit/68488e72cae0bb16522c7044dca213d589e1c1b7))
+* **nisn:** let a teacher verify the NISN of a child and make only a verified NISN unique ([#413](https://github.com/SyafaHadyan/kibooz-backend/issues/413)) ([834702b](https://github.com/SyafaHadyan/kibooz-backend/commit/834702b19f1559f5e124bd288209de305c59d3bd))
+* **nisn:** make a NISN unique only among the children that a teacher verified ([b6dd3da](https://github.com/SyafaHadyan/kibooz-backend/commit/b6dd3daa15fd19408fa1fd51dde0ee4e457b2b49))
+* **nisn:** record the teacher who verified a NISN in nisn_verified_by ([f61ddf5](https://github.com/SyafaHadyan/kibooz-backend/commit/f61ddf5a91821307bad22ffbdba3e05311646be8))
+* **nisn:** record the teacher who verified a NISN in nisn_verified_by ([#420](https://github.com/SyafaHadyan/kibooz-backend/issues/420)) ([cc93c81](https://github.com/SyafaHadyan/kibooz-backend/commit/cc93c812d8b89ee07a06286000f03a3e2e1e27f1))
+
+
+### Bug Fixes
+
+* **buckets:** look back in the alert rules, read the units in decimal and merge the table on host and bucket ([27f2baa](https://github.com/SyafaHadyan/kibooz-backend/commit/27f2baacbcc62b24e3827ae8da08c1a845490202))
+* **buckets:** pause between scans, wait for shutdown, check the endpoint, set a scan timeout and cover the review gaps ([8351192](https://github.com/SyafaHadyan/kibooz-backend/commit/8351192b1e3808876abda375778342aad40e3895))
+* **buckets:** scrape the exporter in Alloy, build both binaries in one RUN and refuse sizes that are not finite ([1c22ffd](https://github.com/SyafaHadyan/kibooz-backend/commit/1c22ffd42efe9480884005e772d08e4e6720fe12))
+* **chat:** count the number that a heartbeat names as missing and never evict an event for a heartbeat ([f561495](https://github.com/SyafaHadyan/kibooz-backend/commit/f561495df79054c5c59cfd9dd18263009575f74e))
+* **chat:** make the heartbeat repeat the last number instead of taking one, so a failed heartbeat is no false resync ([0d49476](https://github.com/SyafaHadyan/kibooz-backend/commit/0d49476d5655af1d6a42dee5259393b67ecdc95d))
+* **chat:** make the heartbeat repeat the last number instead of taking one, so a failed heartbeat is no false resync ([#416](https://github.com/SyafaHadyan/kibooz-backend/issues/416)) ([565c226](https://github.com/SyafaHadyan/kibooz-backend/commit/565c226f874fb1d396a322306ef8293a60e0efdf))
+* **compose:** read the host ports in the update script, take only digits as the exporter port and fix the docs ([7cd71d2](https://github.com/SyafaHadyan/kibooz-backend/commit/7cd71d2d5ef4e26b75ab3a7308895bbbca627cb5))
+* **deploy:** check the image of an extra, wait for two good polls and explain the pull and the exit path ([ee5844a](https://github.com/SyafaHadyan/kibooz-backend/commit/ee5844a8e2368ebabe535338b2e5c5eff981b932))
+* **deploy:** stop on a failed service list, name the services that EXTRAS=all leaves out and document its limits ([43b51ec](https://github.com/SyafaHadyan/kibooz-backend/commit/43b51ecb0a2b447746bce75d96d08dfbe3e7405e))
+* **guru:** refuse a mood for a child that left the class after the teacher was checked ([a40dd5e](https://github.com/SyafaHadyan/kibooz-backend/commit/a40dd5e8f7d6c71499136df76a9ae30801573e21))
+* **guru:** refuse a mood for a child that left the class after the teacher was checked ([#410](https://github.com/SyafaHadyan/kibooz-backend/issues/410)) ([f654433](https://github.com/SyafaHadyan/kibooz-backend/commit/f65443366e36a28d4a47a9f8830c48f4bfc81e01))
+* **logs:** add the archive settings to the compose only list and take the path style setting out ([2014682](https://github.com/SyafaHadyan/kibooz-backend/commit/2014682c95c22a3f722a3c3701fd7fc2965ab8f9))
+* **logs:** keep the archive key out of the API env, retry refused requests, build the pipeline in CI and update the docs ([38638eb](https://github.com/SyafaHadyan/kibooz-backend/commit/38638eb310968c8dbb53015498c670b274934a69))
+* **logs:** leave the archive settings optional in compose and require them in the Vector file, and fix the example ([d7af0d1](https://github.com/SyafaHadyan/kibooz-backend/commit/d7af0d157e501f09f3c7dd664d4dd7d8d5930eda))
+* **nisn:** take the class lock before the NISN lock, re-read the number under it and fix the CI checks ([8e71b43](https://github.com/SyafaHadyan/kibooz-backend/commit/8e71b437900f36d256c45a8b5bd1f729a2bc6927))
+* **nisn:** write the verifying teacher only with a new time and check that no response holds the teacher id ([e508f75](https://github.com/SyafaHadyan/kibooz-backend/commit/e508f753d7692c3d620c8b031e9a90ca26d4d30f))
+* **user:** keep the new avatar file when a failed update turns out to be committed ([ab8dc07](https://github.com/SyafaHadyan/kibooz-backend/commit/ab8dc07e1cb6c7c32f0c415a0abbcb2d0a52e6c9))
+* **user:** keep the new avatar file when a failed update turns out to be committed ([#414](https://github.com/SyafaHadyan/kibooz-backend/issues/414)) ([d39225d](https://github.com/SyafaHadyan/kibooz-backend/commit/d39225da8b0c935ada28851bb6c83accc52b22a8))
+* **user:** read the avatar again under a share lock and clear the leaderboard cache when the update was committed ([f40735b](https://github.com/SyafaHadyan/kibooz-backend/commit/f40735baf85fe740d41faef9d13b414900e9dcda))
+
 ## [0.20.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.19.0...v0.20.0) (2026-10-23)
 
 
