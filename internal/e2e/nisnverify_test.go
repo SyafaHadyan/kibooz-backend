@@ -287,3 +287,71 @@ func TestTwoVerificationsOfTheSameNISNLeaveOneVerifiedChild(t *testing.T) {
 		require.EqualValues(t, 1, verified)
 	}
 }
+
+// The teacher who vouched for a NISN is stored, so a verification that took a number from a real child can be traced. It is never
+// shown to a parent, which is why the checks read the table.
+func TestTheTeacherWhoVerifiedANISNIsRecorded(t *testing.T) {
+	guru := registerGuru(t, "Zephyranthes")
+	colleague := registerGuru(t, "Yucca")
+	classID, code := classOf(t, guru)
+
+	require.Equal(t, http.StatusCreated, call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/teachers", guru.Token, map[string]any{"email": colleague.Email}).Status)
+
+	parent, childID := registeredChild(t, code, nisn(), "Anak Tercatat")
+
+	teacherID := func(who account) string {
+		var id string
+
+		require.NoError(t, testDB.Raw("SELECT g.id::text FROM gurus g JOIN users u ON u.id = g.user_id WHERE u.email = ?", who.Email).Scan(&id).Error)
+		require.NotEmpty(t, id)
+
+		return id
+	}
+
+	recorded := func() string {
+		var by string
+
+		require.NoError(t, testDB.Raw("SELECT COALESCE(nisn_verified_by::text, '') FROM students WHERE id = ?::uuid", childID).Scan(&by).Error)
+
+		return by
+	}
+
+	require.Empty(t, recorded(), "nobody vouched yet")
+
+	verifyNISN(t, guru, classID, childID)
+	require.Equal(t, teacherID(guru), recorded())
+
+	verifyNISN(t, colleague, classID, childID)
+	require.Equal(t, teacherID(guru), recorded(), "a second verification keeps the first teacher")
+
+	res := call(t, http.MethodDelete, "/api/v1/guru/classes/"+classID+"/students/"+childID+"/nisn-verification", colleague.Token, nil)
+	require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+	require.Empty(t, recorded(), "taking the verification back clears the teacher")
+
+	verifyNISN(t, colleague, classID, childID)
+	require.Equal(t, teacherID(colleague), recorded())
+
+	patch := call(t, http.MethodPatch, "/api/v1/wali/children/"+childID, parent.Token, map[string]any{"nisn": nisn()})
+	require.Equal(t, http.StatusOK, patch.Status, "body %v", patch.Body)
+	require.Empty(t, recorded(), "a new number from the parent clears the teacher with the verification")
+
+	// a row that has a time and no teacher, as one that predates the column would, keeps no teacher when another one verifies it
+	require.NoError(t, testDB.Exec("UPDATE students SET nisn_verified_at = now(), nisn_verified_by = NULL WHERE id = ?::uuid", childID).Error)
+	verifyNISN(t, guru, classID, childID)
+	require.Empty(t, recorded(), "the first verification is unknown, and a later click does not claim it")
+
+	verifyNISN(t, colleague, classID, childID)
+	require.NoError(t, testDB.Exec("UPDATE students SET nisn_verified_at = NULL, nisn_verified_by = NULL WHERE id = ?::uuid", childID).Error)
+
+	// nothing that the API answers holds the id of the teacher
+	for name, res := range map[string]result{
+		"the child of the parent":    call(t, http.MethodGet, "/api/v1/wali/child/"+childID, parent.Token, nil),
+		"the children of the parent": call(t, http.MethodGet, "/api/v1/wali/children", parent.Token, nil),
+		"the roster":                 call(t, http.MethodGet, "/api/v1/classes/"+classID+"/students", guru.Token, nil),
+		"a verification":             call(t, http.MethodPost, "/api/v1/guru/classes/"+classID+"/students/"+childID+"/nisn-verification", guru.Token, nil),
+	} {
+		require.Equal(t, http.StatusOK, res.Status, "%s, body %v", name, res.Body)
+		require.NotContains(t, fmt.Sprint(res.Body), teacherID(guru), name)
+		require.NotContains(t, fmt.Sprint(res.Body), teacherID(colleague), name)
+	}
+}

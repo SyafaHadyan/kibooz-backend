@@ -399,6 +399,7 @@ func (r *WaliDB) UpdateStudent(
 
 					fields["nisn"] = update.NISN
 					fields["nisn_verified_at"] = nil
+					fields["nisn_verified_by"] = nil
 				}
 			}
 
