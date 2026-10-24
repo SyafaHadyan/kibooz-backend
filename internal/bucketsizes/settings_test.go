@@ -18,7 +18,7 @@ func environment(values map[string]string) func(string) string {
 
 func complete() map[string]string {
 	return map[string]string{
-		"BUCKET_SIZES_BUCKETS": "media,chat=5GB", "BUCKET_SIZES_ENDPOINT": "https://store.example.test",
+		"BUCKET_SIZES_BUCKET_NAMES": "media,chat=5GB", "BUCKET_SIZES_ENDPOINT": "https://store.example.test",
 		"BUCKET_SIZES_ACCESS_KEY_ID": "id", "BUCKET_SIZES_ACCESS_KEY_SECRET": "secret",
 	}
 }
@@ -54,8 +54,8 @@ func TestLoadSettingsReadsTheOptionalOnes(t *testing.T) {
 
 func TestLoadSettingsRefusesWhatCannotWork(t *testing.T) {
 	for name, change := range map[string]map[string]string{
-		"no buckets":       {"BUCKET_SIZES_BUCKETS": ""},
-		"a bad limit":      {"BUCKET_SIZES_BUCKETS": "media=lots"},
+		"no buckets":       {"BUCKET_SIZES_BUCKET_NAMES": ""},
+		"a bad limit":      {"BUCKET_SIZES_BUCKET_NAMES": "media=lots"},
 		"no endpoint":      {"BUCKET_SIZES_ENDPOINT": " "},
 		"no key id":        {"BUCKET_SIZES_ACCESS_KEY_ID": ""},
 		"no key secret":    {"BUCKET_SIZES_ACCESS_KEY_SECRET": ""},

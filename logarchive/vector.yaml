@@ -41,7 +41,7 @@ sinks:
   bucket:
     type: aws_s3
     inputs: [shape]
-    bucket: "${LOG_ARCHIVE_BUCKET:?set LOG_ARCHIVE_BUCKET to the bucket that takes the logs}"
+    bucket: "${LOG_ARCHIVE_BUCKET_NAME:?set LOG_ARCHIVE_BUCKET_NAME to the bucket that takes the logs}"
     # the address of the store, such as https://<account>.r2.cloudflarestorage.com for Cloudflare R2 or https://s3.<region>.amazonaws.com
     # for AWS S3
     endpoint: "${LOG_ARCHIVE_ENDPOINT:?set LOG_ARCHIVE_ENDPOINT to the address of the store}"

@@ -98,11 +98,12 @@ jobs:
           token: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
 
       # The example file is grouped by topic and not sorted, so the check for the order of the keys is off. The names in the Go tags
-      # of internal/infra/env/env.go are checked by tagliatelle in the Lint job.
-      - name: Lint the example env file
+      # of internal/infra/env/env.go are checked by tagliatelle in the Lint job. The two templates of the log archive and the bucket exporter
+      # are linted here too, they only differ from the rest by their folder.
+      - name: Lint the example env files
         run: |
           docker run --rm -v "$PWD:/app:ro" -w /app "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh dotenv-linter)")" \
-            check --skip-updates --plain --ignore-checks UnorderedKey .env.example
+            check --skip-updates --plain --ignore-checks UnorderedKey .env.example logarchive/.env.example bucketsizes/.env.example
 
   compose:
     name: Compose config
@@ -141,7 +142,7 @@ jobs:
       - name: Validate the Vector pipeline of the log archive
         run: |
           docker run --rm -v "$PWD/logarchive:/etc/vector:ro" \
-            -e LOG_ARCHIVE_BUCKET=ci -e LOG_ARCHIVE_ENDPOINT=https://example.invalid \
+            -e LOG_ARCHIVE_BUCKET_NAME=ci -e LOG_ARCHIVE_ENDPOINT=https://example.invalid \
             -e LOG_ARCHIVE_ACCESS_KEY_ID=ci -e LOG_ARCHIVE_ACCESS_KEY_SECRET=ci \
             "$(bash ./.github/actions/pull-images/pull.sh "$(bash ./.github/tools/image.sh vector)")" \
             validate --skip-healthchecks /etc/vector/vector.yaml
