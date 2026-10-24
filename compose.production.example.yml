@@ -205,8 +205,8 @@ services:
   # The size of the buckets of an S3 compatible store, as metrics that Alloy scrapes and a dashboard and an alert read. It lists the objects
   # of each bucket every hour and keeps the numbers, see docs/monitoring.md. It only starts with the `bucket-sizes` profile, and its
   # settings, with a key that may list the buckets, are in a file of their own and not in .env, which every API container loads. It
-  # runs the image of IMAGE_TAG, which scripts/rolling-update.sh does not restart, so run `docker compose up -d bucket-sizes` after a
-  # deploy to bring it to the same version.
+  # runs the image of IMAGE_TAG, which scripts/rolling-update.sh restarts only when EXTRAS=bucket-sizes is set, so use that or run
+  # `docker compose up -d bucket-sizes` after a deploy to bring it to the same version.
   bucket-sizes:
     image: syafa/kibooz-backend:${IMAGE_TAG:?set IMAGE_TAG in .env to the version to run}
     container_name: kibooz-bucket-sizes
