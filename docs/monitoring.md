@@ -26,9 +26,9 @@ The series count grows with every copy, because each one has its own set. The fr
 |:---|:---|
 | `grafana/alloy/config.alloy` | The Alloy pipeline for the metrics and the logs |
 | `logarchive/vector.yaml` | The Vector pipeline that archives the logs to a bucket, see [Log archive](#log-archive) |
-| `logarchive/archive.env.example` | The settings of the archive container, which go into `logarchive/.env.archive` |
+| `logarchive/.env.example` | The settings of the archive container, which go into `logarchive/.env` |
 | `cmd/bucketsizes`, `internal/bucketsizes` | The exporter that measures the size of the buckets, see [Bucket sizes](#bucket-sizes) |
-| `bucketsizes/sizes.env.example` | The settings of the exporter, which go into `bucketsizes/.env.sizes` |
+| `bucketsizes/.env.example` | The settings of the exporter, which go into `bucketsizes/.env` |
 | `grafana/dashboards/*.json` | API overview, Routes, Dependencies and jobs, Logs, Product activity and Buckets, each with the `Host` variable and, except Buckets, the `API copy` variable. Buckets has a `Bucket` variable instead |
 | `grafana/alerts/rules.json` | The alert rules, as an array in the format of the alert rule provisioning API |
 
@@ -63,7 +63,7 @@ To set it up:
 1. Create a private bucket in the store. It must never be public, because the lines hold client addresses and the ids in the paths.
 2. Add a lifecycle rule that expires the objects under `logs/` after 90 days. Without it nothing ever deletes them, because the code does not. The rule is a setting of the store, such as a lifecycle rule on a Cloudflare R2 bucket, an expiration rule on an AWS S3 bucket or an ILM or `mc ilm` rule on MinIO.
 3. Create a key that is limited to that bucket and give it the least that the store allows. On AWS S3 and MinIO that is a policy with `s3:PutObject` on `logs/*` and nothing else. Cloudflare R2 has no write only token, so use an Object Read and Write token that is scoped to this one bucket. A key that can read and delete can also read and delete the archive, so keep it out of `.env`, which every API container loads. The check at the start of Vector is off, because it asks for the bucket itself and a write only key is refused.
-4. Copy `logarchive/archive.env.example` to `logarchive/.env.archive`, which git ignores, and fill it in. The file is loaded by the archive container only. The address of the store is `LOG_ARCHIVE_ENDPOINT`, such as `https://<account>.r2.cloudflarestorage.com` for Cloudflare R2 or `https://s3.<region>.amazonaws.com` for AWS S3, and the region is `auto` for R2 and the region of the bucket for the others, because AWS refuses `auto`. Then add `log-archive` to `COMPOSE_PROFILES` in `.env`.
+4. Copy `logarchive/.env.example` to `logarchive/.env`, which git ignores, and fill it in. The file is loaded by the archive container only. The address of the store is `LOG_ARCHIVE_ENDPOINT`, such as `https://<account>.r2.cloudflarestorage.com` for Cloudflare R2 or `https://s3.<region>.amazonaws.com` for AWS S3, and the region is `auto` for R2 and the region of the bucket for the others, because AWS refuses `auto`. Then add `log-archive` to `COMPOSE_PROFILES` in `.env`.
 5. Start it and check it. After about 10 minutes the bucket holds a first file. The health check of the container only shows that Vector runs and not that the bucket accepts the files, so read the log of the container after the first 10 minutes and after every change of the key.
 
    ```sh
@@ -94,7 +94,7 @@ A scan that fails keeps the last size and the time of the last good scan, and se
 To set it up:
 
 1. Create a key for the exporter that may list the buckets, and nothing else. The stores differ, so give it the least they allow, for Cloudflare R2 an Object Read only token that is scoped to the buckets to measure. Keep it out of `.env`, which every API container loads.
-2. Copy `bucketsizes/sizes.env.example` to `bucketsizes/.env.sizes`, which git ignores, and fill it in. `BUCKET_SIZES_BUCKETS` lists the buckets, each with an optional size at which it counts as full, such as `media,chat=5GB,logs=20GB`. The exporter works with any S3 compatible store, because the address of the store is `BUCKET_SIZES_ENDPOINT`.
+2. Copy `bucketsizes/.env.example` to `bucketsizes/.env`, which git ignores, and fill it in. `BUCKET_SIZES_BUCKETS` lists the buckets, each with an optional size at which it counts as full, such as `media,chat=5GB,logs=20GB`. The exporter works with any S3 compatible store, because the address of the store is `BUCKET_SIZES_ENDPOINT`.
 3. Add `bucket-sizes` to `COMPOSE_PROFILES` in `.env`, next to `monitoring`, because without that profile nothing scrapes the exporter. Start it and check it.
 
    ```sh

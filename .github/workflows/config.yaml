@@ -123,8 +123,8 @@ jobs:
           IMAGE_TAG: ci
         run: |
           cp .env.example .env
-          cp logarchive/archive.env.example logarchive/.env.archive
-          cp bucketsizes/sizes.env.example bucketsizes/.env.sizes
+          cp logarchive/.env.example logarchive/.env
+          cp bucketsizes/.env.example bucketsizes/.env
           docker compose -f compose.yml config --quiet
           docker compose -f compose.production.example.yml config --quiet
           COMPOSE_PROFILES=monitoring docker compose -f compose.production.example.yml config --quiet
