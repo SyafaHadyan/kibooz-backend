@@ -580,12 +580,12 @@ func (u *GuruUseCase) RemoveStudent(ctx context.Context, userID uuid.UUID, class
 func (u *GuruUseCase) VerifyNISN(
 	ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID,
 ) (dto.NISNVerification, error) {
-	_, class, err := u.resolveWritableClass(ctx, userID, &classID)
+	guru, class, err := u.resolveWritableClass(ctx, userID, &classID)
 	if err != nil {
 		return dto.NISNVerification{}, err
 	}
 
-	found, displaced, err := u.repo.VerifyNISN(ctx, class.ID, studentID)
+	found, displaced, err := u.repo.VerifyNISN(ctx, class.ID, studentID, guru.ID)
 	if err != nil {
 		return dto.NISNVerification{}, appOrInternal(err)
 	}
