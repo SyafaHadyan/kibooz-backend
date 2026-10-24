@@ -17,7 +17,12 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		os.Exit(healthcheck.Run(bucketsizes.Port(bucketsizes.Address)))
+		port, err := bucketsizes.ListenPort(os.Getenv)
+		if err != nil {
+			log.Fatalf("settings %v", err)
+		}
+
+		os.Exit(healthcheck.Run(port))
 	}
 
 	logging.Setup()

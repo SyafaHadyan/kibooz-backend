@@ -23,8 +23,9 @@ const (
 	defaultInterval = time.Hour
 	// the shortest interval, because a listing of a big bucket is hundreds of calls that some stores charge for
 	minInterval = time.Minute
-	// Address is fixed, because the label kibooz.metrics_port of the compose service names the same port for Alloy
-	Address = ":9101"
+	// defaultPort is the port of the metrics listener, which BUCKET_SIZES_PORT changes. The compose service sets it and the label
+	// kibooz.metrics_port from the same value, so Alloy scrapes the port that the exporter listens on
+	defaultPort = "9101"
 
 	defaultScanTimeout = 15 * time.Minute
 	minScanTimeout     = time.Minute
@@ -32,6 +33,11 @@ const (
 
 // LoadSettings reads the settings through getenv, so a test does not have to touch the environment of the process
 func LoadSettings(getenv func(string) string) (Settings, error) {
+	port, err := ListenPort(getenv)
+	if err != nil {
+		return Settings{}, err
+	}
+
 	targets, err := ParseTargets(getenv("BUCKET_SIZES_BUCKET_NAMES"))
 	if err != nil {
 		return Settings{}, fmt.Errorf("BUCKET_SIZES_BUCKET_NAMES, %w", err)
@@ -48,7 +54,7 @@ func LoadSettings(getenv func(string) string) (Settings, error) {
 		Targets:     targets,
 		Interval:    defaultInterval,
 		ScanTimeout: defaultScanTimeout,
-		Address:     Address,
+		Address:     ":" + port,
 	}
 
 	if settings.S3.Endpoint == "" {
@@ -102,12 +108,14 @@ func valueOr(value string, fallback string) string {
 	return fallback
 }
 
-// Port is the port of an address such as :9101 or 127.0.0.1:9101, which the health check of the container calls
-func Port(address string) string {
-	index := strings.LastIndex(address, ":")
-	if index < 0 {
-		return ""
+// ListenPort reads BUCKET_SIZES_PORT, the port that the metrics listener and the health check of the container use
+func ListenPort(getenv func(string) string) (string, error) {
+	port := valueOr(getenv("BUCKET_SIZES_PORT"), defaultPort)
+
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return "", fmt.Errorf("BUCKET_SIZES_PORT %q is not a port, write a number from 1 to 65535", port)
 	}
 
-	return address[index+1:]
+	return port, nil
 }

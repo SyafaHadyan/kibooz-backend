@@ -41,6 +41,7 @@ func TestLoadSettingsReadsTheOptionalOnes(t *testing.T) {
 	values["BUCKET_SIZES_REGION"] = "eu-west-1"
 	values["BUCKET_SIZES_INTERVAL"] = "30m"
 	values["BUCKET_SIZES_SCAN_TIMEOUT"] = "45m"
+	values["BUCKET_SIZES_PORT"] = "9200"
 	values["BUCKET_SIZES_PATH_STYLE"] = "false"
 
 	settings, err := LoadSettings(environment(values))
@@ -49,6 +50,7 @@ func TestLoadSettingsReadsTheOptionalOnes(t *testing.T) {
 	require.Equal(t, "eu-west-1", settings.S3.Region)
 	require.Equal(t, 30*time.Minute, settings.Interval)
 	require.Equal(t, 45*time.Minute, settings.ScanTimeout)
+	require.Equal(t, ":9200", settings.Address)
 	require.False(t, settings.S3.PathStyle)
 }
 
@@ -66,6 +68,7 @@ func TestLoadSettingsRefusesWhatCannotWork(t *testing.T) {
 		"a wrong scheme":   {"BUCKET_SIZES_ENDPOINT": "ftp://store.example.test"},
 		"no host":          {"BUCKET_SIZES_ENDPOINT": "https://"},
 		"a short timeout":  {"BUCKET_SIZES_SCAN_TIMEOUT": "10s"},
+		"a bad port":       {"BUCKET_SIZES_PORT": "99999"},
 		"a bad timeout":    {"BUCKET_SIZES_SCAN_TIMEOUT": "long"},
 	} {
 		values := complete()
@@ -78,10 +81,30 @@ func TestLoadSettingsRefusesWhatCannotWork(t *testing.T) {
 	}
 }
 
-func TestPort(t *testing.T) {
-	require.Equal(t, "9101", Port(":9101"))
-	require.Equal(t, "9200", Port("127.0.0.1:9200"))
-	require.Empty(t, Port("nonsense"))
+func TestListenPort(t *testing.T) {
+	get := func(value string) func(string) string {
+		return func(name string) string {
+			if name == "BUCKET_SIZES_PORT" {
+				return value
+			}
+
+			return ""
+		}
+	}
+
+	port, err := ListenPort(get(""))
+	require.NoError(t, err)
+	require.Equal(t, "9101", port)
+
+	port, err = ListenPort(get(" 9200 "))
+	require.NoError(t, err)
+	require.Equal(t, "9200", port)
+
+	for _, bad := range []string{"0", "65536", "-1", "http", "9101:9102", "127.0.0.1:9101"} {
+		_, err = ListenPort(get(bad))
+		require.Error(t, err, bad)
+	}
+
 }
 
 // status makes one request to the server and answers the status code

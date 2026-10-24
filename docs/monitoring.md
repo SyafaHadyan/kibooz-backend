@@ -78,7 +78,7 @@ Only the owner reads the archive, with a key of their own that can read the buck
 
 ## Bucket sizes
 
-No call of an S3 compatible store returns the size of a bucket, so a small exporter, `bucketsizes`, lists the objects of each bucket and adds them up. It is a second program in the same image as the API, started by the service `bucket-sizes` of `compose.production.example.yml` under the `bucket-sizes` profile. It lists every bucket at the start and then every hour, keeps the numbers, and serves them on `:9101/metrics` on the private network, so a scrape never lists anything. A listing is one call for each 1000 objects, which some stores charge for, so the interval is an hour by default and cannot be shorter than a minute.
+No call of an S3 compatible store returns the size of a bucket, so a small exporter, `bucketsizes`, lists the objects of each bucket and adds them up. It is a second program in the same image as the API, started by the service `bucket-sizes` of `compose.production.example.yml` under the `bucket-sizes` profile. It lists every bucket at the start and then every hour, keeps the numbers, and serves them on `:9101/metrics` (`BUCKET_SIZES_PORT` in `.env` changes the port, and compose passes it to the label that Alloy uses too) on the private network, so a scrape never lists anything. A listing is one call for each 1000 objects, which some stores charge for, so the interval is an hour by default and cannot be shorter than a minute.
 
 | Metric | Meaning |
 |:---|:---|
