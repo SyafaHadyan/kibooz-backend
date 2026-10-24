@@ -202,6 +202,47 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # The size of the buckets of an S3 compatible store, as metrics that Alloy scrapes and a dashboard and an alert read. It lists the objects
+  # of each bucket every hour and keeps the numbers, see docs/monitoring.md. It only starts with the `bucket-sizes` profile, and its
+  # settings, with a key that may list the buckets, are in a file of their own and not in .env, which every API container loads. It
+  # runs the image of IMAGE_TAG, which scripts/rolling-update.sh does not restart, so run `docker compose up -d bucket-sizes` after a
+  # deploy to bring it to the same version.
+  bucket-sizes:
+    image: syafa/kibooz-backend:${IMAGE_TAG:?set IMAGE_TAG in .env to the version to run}
+    container_name: kibooz-bucket-sizes
+    restart: always
+    profiles:
+      - bucket-sizes
+    entrypoint:
+      - /bucketsizes
+    env_file:
+      - path: ./bucketsizes/.env.sizes
+        required: true
+    healthcheck:
+      test: ["CMD", "/bucketsizes", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    environment:
+      # the program holds little, and the soft limit keeps the collector away from the cap of the container
+      GOMEMLIMIT: 48MiB
+    deploy:
+      resources:
+        limits:
+          memory: ${BUCKET_SIZES_MEMORY_LIMIT:-64m}
+    networks:
+      - internal
+    labels:
+      kibooz.role: bucket-sizes
+      kibooz.metrics_port: "9101"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
   # The only container that touches the Docker socket. It answers read requests for containers and networks and refuses
   # everything else, so Alloy and Vector cannot start, stop or create a container even if one of them is compromised.
   socket-proxy:
