@@ -32,9 +32,9 @@ const (
 
 // LoadSettings reads the settings through getenv, so a test does not have to touch the environment of the process
 func LoadSettings(getenv func(string) string) (Settings, error) {
-	targets, err := ParseTargets(getenv("BUCKET_SIZES_BUCKETS"))
+	targets, err := ParseTargets(getenv("BUCKET_SIZES_BUCKET_NAMES"))
 	if err != nil {
-		return Settings{}, fmt.Errorf("BUCKET_SIZES_BUCKETS, %w", err)
+		return Settings{}, fmt.Errorf("BUCKET_SIZES_BUCKET_NAMES, %w", err)
 	}
 
 	settings := Settings{

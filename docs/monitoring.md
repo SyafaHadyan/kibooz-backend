@@ -94,7 +94,7 @@ A scan that fails keeps the last size and the time of the last good scan, and se
 To set it up:
 
 1. Create a key for the exporter that may list the buckets, and nothing else. The stores differ, so give it the least they allow, for Cloudflare R2 an Object Read only token that is scoped to the buckets to measure. Keep it out of `.env`, which every API container loads.
-2. Copy `bucketsizes/.env.example` to `bucketsizes/.env`, which git ignores, and fill it in. `BUCKET_SIZES_BUCKETS` lists the buckets, each with an optional size at which it counts as full, such as `media,chat=5GB,logs=20GB`. The exporter works with any S3 compatible store, because the address of the store is `BUCKET_SIZES_ENDPOINT`.
+2. Copy `bucketsizes/.env.example` to `bucketsizes/.env`, which git ignores, and fill it in. `BUCKET_SIZES_BUCKET_NAMES` lists the buckets, each with an optional size at which it counts as full, such as `media,chat=5GB,logs=20GB`. The exporter works with any S3 compatible store, because the address of the store is `BUCKET_SIZES_ENDPOINT`.
 3. Add `bucket-sizes` to `COMPOSE_PROFILES` in `.env`, next to `monitoring`, because without that profile nothing scrapes the exporter. Start it and check it.
 
    ```sh
@@ -121,7 +121,7 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 
 | Alert | Fires when |
 |:---|:---|
-| A bucket is nearly full | A bucket holds more than 80 percent of the limit that was set for it in `BUCKET_SIZES_BUCKETS`, for 10 minutes. A bucket without a limit never fires it |
+| A bucket is nearly full | A bucket holds more than 80 percent of the limit that was set for it in `BUCKET_SIZES_BUCKET_NAMES`, for 10 minutes. A bucket without a limit never fires it |
 | A bucket scan is failing | No scan of a bucket worked in the last 2 hours, which is two scans in a row at the default interval, so one failed call does not fire it. A start of the exporter does not fire it either, because the window still holds the values from before the start |
 | A bucket scan is old | The size of a bucket was last measured more than 3 hours ago. The rule looks back a day, so an exporter that was stopped or removed fires it after 3 hours and keeps it for a day. A bucket that never worked has no timestamp, and the rule above covers it |
 | The bucket size exporter does not answer | The container of the exporter runs, but its metrics were not scraped for 10 minutes. A container that was stopped or removed disappears from the discovery of Alloy and has no series at all, so that case is caught by the rule above and not by this one. A host without the `bucket-sizes` profile raises none of these rules |

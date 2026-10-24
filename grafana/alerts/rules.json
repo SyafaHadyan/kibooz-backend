@@ -1093,7 +1093,7 @@
       "service": "kibooz-bucket-sizes"
     },
     "annotations": {
-      "summary": "The bucket {{ $labels.bucket }} on {{ $labels.host }} holds more than 80 percent of the size that was set as its limit. Free some space or raise the limit in BUCKET_SIZES_BUCKETS"
+      "summary": "The bucket {{ $labels.bucket }} on {{ $labels.host }} holds more than 80 percent of the size that was set as its limit. Free some space or raise the limit in BUCKET_SIZES_BUCKET_NAMES"
     },
     "data": [
       {
