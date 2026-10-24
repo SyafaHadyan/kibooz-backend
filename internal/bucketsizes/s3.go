@@ -63,7 +63,10 @@ func NewS3Lister(ctx context.Context, settings S3Settings) (*S3Lister, error) {
 func (l *S3Lister) Totals(ctx context.Context, bucket string) (Totals, error) {
 	var totals Totals
 
-	pages := awss3.NewListObjectsV2Paginator(l.client, &awss3.ListObjectsV2Input{Bucket: aws.String(bucket)})
+	// a store that answers the same continuation token twice would otherwise be listed until the timeout
+	pages := awss3.NewListObjectsV2Paginator(l.client, &awss3.ListObjectsV2Input{Bucket: aws.String(bucket)}, func(o *awss3.ListObjectsV2PaginatorOptions) {
+		o.StopOnDuplicateToken = true
+	})
 
 	for pages.HasMorePages() {
 		page, err := pages.NextPage(ctx)

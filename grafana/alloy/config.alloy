@@ -190,7 +190,7 @@ loki.process "kibooz" {
   // many values (a request id, a path) would give every line a stream of its own. The rest stays in the line, where
   // `| json` reads it, and the request id is structured metadata that can be searched without being a label.
   stage.match {
-    selector = "{role=\"api\"}"
+    selector = "{role=~\"api|bucket-sizes\"}"
 
     stage.json {
       expressions = { level = "level", request_id = "request_id" }

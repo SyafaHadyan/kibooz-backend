@@ -32,6 +32,7 @@ func TestLoadSettingsFillsTheDefaults(t *testing.T) {
 	require.True(t, settings.S3.PathStyle)
 	require.Equal(t, time.Hour, settings.Interval)
 	require.Equal(t, ":9101", settings.Address)
+	require.Equal(t, 15*time.Minute, settings.ScanTimeout)
 	require.Len(t, settings.Targets, 2)
 }
 
@@ -39,7 +40,7 @@ func TestLoadSettingsReadsTheOptionalOnes(t *testing.T) {
 	values := complete()
 	values["BUCKET_SIZES_REGION"] = "eu-west-1"
 	values["BUCKET_SIZES_INTERVAL"] = "30m"
-	values["BUCKET_SIZES_ADDRESS"] = "127.0.0.1:9200"
+	values["BUCKET_SIZES_SCAN_TIMEOUT"] = "45m"
 	values["BUCKET_SIZES_PATH_STYLE"] = "false"
 
 	settings, err := LoadSettings(environment(values))
@@ -47,7 +48,7 @@ func TestLoadSettingsReadsTheOptionalOnes(t *testing.T) {
 
 	require.Equal(t, "eu-west-1", settings.S3.Region)
 	require.Equal(t, 30*time.Minute, settings.Interval)
-	require.Equal(t, "127.0.0.1:9200", settings.Address)
+	require.Equal(t, 45*time.Minute, settings.ScanTimeout)
 	require.False(t, settings.S3.PathStyle)
 }
 
@@ -61,6 +62,11 @@ func TestLoadSettingsRefusesWhatCannotWork(t *testing.T) {
 		"a short interval": {"BUCKET_SIZES_INTERVAL": "10s"},
 		"a bad interval":   {"BUCKET_SIZES_INTERVAL": "hourly"},
 		"a bad path style": {"BUCKET_SIZES_PATH_STYLE": "maybe"},
+		"no scheme":        {"BUCKET_SIZES_ENDPOINT": "acct.r2.cloudflarestorage.com"},
+		"a wrong scheme":   {"BUCKET_SIZES_ENDPOINT": "ftp://store.example.test"},
+		"no host":          {"BUCKET_SIZES_ENDPOINT": "https://"},
+		"a short timeout":  {"BUCKET_SIZES_SCAN_TIMEOUT": "10s"},
+		"a bad timeout":    {"BUCKET_SIZES_SCAN_TIMEOUT": "long"},
 	} {
 		values := complete()
 		for key, value := range change {

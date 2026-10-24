@@ -57,12 +57,18 @@ func ParseSize(text string) (int64, error) {
 		return 0, fmt.Errorf("%q is not a size above zero, write it like 500MB or 10GB", text)
 	}
 
-	// 8 million TB is the most that fits in an int64 of bytes, and no limit of a bucket is near that
-	if number*float64(factor) >= math.MaxInt64 {
+	// about 9 million TB is the most that fits in an int64 of bytes, and no limit of a bucket is near that
+	bytes := number * float64(factor)
+	if bytes >= math.MaxInt64 {
 		return 0, fmt.Errorf("%q is too large", text)
 	}
 
-	return int64(number * float64(factor)), nil
+	// a size below one byte would round to zero, which means no limit
+	if bytes < 1 {
+		return 0, fmt.Errorf("%q is less than a byte", text)
+	}
+
+	return int64(bytes), nil
 }
 
 // ParseTargets reads a list of buckets separated by commas, each with an optional limit after an equals sign, as in
@@ -173,8 +179,8 @@ func (s *Scanner) Scan(ctx context.Context) {
 	}
 }
 
-func (s *Scanner) scanOne(ctx context.Context, target Target) {
-	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+func (s *Scanner) scanOne(parent context.Context, target Target) {
+	ctx, cancel := context.WithTimeout(parent, s.timeout)
 	defer cancel()
 
 	begin := s.now()
@@ -184,6 +190,11 @@ func (s *Scanner) scanOne(ctx context.Context, target Target) {
 	s.duration.WithLabelValues(target.Bucket).Set(elapsed.Seconds())
 
 	if err != nil {
+		// a stop in the middle of a scan fails every bucket that is left, and the process is on its way out
+		if parent.Err() != nil {
+			return
+		}
+
 		s.success.WithLabelValues(target.Bucket).Set(0)
 		log.Printf("the scan of the bucket %s failed %v", target.Bucket, err)
 
@@ -200,15 +211,18 @@ func (s *Scanner) scanOne(ctx context.Context, target Target) {
 func (s *Scanner) Run(ctx context.Context, interval time.Duration) {
 	s.Scan(ctx)
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	// the interval is the pause after a scan and not a fixed schedule, so a listing that takes longer than the interval is not followed by
+	// another one at once
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			s.Scan(ctx)
+			timer.Reset(interval)
 		}
 	}
 }

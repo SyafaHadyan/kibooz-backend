@@ -224,6 +224,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    environment:
+      # the program holds little, and the soft limit keeps the collector away from the cap of the container
+      GOMEMLIMIT: 48MiB
     deploy:
       resources:
         limits:

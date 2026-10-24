@@ -23,7 +23,7 @@ func TestParseSize(t *testing.T) {
 		require.Equal(t, want, got, text)
 	}
 
-	for _, text := range []string{"", "GB", "ten", "0", "-5GB", "5 parsecs", "5GBGB", "inf", "NaN", "INFB", "10000000000TB", "1e30"} {
+	for _, text := range []string{"", "GB", "ten", "0", "-5GB", "5 parsecs", "5GBGB", "inf", "NaN", "INFB", "10000000000TB", "1e30", "0.5B", "0.0001KB"} {
 		_, err := ParseSize(text)
 		require.Error(t, err, text)
 	}
@@ -156,6 +156,67 @@ func TestRunScansAtOnceAndThenEveryInterval(t *testing.T) {
 
 	cancel()
 	<-done
+}
+
+func TestAScanThatIsCutOffByAStopDoesNotCountAsAFailure(t *testing.T) {
+	lister := &fakeLister{answers: map[string]Totals{"media": {Bytes: 5, Objects: 1}}}
+	scanner, _ := newScanner(t, lister, []Target{{Bucket: "media"}})
+
+	scanner.Scan(context.Background())
+	require.Equal(t, 1.0, testutil.ToFloat64(scanner.success.WithLabelValues("media")))
+
+	lister.failing = map[string]error{"media": context.Canceled}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	scanner.Scan(ctx)
+
+	require.Equal(t, 1.0, testutil.ToFloat64(scanner.success.WithLabelValues("media")), "the stop is not a failure of the bucket")
+}
+
+func TestTheIntervalIsThePauseAfterAScanAndNotAFixedSchedule(t *testing.T) {
+	lister := &slowLister{pause: 60 * time.Millisecond}
+	scanner, _ := newScanner(t, lister, []Target{{Bucket: "media"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() {
+		scanner.Run(ctx, 40*time.Millisecond)
+		close(done)
+	}()
+
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	<-done
+
+	// with a fixed schedule the scans would follow each other at once, here each one waits 40 ms after the last, so at most 3 fit in 300 ms
+	require.LessOrEqual(t, lister.count(), 4, "a scan that is slower than the interval is not followed by another one at once")
+	require.GreaterOrEqual(t, lister.count(), 2)
+}
+
+// slowLister takes a while for each listing and counts them
+type slowLister struct {
+	mu    sync.Mutex
+	pause time.Duration
+	calls int
+}
+
+func (s *slowLister) Totals(context.Context, string) (Totals, error) {
+	time.Sleep(s.pause)
+
+	s.mu.Lock()
+	s.calls++
+	s.mu.Unlock()
+
+	return Totals{Bytes: 1, Objects: 1}, nil
+}
+
+func (s *slowLister) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.calls
 }
 
 func TestTheGaugesCarryTheBucketLabelAndTheHelpOfTheMetric(t *testing.T) {

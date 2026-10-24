@@ -37,7 +37,13 @@ func Serve(ctx context.Context, address string, handler http.Handler) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	// Serve returns as soon as Shutdown starts, so the process waits for Shutdown to finish before it ends and a scrape that is under way
+	// is answered
+	stopped := make(chan struct{})
+
 	go func() {
+		defer close(stopped)
+
 		<-ctx.Done()
 
 		stop, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -52,6 +58,8 @@ func Serve(ctx context.Context, address string, handler http.Handler) error {
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve %w", err)
 	}
+
+	<-stopped
 
 	return nil
 }
