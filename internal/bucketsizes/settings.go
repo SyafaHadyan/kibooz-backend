@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -108,12 +109,15 @@ func valueOr(value string, fallback string) string {
 	return fallback
 }
 
+var portDigits = regexp.MustCompile(`^[0-9]{1,5}$`)
+
 // ListenPort reads BUCKET_SIZES_PORT, the port that the metrics listener and the health check of the container use
 func ListenPort(getenv func(string) string) (string, error) {
 	port := valueOr(getenv("BUCKET_SIZES_PORT"), defaultPort)
 
+	// digits only, because Atoi also takes a sign and the label of the compose service has to be a plain number for Alloy
 	number, err := strconv.Atoi(port)
-	if err != nil || number < 1 || number > 65535 {
+	if !portDigits.MatchString(port) || err != nil || number < 1 || number > 65535 {
 		return "", fmt.Errorf("BUCKET_SIZES_PORT %q is not a port, write a number from 1 to 65535", port)
 	}
 

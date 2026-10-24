@@ -100,7 +100,7 @@ func TestListenPort(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "9200", port)
 
-	for _, bad := range []string{"0", "65536", "-1", "http", "9101:9102", "127.0.0.1:9101"} {
+	for _, bad := range []string{"0", "65536", "-1", "http", "9101:9102", "127.0.0.1:9101", "+9101", "9 101"} {
 		_, err = ListenPort(get(bad))
 		require.Error(t, err, bad)
 	}

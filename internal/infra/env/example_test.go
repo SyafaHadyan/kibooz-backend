@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// composeOnly are the settings of .env.example that only the compose files read, so no field of Env has them
+// composeOnly are the settings of .env.example that only the compose files and the exporter of the bucket sizes read, so no field of Env has them
 var composeOnly = map[string]bool{
 	"IMAGE_TAG": true, "GOMEMLIMIT": true, "REDIS_MAXMEMORY": true, "API_MEMORY_LIMIT": true, "REDIS_MEMORY_LIMIT": true,
 	"ALLOY_MEMORY_LIMIT": true, "COMPOSE_PROFILES": true, "GRAFANA_CLOUD_PROMETHEUS_URL": true, "GRAFANA_CLOUD_PROMETHEUS_USER": true,

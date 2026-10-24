@@ -35,7 +35,7 @@
 # Settings, all optional, given as environment variables
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
 #   ENV_FILE      the env file that holds IMAGE_TAG, default .env, and it is passed to every compose command
-#   COPIES        the services and the host port of each, in update order, default "api-1:8000 api-2:8001"
+#   COPIES        the services and the host port of each, in update order, default api-1 and api-2 on API_1_HOST_PORT and API_2_HOST_PORT of the env file, which are 8000 and 8001 when unset
 #   EXTRAS        services that run the same image and are recreated after all copies are healthy, default none, for example "bucket-sizes"
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy or one extra to become healthy, default 120
@@ -56,7 +56,6 @@ version="${version#v}"
 script="$(realpath "${BASH_SOURCE[0]}")"
 compose_dir="${COMPOSE_DIR:-$(dirname "$script")}"
 env_file="${ENV_FILE:-.env}"
-copies="${COPIES:-api-1:8000 api-2:8001}"
 image="${IMAGE:-syafa/kibooz-backend}"
 timeout="${TIMEOUT:-120}"
 repo="${REPO:-SyafaHadyan/kibooz-backend}"
@@ -73,6 +72,24 @@ done
 
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "The version must look like 1.2.3, got $version"
 [[ "$timeout" =~ ^[0-9]+$ ]] || die "TIMEOUT must be a number of seconds, got $timeout"
+
+cd "$compose_dir"
+[ -f "$env_file" ] || die "$env_file was not found in $compose_dir"
+
+# env_value prints the last value of a setting in the env file, without quotes or a carriage return
+env_value() {
+  sed -n "s/^$1=//p" "$env_file" | tail -1 | tr -d "\r\"'"
+}
+
+# without COPIES the ports of the copies are the host ports of the env file, so a change of API_1_HOST_PORT or API_2_HOST_PORT there
+# is followed here, and a port that the copy does not listen on cannot make the update poll the wrong address
+if [ -n "${COPIES:-}" ]; then
+  copies="$COPIES"
+else
+  port_1="$(env_value API_1_HOST_PORT)"
+  port_2="$(env_value API_2_HOST_PORT)"
+  copies="api-1:${port_1:-8000} api-2:${port_2:-8001}"
+fi
 
 services=()
 ports=()
@@ -95,9 +112,6 @@ for extra in ${extras_list[@]+"${extras_list[@]}"}; do
   [[ " ${extras[*]:-} " != *" $extra "* ]] || die "The service $extra is listed twice in EXTRAS"
   extras+=("$extra")
 done
-
-cd "$compose_dir"
-[ -f "$env_file" ] || die "$env_file was not found in $compose_dir"
 
 # only one update runs at a time, because two of them would fight over the env file and the same copy
 exec 9>"$compose_dir/.rolling-update.lock"
