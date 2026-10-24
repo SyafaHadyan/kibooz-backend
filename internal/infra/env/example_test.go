@@ -16,6 +16,7 @@ var composeOnly = map[string]bool{
 	"ALLOY_MEMORY_LIMIT": true, "COMPOSE_PROFILES": true, "GRAFANA_CLOUD_PROMETHEUS_URL": true, "GRAFANA_CLOUD_PROMETHEUS_USER": true,
 	"GRAFANA_CLOUD_LOKI_URL": true, "GRAFANA_CLOUD_LOKI_USER": true, "GRAFANA_CLOUD_TOKEN": true, "GRAFANA_HOST": true,
 	"LOG_ARCHIVE_MEMORY_LIMIT": true, "LOG_ARCHIVE_HOST": true,
+	"BUCKET_SIZES_MEMORY_LIMIT": true,
 }
 
 // sampleValues are the required settings, which show a sample value in the example and have no default to compare with

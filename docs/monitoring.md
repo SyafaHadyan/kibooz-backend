@@ -4,9 +4,9 @@ This page explains how the metrics and the logs of the API reach Grafana Cloud, 
 
 ## How it fits together
 
-The API serves its metrics on a second listener, `METRICS_ADDRESS`, which `compose.yml` sets to `:9100` and never publishes on the host. Alloy runs next to the API on the private network of the compose file. It finds the containers to watch by the label `kibooz.role` (`api`, `db` or `redis`), scrapes the metrics listener of each API container every minute and reads the logs of all of them. It sends both to Grafana Cloud. Because it goes by label and not by name, the containers can have any name, and a second copy of the API needs no change to the Alloy config. The metrics are described in [Operations](operations.md#metrics) and the log lines in [Operations](operations.md#logs).
+The API serves its metrics on a second listener, `METRICS_ADDRESS`, which `compose.yml` sets to `:9100` and never publishes on the host. Alloy runs next to the API on the private network of the compose file. It finds the containers to watch by the label `kibooz.role` (`api`, `db`, `redis` or `bucket-sizes`), scrapes the metrics listener of each API container and of the bucket size exporter every minute and reads the logs of all of them. It sends both to Grafana Cloud. Because it goes by label and not by name, the containers can have any name, and a second copy of the API needs no change to the Alloy config. The metrics are described in [Operations](operations.md#metrics) and the log lines in [Operations](operations.md#logs).
 
-Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and networks and refuses everything else, and it sits on a network with no route out that only Alloy and, when the log archive runs, Vector share. The network list is there because the Docker discovery of Alloy asks for it and stops without it, and it adds the names and settings of the networks, never anything inside a container. A compromised Alloy therefore cannot start, stop or create a container. It can still read what a container shows when it is inspected, which includes the environment of the container with its secrets, because Alloy has to inspect a container to read its log through the Docker API. Alloy only talks to the Docker proxy, the API and Grafana Cloud, and it is trusted at the level of the other containers of the stack. The proxy lets a container read everything under `/containers`, which includes the files of a container through the export and archive routes and not only its environment, so the same trust holds for Vector when the log archive runs. Reading the log files of the containers from a read-only mount would avoid the inspection, at the cost of the labels that the dashboards use to tell the copies and hosts apart. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on, and the proxy also starts with the `log-archive` profile.
+Alloy has to list containers to find their logs, which needs the Docker socket. Mounting the socket in Alloy would give a compromised Alloy the control of the host, so the socket goes to a proxy instead. The `socket-proxy` container answers read requests for containers and networks and refuses everything else, and it sits on a network with no route out that only Alloy and, when the log archive runs, Vector share. The network list is there because the Docker discovery of Alloy asks for it and stops without it, and it adds the names and settings of the networks, never anything inside a container. A compromised Alloy therefore cannot start, stop or create a container. It can still read what a container shows when it is inspected, which includes the environment of the container with its secrets, such as the key of the log archive and the read key of the bucket size exporter, because Alloy has to inspect a container to read its log through the Docker API. Alloy only talks to the Docker proxy, the API and Grafana Cloud, and it is trusted at the level of the other containers of the stack. The proxy lets a container read everything under `/containers`, which includes the files of a container through the export and archive routes and not only its environment, so the same trust holds for Vector when the log archive runs. Reading the log files of the containers from a read-only mount would avoid the inspection, at the cost of the labels that the dashboards use to tell the copies and hosts apart. Both containers belong to the `monitoring` profile, so they do not start unless that profile is on, and the proxy also starts with the `log-archive` profile.
 
 The Postgres container writes statements that take longer than 500 ms and lock waits longer than one second to its log, and Alloy ships that log as well. The log holds the text of the statement and never the values that were bound to it, because `log_parameter_max_length` is 0.
 
@@ -27,6 +27,8 @@ The series count grows with every copy, because each one has its own set. The fr
 | `grafana/alloy/config.alloy` | The Alloy pipeline for the metrics and the logs |
 | `logarchive/vector.yaml` | The Vector pipeline that archives the logs to a bucket, see [Log archive](#log-archive) |
 | `logarchive/archive.env.example` | The settings of the archive container, which go into `logarchive/.env.archive` |
+| `cmd/bucketsizes`, `internal/bucketsizes` | The exporter that measures the size of the buckets, see [Bucket sizes](#bucket-sizes) |
+| `bucketsizes/sizes.env.example` | The settings of the exporter, which go into `bucketsizes/.env.sizes` |
 | `grafana/dashboards/*.json` | API overview, Routes, Dependencies and jobs, Logs and Product activity, each with the `Host` and `API copy` variables |
 | `grafana/alerts/rules.json` | The alert rules, as an array in the format of the alert rule provisioning API |
 
@@ -73,6 +75,37 @@ To set it up:
    A request that the store refuses, such as a wrong key, a bucket that does not exist yet or a wrong region, is logged as an error and tried again, so the lines wait in the disk buffer until the setting is fixed and are not dropped. That buffer is bounded, so fix it within a few hours of a busy host.
 
 Only the owner reads the archive, with a key of their own that can read the bucket and that is never given to the container. Deleting an account does not remove its lines from the archive, which keeps them for at most 90 days like the other copies of the access log.
+
+## Bucket sizes
+
+No call of an S3 compatible store returns the size of a bucket, so a small exporter, `bucketsizes`, lists the objects of each bucket and adds them up. It is a second program in the same image as the API, started by the service `bucket-sizes` of `compose.production.example.yml` under the `bucket-sizes` profile. It lists every bucket at the start and then every hour, keeps the numbers, and serves them on `:9101/metrics` on the private network, so a scrape never lists anything. A listing is one call for each 1000 objects, which some stores charge for, so the interval is an hour by default and cannot be shorter than a minute.
+
+| Metric | Meaning |
+|:---|:---|
+| `kibooz_bucket_size_bytes{bucket}` | The size of the current objects of the bucket at the last scan that worked. Delete markers, old versions of a versioned bucket and the parts of an upload that was never finished are not counted, so the number can be below what the store bills |
+| `kibooz_bucket_objects{bucket}` | The number of objects at the last scan that worked |
+| `kibooz_bucket_limit_bytes{bucket}` | The size at which the bucket counts as full, only for the buckets that have a limit in the settings |
+| `kibooz_bucket_scan_success{bucket}` | 1 when the last scan worked, 0 when it failed or has not run yet |
+| `kibooz_bucket_scan_timestamp_seconds{bucket}` | When the last scan that worked ended |
+| `kibooz_bucket_scan_duration_seconds{bucket}` | How long the last scan took, whether it worked or not |
+
+A scan that fails keeps the last size and the time of the last good scan, and sets `kibooz_bucket_scan_success` to 0, and the next bucket is still measured. After every start a bucket shows `kibooz_bucket_scan_success` 0 and no size until its first listing is done, which can take minutes for a bucket with millions of objects, so an alert on a failing scan has to wait longer than that listing. A listing may take 15 minutes by default, which is about 3 million objects, and `BUCKET_SIZES_SCAN_TIMEOUT` raises that. The interval is the pause after a scan, so a slow listing is never followed by another one at once. Listing is one Class A call for each 1000 objects on Cloudflare R2, so an hourly scan of a bucket with a million objects is about 720 thousand calls a month, which counts against the free tier of a million.
+
+To set it up:
+
+1. Create a key for the exporter that may list the buckets, and nothing else. The stores differ, so give it the least they allow, for Cloudflare R2 an Object Read only token that is scoped to the buckets to measure. Keep it out of `.env`, which every API container loads.
+2. Copy `bucketsizes/sizes.env.example` to `bucketsizes/.env.sizes`, which git ignores, and fill it in. `BUCKET_SIZES_BUCKETS` lists the buckets, each with an optional size at which it counts as full, such as `media,chat=5GB,logs=20GB`. The exporter works with any S3 compatible store, because the address of the store is `BUCKET_SIZES_ENDPOINT`.
+3. Add `bucket-sizes` to `COMPOSE_PROFILES` in `.env`, next to `monitoring`, because without that profile nothing scrapes the exporter. Start it and check it.
+
+   ```sh
+   docker compose up -d bucket-sizes
+   docker compose logs --since 5m bucket-sizes
+   docker compose exec bucket-sizes /bucketsizes healthcheck
+   ```
+
+Alloy scrapes the exporter like the API, by the label `kibooz.role: bucket-sizes`, so no setting of Alloy changes. Its metrics carry the label `service="kibooz-bucket-sizes"`. The dashboard and the alerts for the sizes come in a later change.
+
+The exporter runs the image of `IMAGE_TAG`, and `scripts/rolling-update.sh` only restarts the API copies, so run `docker compose up -d bucket-sizes` after a deploy to bring it to the same version.
 
 ## Errors in Sentry
 
