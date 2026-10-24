@@ -103,6 +103,8 @@ To set it up:
    docker compose exec bucket-sizes /bucketsizes healthcheck
    ```
 
+Alloy scrapes the exporter like the API, by the label `kibooz.role: bucket-sizes`, so no setting of Alloy changes. Its metrics carry the label `service="kibooz-bucket-sizes"`. The dashboard and the alerts for the sizes come in a later change.
+
 The exporter runs the image of `IMAGE_TAG`, and `scripts/rolling-update.sh` only restarts the API copies, so run `docker compose up -d bucket-sizes` after a deploy to bring it to the same version.
 
 ## Errors in Sentry

@@ -23,7 +23,7 @@ func TestParseSize(t *testing.T) {
 		require.Equal(t, want, got, text)
 	}
 
-	for _, text := range []string{"", "GB", "ten", "0", "-5GB", "5 parsecs", "5GBGB"} {
+	for _, text := range []string{"", "GB", "ten", "0", "-5GB", "5 parsecs", "5GBGB", "inf", "NaN", "INFB", "10000000000TB", "1e30"} {
 		_, err := ParseSize(text)
 		require.Error(t, err, text)
 	}

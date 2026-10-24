@@ -83,6 +83,58 @@ discovery.relabel "api_metrics" {
   }
 }
 
+// the exporter of the bucket sizes, started with the `bucket-sizes` profile, on the same network and with the same label scheme
+discovery.relabel "bucket_sizes_metrics" {
+  targets = discovery.docker.kibooz_metrics.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_kibooz_role"]
+    regex         = "bucket-sizes"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_network_label_com_docker_compose_network"]
+    regex         = "internal"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_kibooz_metrics_port"]
+    regex         = "(?:.*:)?([0-9]+)"
+    target_label  = "__tmp_metrics_port"
+    replacement   = "$1"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_network_ip", "__tmp_metrics_port"]
+    separator     = ":"
+    regex         = "(.+):([0-9]+)"
+    target_label  = "__address__"
+    replacement   = "$1:$2"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "instance"
+  }
+
+  rule {
+    target_label = "service"
+    replacement  = "kibooz-bucket-sizes"
+  }
+}
+
+// the exporter lists the buckets once an hour and keeps the numbers, so a scrape is cheap and a minute is plenty
+prometheus.scrape "bucket_sizes" {
+  targets         = discovery.relabel.bucket_sizes_metrics.output
+  metrics_path    = "/metrics"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.cloud.receiver]
+  honor_labels    = true
+}
+
 prometheus.scrape "api" {
   targets         = discovery.relabel.api_metrics.output
   metrics_path    = "/metrics"

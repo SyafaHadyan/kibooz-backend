@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,8 +53,13 @@ func ParseSize(text string) (int64, error) {
 	}
 
 	number, err := strconv.ParseFloat(strings.TrimSpace(digits), 64)
-	if err != nil || number <= 0 {
+	if err != nil || math.IsNaN(number) || math.IsInf(number, 0) || number <= 0 {
 		return 0, fmt.Errorf("%q is not a size above zero, write it like 500MB or 10GB", text)
+	}
+
+	// 8 million TB is the most that fits in an int64 of bytes, and no limit of a bucket is near that
+	if number*float64(factor) >= math.MaxInt64 {
+		return 0, fmt.Errorf("%q is too large", text)
 	}
 
 	return int64(number * float64(factor)), nil
