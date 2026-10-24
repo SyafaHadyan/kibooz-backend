@@ -1077,5 +1077,337 @@
         }
       }
     ]
+  },
+  {
+    "title": "A bucket is nearly full",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "10m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-bucket-sizes"
+    },
+    "annotations": {
+      "summary": "The bucket {{ $labels.bucket }} on {{ $labels.host }} holds more than 80 percent of the size that was set as its limit. Free some space or raise the limit in BUCKET_SIZES_BUCKETS"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "kibooz_bucket_size_bytes{service=\"kibooz-bucket-sizes\"} / on (host, bucket) kibooz_bucket_limit_bytes{service=\"kibooz-bucket-sizes\"}",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  0.8
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "A bucket scan is failing",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "30m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-bucket-sizes"
+    },
+    "annotations": {
+      "summary": "The last scan of the bucket {{ $labels.bucket }} on {{ $labels.host }} did not work for 30 minutes. A wrong key, a missing bucket or a listing that takes longer than BUCKET_SIZES_SCAN_TIMEOUT shows here, and the log of the exporter says which"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "min by (host, bucket) (kibooz_bucket_scan_success{service=\"kibooz-bucket-sizes\"})",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "lt",
+                "params": [
+                  1
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "A bucket scan is old",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "10m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-bucket-sizes"
+    },
+    "annotations": {
+      "summary": "The size of the bucket {{ $labels.bucket }} on {{ $labels.host }} was last measured more than 3 hours ago, so the size and the share of the limit are out of date"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "time() - kibooz_bucket_scan_timestamp_seconds{service=\"kibooz-bucket-sizes\"}",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "gt",
+                "params": [
+                  10800
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "title": "The bucket size exporter is down",
+    "ruleGroup": "kibooz",
+    "folderUID": "kibooz",
+    "orgID": 1,
+    "for": "10m",
+    "condition": "C",
+    "noDataState": "OK",
+    "execErrState": "Error",
+    "isPaused": false,
+    "labels": {
+      "severity": "warning",
+      "service": "kibooz-bucket-sizes"
+    },
+    "annotations": {
+      "summary": "The metrics of the bucket size exporter {{ $labels.instance }} on {{ $labels.host }} have not been scraped for 10 minutes, so no bucket size is measured"
+    },
+    "data": [
+      {
+        "refId": "A",
+        "relativeTimeRange": {
+          "from": 600,
+          "to": 0
+        },
+        "datasourceUid": "__PROMETHEUS_UID__",
+        "model": {
+          "refId": "A",
+          "expr": "min by (host, instance) (up{service=\"kibooz-bucket-sizes\"})",
+          "instant": true,
+          "intervalMs": 60000,
+          "maxDataPoints": 43200
+        }
+      },
+      {
+        "refId": "B",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "B",
+          "type": "reduce",
+          "expression": "A",
+          "reducer": "last",
+          "settings": {
+            "mode": "dropNN"
+          },
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      },
+      {
+        "refId": "C",
+        "datasourceUid": "__expr__",
+        "relativeTimeRange": {
+          "from": 0,
+          "to": 0
+        },
+        "model": {
+          "refId": "C",
+          "type": "threshold",
+          "expression": "B",
+          "conditions": [
+            {
+              "evaluator": {
+                "type": "lt",
+                "params": [
+                  1
+                ]
+              }
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          }
+        }
+      }
+    ]
   }
 ]

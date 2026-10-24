@@ -29,7 +29,7 @@ The series count grows with every copy, because each one has its own set. The fr
 | `logarchive/archive.env.example` | The settings of the archive container, which go into `logarchive/.env.archive` |
 | `cmd/bucketsizes`, `internal/bucketsizes` | The exporter that measures the size of the buckets, see [Bucket sizes](#bucket-sizes) |
 | `bucketsizes/sizes.env.example` | The settings of the exporter, which go into `bucketsizes/.env.sizes` |
-| `grafana/dashboards/*.json` | API overview, Routes, Dependencies and jobs, Logs and Product activity, each with the `Host` and `API copy` variables |
+| `grafana/dashboards/*.json` | API overview, Routes, Dependencies and jobs, Logs, Product activity and Buckets, each with the `Host` variable and, except Buckets, the `API copy` variable. Buckets has a `Bucket` variable instead |
 | `grafana/alerts/rules.json` | The alert rules, as an array in the format of the alert rule provisioning API |
 
 The dashboards pick their data sources with two variables at the top (`Metrics` and `Logs`), so they hold no data source id. The alert rules hold the placeholder `__PROMETHEUS_UID__` in place of the id of the metrics data source, and it has to be replaced before they are applied. Grafana is not synced from this repository. The JSON files are the record of what was built, and a change made in Grafana is copied back here by hand.
@@ -103,7 +103,7 @@ To set it up:
    docker compose exec bucket-sizes /bucketsizes healthcheck
    ```
 
-Alloy scrapes the exporter like the API, by the label `kibooz.role: bucket-sizes`, so no setting of Alloy changes. Its metrics carry the label `service="kibooz-bucket-sizes"`. The dashboard and the alerts for the sizes come in a later change.
+Alloy scrapes the exporter like the API, by the label `kibooz.role: bucket-sizes`, so no setting of Alloy changes. Its metrics carry the label `service="kibooz-bucket-sizes"`. The dashboard Buckets shows the sizes and the alerts below watch them.
 
 The exporter runs the image of `IMAGE_TAG`, and `scripts/rolling-update.sh` only restarts the API copies, so run `docker compose up -d bucket-sizes` after a deploy to bring it to the same version.
 
@@ -121,6 +121,10 @@ The Grafana Cloud free plan allows about 10 000 active series and 50 GB of logs 
 
 | Alert | Fires when |
 |:---|:---|
+| A bucket is nearly full | A bucket holds more than 80 percent of the limit that was set for it in `BUCKET_SIZES_BUCKETS`, for 10 minutes. A bucket without a limit never fires it |
+| A bucket scan is failing | The last scan of a bucket did not work for 30 minutes. After a start of the exporter this value is 0 until the first listing is done, so a listing that takes longer than 30 minutes needs a longer `BUCKET_SIZES_SCAN_TIMEOUT` and a later alert |
+| A bucket scan is old | The size of a bucket was last measured more than 3 hours ago. A bucket that never worked has no timestamp, and the rule above covers it |
+| The bucket size exporter is down | The metrics of the exporter were not scraped for 10 minutes. The four rules of the buckets stay quiet when there is no exporter at all, because a host without the `bucket-sizes` profile has nothing to measure |
 | API is down | The metrics of a copy were not scraped for 5 minutes, which means the API or its metrics listener is not answering. It also fires when no data arrives at all, which is what happens when every Alloy is down |
 | Fewer than 2 API copies are up | Fewer than 2 copies of the API reported `up` for 5 minutes, because a container stopped or was removed or the Alloy of a host stopped. It counts the copies that are up, so it does not name the missing one, and the "API copies up" panel of the API overview dashboard shows how many are up. A rename does not fire it. Removing a copy on purpose stays quiet only while at least two copies are still up, so removing one of the two for good fires it after 5 minutes until the threshold in the rule is lowered. The count is 0 when no copy reports at all, so it fires then as well |
 | 5xx ratio is high | More than 5 percent of the requests failed with a 5xx for 10 minutes |
