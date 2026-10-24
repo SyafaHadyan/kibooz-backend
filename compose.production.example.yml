@@ -169,7 +169,7 @@ services:
     # the bucket, the address, the region and the key are in a file of their own, and not in .env, because the API containers load the whole
     # .env (x-api above) and must never hold the key of the archive. Vector refuses a missing or empty setting at the start.
     env_file:
-      - path: ./logarchive/.env.archive
+      - path: ./logarchive/.env
         required: true
     environment:
       LOG_ARCHIVE_HOST: ${LOG_ARCHIVE_HOST:-${GRAFANA_HOST:-main}}
@@ -216,7 +216,7 @@ services:
     entrypoint:
       - /bucketsizes
     env_file:
-      - path: ./bucketsizes/.env.sizes
+      - path: ./bucketsizes/.env
         required: true
     healthcheck:
       test: ["CMD", "/bucketsizes", "healthcheck"]

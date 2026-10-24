@@ -33,7 +33,3 @@ node_modules/
 __pycache__/
 /ci-certs/
 /ci-curl/
-
-# the key of the log archive
-/logarchive/.env.archive
-/bucketsizes/.env.sizes
