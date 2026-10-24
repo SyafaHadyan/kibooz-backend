@@ -18,6 +18,12 @@
 # schema, so read the changelog before going back. A rolling update is only safe when the migrations of the new version leave the
 # old version working, because both versions run on the same database for a short while.
 #
+# Extra services. Services that run the same image but are not part of the rolling update, such as the bucket size exporter, are
+# named in EXTRAS. They are pulled with the copies, and recreated one after another only when every copy is healthy, with the same
+# wait, so a failed extra never stops or undoes the update of the API. When an extra does not become healthy the script says so
+# at the end and exits with 1, and the copies stay on the new version. Name only services of the compose file that use the image
+# of IMAGE_TAG, and whose profile is in COMPOSE_PROFILES of the env file, or the script stops before anything is changed.
+#
 # Going back. When the version is older than the one that runs now, the script warns that this is only safe while no migration ran
 # since that version, and lists the migration files of both versions on GitHub. When the newer one has files that the older one lacks, or GitHub cannot
 # answer, it stops, because the old image cannot start on the newer schema. Restore the database or apply the down files first, see docs/operations.md, and then run
@@ -28,6 +34,7 @@
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
 #   ENV_FILE      the env file that holds IMAGE_TAG, default .env, and it is passed to every compose command
 #   COPIES        the services and the host port of each, in update order, default "api-1:8000 api-2:8001"
+#   EXTRAS        services that run the same image and are recreated after all copies are healthy, default none, for example "bucket-sizes"
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy to become healthy, default 120
 #   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
@@ -75,6 +82,15 @@ for copy in $copies; do
   ports+=("${BASH_REMATCH[2]}")
 done
 [ "${#services[@]}" -gt 0 ] || die "COPIES lists no service"
+
+extras_text="${EXTRAS:-}"
+extras=()
+for extra in $extras_text; do
+  [[ "$extra" =~ ^[A-Za-z0-9_.-]+$ ]] || die "Every entry of EXTRAS must be a service name, got $extra"
+  [[ " ${services[*]} " != *" $extra "* ]] || die "The service $extra is in COPIES and in EXTRAS"
+  [[ " ${extras[*]:-} " != *" $extra "* ]] || die "The service $extra is listed twice in EXTRAS"
+  extras+=("$extra")
+done
 
 cd "$compose_dir"
 [ -f "$env_file" ] || die "$env_file was not found in $compose_dir"
@@ -147,8 +163,8 @@ trap on_signal INT TERM HUP
 
 echo "Checking that the services exist"
 known="$(compose config --services)"
-for service in "${services[@]}"; do
-  grep -qx "$service" <<<"$known" || die "The service $service is not in the compose file, nothing was changed. The services are $(echo "$known" | tr '\n' ' ')"
+for service in "${services[@]}" ${extras[@]+"${extras[@]}"}; do
+  grep -qx "$service" <<<"$known" || die "The service $service is not in the compose file or its profile is not in COMPOSE_PROFILES of $env_file, nothing was changed. The services are $(echo "$known" | tr '\n' ' ')"
 done
 
 echo "Pulling $image:$version, which also proves that the tag exists"
@@ -242,7 +258,7 @@ else
 fi
 
 echo "Pulling through compose"
-if ! run compose pull "${services[@]}"; then
+if ! run compose pull "${services[@]}" ${extras[@]+"${extras[@]}"}; then
   restore_tag || die "The pull through compose failed and IMAGE_TAG in $env_file could not be put back, see above. No copy was touched"
   die "The pull through compose failed, for example because Docker Hub limited it. IMAGE_TAG in $env_file is ${previous:-not set} again and no copy was touched, so run the update again later"
 fi
@@ -250,7 +266,7 @@ fi
 # go_back prints how to return to the version that ran before, when that version is known
 go_back() {
   if [[ "$previous" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "To go back to $previous, run ROLLBACK_OK=$previous COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" $script $previous, which warns and checks the migrations first. It stops when a migration may have run, and then MIGRATIONS_HANDLED=1 is needed after you restored the database or checked it" >&2
+    echo "To go back to $previous, run ROLLBACK_OK=$previous COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" ${extras_text:+EXTRAS=\"$extras_text\" }$script $previous, which warns and checks the migrations first. It stops when a migration may have run, and then MIGRATIONS_HANDLED=1 is needed after you restored the database or checked it" >&2
   else
     echo "The tag before was ${previous:-not set}, so set IMAGE_TAG back by hand and run docker compose up -d --no-deps for each updated copy" >&2
   fi
@@ -303,8 +319,60 @@ for index in "${!services[@]}"; do
   echo "$answer"
 done
 
+# extra_state prints healthy when the container of a service reports healthy, running when it has no health check and is up, and the
+# state of the health check or missing otherwise
+extra_state() {
+  local id
+  id="$(compose ps -q "$1" 2>/dev/null | head -n 1)"
+  [ -n "$id" ] || {
+    echo missing
+    return 0
+  }
+  docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || echo missing
+}
+
+# the extras come after every copy is healthy, and a failure of one is reported at the end and never undoes the copies
+extra_failed=()
+for extra in ${extras[@]+"${extras[@]}"}; do
+  echo
+  echo "Updating $extra, which runs the same image and is not part of the rolling update"
+  if ! run compose up -d --no-deps "$extra"; then
+    echo "docker compose up failed for $extra" >&2
+    extra_failed+=("$extra")
+    continue
+  fi
+
+  if [ "$dry_run" = "1" ]; then
+    continue
+  fi
+
+  start="$SECONDS"
+  state=""
+  while :; do
+    state="$(extra_state "$extra")"
+    case "$state" in
+      healthy | running) break ;;
+    esac
+    [ $((SECONDS - start)) -lt "$timeout" ] || break
+    sleep 3
+  done
+
+  case "$state" in
+    healthy | running) echo "$extra is $state after $((SECONDS - start)) seconds" ;;
+    *)
+      echo "$extra did not become healthy within ${timeout} seconds, its state is $state" >&2
+      extra_failed+=("$extra")
+      ;;
+  esac
+done
+
 echo
 if [ "$dry_run" != "1" ]; then
   compose ps
+fi
+if [ "${#extra_failed[@]}" -gt 0 ]; then
+  echo "The copies ${updated[*]:-none} are on $version and healthy, but ${extra_failed[*]} did not come up. Nothing was rolled back, the API is not affected." >&2
+  echo "Read the logs with docker compose logs --tail 100 ${extra_failed[0]}, and bring it up again with docker compose up -d ${extra_failed[0]} when it is fixed." >&2
+  exit 1
 fi
 echo "Done. Run the Smoke workflow with expected_version ${version} to check the routes."
