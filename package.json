@@ -10,8 +10,8 @@
     "build": "rm -rf dist && redocly build-docs openapi.yaml -o dist/index.html && cp docs/_headers dist/_headers && cp docs/favicon.ico dist/favicon.ico"
   },
   "devDependencies": {
-    "@redocly/cli": "2.62.1",
-    "wrangler": "4.149.0"
+    "@redocly/cli": "2.71.0",
+    "wrangler": "4.152.0"
   },
   "overrides": {
     "sharp": "0.35.5",
