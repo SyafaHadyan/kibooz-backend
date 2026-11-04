@@ -122,7 +122,7 @@ services:
 
   # Metrics and logs go to Grafana Cloud. These two services only start with the `monitoring` profile, see docs/monitoring.md.
   alloy:
-    image: grafana/alloy:v1.21.0
+    image: grafana/alloy:v1.21.3
     container_name: kibooz-alloy
     restart: always
     profiles:
