@@ -158,7 +158,7 @@ services:
   # The logs go to a bucket of any S3 compatible store too, where the lifecycle rule of the bucket keeps them for 90 days. It only
   # starts with the `log-archive` profile and the LOG_ARCHIVE_* settings of .env, see docs/monitoring.md.
   log-archive:
-    image: timberio/vector:0.60.0-alpine
+    image: timberio/vector:0.61.0-alpine
     container_name: kibooz-log-archive
     restart: always
     profiles:
