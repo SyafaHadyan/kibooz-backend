@@ -92,6 +92,9 @@ func TestAccountDeletionQueuesItsFilesInTheSameTransaction(t *testing.T) {
 }
 
 func TestFileCleanupSweep(t *testing.T) {
+	// testDB is set by the first call of app, and the tests run in shuffled order
+	app(t)
+
 	prefix := "avatars/" + uuid.NewString()
 	fine, stuck := prefix+"/fine.jpg", prefix+"/stuck.jpg"
 
@@ -155,6 +158,9 @@ func (g *gateBucket) Delete(ctx context.Context, key string) error {
 
 // Two copies of the API sweep at the same time, and a file must not be tried by both
 func TestTwoSweepsAtOnceNeverTryTheSameFile(t *testing.T) {
+	// testDB is set by the first call of app, and the tests run in shuffled order
+	app(t)
+
 	prefix := "avatars/" + uuid.NewString()
 
 	// more files than a batch, so the second sweep has files of its own to take while the first still holds its lease
