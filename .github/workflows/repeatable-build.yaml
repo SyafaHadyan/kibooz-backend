@@ -116,7 +116,7 @@ jobs:
             sed -E -e "s/^([0-9a-f]{64})  \.\/(.*)$/\2${tab}\1/" -e "s/^link  \.\/(.*) -> (.*)$/\1${tab}link:\2/" "$1" | sort -t "$tab" -k1,1
           }
           join -t "$tab" -a 1 -a 2 -e MISSING -o 0,1.2,2.2 <(keyed "$a") <(keyed "$b") > "${OUT}.joined"
-          # A failed join inside a process substitution is not seen by the shell, so the line count is the guard. The joined list has
+          # A failure of the sed or sort inside a process substitution is not seen by the shell, so the line count is the guard. The joined list has
           # at least as many lines as the longer file list, or something went wrong and the check must not pass.
           longest=$(wc -l < "$a")
           [ "$(wc -l < "$b")" -le "$longest" ] || longest=$(wc -l < "$b")
@@ -143,7 +143,7 @@ jobs:
               echo "${kind}: $(printf '%s\n' "$list" | wc -l) paths, first 40"
               echo
               echo '```text'
-              printf '%s\n' "$list" | head -40
+              printf '%s\n' "$list" | sed -n '1,40p'
               echo '```'
               echo
             done
