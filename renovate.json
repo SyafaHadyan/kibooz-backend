@@ -72,10 +72,9 @@
       "addLabels": ["github_actions"]
     },
     {
-      "description": "the go line of go.mod and the Go image of the Dockerfile name the same patch release, so they move in one pull request, and a Go release carries standard library fixes, so it is a fix",
+      "description": "the go line of go.mod and the Go image of the Dockerfile name the same patch release, so they move in one pull request",
       "matchPackageNames": ["go", "golang"],
-      "groupName": "go-toolchain",
-      "semanticCommitType": "fix"
+      "groupName": "go-toolchain"
     }
   ],
   "customManagers": [
