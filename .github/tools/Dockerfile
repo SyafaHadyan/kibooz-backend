@@ -9,6 +9,6 @@ FROM tufin/oasdiff:v1.38.0@sha256:d8e4cfbd36234af05c0d48f679005bace2a0253a93e506
 FROM koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d AS shellcheck
 FROM mvdan/shfmt:v3.14.1@sha256:8c06884a35683d8763fba6c0d9484d11a61a96da65f8d497d6f625825a6043f2 AS shfmt
 FROM dotenvlinter/dotenv-linter:4.0.0@sha256:49a3c89203aeabb814e7fc028c4bcaf569c6ead29e58dbad5e348324d042d120 AS dotenv-linter
-FROM ghcr.io/astral-sh/ruff:0.17.2@sha256:d69a8c8d529a866a6aaea0dfda672693d68671a08827db765514abc1571a78a0 AS ruff
+FROM ghcr.io/astral-sh/ruff:0.17.6@sha256:2671e9bf3e50c24a88e731f209f9bf01c0360da6857ae36bca680b222efc3528 AS ruff
 FROM ghcr.io/sbdchd/squawk:2.70.0@sha256:95707f5660dfadbc61cf9d9565384b54d157dcb4e8d3c30db78dd7056be293e9 AS squawk
 FROM timberio/vector:0.61.0-alpine@sha256:3bb7ed5152910ed51729e256937b1d8a4bf67ff624e9d565e8e5877bffd015c7 AS vector
