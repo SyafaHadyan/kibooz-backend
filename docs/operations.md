@@ -4,7 +4,7 @@ This page is for whoever runs the stack. It covers deploying a version, what the
 
 ## What runs
 
-The `compose.yml` file starts three containers on one host. `kibooz-api` is the image `syafa/kibooz-backend` and listens on `127.0.0.1:${APP_PORT}`, so only a reverse proxy on the same host reaches it. `kibooz-db` is PostgreSQL 18 and `kibooz-redis` is Redis 8. The API container has a read-only filesystem, drops every Linux capability and runs without new privileges. Each container keeps at most five log files of 10 MB. The API and Redis containers have a hard memory cap (`API_MEMORY_LIMIT`, `REDIS_MEMORY_LIMIT`) and the database has none, so a memory problem of the API kills the API and not the database. The API gets 40 seconds to stop, because it gives running requests 15 seconds and then up to 17 more to close the push, metrics and error report work, and the database gets 30 seconds because PostgreSQL ends with a checkpoint.
+The `compose.yml` file starts three containers on one host. `kibooz-api` is the image `syafa/kibooz-backend` and listens on `127.0.0.1:${APP_PORT}`, so only a reverse proxy on the same host reaches it. `kibooz-db` is PostgreSQL 19 and `kibooz-redis` is Redis 8. The API container has a read-only filesystem, drops every Linux capability and runs without new privileges. Each container keeps at most five log files of 10 MB. The API and Redis containers have a hard memory cap (`API_MEMORY_LIMIT`, `REDIS_MEMORY_LIMIT`) and the database has none, so a memory problem of the API kills the API and not the database. The API gets 40 seconds to stop, because it gives running requests 15 seconds and then up to 17 more to close the push, metrics and error report work, and the database gets 30 seconds because PostgreSQL ends with a checkpoint.
 
 Two more containers, `kibooz-alloy` and `kibooz-socket-proxy`, start only when `COMPOSE_PROFILES` holds `monitoring`, and the socket proxy also starts with `log-archive`, which adds `kibooz-log-archive` to archive the logs to a bucket, see [Monitoring](monitoring.md#log-archive). They ship the metrics and the logs to Grafana Cloud, see [Monitoring](monitoring.md).
 
@@ -159,7 +159,7 @@ Nothing in this repository backs up the database. Take a dump before every deplo
 docker compose exec db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql
 ```
 
-A volume from an older PostgreSQL major version does not start on PostgreSQL 18, see the [README](../README.md#production-deployment).
+A volume from an older PostgreSQL major version does not start on PostgreSQL 19, see the [README](../README.md#production-deployment).
 
 ## Secrets
 
