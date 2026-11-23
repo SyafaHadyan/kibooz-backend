@@ -34,7 +34,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: mirror.gcr.io/library/postgres:18-alpine
+        image: mirror.gcr.io/library/postgres:19-alpine
         env:
           POSTGRES_USER: kibooz
           POSTGRES_PASSWORD: kibooz
