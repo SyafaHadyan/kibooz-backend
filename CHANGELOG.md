@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.0...v0.21.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **build:** raise Go to 1.27.4 for the net/http MaxBytesReader crash fix ([9a17ddb](https://github.com/SyafaHadyan/kibooz-backend/commit/9a17ddb54759c30d9251336dca6fe226d5084e74))
+* **deps:** raise brotli, compress and x/net to the releases that fix GO-2026-6888, GO-2026-6865 and CVE-2026-78661 ([ba4f579](https://github.com/SyafaHadyan/kibooz-backend/commit/ba4f5797f3eecdcf8a4e620029cccf8a8f262f52))
+* **deps:** raise Go to 1.27.4 and the modules that the security gate flags ([#438](https://github.com/SyafaHadyan/kibooz-backend/issues/438)) ([f162f2d](https://github.com/SyafaHadyan/kibooz-backend/commit/f162f2da6daa70a8ef6c7451c2d465116371e6b5))
+* **e2e:** start the app before two file cleanup tests read the database ([66321a1](https://github.com/SyafaHadyan/kibooz-backend/commit/66321a10e253393668ac247ca4c3d621e33ec3a1))
+* **e2e:** start the app before two file cleanup tests read the database ([#441](https://github.com/SyafaHadyan/kibooz-backend/issues/441)) ([395734d](https://github.com/SyafaHadyan/kibooz-backend/commit/395734d7a89a3df650325c41b50c2a08ba496b9f))
+
 ## [0.21.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.20.0...v0.21.0) (2026-10-24)
 
 
