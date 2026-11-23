@@ -74,7 +74,7 @@ The bot cannot read a tool that is named inside a `run` step, so the tools of th
 
 - `.github/tools/Dockerfile` has one stage for each image that a job starts with `docker run`, which are actionlint, zizmor, hadolint, ShellCheck, shfmt, gitleaks and ZAP. Nothing builds it. The workflows get the image from `.github/tools/image.sh <stage>`, so the version of a bump is the version the jobs run. A test in `internal/repocheck` fails when a workflow writes an image digest by hand or names a stage that the file lacks.
 - `tools/go.mod` is a separate Go module with govulncheck as a `tool`. The security workflow installs it with `go -C tools install tool`, and the root `go.mod` keeps only what the service needs.
-- The golangci-lint, k6 and Vale versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
+- The golangci-lint, k6, Vale and reviewdog versions sit in action inputs. A comment such as `# renovate: datasource=github-releases depName=grafana/k6` right above the line tells Renovate where to look, so keep the comment when you edit the line.
 
 The Google style release in `.vale.ini` and the Vale image in the commands of this page are read by two more patterns in `renovate.json`, so Renovate raises them as well.
 
