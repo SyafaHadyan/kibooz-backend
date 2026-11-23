@@ -75,6 +75,12 @@
       "description": "the go line of go.mod and the Go image of the Dockerfile name the same patch release, so they move in one pull request",
       "matchPackageNames": ["go", "golang"],
       "groupName": "go-toolchain"
+    },
+    {
+      "description": "production runs PostgreSQL 18, so a new major of the postgres images waits until the database is upgraded, delete this rule to lift the hold",
+      "matchPackageNames": ["postgres", "mirror.gcr.io/library/postgres"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
   "customManagers": [
