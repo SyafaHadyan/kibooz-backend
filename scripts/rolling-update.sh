@@ -19,7 +19,7 @@
 # old version working, because both versions run on the same database for a short while.
 #
 # Extra services. Services that run the same image but are not part of the rolling update, such as the bucket size exporter, are
-# named in EXTRAS. They are pulled with the copies, so a pull that fails stops the update before any copy is touched, and they are
+# extras. By default EXTRAS is all, which takes every other service of the image, see below. An empty EXTRAS takes none and names narrow the list. They are pulled with the copies, so a pull that fails stops the update before any copy is touched, and they are
 # recreated one after another only when every copy is healthy. An extra has to report healthy twice in a row in Docker, or running
 # twice in a row when it has no health check, within TIMEOUT. A failed extra never stops or undoes the update of the API. The
 # script says so at the end and exits with 1, and the copies stay on the new version. Every extra has to be a service of the
