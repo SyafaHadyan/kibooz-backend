@@ -21,11 +21,6 @@
   },
   "packageRules": [
     {
-      "description": "the Go release is raised by hand in go.mod, which the workflows read, so a patch release is a decision and not a bot update",
-      "matchDatasources": ["golang-version"],
-      "enabled": false
-    },
-    {
       "matchManagers": ["gomod"],
       "semanticCommitType": "chore",
       "addLabels": ["go"]
@@ -75,6 +70,12 @@
       "matchManagers": ["custom.regex"],
       "semanticCommitType": "ci",
       "addLabels": ["github_actions"]
+    },
+    {
+      "description": "the go line of go.mod and the Go image of the Dockerfile name the same patch release, so they move in one pull request, and a Go release carries standard library fixes, so it is a fix",
+      "matchPackageNames": ["go", "golang"],
+      "groupName": "go-toolchain",
+      "semanticCommitType": "fix"
     }
   ],
   "customManagers": [
