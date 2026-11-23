@@ -74,7 +74,7 @@ jobs:
         uses: grafana/setup-k6-action@c47136d33d365efbeb9ae7266908b5dcf98cdece # v1.3.0
         with:
           # renovate: datasource=github-releases depName=grafana/k6
-          k6-version: "2.3.0"
+          k6-version: "2.4.0"
 
       - name: Run k6
         env:
