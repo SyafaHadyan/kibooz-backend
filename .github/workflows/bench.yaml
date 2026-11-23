@@ -43,7 +43,7 @@ jobs:
         env:
           BASE_INPUT: ${{ inputs.base }}
           # renovate: datasource=go depName=golang.org/x/perf
-          BENCHSTAT_VERSION: v0.0.0-20261009192801-be2c69fb417e
+          BENCHSTAT_VERSION: v0.0.0-20261117185222-4febdb082b2c
         run: |
           set -euo pipefail
 
