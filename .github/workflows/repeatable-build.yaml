@@ -1,0 +1,150 @@
+name: Repeatable build
+
+# This workflow builds the image twice from the same commit, on separate runners and with no cache, for each platform of the release
+# image. It compares the files in the two results. It does not push anything and it reads no secret. It exists to check the OpenSSF
+# criterion build_repeatable and to show which files differ between two builds. It is not a required check, see docs/ci-cd.md.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "go.mod"
+      - "go.sum"
+      - ".github/scripts/hash-image-files.sh"
+      - ".github/workflows/repeatable-build.yaml"
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+# A run is never cancelled, so the result of a started check is always reported.
+concurrency:
+  group: repeatable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} (${{ matrix.run }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        run: [a, b]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The cache is off, because a cache hit would hide a difference. The image is written to a directory and not pushed.
+      # The version goes into the binary, so both builds of one commit get the same value, the commit hash.
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ github.sha }}
+          no-cache: true
+          provenance: false
+          sbom: false
+          outputs: type=local,dest=${{ runner.temp }}/rootfs
+
+      - name: Hash the files of the image
+        env:
+          ROOTFS: ${{ runner.temp }}/rootfs
+          MANIFEST: ${{ runner.temp }}/manifest-${{ matrix.arch }}-${{ matrix.run }}.txt
+        run: bash .github/scripts/hash-image-files.sh "$ROOTFS" > "$MANIFEST"
+
+      - name: Upload the file list
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: manifest-${{ matrix.arch }}-${{ matrix.run }}
+          path: ${{ runner.temp }}/manifest-${{ matrix.arch }}-${{ matrix.run }}.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  compare:
+    name: Compare ${{ matrix.arch }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Download the file lists
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: manifest-${{ matrix.arch }}-*
+          path: ${{ runner.temp }}/lists
+
+      # Each list is turned into "path, hash" lines sorted by path, then joined on the path. A path that only one build has gets
+      # the hash MISSING on the other side, and a path with two different hashes is a changed file. Nothing is ignored, so any
+      # difference fails the check.
+      - name: Compare the two builds
+        env:
+          ARCH: ${{ matrix.arch }}
+          LISTS: ${{ runner.temp }}/lists
+          OUT: ${{ runner.temp }}/differences.tsv
+        run: |
+          a="${LISTS}/manifest-${ARCH}-a/manifest-${ARCH}-a.txt"
+          b="${LISTS}/manifest-${ARCH}-b/manifest-${ARCH}-b.txt"
+          if [ ! -s "$a" ] || [ ! -s "$b" ]; then
+            echo "Could not compare the ${ARCH} builds, a file list is missing or empty." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 2
+          fi
+          export LC_ALL=C
+          tab=$(printf '\t')
+          keyed() {
+            sed -E -e "s/^([0-9a-f]{64})  \.\/(.*)$/\2${tab}\1/" -e "s/^link  \.\/(.*) -> (.*)$/\1${tab}link:\2/" "$1" | sort -t "$tab" -k1,1
+          }
+          join -t "$tab" -a 1 -a 2 -e MISSING -o 0,1.2,2.2 <(keyed "$a") <(keyed "$b") | awk -F "$tab" '$2 != $3' > "$OUT"
+          echo "files in build a: $(wc -l < "$a"), files in build b: $(wc -l < "$b"), paths that differ: $(wc -l < "$OUT")"
+          if [ ! -s "$OUT" ]; then
+            echo "The two ${ARCH} builds have the same file contents and symlink targets." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### The two ${ARCH} builds differ"
+            echo
+            for kind in changed "only in build a" "only in build b"; do
+              case "$kind" in
+                changed) list=$(awk -F "$tab" '$2 != "MISSING" && $3 != "MISSING" {print $1}' "$OUT") ;;
+                "only in build a") list=$(awk -F "$tab" '$3 == "MISSING" {print $1}' "$OUT") ;;
+                *) list=$(awk -F "$tab" '$2 == "MISSING" {print $1}' "$OUT") ;;
+              esac
+              [ -n "$list" ] || continue
+              echo "${kind}: $(printf '%s\n' "$list" | wc -l) paths, first 40"
+              echo
+              echo '```text'
+              printf '%s\n' "$list" | head -40
+              echo '```'
+              echo
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Upload the differences
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: differences-${{ matrix.arch }}
+          path: ${{ runner.temp }}/differences.tsv
+          if-no-files-found: ignore
+          retention-days: 14
