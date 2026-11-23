@@ -20,7 +20,7 @@ Some tools are not required on purpose.
 - The active ZAP scan is slow and attacks a throwaway stack, so it is run by hand before a release with new routes, and its report decides whether the release waits.
 - The production smoke test needs the deployed API and runs after a deploy.
 - The Cloudflare docs build can be missing on pull requests from forks.
-- DeepSource is a required gate only while the free quota lasts. Its five checks were taken out of the ruleset when the quota ran out on 2026-10-15, and they go back in when it returns.
+- DeepSource is not a required gate, on purpose. Its five checks were taken out of the ruleset when the quota ran out on 2026-10-15, and they stay out. A DeepSource with no quota never reports them, so a required DeepSource check would block every pull request. DeepSource still analyzes and comments, and its comment is read like that of any other reviewer.
 - CodeRabbit is a review aid on a trial and never a gate. Its comments are read like those of any other reviewer, and a finding is fixed or dismissed with a reason.
 
 Commits are signed. GitHub signs the merge commits and the commits of Renovate, and the release commits are made by a GitHub App, because an App that commits through the API gets a signature from GitHub, which a personal access token does not.
@@ -28,7 +28,7 @@ Commits are signed. GitHub signs the merge commits and the commits of Renovate, 
 ## Consequences
 
 - A tool that runs out of quota or changes its names does not silently stop gating. The ruleset is the single place to look, and a doc must not claim a gate that the ruleset does not hold.
-- With the DeepSource checks out, the remaining checks and a careful reading of the diff carry the load until the quota returns.
+- With the DeepSource checks out, the remaining checks and a careful reading of the diff carry the load.
 - A required check that cannot run on a bot pull request would block dependency updates, so such a check is not made required.
 - Strict checks cost a rerun when `main` moves, which is the price for a branch that was always tested on top of the latest code.
 - A cancelled duplicate of a required check keeps a pull request blocked, and the fix is to run that job again. The `Commit messages` workflow therefore never cancels a run and skips the edit of a pull request that changes neither its title nor its base branch, so a common cause is gone.
