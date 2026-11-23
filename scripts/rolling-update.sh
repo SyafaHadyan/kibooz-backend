@@ -19,7 +19,7 @@
 # old version working, because both versions run on the same database for a short while.
 #
 # Extra services. Services that run the same image but are not part of the rolling update, such as the bucket size exporter, are
-# named in EXTRAS. They are pulled with the copies, so a pull that fails stops the update before any copy is touched, and they are
+# extras. By default EXTRAS is all, which takes every other service of the image, see below. An empty EXTRAS takes none and names narrow the list. They are pulled with the copies, so a pull that fails stops the update before any copy is touched, and they are
 # recreated one after another only when every copy is healthy. An extra has to report healthy twice in a row in Docker, or running
 # twice in a row when it has no health check, within TIMEOUT. A failed extra never stops or undoes the update of the API. The
 # script says so at the end and exits with 1, and the copies stay on the new version. Every extra has to be a service of the
@@ -41,7 +41,7 @@
 #   COMPOSE_DIR   the folder with the compose file and the env file, default the folder of this script
 #   ENV_FILE      the env file that holds IMAGE_TAG, default .env, and it is passed to every compose command
 #   COPIES        the services and the host port of each, in update order, default api-1 and api-2 on API_1_HOST_PORT and API_2_HOST_PORT of the env file, which are 8000 and 8001 when unset
-#   EXTRAS        services that run the same image and are recreated after all copies are healthy, default none, for example "bucket-sizes", or all for every service of the image, see Extra services above
+#   EXTRAS        services that run the same image and are recreated after all copies are healthy, default all, which is every other service of the image, set it to an empty value for none or name services, for example "bucket-sizes", see Extra services above
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy or one extra to become healthy, default 120
 #   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
@@ -107,7 +107,7 @@ for copy in $copies; do
 done
 [ "${#services[@]}" -gt 0 ] || die "COPIES lists no service"
 
-extras_text="${EXTRAS:-}"
+extras_text="${EXTRAS-all}"
 extras=()
 # EXTRAS=all means every service of the compose file that runs the image of the version, found below once compose can be asked
 extras_all=0
@@ -343,7 +343,7 @@ fi
 # go_back prints how to return to the version that ran before, when that version is known
 go_back() {
   if [[ "$previous" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "To go back to $previous, run ROLLBACK_OK=$previous COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" ${extras_text:+EXTRAS=\"$extras_text\" }$script $previous, which warns and checks the migrations first. It stops when a migration may have run, and then MIGRATIONS_HANDLED=1 is needed after you restored the database or checked it" >&2
+    echo "To go back to $previous, run ROLLBACK_OK=$previous COMPOSE_DIR=$compose_dir ENV_FILE=$env_file COPIES=\"$copies\" EXTRAS=\"$extras_text\" $script $previous, which warns and checks the migrations first. It stops when a migration may have run, and then MIGRATIONS_HANDLED=1 is needed after you restored the database or checked it" >&2
   else
     echo "The tag before was ${previous:-not set}, so set IMAGE_TAG back by hand and run docker compose up -d --no-deps for each updated copy" >&2
   fi
