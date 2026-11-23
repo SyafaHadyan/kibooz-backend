@@ -12,6 +12,9 @@
 [![Fuzz](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/fuzz.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/fuzz.yaml)
 [![Links](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/links.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/links.yaml)
 [![Repeatable build](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/repeatable-build.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/repeatable-build.yaml)
+[![Benchmarks](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/bench.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/bench.yaml)
+[![Mutation testing](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/mutation.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/mutation.yaml)
+[![Release Please](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/release-please.yaml/badge.svg?branch=main)](https://github.com/SyafaHadyan/kibooz-backend/actions/workflows/release-please.yaml)
 
 [![Release](https://img.shields.io/github/v/release/SyafaHadyan/kibooz-backend?sort=semver)](https://github.com/SyafaHadyan/kibooz-backend/releases)
 [![License](https://img.shields.io/github/license/SyafaHadyan/kibooz-backend)](LICENSE)
