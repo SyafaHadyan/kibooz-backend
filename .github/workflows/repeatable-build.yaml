@@ -98,6 +98,7 @@ jobs:
       # the hash MISSING on the other side, and a path with two different hashes is a changed file. Nothing is ignored, so any
       # difference fails the check.
       - name: Compare the two builds
+        shell: bash
         env:
           ARCH: ${{ matrix.arch }}
           LISTS: ${{ runner.temp }}/lists
@@ -114,7 +115,16 @@ jobs:
           keyed() {
             sed -E -e "s/^([0-9a-f]{64})  \.\/(.*)$/\2${tab}\1/" -e "s/^link  \.\/(.*) -> (.*)$/\1${tab}link:\2/" "$1" | sort -t "$tab" -k1,1
           }
-          join -t "$tab" -a 1 -a 2 -e MISSING -o 0,1.2,2.2 <(keyed "$a") <(keyed "$b") | awk -F "$tab" '$2 != $3' > "$OUT"
+          join -t "$tab" -a 1 -a 2 -e MISSING -o 0,1.2,2.2 <(keyed "$a") <(keyed "$b") > "${OUT}.joined"
+          # A failed join inside a process substitution is not seen by the shell, so the line count is the guard. The joined list has
+          # at least as many lines as the longer file list, or something went wrong and the check must not pass.
+          longest=$(wc -l < "$a")
+          [ "$(wc -l < "$b")" -le "$longest" ] || longest=$(wc -l < "$b")
+          if [ "$(wc -l < "${OUT}.joined")" -lt "$longest" ]; then
+            echo "Could not compare the ${ARCH} builds, the joined list has fewer lines than a file list." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 2
+          fi
+          awk -F "$tab" '$2 != $3' "${OUT}.joined" > "$OUT"
           echo "files in build a: $(wc -l < "$a"), files in build b: $(wc -l < "$b"), paths that differ: $(wc -l < "$OUT")"
           if [ ! -s "$OUT" ]; then
             echo "The two ${ARCH} builds have the same file contents and symlink targets." | tee -a "$GITHUB_STEP_SUMMARY"
