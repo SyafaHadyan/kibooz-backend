@@ -51,7 +51,7 @@ services:
     logging: *default-logging
 
   db:
-    image: postgres:18-alpine
+    image: postgres:19-alpine
     container_name: kibooz-db
     restart: always
     # a fast shutdown of PostgreSQL ends with a checkpoint, which the default 10 seconds can cut short. The database has
