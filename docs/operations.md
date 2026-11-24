@@ -165,16 +165,18 @@ A volume from an older PostgreSQL major version does not start on PostgreSQL 19,
 
 A PostgreSQL image refuses to start on a volume that holds the data of another major version. The new version therefore needs its own empty volume, and the data moves with a dump. The old volume stays untouched, so it is the way back.
 
-Plan the downtime first. The restore takes longer than the dump, and the time grows with the size of the data. Nothing may write to the database between the dump and the end of the restore, because a later write is lost.
+These steps are for the `db` service of `compose.yml`. A PostgreSQL server in its own stack, as in `compose.production.example.yml`, follows the same method with the compose file and the data folder of that stack.
 
-1. Stop the API with `docker compose stop api`, and stop every other client of the database.
-2. Note the row count of every table with the query below, so the new database can be compared with it.
-3. Dump every database with `docker compose exec -T db sh -c 'pg_dumpall -U "$POSTGRES_USER"' | gzip > backup.sql.gz`. Check that the file is not empty and that its last line reads `PostgreSQL database cluster dump complete`. Keep a copy off the host.
+Plan the downtime first. The restore takes longer than the dump, and the time grows with the size of the data. Nothing may write to the database between the dump and the end of the restore, because the dump does not hold a write that happens after it.
+
+1. Stop the API with `docker compose stop api`, and stop every other program that writes to the database. Do not restart the host before step 8, because the restart policy `always` starts a stopped container again after a host restart.
+2. Save the query below as `count.sql`, and run `docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' < count.sql > counts-before.txt`. It counts the rows of the database named in `POSTGRES_DB`. Repeat it with another name after `-d` for every other database.
+3. Dump every database with `docker compose exec -T db sh -c 'pg_dumpall -U "$POSTGRES_USER"' | gzip > backup.sql.gz`. Then run `gunzip -c backup.sql.gz | tail -n 5` and check that it shows `PostgreSQL database cluster dump complete`. A pipe hides a failed dump from the exit code, so this check matters. Keep a copy of the file off the host.
 4. Stop the old container with `docker compose stop db`. In `compose.yml` set the new image and rename the volume `kibooz-db` to a new name such as `kibooz-db-19`, in the `db` service and in the `volumes` list at the end of the file.
 5. Start the new container with `docker compose up -d db` and wait until it is healthy.
-6. Load the dump with `gunzip -c backup.sql.gz | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres'`. The only error to expect is that the role of the database user already exists.
-7. Run the row count query again and compare the two outputs. If one table differs, stop and roll back.
-8. Run `ANALYZE` in each database, because the new database has no statistics yet. Then start the API with `docker compose up -d`, and check `/healthz` and the log.
+6. Load the dump with `gunzip -c backup.sql.gz | docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres'`. Two errors are expected, that the role of the database user already exists and that the database named in `POSTGRES_DB` already exists. Any other error means stop and roll back.
+7. Run the command of step 2 again with `> counts-after.txt`, and compare the files with `diff counts-before.txt counts-after.txt`. If anything differs, stop and roll back.
+8. Run `docker compose exec -T db sh -c 'vacuumdb -U "$POSTGRES_USER" --all --analyze-only'`, because the new database has no statistics yet. Then start the API with `docker compose up -d`, and check `/healthz` and the log.
 
 ```sql
 select table_schema || '.' || table_name,
@@ -184,7 +186,7 @@ where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog', 'informat
 order by 1;
 ```
 
-To roll back, stop `db`, put the old image and the old volume name back in `compose.yml`, and run `docker compose up -d`. Remove the old volume with `docker volume rm` only after the new version has run well for a while.
+To roll back, stop `db`, put the old image and the old volume name back in `compose.yml`, and run `docker compose up -d`. Writes that the API made on the new database are lost when you go back. Remove the old volume with `docker volume rm` only after the new version has run well for a while.
 
 ## Secrets
 
