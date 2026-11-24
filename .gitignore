@@ -33,3 +33,6 @@ node_modules/
 __pycache__/
 /ci-certs/
 /ci-curl/
+
+# A log file that a tool or a shell redirect leaves in the repository root
+/log
