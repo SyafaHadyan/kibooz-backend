@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.21.2](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.1...v0.21.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ci:** run the Vale action with reviewdog 0.21.3 to try to stop the check run 404 ([37dc437](https://github.com/SyafaHadyan/kibooz-backend/commit/37dc437cba0616c7bf43654c04dbe39ec259676f))
+* **ci:** run the Vale action with reviewdog 0.21.3 to try to stop the check run 404 ([#467](https://github.com/SyafaHadyan/kibooz-backend/issues/467)) ([1e944c5](https://github.com/SyafaHadyan/kibooz-backend/commit/1e944c59b9a4baa65cc7f96c810eeaa61ef4f49d))
+* **deploy:** update the other services of the image by default in the rolling update script ([a49318d](https://github.com/SyafaHadyan/kibooz-backend/commit/a49318d9f8744a44c526957dd243a8b73f33bcdd))
+* **deploy:** update the other services of the image by default in the rolling update script ([#442](https://github.com/SyafaHadyan/kibooz-backend/issues/442)) ([d9ae29a](https://github.com/SyafaHadyan/kibooz-backend/commit/d9ae29a31f1adea4309ff71d80bc3e77a17151b5))
+
 ## [0.21.1](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.0...v0.21.1) (2026-11-23)
 
 
