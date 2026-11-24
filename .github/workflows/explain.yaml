@@ -1,6 +1,6 @@
 name: Explain plans
 
-# Seeds a throwaway PostgreSQL 18 on the runner with accounts, classes, chats and rows in every table, calls every method of every
+# Seeds a throwaway PostgreSQL 19 on the runner with accounts, classes, chats and rows in every table, calls every method of every
 # repository that reads and the jobs that run on their own, and writes the EXPLAIN plans. The database is a container of the job
 # and never the one of the VPS, and nothing here touches production.
 #
@@ -34,7 +34,7 @@ jobs:
       contents: read
     services:
       postgres:
-        image: mirror.gcr.io/library/postgres:18-alpine
+        image: mirror.gcr.io/library/postgres:19-alpine
         env:
           POSTGRES_USER: kibooz
           POSTGRES_PASSWORD: kibooz
