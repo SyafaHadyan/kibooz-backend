@@ -23,6 +23,13 @@ import (
 
 const uniqueViolation = "23505"
 
+// PendingAccount is an account that waits for the code of its email, with what its removal needs
+type PendingAccount struct {
+	ID           uuid.UUID
+	Role         constants.Role
+	PasswordHash string
+}
+
 type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
@@ -34,6 +41,12 @@ type AuthDBItf interface {
 	// uses, and nil when none is. An empty NIP or NISN is not looked up. It lets a registration that cannot succeed be refused
 	// before the password hash, and the unique indexes still decide when two registrations race.
 	RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error
+	// StalePendingAccounts returns the accounts that wait for the code of their email since before the given time and that use the
+	// email or the NIP, so a new registration can replace them. An empty NIP is not looked up.
+	StalePendingAccounts(ctx context.Context, email string, nip string, before time.Time) ([]PendingAccount, error)
+	// OlderPendingAccounts returns up to limit accounts that wait for the code of their email since before the given time, the
+	// oldest first
+	OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]PendingAccount, error)
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
 	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
@@ -76,7 +89,12 @@ type SendRule struct {
 	Cooldown time.Duration
 	// PerHour is the most codes in an hour, the new one included
 	PerHour int
+	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap.
+	MaxTotal int
 }
+
+// ErrCodeLimit means that the account has had all the codes that it may have, so no new code is stored
+var ErrCodeLimit = errors.New("the account reached the cap of codes")
 
 // RotationPolicy holds the limits of swapping a refresh token
 type RotationPolicy struct {
@@ -565,11 +583,12 @@ func (r *AuthDB) StoreVerification(
 			LastSentAt      time.Time
 			WindowStartedAt time.Time
 			SendsInWindow   int
+			SendsTotal      int
 		}
 
 		// the row of the account is locked, so two requests for a code cannot both pass the cooldown
 		err := tx.Raw(
-			"SELECT last_sent_at, window_started_at, sends_in_window FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
+			"SELECT last_sent_at, window_started_at, sends_in_window, sends_total FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
 		).Scan(&rows).Error
 		if err != nil {
 			return err
@@ -579,12 +598,17 @@ func (r *AuthDB) StoreVerification(
 
 		if len(rows) == 0 {
 			return tx.Exec(
-				`INSERT INTO email_verifications (user_id, code_hash, expires_at, attempts, last_sent_at, window_started_at, sends_in_window)
-				VALUES (?, ?, ?, 0, ?, ?, 1)`, userID, codeHash, expires, now, now,
+				`INSERT INTO email_verifications (user_id, code_hash, expires_at, attempts, last_sent_at, window_started_at, sends_in_window, sends_total)
+				VALUES (?, ?, ?, 0, ?, ?, 1, 1)`, userID, codeHash, expires, now, now,
 			).Error
 		}
 
 		last := rows[0]
+
+		// the cap comes before the waits, because waiting does not help an account that has no codes left
+		if rule.MaxTotal > 0 && last.SendsTotal >= rule.MaxTotal {
+			return ErrCodeLimit
+		}
 
 		if elapsed := now.Sub(last.LastSentAt); elapsed < rule.Cooldown {
 			wait = rule.Cooldown - elapsed
@@ -605,7 +629,7 @@ func (r *AuthDB) StoreVerification(
 
 		return tx.Exec(
 			`UPDATE email_verifications SET code_hash = ?, expires_at = ?, attempts = 0, last_sent_at = ?, window_started_at = ?,
-				sends_in_window = ? WHERE user_id = ?`, codeHash, expires, now, windowStart, sent+1, userID,
+				sends_in_window = ?, sends_total = sends_total + 1 WHERE user_id = ?`, codeHash, expires, now, windowStart, sent+1, userID,
 		).Error
 	})
 
@@ -668,7 +692,33 @@ func (r *AuthDB) CheckVerification(
 
 func (r *AuthDB) ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error {
 	return r.db.WithContext(ctx).Exec(
-		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0)
+		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0),
+			sends_total = GREATEST(sends_total - 1, 0)
 		WHERE user_id = ? AND code_hash = ?`, now.Add(-cooldown), userID, codeHash,
 	).Error
+}
+
+func (r *AuthDB) StalePendingAccounts(ctx context.Context, email string, nip string, before time.Time) ([]PendingAccount, error) {
+	var accounts []PendingAccount
+
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT id, role, password_hash FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ?
+			AND (email = ? OR (? <> '' AND id IN (SELECT user_id FROM gurus WHERE nip = ? AND deleted_at IS NULL)))
+		LIMIT 5`, before, email, nip, nip,
+	).Scan(&accounts).Error
+
+	return accounts, err
+}
+
+func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]PendingAccount, error) {
+	var accounts []PendingAccount
+
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT id, role, password_hash FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ?
+		ORDER BY created_at LIMIT ?`, before, limit,
+	).Scan(&accounts).Error
+
+	return accounts, err
 }

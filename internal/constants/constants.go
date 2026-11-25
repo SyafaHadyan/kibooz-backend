@@ -151,6 +151,13 @@ const (
 	// EmailSendsPerHour is the most codes that one account can have sent in an hour, the first one included
 	EmailSendsPerHour = 5
 
+	// PendingReplaceAfterHours is how long an account waits for the code of its email before a new registration with its email or
+	// NIP may replace it
+	PendingReplaceAfterHours = 24
+
+	// PendingPurgeAfterDays is how long an account waits for the code of its email before a job removes it
+	PendingPurgeAfterDays = 7
+
 	// JSONBodyMaxBytes is the largest body of any request except the three photo uploads (the avatar, the trash photo and the photo of a chat message). The largest real
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024

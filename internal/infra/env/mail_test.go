@@ -17,7 +17,24 @@ func TestAVerificationThatRequiresTheCodeNeedsAKeyToSendIt(t *testing.T) {
 	require.ErrorContains(t, cfg.validate(), "RESEND_API_KEY", "a key of spaces is no key")
 
 	cfg.ResendAPIKey = "re_testkey"
+	cfg.EmailCodesMaxPerAccount = 20
 	require.NoError(t, cfg.validate())
+}
+
+func TestTheCapOfCodesNeedsAtLeastOneCodeWhileTheVerificationIsRequired(t *testing.T) {
+	cfg := valid()
+	cfg.EmailVerificationRequired = true
+	cfg.ResendAPIKey = "re_testkey"
+
+	cfg.EmailCodesMaxPerAccount = 0
+	require.ErrorContains(t, cfg.validate(), "EMAIL_CODES_MAX_PER_ACCOUNT")
+
+	cfg.EmailCodesMaxPerAccount = 1
+	require.NoError(t, cfg.validate())
+
+	cfg.EmailVerificationRequired = false
+	cfg.EmailCodesMaxPerAccount = 0
+	require.NoError(t, cfg.validate(), "the cap is not used while the verification is off")
 }
 
 func TestTheMailSettingsHaveSafeDefaults(t *testing.T) {
@@ -29,6 +46,7 @@ func TestTheMailSettingsHaveSafeDefaults(t *testing.T) {
 	require.Empty(t, cfg.ResendAPIKey)
 	require.Equal(t, "https://api.resend.com", cfg.ResendAPIURL)
 	require.Equal(t, "no-reply@mail.syafahadyan.com", cfg.EmailFrom)
+	require.Equal(t, 20, cfg.EmailCodesMaxPerAccount)
 }
 
 func TestTheResendAddressIsHttpsOrALoopbackAddress(t *testing.T) {

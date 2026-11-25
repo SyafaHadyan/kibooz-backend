@@ -144,7 +144,7 @@ func (u *AuthUseCase) GoogleRegister(ctx context.Context, req dto.GoogleRegister
 		nisn = strings.TrimSpace(req.Student.NISN)
 	}
 
-	if err := u.repo.RegistrationTaken(ctx, normalizeEmail(claims.Email), nip, nisn); err != nil {
+	if err := u.registrationTaken(ctx, normalizeEmail(claims.Email), nip, nisn); err != nil {
 		return dto.AuthResponse{}, wrap(err)
 	}
 

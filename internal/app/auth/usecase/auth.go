@@ -78,14 +78,24 @@ type AuthUseCase struct {
 	google *googleauth.SwitchableVerifier
 
 	mail mailer.Sender
+	// removeAccount removes an account that waited too long for its code, nil when none is ever replaced
+	removeAccount AccountRemover
 	// mails counts the codes that were handed to the mail service, by result
 	mails *prometheus.CounterVec
 	// report sends a failure to the error reports, a field for the tests
 	report func(error)
 }
 
+// AccountRemover removes an account that waits for the code of its email, with everything that hangs on it
+type AccountRemover func(ctx context.Context, account repository.PendingAccount) error
+
 // Option changes how the use case is built, and the tests use it to put a fake in place of a part
 type Option func(*AuthUseCase)
+
+// WithAccountRemover sets what removes an account that waited too long for its code. Without it no account is ever replaced.
+func WithAccountRemover(remove AccountRemover) Option {
+	return func(u *AuthUseCase) { u.removeAccount = remove }
+}
 
 // WithMailer sets what sends the mail. Without it nothing can be sent and a new account has to ask for its code again.
 func WithMailer(sender mailer.Sender) Option {
@@ -208,7 +218,7 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		nisn = strings.TrimSpace(req.Student.NISN)
 	}
 
-	err := u.repo.RegistrationTaken(ctx, normalizeEmail(req.Email), nip, nisn)
+	err := u.registrationTaken(ctx, normalizeEmail(req.Email), nip, nisn)
 	if err != nil {
 		return dto.AuthResponse{}, apperror.As(err)
 	}
@@ -267,6 +277,36 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	}
 
 	return u.withDeviceToken(res, user, "")
+}
+
+// registrationTaken is RegistrationTaken, except that an email or a NIP that only an account holds that has waited for its code for
+// more than a day is let go. That account is removed and the registration goes on. It only works while the verification of the
+// email is required, because an account that waits for a code can sign in when it is not.
+func (u *AuthUseCase) registrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+	err := u.repo.RegistrationTaken(ctx, email, nip, nisn)
+	if err == nil || !u.cfg.EmailVerificationRequired || u.removeAccount == nil {
+		return err
+	}
+
+	if code := apperror.As(err).Code; code != apperror.ErrEmailTaken.Code && code != apperror.ErrNIPTaken.Code {
+		return err
+	}
+
+	stale, lookupErr := u.repo.StalePendingAccounts(ctx, email, nip, u.now().Add(-constants.PendingReplaceAfterHours*time.Hour))
+	if lookupErr != nil || len(stale) == 0 {
+		return err
+	}
+
+	for _, account := range stale {
+		removeErr := u.removeAccount(ctx, account)
+		if removeErr != nil {
+			log.Printf("an account that waited for its code was not replaced %v", removeErr)
+
+			return err
+		}
+	}
+
+	return u.repo.RegistrationTaken(ctx, email, nip, nisn)
 }
 
 // pendingRegistration answers the registration of an account that waits for its code, after it sent the first one. The account
@@ -448,7 +488,12 @@ func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) 
 		TTL:      constants.EmailCodeTTLMinutes * time.Minute,
 		Cooldown: constants.EmailResendCooldownSeconds * time.Second,
 		PerHour:  constants.EmailSendsPerHour,
+		MaxTotal: u.cfg.EmailCodesMaxPerAccount,
 	})
+	if errors.Is(err, repository.ErrCodeLimit) {
+		return false, apperror.ErrCodeLimitReached
+	}
+
 	if err != nil {
 		return false, apperror.Internal(err)
 	}

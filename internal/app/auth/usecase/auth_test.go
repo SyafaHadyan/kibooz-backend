@@ -30,6 +30,11 @@ import (
 )
 
 type fakeRepo struct {
+	// stale is what the lookup of accounts that waited too long finds, staleBefore the time it was asked about and staleErr makes it fail
+	stale       []repository.PendingAccount
+	staleBefore time.Time
+	staleErr    error
+
 	user        *entity.User
 	rotateErrs  []error
 	rotateCalls int
@@ -151,6 +156,16 @@ func (f *fakeRepo) RotateRefreshToken(
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
+
+func (f *fakeRepo) StalePendingAccounts(_ context.Context, _ string, _ string, before time.Time) ([]repository.PendingAccount, error) {
+	f.staleBefore = before
+
+	return f.stale, f.staleErr
+}
+
+func (f *fakeRepo) OlderPendingAccounts(context.Context, time.Time, int) ([]repository.PendingAccount, error) {
+	return f.stale, f.staleErr
+}
 
 func (f *fakeRepo) StoreVerification(
 	_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ repository.SendRule,

@@ -466,6 +466,12 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("auth, give back a verification send", func(ctx context.Context) error {
 		return auth.ReleaseVerification(ctx, parent, "z", now.Add(2*time.Minute), time.Minute)
 	})
+	call("auth, find the accounts that waited a day for their code", func(ctx context.Context) error {
+		return drop(auth.StalePendingAccounts(ctx, "explain-wali@example.test", "123456", now.Add(-24*time.Hour)))
+	})
+	call("auth, find the accounts that waited a week for their code", func(ctx context.Context) error {
+		return drop(auth.OlderPendingAccounts(ctx, now.Add(-7*24*time.Hour), 100))
+	})
 	call("auth, check a wrong verification code", func(ctx context.Context) error {
 		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
 
