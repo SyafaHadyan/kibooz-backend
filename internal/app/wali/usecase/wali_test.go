@@ -83,6 +83,10 @@ func (f *fakeRepo) ListMoves(_ context.Context, waliID uuid.UUID, studentID uuid
 	return f.moveRows, f.moveErr
 }
 
+func (f *fakeRepo) ListChildHistory(context.Context, uuid.UUID, string, int, int) ([]repository.WaliHistoryRow, int, error) {
+	return nil, 0, nil
+}
+
 func (f *fakeRepo) FindWaliByUserID(context.Context, uuid.UUID) (*entity.Wali, error) {
 	return f.wali, f.waliErr
 }

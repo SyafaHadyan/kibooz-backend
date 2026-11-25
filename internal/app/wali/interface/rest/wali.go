@@ -39,6 +39,7 @@ func NewWaliHandler(router fiber.Router, mw middleware.MiddlewareItf, classCodeL
 	group.Post("/children/:studentId/move-requests", idempotent, classCodeLimiter, handler.RequestMove)
 	group.Get("/children/:studentId/move-requests", handler.MoveRequests)
 	group.Get("/children/:studentId/previous-classes", handler.PreviousClasses)
+	group.Get("/children/:studentId/history", handler.ChildHistory)
 	group.Delete("/children/:studentId/move-requests/:requestId", handler.CancelMove)
 
 	router.Get("/trash/stats", mw.Authentication, mw.RequireRole(constants.RoleWali), handler.TrashStats)
