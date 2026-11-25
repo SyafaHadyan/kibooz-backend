@@ -71,6 +71,7 @@ Email, NIP and NISN can be used again after the account that held them is delete
 | `FORUM_POST_NOT_FOUND` | 404 | The thread or reply does not exist, or was deleted | Refresh the thread or its replies |
 | `VIDEO_NOT_FOUND` | 404 | The learning video does not exist, or was removed | Refresh the video list |
 | `CHAT_CONVERSATION_NOT_FOUND` | 404 | The conversation does not exist, or the signed in account is not one of its two people or a member of the class of the room. Both get the same answer on purpose | Refresh the conversation list |
+| `NOTIFICATION_NOT_FOUND` | 404 | The notification does not exist, or it belongs to another account. Both get the same answer on purpose | Refresh the notification list |
 | `CHAT_MESSAGE_NOT_FOUND` | 404 | The conversation has no message with this id | Refresh the messages |
 | `NOT_FOUND` | 404 | The route does not exist | This is a bug in the app |
 

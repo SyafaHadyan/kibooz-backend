@@ -4809,7 +4809,11 @@ components:
           format: uuid
         kind:
           type: string
-          example: mood_logged
+          enum: [mood_logged, guidance_applied, move_requested, move_decided, video_added]
+          description: >-
+            What happened. `mood_logged` goes to the parent of the child, `guidance_applied` and `move_requested` go to the
+            teachers of the class, `move_decided` goes to the parent who asked for the move, and `video_added` goes to the
+            parents of the class.
         title:
           type: string
         body:
@@ -4817,10 +4821,13 @@ components:
         referenceType:
           type: string
           nullable: true
+          enum: [mood_log, guidance_application, move_request, video]
+          description: The kind of record that caused the notification, or null when there is none
         referenceId:
           type: string
           format: uuid
           nullable: true
+          description: The id of the record that caused the notification, or null when there is none
         readAt:
           type: string
           format: date-time
