@@ -443,6 +443,33 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		}))
 	})
 	call("auth, delete a refresh token", func(ctx context.Context) error { return auth.DeleteRefreshToken(ctx, spare) })
+	rule := authrepository.SendRule{TTL: 15 * time.Minute, Cooldown: time.Minute, PerHour: 5}
+
+	call("auth, store the first verification code", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "x", now, rule)
+
+		return err
+	})
+	call("auth, store a verification code before the cooldown is over", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "y", now.Add(time.Second), rule)
+
+		return err
+	})
+	call("auth, replace a verification code", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "z", now.Add(2*time.Minute), rule)
+
+		return err
+	})
+	call("auth, check a wrong verification code", func(ctx context.Context) error {
+		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
+
+		return err
+	})
+	call("auth, check the right verification code", func(ctx context.Context) error {
+		_, err := auth.CheckVerification(ctx, parent, "z", now.Add(3*time.Minute), 5)
+
+		return err
+	})
 	call("chat, get or create a conversation", func(ctx context.Context) error {
 		low, high := teacher, parent
 		if strings.Compare(low.String(), high.String()) > 0 {

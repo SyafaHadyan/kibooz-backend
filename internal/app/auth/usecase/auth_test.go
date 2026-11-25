@@ -58,6 +58,21 @@ type fakeRepo struct {
 	// taken is what the check of the email, the NIP and the NISN answers, and takenChecks keeps what it was asked
 	taken       error
 	takenChecks [][3]string
+
+	// createdUser is the account that a registration stored, and live holds the code of the account that waits for its email
+	createdUser *entity.User
+	live        liveCode
+	storeWait   time.Duration
+	storeErr    error
+	checkErr    error
+	stores      int
+}
+
+// liveCode is the one code of an account that waits for its email, as the repository would keep it
+type liveCode struct {
+	userID   uuid.UUID
+	hash     string
+	attempts int
 }
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
@@ -77,23 +92,25 @@ func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string
 	return f.taken
 }
 
-func (f *fakeRepo) CreateGuru(_ context.Context, _ *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
+func (f *fakeRepo) CreateGuru(_ context.Context, user *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
 
+	f.createdUser = user
 	f.registered = session
 
 	return nil
 }
 
 func (f *fakeRepo) CreateWali(
-	_ context.Context, _ *entity.User, _ *entity.Wali, _ string, _ *entity.Student, session *entity.RefreshToken,
+	_ context.Context, user *entity.User, _ *entity.Wali, _ string, _ *entity.Student, session *entity.RefreshToken,
 ) (uuid.UUID, error) {
 	if f.createErr != nil {
 		return uuid.Nil, f.createErr
 	}
 
+	f.createdUser = user
 	f.registered = session
 
 	return uuid.Nil, nil
@@ -133,6 +150,41 @@ func (f *fakeRepo) RotateRefreshToken(
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
+
+func (f *fakeRepo) StoreVerification(
+	_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ repository.SendRule,
+) (time.Duration, error) {
+	f.stores++
+
+	if f.storeErr != nil || f.storeWait > 0 {
+		return f.storeWait, f.storeErr
+	}
+
+	f.live = liveCode{userID: userID, hash: codeHash}
+
+	return 0, nil
+}
+
+// CheckVerification follows the contract of the real one, a wrong code counts an attempt and a used up code is only refused
+func (f *fakeRepo) CheckVerification(_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, maxAttempts int) (bool, error) {
+	if f.checkErr != nil {
+		return false, f.checkErr
+	}
+
+	if f.live.userID != userID || f.live.hash == "" || f.live.attempts >= maxAttempts {
+		return false, nil
+	}
+
+	if f.live.hash != codeHash {
+		f.live.attempts++
+
+		return false, nil
+	}
+
+	f.live = liveCode{}
+
+	return true, nil
+}
 
 // fakeCache follows the contract of the real cache, a missing key is never flagged as used
 type fakeCache struct{ keys map[string]string }

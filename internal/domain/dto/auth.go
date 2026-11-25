@@ -44,6 +44,29 @@ type LoginRequest struct {
 	DeviceToken string `json:"deviceToken" validate:"omitempty,max=256"`
 }
 
+// VerifyEmailRequest sends back the code that the mail of a new account carried
+type VerifyEmailRequest struct {
+	Email string `json:"email" validate:"required,email,max=255"`
+	Code  string `json:"code" validate:"required,len=6,numeric"`
+}
+
+// ResendVerificationRequest asks for a new code. The password proves that the caller made the account, so the route cannot be used
+// to send mail to an address that the caller does not hold.
+type ResendVerificationRequest struct {
+	Email    string `json:"email" validate:"required,email,max=255"`
+	Password string `json:"password" validate:"required,max=72"`
+}
+
+// VerificationResponse says what happened to the code of an account that waits for its email
+type VerificationResponse struct {
+	// Sent is false when the mail could not be sent. The account exists and a new code can be asked for after ResendAfterSeconds.
+	Sent bool `json:"sent"`
+	// ExpiresInSeconds is how long the code works
+	ExpiresInSeconds int `json:"expiresInSeconds"`
+	// ResendAfterSeconds is the wait before a new code can be asked for
+	ResendAfterSeconds int `json:"resendAfterSeconds"`
+}
+
 type RefreshRequest struct {
 	RefreshToken string `json:"refreshToken" validate:"required,max=128"`
 }
@@ -67,4 +90,9 @@ type AuthResponse struct {
 
 	// DeviceToken is set by register and login, and is empty for a token refresh
 	DeviceToken string `json:"deviceToken,omitempty"`
+
+	// VerificationRequired is true for a new account that has to send back the code of its email. Token and RefreshToken are
+	// empty then, and Verification says whether the mail went out.
+	VerificationRequired bool                  `json:"verificationRequired,omitempty"`
+	Verification         *VerificationResponse `json:"verification,omitempty"`
 }
