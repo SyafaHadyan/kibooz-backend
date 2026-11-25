@@ -5724,6 +5724,7 @@ components:
           type: string
         actorName:
           type: string
+          description: The teacher or parent who did the event. A deleted account shows as `Deleted account`.
         moodType:
           $ref: "#/components/schemas/Mood"
         confidenceScore:
