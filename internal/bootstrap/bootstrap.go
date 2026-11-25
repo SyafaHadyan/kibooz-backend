@@ -24,6 +24,9 @@ import (
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
+	notificationhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/interface/rest"
+	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/usecase"
 	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	pushusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/push/usecase"
@@ -51,6 +54,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -165,18 +169,26 @@ func Start(version string) (*Bootstrap, error) {
 	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
 	))
-	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
+	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
+	notificationhandler.NewNotificationHandler(app.Router, mw, notifUC)
+
+	waliUC := waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
-	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
+	)
+	guruUC := guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
+	)
+	classroomUC := classroomusecase.NewClassroomUseCase(
+		classroomrepository.NewClassroomDB(database), retrying, cfg,
+	)
+	attachNotifier(notifUC, waliUC, guruUC, classroomUC)
+
+	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliUC)
+	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruUC)
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, retrying, cfg,
 	))
-	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
-		classroomrepository.NewClassroomDB(database), retrying, cfg,
-	))
+	classroomhandler.NewClassroomHandler(app.Router, mw, classroomUC)
 	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
 	hub := chatlive.NewHub(chatlive.Config{
 		MaxSockets: cfg.ChatMaxSockets, MaxPerUser: cfg.ChatMaxSocketsPerUser, Bus: chatlive.NewRedisBus(cache),
@@ -317,6 +329,18 @@ func (b *Bootstrap) Close() {
 	_ = b.Redis.Close()
 
 	b.stopReports()
+}
+
+type notifierSetter interface {
+	SetNotifier(n notifier.Notifier)
+}
+
+func attachNotifier(n notifier.Notifier, targets ...any) {
+	for _, target := range targets {
+		if s, ok := target.(notifierSetter); ok {
+			s.SetNotifier(n)
+		}
+	}
 }
 
 type pinger func(ctx context.Context) error

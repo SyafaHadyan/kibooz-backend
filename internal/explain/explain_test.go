@@ -28,6 +28,7 @@ import (
 	chatrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/repository"
 	classroomrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	gururepository "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
+	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	trashrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
@@ -262,6 +263,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	chat := chatrepository.NewChatDB(logged)
 	classroom := classroomrepository.NewClassroomDB(logged)
 	guruRepo := gururepository.NewGuruDB(logged, keyOf)
+	notifRepo := notificationrepository.NewNotificationDB(logged)
 	pushRepo := pushrepository.NewPushDB(logged)
 	trash := trashrepository.NewTrashDB(logged)
 	userRepo := userrepository.NewUserDB(logged)
@@ -362,6 +364,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("guru, teachers of a class", func(ctx context.Context) error { return drop(guruRepo.ListTeachers(ctx, class)) })
 	call("push, tokens of the people of a conversation", func(ctx context.Context) error {
 		return drop(pushRepo.TokensOf(ctx, []uuid.UUID{teacher, parent, id("wali2"), id("wali3")}))
+	})
+	call("notification, list of a parent", func(ctx context.Context) error {
+		_, _, _, err := notifRepo.List(ctx, parent, false, 20, 0)
+		return err
 	})
 	call("trash, find the parent id", func(ctx context.Context) error { return drop(trash.FindWaliIDByUserID(ctx, parent)) })
 	call("trash, find the teacher id", func(ctx context.Context) error { return drop(trash.FindGuruIDByUserID(ctx, teacher)) })
@@ -610,6 +616,29 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return pushRepo.DeleteTokenValues(ctx, []string{
 			fmt.Sprintf("%x%x", md5.Sum([]byte("p2")), md5.Sum([]byte("q2"))), fmt.Sprintf("%x%x", md5.Sum([]byte("p3")), md5.Sum([]byte("q3"))),
 		})
+	})
+	call("notification, notify student parent", func(ctx context.Context) error {
+		return notifRepo.CreateForStudentParent(ctx, &entity.Notification{Kind: "mood_logged", Title: "T", Body: "B", CreatedAt: now}, child)
+	})
+	call("notification, notify class teachers", func(ctx context.Context) error {
+		return notifRepo.CreateForClassTeachers(ctx, &entity.Notification{Kind: "guidance_applied", Title: "T", Body: "B", CreatedAt: now}, class)
+	})
+	call("notification, notify class parents", func(ctx context.Context) error {
+		return notifRepo.CreateForClassParents(ctx, &entity.Notification{Kind: "video_added", Title: "T", Body: "B", CreatedAt: now}, class)
+	})
+	call("notification, notify move request parent", func(ctx context.Context) error {
+		return notifRepo.CreateForMoveRequestParent(ctx, &entity.Notification{Kind: "move_decided", Title: "T", Body: "B", CreatedAt: now}, accepted)
+	})
+	call("notification, mark one read", func(ctx context.Context) error {
+		rows, _, _, err := notifRepo.List(ctx, parent, false, 1, 0)
+		if err != nil || len(rows) == 0 {
+			return err
+		}
+
+		return okOnly(notifRepo.MarkRead(ctx, parent, rows[0].ID, now))
+	})
+	call("notification, mark all read", func(ctx context.Context) error {
+		return notifRepo.MarkAllRead(ctx, parent, now)
 	})
 	call("user, set the avatar of an account", func(ctx context.Context) error { return matched(userRepo.UpdateUserAvatar(ctx, parent, avatarURL)) })
 	call("user, set the avatar of a child", func(ctx context.Context) error {

@@ -22,6 +22,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -76,14 +77,19 @@ var videoTypes = map[string]string{"video/mp4": ".mp4", "video/webm": ".webm"}
 const bytesPerMB = 1024 * 1024
 
 type ClassroomUseCase struct {
-	repo    repository.ClassroomDBItf
-	storage s3.StorageItf
-	cfg     *env.Env
-	now     func() time.Time
+	repo     repository.ClassroomDBItf
+	storage  s3.StorageItf
+	cfg      *env.Env
+	now      func() time.Time
+	notifier notifier.Notifier
 }
 
 func NewClassroomUseCase(repo repository.ClassroomDBItf, storage s3.StorageItf, cfg *env.Env) ClassroomUseCaseItf {
 	return &ClassroomUseCase{repo: repo, storage: storage, cfg: cfg, now: time.Now}
+}
+
+func (u *ClassroomUseCase) SetNotifier(n notifier.Notifier) {
+	u.notifier = n
 }
 
 func (u *ClassroomUseCase) ListVideos(
@@ -201,6 +207,18 @@ func (u *ClassroomUseCase) AddVideo(ctx context.Context, userID uuid.UUID, class
 	if stagedKey != "" {
 		// the staged file is only a leftover now, and the bucket removes it anyway if this fails
 		s3.Discard(ctx, u.storage, stagedKey)
+	}
+
+	if u.notifier != nil {
+		u.notifier.NotifyClassParents(
+			ctx,
+			classID,
+			constants.NotificationVideoAdded,
+			"New learning video added",
+			fmt.Sprintf("A teacher added video: %s", video.Title),
+			"video",
+			video.ID,
+		)
 	}
 
 	return videoResponse(video), nil

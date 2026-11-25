@@ -117,6 +117,9 @@ func seedOtherTables(t *testing.T, database *gorm.DB, classes int, children int)
 			FROM generate_series(1, ?::int) AS i`, []any{children}},
 		{"push tokens", `INSERT INTO push_tokens (user_id, token) SELECT md5('wali' || i)::uuid, md5('p' || i) || md5('q' || i)
 			FROM generate_series(1, ?::int) AS i`, []any{children}},
+		{"notifications", `INSERT INTO notifications (user_id, kind, title, body, created_at)
+			SELECT md5('wali' || i)::uuid, 'mood_logged', 'Daily mood recorded', 'Happy mood', now() - make_interval(mins => i % 60)
+			FROM generate_series(1, ?::int) AS i`, []any{children}},
 		{"reads of the other person", `INSERT INTO chat_reads (conversation_id, user_id, last_read_message_id)
 			SELECT c.id, c.user_high_id, 0 FROM chat_conversations AS c ON CONFLICT DO NOTHING`, nil},
 		// one in five is due, the rest wait for a day

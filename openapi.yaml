@@ -55,6 +55,8 @@ tags:
     description: Conversations between a teacher and a parent who share a class
   - name: Push
     description: The push tokens of the installed apps, which wake a closed chat app
+  - name: Notifications
+    description: In-app notifications for teachers and parents
   - name: Trash
     description: Claiming points and the leaderboard
   - name: Account
@@ -2767,6 +2769,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List in-app notifications for the signed in user
+      description: Newest first, together with the total number of unread notifications.
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          description: Set to true to list unread notifications only
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The notifications of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark all unread notifications as read
+      description: Marks every unread notification belonging to the signed in user as read.
+      responses:
+        "200":
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark one notification as read
+      description: Marks the requested notification of the signed in user as read.
+      parameters:
+        - $ref: "#/components/parameters/NotificationPath"
+      responses:
+        "200":
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /push/tokens:
     post:
       tags: [Push]
@@ -3012,6 +3088,14 @@ components:
       schema:
         type: string
         format: uuid
+    NotificationPath:
+      name: notificationId
+      in: path
+      required: true
+      description: An in-app notification of the user
+      schema:
+        type: string
+        format: uuid
     ReplyPath:
       name: replyId
       in: path
@@ -3120,7 +3204,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `NOTIFICATION_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -4716,6 +4800,58 @@ components:
           minLength: 20
           maxLength: 4096
           description: The token to forget, trimmed and checked the same way as the one that was registered
+    Notification:
+      type: object
+      required: [id, kind, title, body, referenceType, referenceId, readAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          example: mood_logged
+        title:
+          type: string
+        body:
+          type: string
+        referenceType:
+          type: string
+          nullable: true
+        referenceId:
+          type: string
+          format: uuid
+          nullable: true
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    NotificationList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [notifications, unreadCount]
+          properties:
+            notifications:
+              type: array
+              items:
+                $ref: "#/components/schemas/Notification"
+            unreadCount:
+              type: integer
+              minimum: 0
+    NotificationListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/NotificationList"
     ChatPhotoUpload:
       type: object
       required: [mediaKey, kind, contentType, sizeBytes]

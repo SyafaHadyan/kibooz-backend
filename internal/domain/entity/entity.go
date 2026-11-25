@@ -215,3 +215,16 @@ type PushToken struct {
 	CreatedAt time.Time `gorm:"autoCreateTime:false;not null"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;not null"`
 }
+
+// Notification is one in-app update queued for a teacher or parent account.
+type Notification struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	UserID        uuid.UUID  `gorm:"type:uuid;not null"`
+	Kind          string     `gorm:"size:40;not null"`
+	Title         string     `gorm:"size:150;not null"`
+	Body          string     `gorm:"not null"`
+	ReferenceType *string    `gorm:"size:40"`
+	ReferenceID   *uuid.UUID `gorm:"type:uuid"`
+	ReadAt        *time.Time
+	CreatedAt     time.Time `gorm:"autoCreateTime:false;not null"`
+}

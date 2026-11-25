@@ -166,3 +166,8 @@ var (
 	ErrClassArchived    = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
 	ErrClassNotArchived = New(http.StatusConflict, "CLASS_NOT_ARCHIVED", "This class is not archived")
 )
+
+// errors of notifications, in a block of their own for the same reason
+var (
+	ErrNotificationNotFound = New(http.StatusNotFound, "NOTIFICATION_NOT_FOUND", "Notification not found")
+)
