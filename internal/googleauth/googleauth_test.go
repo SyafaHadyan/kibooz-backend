@@ -374,3 +374,74 @@ func TestJWKSClientRejectsATokenWithoutExpiry(t *testing.T) {
 	_, err := verifier.Verify(context.Background(), token)
 	require.ErrorIs(t, err, googleauth.ErrInvalidToken)
 }
+
+func TestJWKSClientServesCachedKeysWhileADownloadIsSlow(t *testing.T) {
+	signer := newSigner(t, "kid-cached")
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+
+	var slow atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if slow.Load() {
+			started <- struct{}{}
+			<-release
+		}
+
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{signer.jwk()}})
+	}))
+	t.Cleanup(server.Close)
+
+	var tick atomic.Int64
+
+	tick.Store(1_760_000_000)
+
+	now := func() time.Time { return time.Unix(tick.Load(), 0) }
+	verifier := googleauth.NewVerifier([]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(now))
+
+	token := func(kid string) string {
+		other := signer
+		other.kid = kid
+
+		return other.sign(t, jwt.MapClaims{
+			"iss": "https://accounts.google.com", "aud": testClientID, "sub": "1", "email": "a@example.test",
+			"email_verified": true, "exp": now().Add(time.Hour).Unix(),
+		})
+	}
+
+	_, err := verifier.Verify(context.Background(), token("kid-cached"))
+	require.NoError(t, err)
+
+	// the cache is fresh and its last download is older than the wait, so a token with an unknown key downloads again
+	tick.Add(30)
+	slow.Store(true)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		_, _ = verifier.Verify(context.Background(), token("kid-unknown"))
+	}()
+
+	<-started
+
+	answered := make(chan error, 1)
+
+	go func() {
+		_, err := verifier.Verify(context.Background(), token("kid-cached"))
+		answered <- err
+	}()
+
+	select {
+	case err := <-answered:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("a cached key waited for the download of another")
+	}
+
+	close(release)
+	<-done
+}

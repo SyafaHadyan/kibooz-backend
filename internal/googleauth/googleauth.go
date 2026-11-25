@@ -134,10 +134,17 @@ type JWKSClient struct {
 	httpClient *http.Client
 	now        func() time.Time
 
+	// fetchMu lets one download run at a time. It is never held by a reader of the cache, so a slow download of Google
+	// does not hold up the checks that a cached key can answer.
+	fetchMu sync.Mutex
+
 	mu          sync.RWMutex
 	keys        map[string]*rsa.PublicKey
 	expiresAt   time.Time
 	lastRefresh time.Time
+	// retryAt is when a download may start again after one failed, and failure is the error of that download
+	retryAt time.Time
+	failure error
 }
 
 // NewVerifier returns a JWKSClient configured for the given accepted Google OAuth client IDs.
@@ -283,25 +290,28 @@ func (c *JWKSClient) publicKey(ctx context.Context, kid string) (*rsa.PublicKey,
 }
 
 func (c *JWKSClient) refreshKeys(ctx context.Context, neededKID string) (map[string]*rsa.PublicKey, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.fetchMu.Lock()
+	defer c.fetchMu.Unlock()
 
-	now := c.now()
-	if key := c.keys[neededKID]; key != nil && now.Before(c.expiresAt) {
-		return c.keys, nil
-	}
-
-	if len(c.keys) > 0 && now.Sub(c.lastRefresh) < minRefreshInterval && now.Before(c.expiresAt) {
-		return c.keys, nil
+	// the callers that waited for the download in front of them find its result here and download nothing
+	if keys, done, err := c.cached(neededKID); done {
+		return keys, err
 	}
 
 	fetched, ttl, err := c.fetchJWKS(ctx)
-	if err != nil {
-		// Google rotates its keys rarely, so a key that is already known still checks tokens while the fetch is down. The wait
-		// before the next fetch keeps a slow answer of Google from holding the lock for every sign in.
-		if key := c.keys[neededKID]; key != nil {
-			c.expiresAt = c.now().Add(minRefreshInterval)
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// the clock is read after the download, so a slow answer does not use up the wait before the next one
+	now := c.now()
+
+	if err != nil {
+		c.retryAt = now.Add(minRefreshInterval)
+		c.failure = err
+
+		// Google rotates its keys rarely, so a key that is already known still checks tokens while the download is down
+		if c.keys[neededKID] != nil {
 			return c.keys, nil
 		}
 
@@ -311,8 +321,36 @@ func (c *JWKSClient) refreshKeys(ctx context.Context, neededKID string) (map[str
 	c.keys = fetched
 	c.lastRefresh = now
 	c.expiresAt = now.Add(ttl)
+	c.retryAt = time.Time{}
+	c.failure = nil
 
 	return c.keys, nil
+}
+
+// cached answers a refresh without a download when the cache can. done is false when a download is due.
+func (c *JWKSClient) cached(neededKID string) (map[string]*rsa.PublicKey, bool, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	now := c.now()
+	if key := c.keys[neededKID]; key != nil && now.Before(c.expiresAt) {
+		return c.keys, true, nil
+	}
+
+	if len(c.keys) > 0 && now.Sub(c.lastRefresh) < minRefreshInterval && now.Before(c.expiresAt) {
+		return c.keys, true, nil
+	}
+
+	// after a failed download nobody downloads again until the wait is over
+	if c.failure != nil && now.Before(c.retryAt) {
+		if c.keys[neededKID] != nil {
+			return c.keys, true, nil
+		}
+
+		return nil, true, c.failure
+	}
+
+	return nil, false, nil
 }
 
 type jwksFetchError struct {
