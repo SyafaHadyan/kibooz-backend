@@ -445,3 +445,147 @@ func TestJWKSClientServesCachedKeysWhileADownloadIsSlow(t *testing.T) {
 	close(release)
 	<-done
 }
+
+func tokenFor(t *testing.T, signer rsaSigner, now time.Time) string {
+	t.Helper()
+
+	return signer.sign(t, jwt.MapClaims{
+		"iss": "https://accounts.google.com", "aud": testClientID, "sub": "110248495921234",
+		"email": "a@example.test", "email_verified": true, "exp": now.Add(time.Hour).Unix(),
+	})
+}
+
+func TestJWKSClientUsesOnlyUsableSigningKeys(t *testing.T) {
+	signer := newSigner(t, "kid-good")
+	now := time.Unix(1_760_000_000, 0)
+
+	entry := func(mutate func(map[string]any)) map[string]any {
+		jwk := signer.jwk()
+		mutate(jwk)
+
+		return jwk
+	}
+
+	cases := map[string]struct {
+		keys    []any
+		cache   string
+		wantErr bool
+	}{
+		"skips what is not a signing key and uses the good one": {
+			keys: []any{
+				entry(func(j map[string]any) { j["kty"] = "EC"; j["kid"] = "ec" }),
+				entry(func(j map[string]any) { j["kid"] = "" }),
+				entry(func(j map[string]any) { j["use"] = "enc"; j["kid"] = "enc" }),
+				entry(func(j map[string]any) { j["alg"] = "RS384"; j["kid"] = "rs384" }),
+				entry(func(j map[string]any) { j["n"] = "!!"; j["kid"] = "badn" }),
+				entry(func(j map[string]any) { j["e"] = "!!"; j["kid"] = "bade" }),
+				entry(func(j map[string]any) { j["e"] = "AQ"; j["kid"] = "smalle" }),
+				signer.jwk(),
+			},
+			cache: "public, max-age=1",
+		},
+		"a long max-age is capped": {keys: []any{signer.jwk()}, cache: "max-age=99999999"},
+		"a bad max-age falls back": {keys: []any{signer.jwk()}, cache: "max-age=abc, public"},
+		"no usable key is a fetch error": {
+			keys:    []any{entry(func(j map[string]any) { j["kty"] = "EC" })},
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if tc.cache != "" {
+					w.Header().Set("Cache-Control", tc.cache)
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"keys": tc.keys})
+			}))
+			t.Cleanup(server.Close)
+
+			verifier := googleauth.NewVerifier(
+				[]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(func() time.Time { return now }),
+				googleauth.WithHTTPClient(server.Client()),
+			)
+
+			_, err := verifier.Verify(context.Background(), tokenFor(t, signer, now))
+			if tc.wantErr {
+				require.Error(t, err)
+				require.NotErrorIs(t, err, googleauth.ErrInvalidToken)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestJWKSClientFetchFailuresAreRetriedAfterTheWait(t *testing.T) {
+	signer := newSigner(t, "kid-retry")
+	now := time.Unix(1_760_000_000, 0)
+
+	var hits atomic.Int32
+
+	var mode atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+
+		switch mode.Load() {
+		case 0:
+			http.Error(w, "down", http.StatusBadGateway)
+		case 1:
+			_, _ = w.Write([]byte("not json"))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{signer.jwk()}})
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	verifier := googleauth.NewVerifier(
+		[]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(func() time.Time { return now }),
+	)
+	token := tokenFor(t, signer, now)
+
+	// the first failure is a bad status, and the callers in the next seconds get the same answer without a new download
+	_, err := verifier.Verify(context.Background(), token)
+	require.Error(t, err)
+
+	_, err = verifier.Verify(context.Background(), token)
+	require.Error(t, err)
+	require.Equal(t, int32(1), hits.Load())
+
+	// after the wait a download starts again, and a body that is no JSON fails it again
+	now = now.Add(6 * time.Second)
+	mode.Store(1)
+
+	_, err = verifier.Verify(context.Background(), token)
+	require.Error(t, err)
+	require.Equal(t, int32(2), hits.Load())
+
+	// then Google answers again
+	now = now.Add(6 * time.Second)
+	mode.Store(2)
+
+	_, err = verifier.Verify(context.Background(), token)
+	require.NoError(t, err)
+}
+
+func TestJWKSClientAnswersUnavailableWhenGoogleCannotBeReached(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := server.URL
+	server.Close()
+
+	signer := newSigner(t, "kid-gone")
+	now := time.Unix(1_760_000_000, 0)
+	verifier := googleauth.NewVerifier(
+		[]string{testClientID}, googleauth.WithJWKSURL(url), googleauth.WithNow(func() time.Time { return now }),
+	)
+
+	_, err := verifier.Verify(context.Background(), tokenFor(t, signer, now))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, googleauth.ErrInvalidToken)
+}

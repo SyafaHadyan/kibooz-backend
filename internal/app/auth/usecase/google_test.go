@@ -251,3 +251,112 @@ func TestGoogleRegisterCreatesRoleAccountWithoutPassword(t *testing.T) {
 		require.ErrorIs(t, err, apperror.ErrGoogleAlreadyRegistered)
 	})
 }
+
+// brokenRepo makes the lookups of a Google sign in fail
+type brokenRepo struct {
+	*fakeRepo
+	failSub   bool
+	failEmail bool
+}
+
+func (r *brokenRepo) FindUserByGoogleSub(ctx context.Context, sub string) (*entity.User, error) {
+	if r.failSub {
+		return nil, errors.New("database is down")
+	}
+
+	return r.fakeRepo.FindUserByGoogleSub(ctx, sub)
+}
+
+func (r *brokenRepo) FindUserByEmail(ctx context.Context, email string) (*entity.User, error) {
+	if r.failEmail {
+		return nil, errors.New("database is down")
+	}
+
+	return r.fakeRepo.FindUserByEmail(ctx, email)
+}
+
+func googleUseCase(repo *brokenRepo, verifier googleauth.Verifier) usecase.AuthUseCaseItf {
+	useCase := usecase.NewAuthUseCase(
+		repo, fakeJWT{}, newFakeCache(),
+		&env.Env{
+			JWTRefreshExpiredDays: 30, JWTSessionMaxDays: 90, JWTSecretKey: strings.Repeat("k", 48),
+			DeviceTokenTTLDays: 90, RefreshReuseLeewaySeconds: 10,
+		},
+		testHasher,
+	)
+	useCase.SetGoogleVerifier(verifier)
+
+	return useCase
+}
+
+func TestGoogleVerifierIsTheOneThatChecksTokens(t *testing.T) {
+	verifier := &stubGoogleVerifier{claims: googleauth.Claims{Subject: "s", Email: "a@example.test", EmailVerified: true}}
+	useCase := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}}, verifier)
+
+	_, err := useCase.GoogleVerifier().Verify(context.Background(), testGoogleCredential())
+	require.NoError(t, err)
+	require.Equal(t, 1, verifier.calls)
+}
+
+func TestGoogleLoginAnswersAnInternalErrorWhenALookupFails(t *testing.T) {
+	verifier := &stubGoogleVerifier{claims: googleauth.Claims{Subject: "s", Email: "a@example.test", EmailVerified: true}}
+	req := dto.GoogleLoginRequest{IDToken: testGoogleCredential(), Role: constants.RoleWali}
+
+	_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}, failSub: true}, verifier).GoogleLogin(context.Background(), req)
+	require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+
+	_, err = googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}, failEmail: true}, verifier).GoogleLogin(context.Background(), req)
+	require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+
+	_, err = googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}}, &stubGoogleVerifier{err: googleauth.ErrInvalidToken}).GoogleLogin(context.Background(), req)
+	require.Equal(t, "AUTH_GOOGLE_INVALID", apperror.As(err).Code)
+}
+
+func TestGoogleRegisterRefusesWhatIsMissingOrBroken(t *testing.T) {
+	verifier := &stubGoogleVerifier{claims: googleauth.Claims{Subject: "s", Email: "a@example.test", EmailVerified: true}}
+	ctx := context.Background()
+
+	t.Run("an invalid token", func(t *testing.T) {
+		_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}}, &stubGoogleVerifier{err: googleauth.ErrInvalidToken}).
+			GoogleRegister(ctx, dto.GoogleRegisterRequest{IDToken: testGoogleCredential(), FullName: "Ibu Guru", Role: constants.RoleGuru})
+		require.Equal(t, "AUTH_GOOGLE_INVALID", apperror.As(err).Code)
+	})
+
+	cases := map[string]dto.GoogleRegisterRequest{
+		"a teacher without a class":      {FullName: "Ibu Guru", Role: constants.RoleGuru},
+		"a parent without a class code":  {FullName: "Ibu Wali", Role: constants.RoleWali, Student: &dto.RegisterStudent{FullName: "Anak", NISN: "1234567890"}},
+		"a parent without a child":       {FullName: "Ibu Wali", Role: constants.RoleWali, ClassCode: "ABCD2345"},
+		"a role that is not one of them": {FullName: "Pak Admin", Role: constants.RoleAdmin},
+	}
+
+	for name, req := range cases {
+		t.Run(name, func(t *testing.T) {
+			req.IDToken = testGoogleCredential()
+
+			_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}}, verifier).GoogleRegister(ctx, req)
+			require.Equal(t, http.StatusBadRequest, apperror.As(err).Status)
+		})
+	}
+
+	t.Run("a failed lookup of the Google account", func(t *testing.T) {
+		_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{}, failSub: true}, verifier).GoogleRegister(ctx, dto.GoogleRegisterRequest{
+			IDToken: testGoogleCredential(), FullName: "Ibu Guru", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Melati"},
+		})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+
+	t.Run("a failed lookup of the class code", func(t *testing.T) {
+		_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{lookupErr: errors.New("database is down")}}, verifier).GoogleRegister(ctx, dto.GoogleRegisterRequest{
+			IDToken: testGoogleCredential(), FullName: "Ibu Wali", Role: constants.RoleWali, ClassCode: "ABCD2345",
+			Student: &dto.RegisterStudent{FullName: "Anak", NISN: "1234567890"},
+		})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+
+	t.Run("an email, NIP or NISN that is taken", func(t *testing.T) {
+		_, err := googleUseCase(&brokenRepo{fakeRepo: &fakeRepo{taken: apperror.ErrEmailTaken}}, verifier).GoogleRegister(ctx, dto.GoogleRegisterRequest{
+			IDToken: testGoogleCredential(), FullName: "Ibu Guru", Role: constants.RoleGuru, Class: &dto.RegisterClass{Name: "Melati"},
+		})
+		require.Equal(t, "EMAIL_ALREADY_REGISTERED", apperror.As(err).Code)
+	})
+}

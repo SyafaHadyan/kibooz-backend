@@ -2,7 +2,9 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -252,3 +254,129 @@ func TestLinkAndUnlinkGoogle(t *testing.T) {
 		require.Equal(t, "AUTH_GOOGLE_UNAVAILABLE", apperror.As(err).Code)
 	})
 }
+
+func TestGoogleActionsRefuseTheWrongCaller(t *testing.T) {
+	ctx := context.Background()
+	user := googleOnlyAccount("sub-1")
+
+	t.Run("an account that is gone", func(t *testing.T) {
+		uc := withGoogle(&fakeRepo{}, freshClaims("sub-1"), nil)
+
+		err := uc.UnlinkGoogle(ctx, uuid.New(), constants.RoleWali, dto.UnlinkGoogleRequest{Password: credential()})
+		require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+
+		err = uc.LinkGoogle(ctx, uuid.New(), constants.RoleWali, dto.LinkGoogleRequest{IDToken: credential(), Password: credential()})
+		require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+
+		err = uc.SetPassword(ctx, uuid.New(), constants.RoleWali, dto.SetPasswordRequest{IDToken: credential(), NewPassword: credential()})
+		require.Equal(t, "PROFILE_NOT_FOUND", apperror.As(err).Code)
+	})
+
+	t.Run("another role", func(t *testing.T) {
+		uc := withGoogle(&fakeRepo{user: user}, freshClaims("sub-1"), nil)
+
+		err := uc.SetPassword(ctx, user.ID, constants.RoleGuru, dto.SetPasswordRequest{IDToken: credential(), NewPassword: credential()})
+		require.Equal(t, "AUTH_FORBIDDEN", apperror.As(err).Code)
+	})
+
+	t.Run("a failed lookup", func(t *testing.T) {
+		uc := withGoogle(&fakeRepo{user: user, lookupErr: errDown}, freshClaims("sub-1"), nil)
+
+		err := uc.SetPassword(ctx, user.ID, user.Role, dto.SetPasswordRequest{IDToken: credential(), NewPassword: credential()})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+}
+
+func TestSetPasswordChecksTheNewPassword(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("too long for bcrypt", func(t *testing.T) {
+		user := googleOnlyAccount("sub-1")
+		uc := withGoogle(&fakeRepo{user: user}, freshClaims("sub-1"), nil)
+
+		err := uc.SetPassword(ctx, user.ID, user.Role, dto.SetPasswordRequest{IDToken: credential(), NewPassword: strings.Repeat("a", 80)})
+		require.Equal(t, http.StatusBadRequest, apperror.As(err).Status)
+	})
+
+	t.Run("holding the email of the account", func(t *testing.T) {
+		user := googleOnlyAccount("sub-1")
+		user.Email = "ibu.sari@example.test"
+		uc := withGoogle(&fakeRepo{user: user}, freshClaims("sub-1"), nil)
+
+		err := uc.SetPassword(ctx, user.ID, user.Role, dto.SetPasswordRequest{IDToken: credential(), NewPassword: "x-" + user.Email + "-x"})
+		require.Equal(t, http.StatusBadRequest, apperror.As(err).Status)
+	})
+
+	t.Run("a failed update", func(t *testing.T) {
+		user := googleOnlyAccount("sub-1")
+		uc := withGoogle(&fakeRepo{user: user, err: errDown}, freshClaims("sub-1"), nil)
+
+		err := uc.SetPassword(ctx, user.ID, user.Role, dto.SetPasswordRequest{IDToken: credential(), NewPassword: credential()})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+}
+
+func TestLinkAndUnlinkGoogleEdges(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("link without a password is refused", func(t *testing.T) {
+		user := &entity.User{ID: uuid.New(), Role: constants.RoleWali}
+		uc := withGoogle(&fakeRepo{user: user}, freshClaims("sub-1"), nil)
+
+		err := uc.LinkGoogle(ctx, user.ID, user.Role, dto.LinkGoogleRequest{IDToken: credential(), Password: credential()})
+		require.Equal(t, "AUTH_PASSWORD_NOT_SET", apperror.As(err).Code)
+	})
+
+	t.Run("link whose guarded update finds the account changed", func(t *testing.T) {
+		password := credential()
+		user := accountOf(t, constants.RoleWali, password)
+		uc := withGoogle(&fakeRepo{user: user, linkStale: true}, freshClaims("sub-7"), nil)
+
+		err := uc.LinkGoogle(ctx, user.ID, user.Role, dto.LinkGoogleRequest{IDToken: credential(), Password: password})
+		require.Equal(t, "GOOGLE_ALREADY_LINKED", apperror.As(err).Code)
+	})
+
+	t.Run("link whose update fails", func(t *testing.T) {
+		password := credential()
+		user := accountOf(t, constants.RoleWali, password)
+		uc := withGoogle(&fakeRepo{user: user, err: errDown}, freshClaims("sub-7"), nil)
+
+		err := uc.LinkGoogle(ctx, user.ID, user.Role, dto.LinkGoogleRequest{IDToken: credential(), Password: password})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+
+	t.Run("unlink whose guarded update finds the account changed or fails", func(t *testing.T) {
+		password := credential()
+		sub := "sub-1"
+		user := accountOf(t, constants.RoleWali, password)
+		user.GoogleSub = &sub
+
+		err := withGoogle(&fakeRepo{user: user, unlinkStale: true}, freshClaims(sub), nil).
+			UnlinkGoogle(ctx, user.ID, user.Role, dto.UnlinkGoogleRequest{Password: password})
+		require.Equal(t, "GOOGLE_NOT_LINKED", apperror.As(err).Code)
+
+		err = withGoogle(&fakeRepo{user: user, err: errDown}, freshClaims(sub), nil).
+			UnlinkGoogle(ctx, user.ID, user.Role, dto.UnlinkGoogleRequest{Password: password})
+		require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
+	})
+
+	t.Run("a Google only account that lost its link cannot confirm with a token", func(t *testing.T) {
+		user := &entity.User{ID: uuid.New(), Role: constants.RoleWali}
+		repo := &fakeRepo{user: user}
+
+		err := withGoogle(repo, freshClaims("sub-1"), nil).DeleteAccount(ctx, user.ID, user.Role, dto.DeleteAccountRequest{IDToken: credential()})
+		require.Equal(t, "GOOGLE_NOT_LINKED", apperror.As(err).Code)
+	})
+
+	t.Run("a verifier that fails for another reason answers unavailable", func(t *testing.T) {
+		user := googleOnlyAccount("sub-1")
+
+		for _, verifyErr := range []error{googleauth.ErrNotConfigured, errDown} {
+			err := withGoogle(&fakeRepo{user: user}, googleauth.Claims{}, verifyErr).
+				SetPassword(ctx, user.ID, user.Role, dto.SetPasswordRequest{IDToken: credential(), NewPassword: credential()})
+			require.Equal(t, "AUTH_GOOGLE_UNAVAILABLE", apperror.As(err).Code)
+		}
+	})
+}
+
+var errDown = errors.New("database is down")

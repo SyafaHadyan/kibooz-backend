@@ -79,6 +79,7 @@ type fakeRepo struct {
 
 	// linked holds the subject the last link stored, linkTaken makes a link find a subject of another account, and linkStale and
 	// unlinkStale make the guarded update find that the account moved on
+	lookupErr   error
 	linked      string
 	linkTaken   bool
 	linkStale   bool
@@ -140,7 +141,7 @@ func (f *fakeRepo) UpdateStudentAvatar(context.Context, uuid.UUID, uuid.UUID, st
 }
 
 func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) {
-	return f.user, nil
+	return f.user, f.lookupErr
 }
 
 func (f *fakeRepo) SoftDeleteAccount(
