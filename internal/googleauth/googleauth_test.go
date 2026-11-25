@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -394,6 +395,10 @@ func TestJWKSClientServesCachedKeysWhileADownloadIsSlow(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
+	// closes release once, so a failed test does not leave the handler blocked and server.Close waiting for it
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+
 	var tick atomic.Int64
 
 	tick.Store(1_760_000_000)
@@ -442,7 +447,7 @@ func TestJWKSClientServesCachedKeysWhileADownloadIsSlow(t *testing.T) {
 		t.Fatal("a cached key waited for the download of another")
 	}
 
-	close(release)
+	releaseOnce()
 	<-done
 }
 
