@@ -134,7 +134,7 @@ func login(t *testing.T, target *fiber.App, email string, password string) resul
 func verify(t *testing.T, target *fiber.App, email string, code string) result {
 	t.Helper()
 
-	return callApp(t, target, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]any{"email": email, "code": code})
+	return callApp(t, target, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]any{"email": email, "password": testPassword, "code": code})
 }
 
 func resend(t *testing.T, target *fiber.App, email string) result {
@@ -238,12 +238,12 @@ func TestAnAccountWaitsForItsCodeAndTheFirstSessionComesWithIt(t *testing.T) {
 		resend(t, target, email).requireError(t, http.StatusConflict, "EMAIL_ALREADY_VERIFIED")
 	})
 
-	t.Run("an email that no account waits on gets the same answer as a wrong code", func(t *testing.T) {
-		verify(t, target, "nobody."+suffix()+"@example.com", "123456").requireError(t, http.StatusBadRequest, "VERIFICATION_CODE_INVALID")
+	t.Run("an email that no account has gets the answer of a wrong password", func(t *testing.T) {
+		verify(t, target, "nobody."+suffix()+"@example.com", "123456").requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 	})
 
 	t.Run("a code that is not six digits is a validation error", func(t *testing.T) {
-		for _, code := range []string{"12345", "1234567", "12345a", ""} {
+		for _, code := range []string{"12345", "1234567", "12345a", "+12345", "1.2345", ""} {
 			verify(t, target, email, code).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 		}
 	})
@@ -264,6 +264,21 @@ func TestACodeIsLimitedByCooldownAttemptsAgeAndTheHour(t *testing.T) {
 		})
 		wrong.requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
 		require.Equal(t, 1, stub.count(email))
+	})
+
+	t.Run("a stranger who has no password cannot use up the tries", func(t *testing.T) {
+		for range 8 {
+			callApp(t, target, http.MethodPost, "/api/v1/auth/verify-email", "", map[string]any{
+				"email": email, "password": testPassword + "x", "code": "000000",
+			}).requireError(t, http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS")
+		}
+
+		var attempts int
+
+		require.NoError(t, testDB.Raw(
+			"SELECT attempts FROM email_verifications WHERE user_id = (SELECT id FROM users WHERE email = ?)", email,
+		).Scan(&attempts).Error)
+		require.Zero(t, attempts)
 	})
 
 	t.Run("a code that took all its attempts is refused until a new one is sent", func(t *testing.T) {
@@ -332,14 +347,22 @@ func TestARegistrationSurvivesAMailServiceThatFails(t *testing.T) {
 	require.Equal(t, false, registered.data("verification", "sent"), "the answer says the mail did not go out")
 	require.Zero(t, stub.count(email))
 
-	t.Run("a new code cannot be sent while the service is down, and the answer says so", func(t *testing.T) {
-		ageTheCode(t, email, "")
-		resend(t, target, email).requireError(t, http.StatusServiceUnavailable, "EMAIL_SEND_FAILED")
+	t.Run("a new code cannot be sent while the service is down, the answer says so and the wait is given back", func(t *testing.T) {
+		// no waiting between the tries, because a mail that did not go out gives back its wait and its send of the hour
+		for range 3 {
+			resend(t, target, email).requireError(t, http.StatusServiceUnavailable, "EMAIL_SEND_FAILED")
+		}
+
+		var sends int
+
+		require.NoError(t, testDB.Raw(
+			"SELECT sends_in_window FROM email_verifications WHERE user_id = (SELECT id FROM users WHERE email = ?)", email,
+		).Scan(&sends).Error)
+		require.LessOrEqual(t, sends, 1, "the failed sends do not use up the five of the hour")
 	})
 
-	t.Run("it can once the service is back", func(t *testing.T) {
+	t.Run("it can once the service is back, at once", func(t *testing.T) {
 		stub.setFail(false)
-		ageTheCode(t, email, "")
 
 		sent := resend(t, target, email)
 		require.Equal(t, http.StatusOK, sent.Status, "body %v", sent.Body)

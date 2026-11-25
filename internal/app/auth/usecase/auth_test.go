@@ -66,6 +66,7 @@ type fakeRepo struct {
 	storeErr    error
 	checkErr    error
 	stores      int
+	releases    int
 }
 
 // liveCode is the one code of an account that waits for its email, as the repository would keep it
@@ -163,6 +164,14 @@ func (f *fakeRepo) StoreVerification(
 	f.live = liveCode{userID: userID, hash: codeHash}
 
 	return 0, nil
+}
+
+func (f *fakeRepo) ReleaseVerification(_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ time.Duration) error {
+	if f.live.userID == userID && f.live.hash == codeHash {
+		f.releases++
+	}
+
+	return nil
 }
 
 // CheckVerification follows the contract of the real one, a wrong code counts an attempt and a used up code is only refused

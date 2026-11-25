@@ -37,7 +37,7 @@ The app and the PRD are in Indonesian, and the API keeps a few of those words in
 
 **Can a deleted account be restored?** Not through the API. Deleting hides the rows and ends the sessions, and the email can be registered again as a new account. See [Privacy](privacy.md#what-deleting-an-account-does).
 
-**Does the API send email?** No. There is no email verification and no password reset yet, which is why the password can only be changed with the current one.
+**Does the API send email?** Only when the verification of the email is switched on, and then only the 6 digit code of a new account. There is no password reset yet, which is why the password can only be changed with the current one.
 
 **Where is the API documentation?** At <https://docs.kibooz.syafahadyan.com>, built from `openapi.yaml`.
 

@@ -27,8 +27,9 @@ var ErrDisabled = errors.New("mail is not configured, RESEND_API_KEY is empty")
 
 // Sender sends the mail of the API
 type Sender interface {
-	// SendVerificationCode mails the code of an email verification to the address, and says how many minutes it works
-	SendVerificationCode(ctx context.Context, to string, fullName string, code string, validMinutes int) error
+	// SendVerificationCode mails the code of an email verification to the address, and says how many minutes it works. The mail
+	// names nobody, because a name that a stranger typed would reach the inbox of someone else in a mail that looks like the service's.
+	SendVerificationCode(ctx context.Context, to string, code string, validMinutes int) error
 }
 
 // Resend sends mail through the Resend API
@@ -50,8 +51,18 @@ func New(cfg *env.Env) *Resend {
 		client: &http.Client{Timeout: sendTimeout},
 		url:    strings.TrimRight(base, "/") + "/emails",
 		key:    strings.TrimSpace(cfg.ResendAPIKey),
-		from:   cfg.EmailFrom,
+		from:   sender(cfg.EmailFrom),
 	}
+}
+
+// sender gives a bare address the name of the service, and leaves an address that has a name as it is
+func sender(from string) string {
+	from = strings.TrimSpace(from)
+	if from == "" || strings.Contains(from, "<") {
+		return from
+	}
+
+	return "Kibooz <" + from + ">"
 }
 
 type resendMessage struct {
@@ -63,25 +74,20 @@ type resendMessage struct {
 }
 
 // SendVerificationCode mails the code in Indonesian, as a plain text part and an html part
-func (r *Resend) SendVerificationCode(ctx context.Context, to string, fullName string, code string, validMinutes int) error {
+func (r *Resend) SendVerificationCode(ctx context.Context, to string, code string, validMinutes int) error {
 	if r.key == "" {
 		return ErrDisabled
 	}
 
-	name := strings.TrimSpace(fullName)
-	if name == "" {
-		name = "Pengguna"
-	}
-
 	text := fmt.Sprintf(
-		"Halo %s,\n\nKode verifikasi email Kibooz Anda adalah %s.\n\nKode ini berlaku %d menit. Jika Anda tidak mendaftar di Kibooz, abaikan email ini.\n",
-		name, code, validMinutes,
+		"Halo,\n\nKode verifikasi email Kibooz Anda adalah %s.\n\nKode ini berlaku %d menit. Jika Anda tidak mendaftar di Kibooz, abaikan email ini.\n",
+		code, validMinutes,
 	)
 
 	page := fmt.Sprintf(
-		`<p>Halo %s,</p><p>Kode verifikasi email Kibooz Anda adalah</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">%s</p>`+
+		`<p>Halo,</p><p>Kode verifikasi email Kibooz Anda adalah</p><p style="font-size:28px;font-weight:bold;letter-spacing:6px">%s</p>`+
 			`<p>Kode ini berlaku %d menit. Jika Anda tidak mendaftar di Kibooz, abaikan email ini.</p>`,
-		html.EscapeString(name), html.EscapeString(code), validMinutes,
+		html.EscapeString(code), validMinutes,
 	)
 
 	body, err := json.Marshal(resendMessage{

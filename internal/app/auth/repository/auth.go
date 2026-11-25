@@ -59,6 +59,9 @@ type AuthDBItf interface {
 	// that is expired or used up is only refused. A code that matches ends the wait of the account in the same transaction, so
 	// it works once.
 	CheckVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int) (matched bool, err error)
+	// ReleaseVerification gives back the wait and the send of the hour of a code whose mail was not taken by the mail service, so the
+	// person can ask again at once. It only touches the row of that code, a newer code is left alone.
+	ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error
 }
 
 // SendRule holds the limits of the codes that one account can have sent
@@ -643,4 +646,11 @@ func (r *AuthDB) CheckVerification(
 	})
 
 	return matched && err == nil, err
+}
+
+func (r *AuthDB) ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error {
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0)
+		WHERE user_id = ? AND code_hash = ?`, now.Add(-cooldown), userID, codeHash,
+	).Error
 }

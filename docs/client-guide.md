@@ -17,10 +17,10 @@ A refresh token works once. Every successful call to `POST /api/v1/auth/refresh-
 A server can require that a new account confirms its email. Then registration answers `201` with `verificationRequired: true`, an empty `token` and `refreshToken`, and a `verification` object. The mail carries a 6 digit code, in Indonesian, from the address that the operator set.
 
 1. Show a screen for the code. Keep the code as text, because it can start with 0.
-2. Send it to `POST /api/v1/auth/verify-email` with the email. A right code answers like a login, with the tokens, and the person is signed in.
+2. Send it to `POST /api/v1/auth/verify-email` with the email and the password, and the `deviceToken` that registration returned. A right code answers like a login, with the tokens, and the person is signed in.
 3. A wrong code answers `400` with `VERIFICATION_CODE_INVALID`, and so does an expired code or a code that took 5 wrong tries. The answer is the same for all of them.
-4. For a new code, send the email and the password to `POST /api/v1/auth/resend-verification`. Wait `resendAfterSeconds` between two requests. A request before that answers `429` with `VERIFICATION_RESEND_TOO_SOON` and `Retry-After`.
-5. When `verification.sent` is `false`, the account exists but the mail did not go out. Show the resend button at once.
+4. For a new code, send the email and the password to `POST /api/v1/auth/resend-verification`. Wait `resendAfterSeconds` between two requests. A request before that answers `429` with `VERIFICATION_RESEND_TOO_SOON` and `Retry-After`, which is longer than a minute when the 5 codes of the hour are used up. Count down from the header and do not assume 60 seconds.
+5. When `verification.sent` is `false`, the account exists but the mail did not go out. A code that was not mailed gives its wait back, so the resend button works at once. A resend whose mail fails answers `503` with `EMAIL_SEND_FAILED`.
 
 Signing in with the right password before the code is verified answers `403` with `EMAIL_NOT_VERIFIED`. Send the person to the same screen and ask for a new code if the old one is gone. Accounts that were registered before the server turned the check on are verified and sign in as before.
 

@@ -44,13 +44,13 @@ func resendServer(t *testing.T, status int, answer string) (*httptest.Server, *c
 }
 
 func sender(url string, key string) *mailer.Resend {
-	return mailer.New(&env.Env{ResendAPIURL: url, ResendAPIKey: key, EmailFrom: "Kibooz <no-reply@mail.example.org>"})
+	return mailer.New(&env.Env{ResendAPIURL: url, ResendAPIKey: key, EmailFrom: "no-reply@mail.example.org"})
 }
 
 func TestTheCodeGoesToResendInIndonesianWithTheKeyInTheHeaderOnly(t *testing.T) {
 	server, seen := resendServer(t, http.StatusOK, `{"id":"abc"}`)
 
-	err := sender(server.URL+"/", "re_testkey").SendVerificationCode(context.Background(), "parent@example.com", "Ibu <b>Ani</b>", "012345", 15)
+	err := sender(server.URL+"/", "re_testkey").SendVerificationCode(context.Background(), "parent@example.com", "012345", 15)
 	require.NoError(t, err)
 
 	require.Equal(t, http.MethodPost, seen.method)
@@ -66,11 +66,24 @@ func TestTheCodeGoesToResendInIndonesianWithTheKeyInTheHeaderOnly(t *testing.T) 
 	require.Contains(t, text, "012345", "leading zeros are kept")
 	require.Contains(t, text, "15 menit")
 	require.Contains(t, page, "012345")
-	require.Contains(t, page, "Ibu &lt;b&gt;Ani&lt;/b&gt;", "a name cannot add markup to the mail")
-	require.NotContains(t, page, "<b>Ani</b>")
+	require.Contains(t, text, "Halo,", "the mail names nobody, a name that a stranger typed would not reach someone else's inbox")
 
 	for name, value := range map[string]string{"text": text, "html": page} {
 		require.NotContains(t, value, "re_testkey", name)
+	}
+}
+
+func TestTheSenderShowsTheNameOfTheServiceUnlessTheSettingHasOne(t *testing.T) {
+	for from, shown := range map[string]string{
+		"no-reply@mail.example.org":           "Kibooz <no-reply@mail.example.org>",
+		"  no-reply@mail.example.org ":        "Kibooz <no-reply@mail.example.org>",
+		"School Team <team@mail.example.org>": "School Team <team@mail.example.org>",
+	} {
+		server, seen := resendServer(t, http.StatusOK, `{}`)
+
+		cfg := &env.Env{ResendAPIURL: server.URL, ResendAPIKey: "re_testkey", EmailFrom: from}
+		require.NoError(t, mailer.New(cfg).SendVerificationCode(context.Background(), "a@example.com", "123456", 15))
+		require.Equal(t, shown, seen.body["from"], from)
 	}
 }
 
@@ -78,7 +91,7 @@ func TestAnAnswerThatIsNotAnAcceptIsAnErrorWithoutTheKey(t *testing.T) {
 	for _, status := range []int{http.StatusTooManyRequests, http.StatusUnprocessableEntity, http.StatusInternalServerError} {
 		server, _ := resendServer(t, status, `{"message":"daily quota reached"}`)
 
-		err := sender(server.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "A", "123456", 15)
+		err := sender(server.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "daily quota reached")
 		require.NotContains(t, err.Error(), "re_secretvalue")
@@ -92,7 +105,7 @@ func TestWithoutAKeyNothingIsSent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 	t.Cleanup(server.Close)
 
-	err := sender(server.URL, "  ").SendVerificationCode(context.Background(), "a@example.com", "A", "123456", 15)
+	err := sender(server.URL, "  ").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
 	require.ErrorIs(t, err, mailer.ErrDisabled)
 	require.False(t, called)
 }
@@ -103,14 +116,7 @@ func TestAServerThatIsDownIsAnErrorWithoutTheKey(t *testing.T) {
 
 	server.Close()
 
-	err := sender(url, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "A", "123456", 15)
+	err := sender(url, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
 	require.Error(t, err)
 	require.False(t, strings.Contains(err.Error(), "re_secretvalue"))
-}
-
-func TestAnEmptyNameFallsBackToAGreeting(t *testing.T) {
-	server, seen := resendServer(t, http.StatusOK, `{}`)
-
-	require.NoError(t, sender(server.URL, "re_testkey").SendVerificationCode(context.Background(), "a@example.com", "   ", "123456", 15))
-	require.Contains(t, seen.body["text"], "Halo Pengguna")
 }

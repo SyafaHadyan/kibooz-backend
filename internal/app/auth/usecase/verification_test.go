@@ -24,7 +24,7 @@ type fakeMail struct {
 	err   error
 }
 
-func (m *fakeMail) SendVerificationCode(_ context.Context, to string, _ string, code string, _ int) error {
+func (m *fakeMail) SendVerificationCode(_ context.Context, to string, code string, _ int) error {
 	if m.err != nil {
 		return m.err
 	}
@@ -172,7 +172,7 @@ func TestTheCodeOfTheMailOpensTheFirstSession(t *testing.T) {
 	_, err := useCase.ResendVerification(context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"})
 	require.NoError(t, err)
 
-	res, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "A@example.com", Code: mail.last(t)})
+	res, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "A@example.com", Password: "correct horse", Code: mail.last(t)})
 	require.NoError(t, err)
 	require.NotEmpty(t, res.RefreshToken)
 	require.Equal(t, 1, repo.separateTokens)
@@ -182,9 +182,28 @@ func TestTheCodeOfTheMailOpensTheFirstSession(t *testing.T) {
 	t.Run("the same code works once", func(t *testing.T) {
 		repo.user.EmailVerificationPending = true
 
-		_, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Code: mail.last(t)})
+		_, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: mail.last(t)})
 		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(err).Code)
 	})
+}
+
+func TestAStrangerWithoutThePasswordCannotUseUpTheTriesOfACode(t *testing.T) {
+	repo, mail := &fakeRepo{}, &fakeMail{}
+	pendingAccount(t, repo)
+	useCase := buildVerifying(repo, mail, true)
+
+	_, err := useCase.ResendVerification(context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"})
+	require.NoError(t, err)
+
+	for range constants.EmailCodeMaxAttempts * 3 {
+		_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "wrong password", Code: "000000"})
+		require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
+	}
+
+	require.Zero(t, repo.live.attempts, "a wrong password never reaches the code")
+
+	_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: mail.last(t)})
+	require.NoError(t, err, "the owner can still verify")
 }
 
 func TestEveryRefusedCodeGivesTheSameAnswer(t *testing.T) {
@@ -202,28 +221,34 @@ func TestEveryRefusedCodeGivesTheSameAnswer(t *testing.T) {
 		wrong = "000001"
 	}
 
-	verify := func(email string, code string) error {
-		_, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: email, Code: code})
+	verify := func(code string) error {
+		_, err := useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: code})
 
 		return err
 	}
 
 	t.Run("a wrong code", func(t *testing.T) {
-		err := verify("a@example.com", wrong)
+		err := verify(wrong)
 		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(err).Code)
 		require.Equal(t, 400, apperror.As(err).Status)
 	})
 
-	t.Run("an email that no account has", func(t *testing.T) {
-		repo.user = nil
+	t.Run("a code that expired or took all its tries", func(t *testing.T) {
+		repo.live.attempts = constants.EmailCodeMaxAttempts
 
-		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(verify("nobody@example.com", right)).Code)
+		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(verify(right)).Code)
 	})
 
-	t.Run("an account that is not waiting", func(t *testing.T) {
+	t.Run("an email that no account has gives the answer of a wrong password", func(t *testing.T) {
+		repo.user = nil
+
+		require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(verify(right)).Code)
+	})
+
+	t.Run("an account that is verified already", func(t *testing.T) {
 		repo.user = accountWith(t, "correct horse")
 
-		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(verify("a@example.com", right)).Code)
+		require.Equal(t, "EMAIL_ALREADY_VERIFIED", apperror.As(verify(right)).Code)
 	})
 }
 
@@ -243,11 +268,11 @@ func TestACodeStopsWorkingAfterItsAttemptsAreUsedUp(t *testing.T) {
 	}
 
 	for range constants.EmailCodeMaxAttempts {
-		_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Code: wrong})
+		_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: wrong})
 		require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(err).Code)
 	}
 
-	_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Code: right})
+	_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: right})
 	require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(err).Code, "the right code is refused once the attempts are used up")
 	require.Zero(t, repo.separateTokens)
 }
@@ -256,7 +281,7 @@ func TestAnErrorOfTheRepositoryIsNotAWrongCode(t *testing.T) {
 	repo := &fakeRepo{checkErr: errors.New("database is down")}
 	pendingAccount(t, repo)
 
-	_, err := buildVerifying(repo, &fakeMail{}, true).VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Code: "123456"})
+	_, err := buildVerifying(repo, &fakeMail{}, true).VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: "123456"})
 	require.Equal(t, "INTERNAL_ERROR", apperror.As(err).Code)
 }
 
@@ -347,7 +372,29 @@ func TestACodeOfOneAccountNeverMatchesTheRowOfAnother(t *testing.T) {
 	other.EmailVerificationPending = true
 	repo.user = other
 
-	_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Code: code})
+	_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "correct horse", Code: code})
 	require.Equal(t, "VERIFICATION_CODE_INVALID", apperror.As(err).Code)
 	require.NotEqual(t, first.ID, other.ID)
+}
+
+func TestAFailedMailGivesBackTheWaitAndTheSendOfTheHour(t *testing.T) {
+	repo, mail := &fakeRepo{}, &fakeMail{err: errors.New("resend answered 503")}
+	pendingAccount(t, repo)
+
+	_, err := buildVerifying(repo, mail, true).ResendVerification(
+		context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+	)
+	require.Equal(t, "EMAIL_SEND_FAILED", apperror.As(err).Code)
+	require.Equal(t, 1, repo.releases, "the code that was not mailed is released, so the person can ask again at once")
+}
+
+func TestAMailThatWentOutKeepsItsWait(t *testing.T) {
+	repo, mail := &fakeRepo{}, &fakeMail{}
+	pendingAccount(t, repo)
+
+	_, err := buildVerifying(repo, mail, true).ResendVerification(
+		context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+	)
+	require.NoError(t, err)
+	require.Zero(t, repo.releases)
 }

@@ -460,6 +460,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 
 		return err
 	})
+	call("auth, give back a verification send", func(ctx context.Context) error {
+		return auth.ReleaseVerification(ctx, parent, "z", now.Add(2*time.Minute), time.Minute)
+	})
 	call("auth, check a wrong verification code", func(ctx context.Context) error {
 		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
 

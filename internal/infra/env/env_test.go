@@ -460,7 +460,7 @@ func TestTheMailSettingsHaveSafeDefaults(t *testing.T) {
 	require.False(t, cfg.EmailVerificationRequired)
 	require.Empty(t, cfg.ResendAPIKey)
 	require.Equal(t, "https://api.resend.com", cfg.ResendAPIURL)
-	require.Equal(t, "Kibooz <no-reply@mail.syafahadyan.com>", cfg.EmailFrom)
+	require.Equal(t, "no-reply@mail.syafahadyan.com", cfg.EmailFrom)
 }
 
 func TestTheResendAddressIsHttpsOrALoopbackAddress(t *testing.T) {

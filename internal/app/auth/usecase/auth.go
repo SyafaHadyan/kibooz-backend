@@ -37,6 +37,9 @@ import (
 const (
 	bcryptMaxBytes = 72
 
+	// releaseTimeout is how long giving back the send of a mail that failed may take
+	releaseTimeout = 3 * time.Second
+
 	// minFullNameRunes is the shortest name of a person, the same minimum the request validator uses
 	minFullNameRunes = 2
 )
@@ -103,7 +106,7 @@ func NewAuthUseCase(
 // noMail is the sender of a use case that was built without one
 type noMail struct{}
 
-func (noMail) SendVerificationCode(context.Context, string, string, string, int) error {
+func (noMail) SendVerificationCode(context.Context, string, string, int) error {
 	return mailer.ErrDisabled
 }
 
@@ -365,16 +368,16 @@ func (u *AuthUseCase) checkPassword(ctx context.Context, email string, password 
 	return user, nil
 }
 
-// VerifyEmail takes the code of the mail of a new account. Every refusal is the same answer, so it does not tell whether an email
-// has an account, whether the code expired or whether the attempts are used up.
+// VerifyEmail takes the code of the mail of a new account. The password has to match first, so a stranger who knows only the email
+// cannot use up the tries of the code and keep the owner from verifying. A wrong, expired and used up code give the same answer.
 func (u *AuthUseCase) VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.AuthResponse, error) {
-	user, err := u.repo.FindUserByEmail(ctx, normalizeEmail(req.Email))
+	user, err := u.checkPassword(ctx, req.Email, req.Password)
 	if err != nil {
-		return dto.AuthResponse{}, apperror.Internal(err)
+		return dto.AuthResponse{}, err
 	}
 
-	if user == nil || !user.EmailVerificationPending {
-		return dto.AuthResponse{}, apperror.ErrVerificationCodeInvalid
+	if !user.EmailVerificationPending {
+		return dto.AuthResponse{}, apperror.ErrEmailAlreadyVerified
 	}
 
 	matched, err := u.repo.CheckVerification(ctx, user.ID, u.codeHash(user.ID, req.Code), u.now(), constants.EmailCodeMaxAttempts)
@@ -425,7 +428,9 @@ func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) 
 		return false, apperror.Internal(err)
 	}
 
-	wait, err := u.repo.StoreVerification(ctx, user.ID, u.codeHash(user.ID, code), u.now(), repository.SendRule{
+	codeHash := u.codeHash(user.ID, code)
+
+	wait, err := u.repo.StoreVerification(ctx, user.ID, codeHash, u.now(), repository.SendRule{
 		TTL:      constants.EmailCodeTTLMinutes * time.Minute,
 		Cooldown: constants.EmailResendCooldownSeconds * time.Second,
 		PerHour:  constants.EmailSendsPerHour,
@@ -438,11 +443,21 @@ func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) 
 		return false, apperror.ErrResendTooSoon(int((wait + time.Second - 1) / time.Second))
 	}
 
-	err = u.mail.SendVerificationCode(ctx, user.Email, user.FullName, code, constants.EmailCodeTTLMinutes)
+	err = u.mail.SendVerificationCode(ctx, user.Email, code, constants.EmailCodeTTLMinutes)
 	if err != nil {
 		u.mails.WithLabelValues("failed").Inc()
 		log.Printf("verification mail failed %v", err)
 		u.report(fmt.Errorf("verification mail: %w", err))
+
+		// nothing was mailed, so the wait and the send of the hour are given back and the person can ask again at once. The context
+		// of the request may be the reason of the failure, so the release has its own.
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+		defer cancel()
+
+		releaseErr := u.repo.ReleaseVerification(releaseCtx, user.ID, codeHash, u.now(), constants.EmailResendCooldownSeconds*time.Second)
+		if releaseErr != nil {
+			log.Printf("verification send was not given back %v", releaseErr)
+		}
 
 		return false, nil
 	}

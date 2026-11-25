@@ -5,7 +5,7 @@ ALTER TABLE users ADD COLUMN email_verification_pending BOOLEAN NOT NULL DEFAULT
 -- One live code for each account that waits. The code itself is never stored, only a keyed hash of it.
 CREATE TABLE email_verifications (
     user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    code_hash CHAR(64) NOT NULL,
+    code_hash VARCHAR(64) NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     attempts SMALLINT NOT NULL DEFAULT 0,
     last_sent_at TIMESTAMP WITH TIME ZONE NOT NULL,

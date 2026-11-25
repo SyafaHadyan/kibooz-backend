@@ -44,17 +44,25 @@ type LoginRequest struct {
 	DeviceToken string `json:"deviceToken" validate:"omitempty,max=256"`
 }
 
-// VerifyEmailRequest sends back the code that the mail of a new account carried
+// VerifyEmailRequest sends back the code that the mail of a new account carried. The password is needed so that a stranger who knows
+// only the email cannot use up the tries of the code.
 type VerifyEmailRequest struct {
-	Email string `json:"email" validate:"required,email,max=255"`
-	Code  string `json:"code" validate:"required,len=6,numeric"`
+	Email    string `json:"email" validate:"required,email,max=255"`
+	Password string `json:"password" validate:"required,max=72"`
+	Code     string `json:"code" validate:"required,len=6,number"`
+
+	// DeviceToken is the one that registration or login returned, it only gives this device its own rate limit for the email
+	DeviceToken string `json:"deviceToken" validate:"omitempty,max=256"`
 }
 
-// ResendVerificationRequest asks for a new code. The password proves that the caller made the account, so the route cannot be used
-// to send mail to an address that the caller does not hold.
+// ResendVerificationRequest asks for a new code. The password proves that the caller holds the account. It does not prove that the
+// caller holds the mailbox, so the cooldown and the cap of the hour bound what one account can cost.
 type ResendVerificationRequest struct {
 	Email    string `json:"email" validate:"required,email,max=255"`
 	Password string `json:"password" validate:"required,max=72"`
+
+	// DeviceToken is the one that registration or login returned, it only gives this device its own rate limit for the email
+	DeviceToken string `json:"deviceToken" validate:"omitempty,max=256"`
 }
 
 // VerificationResponse says what happened to the code of an account that waits for its email

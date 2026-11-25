@@ -172,10 +172,10 @@ paths:
       operationId: verifyEmail
       summary: Confirm the email of a new account with its code
       description: |
-        The code is 6 digits, comes in the mail that registration sent and works for 15 minutes. A code takes 5 wrong tries, and then it
-        is refused even when it is right, until a new one is sent. Every refusal is the same answer, so it does not tell whether the
-        email has an account, whether the code expired or whether the tries are used up. A right code works once and opens the first
-        session of the account, in the same shape as a login.
+        The code is 6 digits, comes in the mail that registration sent and works for 15 minutes. The password of the account is checked
+        first and answers `401` like a login, so a stranger who knows only the email cannot use up the tries. A code takes 5 wrong tries,
+        and then it is refused even when it is right, until a new one is sent. A wrong, expired and used up code give the same answer.
+        A right code works once and opens the first session of the account, in the same shape as a login.
       security: []
       requestBody:
         required: true
@@ -196,6 +196,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+        "401":
+          description: The email or password does not match an account (`AUTH_INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The email of the account is verified already (`EMAIL_ALREADY_VERIFIED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
   /auth/resend-verification:
@@ -204,9 +216,10 @@ paths:
       operationId: resendVerification
       summary: Send a new code to an account that waits for its email
       description: |
-        The password has to be the one of the account, so the route cannot be used to mail an address that the caller does not hold. A new
-        code replaces the old one and starts with 5 tries. One code can be sent every 60 seconds and 5 in an hour for an account, and a
-        request before that is refused with `VERIFICATION_RESEND_TOO_SOON` and a `Retry-After` header.
+        The password has to be the one of the account. It proves that the caller made the account and not that the caller holds the
+        mailbox, so the limits bound what one account can cost. A new code replaces the old one and starts with 5 tries. One code can be
+        sent every 60 seconds and 5 in an hour for an account, and a request before that is refused with `VERIFICATION_RESEND_TOO_SOON`
+        and a `Retry-After` header. A mail that the mail service did not take gives its wait and its send of the hour back.
       security: []
       requestBody:
         required: true
@@ -4061,12 +4074,21 @@ components:
             and it only gives this device its own rate limit for the email. Send it whenever the app has one.
     VerifyEmailRequest:
       type: object
-      required: [email, code]
+      required: [email, password, code]
       properties:
         email:
           type: string
           format: email
           maxLength: 255
+        password:
+          type: string
+          format: password
+          maxLength: 72
+          description: The password of the account. It is checked first, so a stranger who knows only the email cannot use up the tries of the code.
+        deviceToken:
+          type: string
+          maxLength: 256
+          description: The `deviceToken` that registration or login returned. It only gives this device its own rate limit for the email.
         code:
           type: string
           pattern: "^[0-9]{6}$"
@@ -4084,6 +4106,10 @@ components:
           type: string
           format: password
           maxLength: 72
+        deviceToken:
+          type: string
+          maxLength: 256
+          description: The `deviceToken` that registration or login returned. It only gives this device its own rate limit for the email.
     Verification:
       type: object
       required: [sent, expiresInSeconds, resendAfterSeconds]

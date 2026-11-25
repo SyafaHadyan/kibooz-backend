@@ -78,8 +78,9 @@ type Env struct {
 	EmailVerificationRequired bool `env:"EMAIL_VERIFICATION_REQUIRED" envDefault:"false"`
 	// ResendAPIKey is the key of the Resend account that sends the mail. A key with sending access to the domain of EmailFrom is enough.
 	ResendAPIKey string `env:"RESEND_API_KEY"`
-	// EmailFrom is the sender of the mail, in the form "Name <address>". Its domain has to be verified in Resend.
-	EmailFrom string `env:"EMAIL_FROM" envDefault:"Kibooz <no-reply@mail.syafahadyan.com>"`
+	// EmailFrom is the address that sends the mail. The mail shows it as "Kibooz <address>", and a value that already has a name
+	// in angle brackets is used as it is. Its domain has to be verified in Resend.
+	EmailFrom string `env:"EMAIL_FROM" envDefault:"no-reply@mail.syafahadyan.com"`
 	// ResendAPIURL is the address of the Resend API. Only a test needs another value.
 	ResendAPIURL          string `env:"RESEND_API_URL" envDefault:"https://api.resend.com"`
 	ChatMaxSockets        int    `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
