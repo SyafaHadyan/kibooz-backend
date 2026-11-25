@@ -24,6 +24,16 @@ The `message` is English text for people and can be reworded, so an app branches
 | `CHAT_CONTACT_NOT_ALLOWED` | 403 | A new conversation needs a teacher and a parent who share an active class, and a room needs an account that belongs to the class. A person who does not exist, was deleted, has the same role or shares no class, and a class that does not exist or that the account is not in, get this same answer | Show that this person cannot be contacted, and offer the contact list instead |
 | `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
 
+## Email verification
+
+| Code | Status | Meaning | What the app does |
+|:---|:---|:---|:---|
+| `EMAIL_NOT_VERIFIED` | 403 | The password was right, but the account waits for the code of its email | Show the screen for the code |
+| `VERIFICATION_CODE_INVALID` | 400 | The code is wrong, expired or used up, or no account waits on this email. The answer is the same for all of them | Ask the person to check the code, or send a new one |
+| `VERIFICATION_RESEND_TOO_SOON` | 429 | A code was sent less than 60 seconds ago, or 5 were sent in the last hour. `Retry-After` says how long to wait | Disable the button and count down |
+| `EMAIL_ALREADY_VERIFIED` | 409 | The email of this account is verified already | Send the person to sign in |
+| `EMAIL_SEND_FAILED` | 503 | The mail service did not take the code, so no mail is on its way | Tell the person to try again later |
+
 ## Registration and conflicts
 
 | Code | Status | Meaning | What the app does |
