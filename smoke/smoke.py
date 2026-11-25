@@ -10,6 +10,9 @@ Settings come from the environment
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
   SMOKE_STORAGE          off for a stack that has no bucket. The upload checks then expect STORAGE_UNAVAILABLE instead
+  SMOKE_EMAIL_VERIFICATION  on when the server requires the code of the email for a new account. The run then creates no account,
+                         because every registration would mail a code to an address that nobody reads, and it checks only what
+                         the keeper can do and the routes of the verification, with requests that send no mail
   SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
                          bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
@@ -28,6 +31,7 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
 
 STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
 CHAT_MEDIA_ON = os.environ.get("SMOKE_CHAT_MEDIA", "off") == "on"
+EMAIL_VERIFICATION_ON = os.environ.get("SMOKE_EMAIL_VERIFICATION", "off") == "on"
 # The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
 # http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
 URL = urlsplit(BASE)
@@ -270,6 +274,33 @@ for m, p in [("GET", "/wali/dashboard"), ("GET", "/guru/dashboard"), ("GET", "/l
     expect(f"{m} {p} needs a token", call(m, p), 401, "AUTH_TOKEN_MISSING")
 expect("bad token", call("GET", "/guru/dashboard", "not-a-token"), 401)
 
+# ---------- email verification is on ----------
+# A registration would mail a real code to an address at example.com, which bounces and uses the quota of the mail service, so a run
+# with the verification on creates no account. The keeper was verified before the switch, and the parent side and the flows that
+# need a second account are covered by the end to end tests of CI. This part checks what the keeper can do and the routes of the
+# verification with requests that send no mail, because an account that does not exist or is verified never gets one.
+if EMAIL_VERIFICATION_ON:
+    ks, kj = call("POST", "/auth/login", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "role": "GURU"})
+    check("the keeper signs in, so it was verified before the switch", ks == 200 and bool(dig(kj, "data", "token")), f"{ks} {kj}")
+    keeper_token = dig(kj, "data", "token")
+    if keeper_token:
+        g4 = {"email": KEEPER_EMAIL, "token": keeper_token, "refresh": dig(kj, "data", "refreshToken"), "role": "GURU", "pw": KEEPER_PASSWORD, "reused": True}
+        for path in ("/guru/dashboard", "/guru/classes", "/guru/profile", "/notifications"):
+            expect(f"the keeper reads {path}", call("GET", path, keeper_token), 200)
+        s, rj = call("POST", "/auth/refresh-token", body={"refreshToken": g4["refresh"], "email": KEEPER_EMAIL})
+        check("the keeper refreshes", s == 200 and bool(dig(rj, "data", "refreshToken")), f"{s} {rj}")
+        expect("the keeper logs out", call("POST", "/auth/logout", body={"refreshToken": dig(rj, "data", "refreshToken")}), 200)
+    nobody = f"kibooz-smoke-{RUN}-nobody@example.com"
+    expect("verify with an email that has no account", call("POST", "/auth/verify-email", body={"email": nobody, "password": PW, "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("resend for an email that has no account", call("POST", "/auth/resend-verification", body={"email": nobody, "password": PW}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("verify with a wrong password", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD + "x", "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("verify for an account that is verified", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "code": "123456"}), 409, "EMAIL_ALREADY_VERIFIED")
+    expect("resend for an account that is verified", call("POST", "/auth/resend-verification", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD}), 409, "EMAIL_ALREADY_VERIFIED")
+    expect("a code of five digits is refused", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "code": "12345"}), 400, "VALIDATION_ERROR")
+    expect("register validation sends no mail", call("POST", "/auth/register", body={"email": "bad", "password": "x", "role": "GURU"}), 400, "VALIDATION_ERROR")
+    print("email verification is on, so no account was registered and the flows that need one were skipped")
+    sys.exit(1 if failed else 0)
+
 # ---------- registration ----------
 g1 = register_guru("g1", "Smoke A")
 g2 = register_guru("g2", "Smoke B")
@@ -316,6 +347,11 @@ s, js = call("POST", "/auth/login", body={"email": g1["email"], "password": PW, 
 check("login ok", s == 200 and dig(js, "data", "token"), f"{s} {js}")
 expect("login wrong password", call("POST", "/auth/login", body={"email": g1["email"], "password": PW + "x", "role": "GURU"}), 401, "AUTH_INVALID_CREDENTIALS")
 expect("login wrong role", call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
+# the account is verified, so these send no mail whatever the setting of the server is
+expect("verify for an account that is verified", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW, "code": "123456"}), 409, "EMAIL_ALREADY_VERIFIED")
+expect("resend for an account that is verified", call("POST", "/auth/resend-verification", body={"email": g1["email"], "password": PW}), 409, "EMAIL_ALREADY_VERIFIED")
+expect("verify with a wrong password", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW + "x", "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+expect("a code that is not six digits is refused", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW, "code": "+12345"}), 400, "VALIDATION_ERROR")
 old_refresh = dig(js, "data", "refreshToken")
 s, js2 = call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]})
 check("refresh rotates", s == 200 and dig(js2, "data", "refreshToken") not in (None, old_refresh), f"{s} {js2}")

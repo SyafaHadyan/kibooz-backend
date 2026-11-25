@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: true
+      email_verification:
+        description: Turn it on when EMAIL_VERIFICATION_REQUIRED is true on the server. The run then registers no account, because every registration would mail a code to an address that nobody reads, and it checks only the keeper and the verification routes.
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: smoke
@@ -42,6 +47,7 @@ jobs:
           BASE_URL: https://kibooz-api.syafahadyan.com
           EXPECTED_VERSION: ${{ inputs.expected_version }}
           SMOKE_CHAT_MEDIA: ${{ inputs.chat_media && 'on' || 'off' }}
+          SMOKE_EMAIL_VERIFICATION: ${{ inputs.email_verification && 'on' || 'off' }}
           SMOKE_KEEPER_EMAIL: ${{ vars.SMOKE_KEEPER_EMAIL }}
           SMOKE_KEEPER_PASSWORD: ${{ secrets.SMOKE_KEEPER_PASSWORD }}
         run: python3 -I smoke/smoke.py
