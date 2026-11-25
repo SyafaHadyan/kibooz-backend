@@ -166,6 +166,20 @@ type LearningVideo struct {
 	CreatedAt       time.Time `gorm:"autoCreateTime:false;not null"`
 }
 
+// LearningModule stores one scheduled meeting of a class.
+type LearningModule struct {
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ClassID       uuid.UUID `gorm:"type:uuid;not null"`
+	AddedByGuruID uuid.UUID `gorm:"type:uuid;not null"`
+	MeetingNumber int       `gorm:"not null"`
+	Title         string    `gorm:"size:150;not null"`
+	Description   *string
+	Status        constants.ModuleStatus `gorm:"size:20;not null"`
+	ScheduledAt   *time.Time
+	CreatedAt     time.Time `gorm:"autoCreateTime:false;not null"`
+	UpdatedAt     time.Time `gorm:"autoUpdateTime:false;not null"`
+}
+
 // ForumPost is a thread when ParentID is nil and a reply to that thread otherwise
 type ForumPost struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`

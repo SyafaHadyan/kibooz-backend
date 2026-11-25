@@ -108,6 +108,7 @@ var (
 	ErrLastTeacher        = New(http.StatusConflict, "LAST_TEACHER", "The only teacher of a class cannot leave it")
 	ErrForumPostNotFound  = New(http.StatusNotFound, "FORUM_POST_NOT_FOUND", "Forum post not found")
 	ErrVideoNotFound      = New(http.StatusNotFound, "VIDEO_NOT_FOUND", "Learning video not found")
+	ErrModuleNotFound     = New(http.StatusNotFound, "MODULE_NOT_FOUND", "Learning module not found")
 	ErrDailyLimitReached  = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Today's limit for trash sorting point claims has been reached")
 	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
 	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")

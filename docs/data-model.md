@@ -17,6 +17,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `trash_scans` | One verified trash sorting claim, with the category, the points awarded and the photo |
 | `guidance_applications` | A parent who applied a piece of emotional guidance to a child, with their notes |
 | `learning_videos` | A video that a teacher added to a class |
+| `learning_modules` | A meeting of a class that a teacher added, with its number from 1 to 100, a title, an optional description, a status of `upcoming`, `ongoing` or `completed`, and an optional date |
 | `forum_posts` | A thread or a reply in the forum of a class |
 | `chat_conversations` | A conversation, either `direct` or `class`. A direct one is between a teacher and a parent, one for each pair of accounts, and the smaller id of the two is always `user_low_id`. A class room has a `class_id`, one room for each class, and no pair. Its members are not stored, they are the teachers of the class and the parents with an active child in it, and each sees the messages from the time they joined |
 | `chat_messages` | A message of a conversation. The `id` only grows and is the cursor of the conversation. A message has text, a photo or video, or both, and the four `media_` columns are set or empty together. A deleted message keeps its row with an empty body, no media and `deleted_at` |

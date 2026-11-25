@@ -651,6 +651,54 @@ expect("delete video", call("DELETE", f"/classes/{cid}/videos/{vid}", g1["token"
 expect("deleted video gone", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "x"}), 404, "VIDEO_NOT_FOUND")
 expect("other class videos closed", call("GET", f"/classes/{cid}/videos", g2["token"]), 403, "AUTH_FORBIDDEN")
 
+# ---------- learning modules ----------
+mods = f"/classes/{cid}/modules"
+s, js = call("GET", mods, w1["token"])
+check("a class starts without modules", s == 200 and dig(js, "data", "total") == 0 and dig(js, "data", "modules") == [], f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 2, "title": "  Smoke Module 2  ", "description": "bring pencils", "status": "ongoing", "scheduledAt": "2026-12-01T08:00:00Z"})
+mod_two = dig(js, "data", "id")
+check("add module", s == 201 and mod_two and dig(js, "data", "title") == "Smoke Module 2" and dig(js, "data", "status") == "ongoing"
+      and str(dig(js, "data", "scheduledAt")).startswith("2026-12-01T08:00:00"), f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 1, "title": "Smoke Module 1"})
+mod_one = dig(js, "data", "id")
+check("a module starts as upcoming without a text", s == 201 and mod_one and dig(js, "data", "status") == "upcoming" and dig(js, "data", "description") is None, f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 1, "title": "Smoke Module 1b"})
+mod_tie = dig(js, "data", "id")
+check("a second module of the same meeting", s == 201 and mod_tie, f"{s} {js}")
+for name, body in (("number 0", {"meetingNumber": 0, "title": "x"}), ("number 101", {"meetingNumber": 101, "title": "x"}),
+                   ("unknown status", {"meetingNumber": 3, "title": "x", "status": "unknown"}), ("long title", {"meetingNumber": 3, "title": "a" * 151})):
+    expect(f"add module with {name} rejected", call("POST", mods, g1["token"], body), 400, "VALIDATION_ERROR")
+expect("parent cannot add module", call("POST", mods, w1["token"], {"meetingNumber": 3, "title": "x"}), 403, "AUTH_FORBIDDEN")
+expect("other class modules closed", call("GET", mods, g2["token"]), 403, "AUTH_FORBIDDEN")
+s, js = call("GET", mods, w1["token"])
+names = [m.get("title") for m in dig(js, "data", "modules") or []]
+check("parent lists modules by meeting and creation order", s == 200 and dig(js, "data", "total") == 3 and names == ["Smoke Module 1", "Smoke Module 1b", "Smoke Module 2"], f"{s} {names}")
+s, js = call("GET", mods + "?limit=2&page=2", w1["token"])
+check("modules are paged", s == 200 and dig(js, "data", "total") == 3 and [m.get("title") for m in dig(js, "data", "modules") or []] == ["Smoke Module 2"], f"{s} {js}")
+s, js = call("PATCH", f"{mods}/{mod_one}", g1["token"], {"title": " Smoke Module 1 Edited ", "description": "", "status": "completed", "meetingNumber": 3})
+check("edit module", s == 200 and dig(js, "data", "title") == "Smoke Module 1 Edited" and dig(js, "data", "description") is None
+      and dig(js, "data", "status") == "completed" and dig(js, "data", "meetingNumber") == 3, f"{s} {js}")
+expect("edit module empty body", call("PATCH", f"{mods}/{mod_one}", g1["token"], {}), 400, "VALIDATION_ERROR")
+expect("edit module with a bad status", call("PATCH", f"{mods}/{mod_one}", g1["token"], {"status": "unknown"}), 400, "VALIDATION_ERROR")
+expect("parent cannot edit module", call("PATCH", f"{mods}/{mod_one}", w1["token"], {"title": "x"}), 403, "AUTH_FORBIDDEN")
+expect("parent cannot delete module", call("DELETE", f"{mods}/{mod_one}", w1["token"]), 403, "AUTH_FORBIDDEN")
+expect("other teacher cannot edit module", call("PATCH", f"{mods}/{mod_one}", g2["token"], {"title": "x"}), 403, "AUTH_FORBIDDEN")
+module_key = str(uuid.uuid4())
+s, js, replayed = call_key("POST", mods, g1["token"], module_key, {"meetingNumber": 4, "title": "Smoke Module Keyed"})
+mod_key_id = dig(js, "data", "id")
+check("module with a key is added", s == 201 and mod_key_id and not replayed, f"{s} {js} {replayed}")
+s, js, replayed = call_key("POST", mods, g1["token"], module_key, {"meetingNumber": 4, "title": "Smoke Module Keyed"})
+check("repeating the key replays the module", s == 201 and dig(js, "data", "id") == mod_key_id and replayed, f"{s} {js} {replayed}")
+s, js = call("GET", mods, g1["token"])
+check("the replay stored one module", s == 200 and dig(js, "data", "total") == 4, f"{s} {js}")
+for mod_id in (mod_one, mod_two, mod_tie, mod_key_id):
+    if mod_id:
+        expect("delete module", call("DELETE", f"{mods}/{mod_id}", g1["token"]), 200)
+expect("deleted module gone", call("PATCH", f"{mods}/{mod_one}", g1["token"], {"title": "x"}), 404, "MODULE_NOT_FOUND")
+expect("delete a deleted module", call("DELETE", f"{mods}/{mod_one}", g1["token"]), 404, "MODULE_NOT_FOUND")
+s, js = call("GET", mods, w1["token"])
+check("the class has no module left", s == 200 and dig(js, "data", "total") == 0, f"{s} {js}")
+
 # ---------- 0.13.0 class limit of a teacher ----------
 g6 = register_guru("g6", "Smoke Limit 1")
 limit_class = None
