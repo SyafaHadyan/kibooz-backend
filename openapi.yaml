@@ -1857,6 +1857,9 @@ paths:
       responses:
         "201":
           description: Learning module added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
           content:
             application/json:
               schema:
@@ -1868,11 +1871,9 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "409":
-          description: The class is archived and read only (`CLASS_ARCHIVED`)
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Failure"
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
         "429":
           $ref: "#/components/responses/RateLimited"
   /classes/{classId}/modules/{moduleId}:
@@ -4624,7 +4625,7 @@ components:
         scheduledAt:
           type: string
           format: date-time
-          nullable: true
+          description: A new date for the meeting. A date that is set cannot be removed, so a null here is the same as leaving the field out
     Module:
       type: object
       required: [id, meetingNumber, title, description, status, scheduledAt, createdAt, updatedAt]
