@@ -82,6 +82,8 @@ reply_id="$(pick "$reply" '.data.id')"
 # one learning module, and the inbox of the parent, which already holds the notification that the video above made
 module="$(post_as "/classes/$class/modules" "$guru_session" '{"meetingNumber": 1, "title": "ZAP module"}')"
 module_id="$(pick "$module" '.data.id')"
+module_two="$(post_as "/classes/$class/modules" "$guru_session" '{"meetingNumber": 7, "title": "ZAP module kept"}')"
+module_two_id="$(pick "$module_two" '.data.id')"
 notification_id="$(pick "$(get /notifications "$wali_session")" '.data.notifications[0].id')"
 
 # a conversation between the teacher and the parent with one message in it, so that the chat routes answer real data
@@ -160,7 +162,7 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" --arg ri "$room_id" \
   --arg mi "$message_id" --arg tu "$teacher_user" --arg lk "$target_class" --arg mt "$target_token" --arg mc "$target_code" --arg ac "$accept_child" --arg ar "$accept_request" \
   --arg rc "$reject_child" --arg rr "$reject_request" --arg cc "$cancel_child" --arg cr "$cancel_request" \
-  --arg md "$module_id" --arg nt "$notification_id" '[
+  --arg md "$module_id" --arg m2 "$module_two_id" --arg nt "$notification_id" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.nocode." + $x + "@example.com"), password: $p, fullName: "ZAP No Code", role: "WALI", classCode: "ZZZZZZZZ", student: {nisn: "323456789012", fullName: "ZAP Nobody"}}},
@@ -336,20 +338,20 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "GET", path: ("/api/v1/classes/" + $c + "/modules"), token: $pw},
   {method: "GET", path: ("/api/v1/classes/" + $c + "/modules")},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 2, title: "ZAP module two", description: "ZAP module text", status: "ongoing", scheduledAt: "2030-01-01T08:00:00Z"}},
-  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
-  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
-  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 4, title: "ZAP other body"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-4"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-4"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-4"), body: {meetingNumber: 4, title: "ZAP other body"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $wt, body: {meetingNumber: 5, title: "parent module"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 0, title: "zero"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 101, title: "too high"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 6, title: "bad status", status: "unknown"}},
-  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {title: "ZAP module renamed", status: "completed"}},
-  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {}},
-  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {meetingNumber: 101}},
-  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $wt, body: {title: "not a teacher"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $m2), token: $gt, body: {title: "ZAP module renamed", status: "completed"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $m2), token: $gt, body: {}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $m2), token: $gt, body: {meetingNumber: 101}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $m2), token: $wt, body: {title: "not a teacher"}},
   {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/not-a-uuid"), token: $gt, body: {title: "x"}},
-  {method: "PATCH", path: ("/api/v1/classes/" + $lk + "/modules/" + $md), token: $gt, body: {title: "another class"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $lk + "/modules/" + $m2), token: $gt, body: {title: "another class"}},
   {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $wt},
   {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt},
   {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt},
