@@ -253,3 +253,91 @@ func found(t *testing.T, repo authrepository.AuthDBItf, email string, nip string
 
 	return accounts[0].ID
 }
+
+// The schedule of the mail retries is in SQL, so it runs against the real database.
+func TestMailRetriesFollowTheScheduleAndAreClaimedOnce(t *testing.T) {
+	ctx := context.Background()
+	repo := authrepository.NewAuthDB(testDB)
+	guru := registerGuru(t, "Kode Gagal")
+
+	var id string
+
+	require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", guru.Email).Scan(&id).Error)
+	require.NoError(t, testDB.Exec("UPDATE users SET email_verification_pending = TRUE WHERE id = ?::uuid", id).Error)
+
+	userID, err := uuid.Parse(id)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_ = testDB.Exec("DELETE FROM email_verifications WHERE user_id = ?::uuid", id).Error
+		_ = testDB.Exec("UPDATE users SET email_verification_pending = FALSE WHERE id = ?::uuid", id).Error
+	})
+
+	now := time.Now().Truncate(time.Second)
+	rule := authrepository.SendRule{TTL: time.Hour, Cooldown: 0, PerHour: 100}
+
+	_, err = repo.StoreVerification(ctx, userID, "code-1", now, rule)
+	require.NoError(t, err)
+
+	retryAfter := func() time.Duration {
+		var seconds float64
+
+		require.NoError(t, testDB.Raw(
+			"SELECT extract(epoch FROM retry_at - ?::timestamptz) FROM email_verifications WHERE user_id = ?::uuid", now, id,
+		).Scan(&seconds).Error)
+
+		return time.Duration(seconds * float64(time.Second))
+	}
+
+	t.Run("each failure waits longer, 1, 5 and 15 minutes and then an hour", func(t *testing.T) {
+		for _, want := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, time.Hour} {
+			require.NoError(t, repo.MarkMailFailed(ctx, userID, "code-1", now))
+			require.Equal(t, want, retryAfter())
+		}
+	})
+
+	t.Run("a failure of another code is not noted", func(t *testing.T) {
+		require.NoError(t, repo.ClearMailRetry(ctx, userID))
+		require.NoError(t, repo.MarkMailFailed(ctx, userID, "an-older-code", now))
+
+		var due int64
+
+		require.NoError(t, testDB.Raw("SELECT count(*) FROM email_verifications WHERE user_id = ?::uuid AND retry_at IS NOT NULL", id).Scan(&due).Error)
+		require.Zero(t, due)
+	})
+
+	t.Run("a mail that is due is claimed once, and not before its time", func(t *testing.T) {
+		require.NoError(t, repo.MarkMailFailed(ctx, userID, "code-1", now))
+
+		early, err := repo.ClaimMailRetries(ctx, now.Add(30*time.Second), 5*time.Minute, 10)
+		require.NoError(t, err)
+		require.NotContains(t, early, userID)
+
+		claimed, err := repo.ClaimMailRetries(ctx, now.Add(2*time.Minute), 5*time.Minute, 10)
+		require.NoError(t, err)
+		require.Contains(t, claimed, userID)
+
+		again, err := repo.ClaimMailRetries(ctx, now.Add(2*time.Minute), 5*time.Minute, 10)
+		require.NoError(t, err)
+		require.NotContains(t, again, userID, "the lease keeps a second copy away")
+
+		later, err := repo.ClaimMailRetries(ctx, now.Add(8*time.Minute), 5*time.Minute, 10)
+		require.NoError(t, err)
+		require.Contains(t, later, userID, "a copy that died leaves the retry for after the lease")
+	})
+
+	t.Run("an account that is verified is never claimed and clearing stops the retries", func(t *testing.T) {
+		require.NoError(t, testDB.Exec("UPDATE users SET email_verification_pending = FALSE WHERE id = ?::uuid", id).Error)
+
+		claimed, err := repo.ClaimMailRetries(ctx, now.Add(48*time.Hour), time.Minute, 10)
+		require.NoError(t, err)
+		require.NotContains(t, claimed, userID)
+
+		require.NoError(t, repo.ClearMailRetry(ctx, userID))
+
+		var failures int64
+
+		require.NoError(t, testDB.Raw("SELECT mail_failures FROM email_verifications WHERE user_id = ?::uuid", id).Scan(&failures).Error)
+		require.Zero(t, failures)
+	})
+}

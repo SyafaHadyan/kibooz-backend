@@ -36,6 +36,12 @@ type fakeRepo struct {
 	// takenElse is what is taken apart from the accounts that a lookup leaves out, which are recorded in ignored
 	takenElse error
 	ignored   []uuid.UUID
+	// findErr makes the lookup of a user by id fail
+	findErr error
+	// markedFailed and clearedRetry count the calls that schedule and stop the retries of a mail
+	markedFailed int
+	clearedRetry int
+
 	// stale is what the lookup of accounts that waited too long finds, staleBefore the time it was asked about and staleErr makes it fail
 	stale       []repository.PendingAccount
 	staleBefore time.Time
@@ -89,7 +95,9 @@ type liveCode struct {
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
 
-func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) { return f.user, nil }
+func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) {
+	return f.user, f.findErr
+}
 
 func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, error) {
 	f.classLookups++
@@ -175,6 +183,22 @@ func (f *fakeRepo) RotateRefreshToken(
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
+
+func (f *fakeRepo) MarkMailFailed(context.Context, uuid.UUID, string, time.Time) error {
+	f.markedFailed++
+
+	return nil
+}
+
+func (f *fakeRepo) ClearMailRetry(context.Context, uuid.UUID) error {
+	f.clearedRetry++
+
+	return nil
+}
+
+func (f *fakeRepo) ClaimMailRetries(context.Context, time.Time, time.Duration, int) ([]uuid.UUID, error) {
+	return nil, nil
+}
 
 func (f *fakeRepo) StalePendingAccounts(_ context.Context, _ string, _ string, before time.Time) ([]repository.PendingAccount, error) {
 	f.staleBefore = before

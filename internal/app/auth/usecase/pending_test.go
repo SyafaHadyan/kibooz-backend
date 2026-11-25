@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
 )
 
 func buildReplacing(repo *fakeRepo, required bool, remove usecase.AccountRemover) usecase.AuthUseCaseItf {
@@ -160,4 +162,125 @@ func TestACodeIsNotStoredForAnAccountThatIsGone(t *testing.T) {
 		context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
 	)
 	require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
+}
+
+// failingMail answers every send with its error
+func failingMail(err error) *fakeMail { return &fakeMail{err: err} }
+
+func TestAFailedMailIsScheduledForARetryAndAGoodOneStopsThem(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a failed mail is scheduled", func(t *testing.T) {
+		repo := &fakeRepo{}
+		pendingAccount(t, repo)
+
+		_, err := buildVerifying(repo, failingMail(errors.New("resend answered 500")), true).ResendVerification(
+			ctx, dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+		)
+		require.Equal(t, "EMAIL_SEND_FAILED", apperror.As(err).Code)
+		require.Equal(t, 1, repo.markedFailed)
+		require.Zero(t, repo.clearedRetry)
+	})
+
+	t.Run("a mail that cannot be sent without a key is not retried", func(t *testing.T) {
+		repo := &fakeRepo{}
+		pendingAccount(t, repo)
+
+		_, _ = buildVerifying(repo, failingMail(mailer.ErrDisabled), true).ResendVerification(
+			ctx, dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+		)
+		require.Zero(t, repo.markedFailed)
+	})
+
+	t.Run("a good mail clears the retries", func(t *testing.T) {
+		repo := &fakeRepo{}
+		pendingAccount(t, repo)
+
+		_, err := buildVerifying(repo, &fakeMail{}, true).ResendVerification(
+			ctx, dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+		)
+		require.NoError(t, err)
+		require.Equal(t, 1, repo.clearedRetry)
+		require.Zero(t, repo.markedFailed)
+	})
+}
+
+func TestRetryVerification(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a new code is mailed to an account that waits", func(t *testing.T) {
+		repo, mail := &fakeRepo{}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Len(t, mail.codes, 1)
+		require.Equal(t, 1, repo.clearedRetry)
+	})
+
+	t.Run("an account that is verified, gone or not waiting any more only stops the retries", func(t *testing.T) {
+		repo, mail := &fakeRepo{}, &fakeMail{}
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, uuid.New()))
+		require.Empty(t, mail.codes)
+		require.Equal(t, 1, repo.clearedRetry)
+
+		user := pendingAccount(t, repo)
+		user.EmailVerificationPending = false
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Empty(t, mail.codes)
+		require.Equal(t, 2, repo.clearedRetry)
+	})
+
+	t.Run("nothing is retried while the verification is off", func(t *testing.T) {
+		repo, mail := &fakeRepo{}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, false).RetryVerification(ctx, user.ID))
+		require.Empty(t, mail.codes)
+	})
+
+	t.Run("an account that had all its codes is let go", func(t *testing.T) {
+		repo, mail := &fakeRepo{storeErr: repository.ErrCodeLimit}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Equal(t, 1, repo.clearedRetry)
+	})
+
+	t.Run("an account that was removed in the meantime is let go", func(t *testing.T) {
+		repo, mail := &fakeRepo{storeErr: repository.ErrNotWaiting}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Equal(t, 1, repo.clearedRetry)
+		require.Empty(t, mail.codes)
+	})
+
+	t.Run("a code that was asked for in the meantime is not mailed again", func(t *testing.T) {
+		repo, mail := &fakeRepo{storeWait: time.Minute}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Empty(t, mail.codes)
+		require.Zero(t, repo.clearedRetry)
+	})
+
+	t.Run("a quota answer is handed back and another failure is not", func(t *testing.T) {
+		repo := &fakeRepo{}
+		user := pendingAccount(t, repo)
+
+		err := buildVerifying(repo, failingMail(fmt.Errorf("%w, resend answered 429", mailer.ErrQuota)), true).RetryVerification(ctx, user.ID)
+		require.ErrorIs(t, err, mailer.ErrQuota)
+
+		err = buildVerifying(repo, failingMail(errors.New("resend answered 500")), true).RetryVerification(ctx, user.ID)
+		require.NoError(t, err)
+		require.Equal(t, 2, repo.markedFailed, "both failures are scheduled again")
+	})
+
+	t.Run("a failed lookup is an error", func(t *testing.T) {
+		repo := &fakeRepo{findErr: errors.New("database is down")}
+
+		require.Error(t, buildVerifying(repo, &fakeMail{}, true).RetryVerification(ctx, uuid.New()))
+	})
 }

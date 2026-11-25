@@ -14,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	authhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/interface/rest"
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/mailretry"
 	pendingsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/pending"
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	authusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
@@ -81,6 +82,7 @@ type Bootstrap struct {
 	stopTokens    func()
 	stopNotifs    func()
 	stopPending   func()
+	stopMailRetry func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -337,8 +339,11 @@ func Start(version string) (*Bootstrap, error) {
 		Observe(stats.Job("notification_purge")).Start(notificationsweep.Interval)
 
 	// accounts that wait for a code can sign in while the verification is off, so nothing may remove them then
-	stopPending := func() {}
+	stopPending, stopMailRetry := func() {}, func() {}
 	if cfg.EmailVerificationRequired {
+		stopMailRetry = mailretry.NewJob(authRepo, authUseCase.RetryVerification).
+			Observe(stats.Job("verification_mail_retry")).Start(mailretry.Interval)
+
 		stopPending = pendingsweep.NewSweeper(authRepo, removePending).
 			Observe(stats.Job("pending_account_purge")).Start(pendingsweep.Interval)
 	}
@@ -358,7 +363,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopPending: stopPending, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopPending: stopPending, stopMailRetry: stopMailRetry, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -380,6 +385,7 @@ func (b *Bootstrap) Close() {
 	b.stopTokens()
 	b.stopNotifs()
 	b.stopPending()
+	b.stopMailRetry()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()

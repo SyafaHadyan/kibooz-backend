@@ -119,3 +119,15 @@ func TestAServerThatIsDownIsAnErrorWithoutTheKey(t *testing.T) {
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "re_secretvalue")
 }
+
+func TestAQuotaAnswerIsToldApartFromOtherFailures(t *testing.T) {
+	quota, _ := resendServer(t, http.StatusTooManyRequests, `{"message":"daily quota reached"}`)
+	other, _ := resendServer(t, http.StatusInternalServerError, `{"message":"oops"}`)
+
+	err := sender(quota.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
+	require.ErrorIs(t, err, mailer.ErrQuota)
+
+	err = sender(other.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, mailer.ErrQuota)
+}

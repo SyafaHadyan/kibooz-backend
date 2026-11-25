@@ -79,6 +79,15 @@ type AuthDBItf interface {
 	// that is expired or used up is only refused. A code that matches ends the wait of the account in the same transaction, so
 	// it works once.
 	CheckVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int) (matched bool, err error)
+	// MarkMailFailed notes that the mail of the live code of the account was not taken by the mail service, and when it is tried
+	// again, which is after 1, 5 and 15 minutes and then every hour. It does nothing when the live code is another one by now.
+	MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error
+	// ClearMailRetry stops the retries of the account, because a mail went out, the account is verified or the codes are used up
+	ClearMailRetry(ctx context.Context, userID uuid.UUID) error
+	// ClaimMailRetries returns the accounts that wait for a code and whose mail is due for another try, at most limit of them, and
+	// puts the next try of each after the lease, so two copies of the API never take the same account. A row that another
+	// transaction holds is skipped.
+	ClaimMailRetries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]uuid.UUID, error)
 	// ReleaseVerification gives back the wait and the send of the hour of a code whose mail was not taken by the mail service, so the
 	// person can ask again at once. It only touches the row of that code, a newer code is left alone.
 	ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error
@@ -795,4 +804,35 @@ func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, lim
 	).Scan(&accounts).Error
 
 	return accounts, err
+}
+
+func (r *AuthDB) MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error {
+	// the right side of a SET reads the row as it was, so the wait follows the failures before this one
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE email_verifications SET mail_failures = mail_failures + 1, retry_at = ?::timestamptz + (CASE mail_failures
+			WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '15 minutes'
+			ELSE interval '1 hour' END)
+		WHERE user_id = ? AND code_hash = ?`, now, userID, codeHash,
+	).Error
+}
+
+func (r *AuthDB) ClearMailRetry(ctx context.Context, userID uuid.UUID) error {
+	return r.db.WithContext(ctx).Exec(
+		"UPDATE email_verifications SET retry_at = NULL, mail_failures = 0 WHERE user_id = ? AND (retry_at IS NOT NULL OR mail_failures > 0)", userID,
+	).Error
+}
+
+func (r *AuthDB) ClaimMailRetries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+
+	err := r.db.WithContext(ctx).Raw(
+		`UPDATE email_verifications SET retry_at = ?::timestamptz + make_interval(secs => ?)
+		WHERE user_id IN (
+			SELECT ev.user_id FROM email_verifications ev JOIN users u ON u.id = ev.user_id
+			WHERE ev.retry_at IS NOT NULL AND ev.retry_at <= ? AND u.email_verification_pending AND u.deleted_at IS NULL
+			ORDER BY ev.retry_at LIMIT ? FOR UPDATE OF ev SKIP LOCKED
+		) RETURNING user_id`, now, lease.Seconds(), now, limit,
+	).Scan(&ids).Error
+
+	return ids, err
 }
