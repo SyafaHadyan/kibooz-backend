@@ -14,6 +14,9 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
+// deletedActorName stands in for the name of a teacher or parent whose account was deleted after the event
+const deletedActorName = "Deleted account"
+
 func (u *GuruUseCase) ClassHistory(
 	ctx context.Context, userID uuid.UUID, classID *uuid.UUID, eventType string, page pagination.Params,
 ) (dto.GuruHistoryResponse, error) {
@@ -70,6 +73,11 @@ func toGuruHistoryEvent(classID uuid.UUID, className string, row repository.Guru
 		ConfidenceScore: row.ConfidenceScore,
 		Description:     row.Description,
 		OccurredAt:      row.OccurredAt.UTC(),
+	}
+
+	if row.ActorDeleted {
+		name := deletedActorName
+		event.ActorName = &name
 	}
 
 	switch row.EventType {
