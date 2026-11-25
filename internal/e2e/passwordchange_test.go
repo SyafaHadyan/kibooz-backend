@@ -160,7 +160,7 @@ func TestASignInThatWaitsForAPasswordChangeIsRefused(t *testing.T) {
 
 		err := testDB.Raw(
 			"SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> pg_backend_pid() " +
-				"AND query LIKE '%password_hash FROM users%FOR SHARE%'",
+				"AND query LIKE '%password_hash%FROM users%FOR SHARE%'",
 		).Scan(&waiting).Error
 
 		return err == nil && waiting > 0
