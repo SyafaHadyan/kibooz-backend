@@ -346,6 +346,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, guidance reports", func(ctx context.Context) error { return drop2(classroom.ListGuidanceReports(ctx, class, 20, 0)) })
 	call("guru, move requests", func(ctx context.Context) error { return drop(guruRepo.ListMoveRequests(ctx, class)) })
 	call("guru, history of a child", func(ctx context.Context) error { return drop(guruRepo.StudentHistory(ctx, class, child)) })
+	call("guru, class activity history", func(ctx context.Context) error {
+		return drop2(guruRepo.ListClassHistory(ctx, class, "", 20, 0))
+	})
 	call("nisn, verified holder", func(ctx context.Context) error {
 		return drop(nisn.VerifiedHolder(logged.WithContext(ctx), "1000000001", child))
 	})
@@ -394,6 +397,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("parent, find the guardian", func(ctx context.Context) error { return drop(waliRepo.FindGuardian(ctx, parent)) })
 	call("parent, children", func(ctx context.Context) error { return drop(waliRepo.ListChildren(ctx, wali)) })
 	call("parent, previous classes", func(ctx context.Context) error { return drop(waliRepo.PreviousClasses(ctx, wali, child)) })
+	call("parent, child activity history", func(ctx context.Context) error {
+		return drop2(waliRepo.ListChildHistory(ctx, child, "", 20, 0))
+	})
 	call("parent, moves", func(ctx context.Context) error { return drop(waliRepo.ListMoves(ctx, wali, child)) })
 
 	// writing, where the statements around the write are the part that grows with the data

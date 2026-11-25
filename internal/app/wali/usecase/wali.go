@@ -23,6 +23,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
+	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
 // trashTypes fixes the order of the categories in the statistics
@@ -54,6 +55,7 @@ type WaliUseCaseItf interface {
 	MoveRequests(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.MoveRequestList, error)
 	// PreviousClasses lists the classes that a child of the caller left, with what the child had in each
 	PreviousClasses(ctx context.Context, userID uuid.UUID, studentID uuid.UUID) (dto.PreviousClassList, error)
+	ChildHistory(ctx context.Context, userID uuid.UUID, studentID uuid.UUID, eventType string, page pagination.Params) (dto.WaliHistoryResponse, error)
 }
 
 // MaxChildren is the largest number of children one parent account can hold

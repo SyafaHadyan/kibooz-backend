@@ -60,6 +60,7 @@ type GuruUseCaseItf interface {
 	RestoreClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (dto.ClassSummary, error)
 	// StudentHistory shows what a child of the class did in the classes it left, read only
 	StudentHistory(ctx context.Context, userID uuid.UUID, classID uuid.UUID, studentID uuid.UUID) (dto.StudentHistory, error)
+	ClassHistory(ctx context.Context, userID uuid.UUID, classID *uuid.UUID, eventType string, page pagination.Params) (dto.GuruHistoryResponse, error)
 	// RejectMove turns down a request to move a child into the class
 	RejectMove(ctx context.Context, userID uuid.UUID, classID uuid.UUID, requestID uuid.UUID) error
 	// Teachers lists the teachers of a class the caller teaches

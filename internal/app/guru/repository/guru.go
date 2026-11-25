@@ -97,6 +97,7 @@ type GuruDBItf interface {
 	// StudentHistory returns what a child that is in the class did in the classes it left, and apperror.ErrStudentNotFound when the
 	// child is not in the class
 	StudentHistory(ctx context.Context, classID uuid.UUID, studentID uuid.UUID) ([]enrollment.HistoryRow, error)
+	ListClassHistory(ctx context.Context, classID uuid.UUID, eventType string, limit int, offset int) ([]GuruHistoryRow, int, error)
 	// RejectMove turns down a request that waits for the class
 	RejectMove(ctx context.Context, classID uuid.UUID, requestID uuid.UUID, guruID uuid.UUID) error
 	FindGuruByUserID(ctx context.Context, userID uuid.UUID) (*GuruRow, error)
