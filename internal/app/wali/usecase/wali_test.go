@@ -192,8 +192,8 @@ func TestChildrenListsTheChildrenWithTheirClasses(t *testing.T) {
 	classID := uuid.New()
 	repo := parentRepo()
 	repo.children = []repository.StudentRow{
-		{Student: entity.Student{ID: uuid.New(), FullName: "Amelia Siti", NISN: "12345", ClassID: classID}, ClassName: "Mawar"},
-		{Student: entity.Student{ID: uuid.New(), FullName: "Brother Siti", NISN: "12346", ClassID: classID}, ClassName: "Mawar"},
+		{Student: entity.Student{ID: uuid.New(), FullName: "Amelia Siti", NISN: "12345", ClassID: classID}, ClassName: "Mawar", JoinCode: "K7M2QX4R"},
+		{Student: entity.Student{ID: uuid.New(), FullName: "Brother Siti", NISN: "12346", ClassID: classID}, ClassName: "Mawar", JoinCode: "K7M2QX4R"},
 	}
 
 	res, err := newUseCase(repo, &fakeCache{}).Children(context.Background(), uuid.New())
@@ -201,7 +201,9 @@ func TestChildrenListsTheChildrenWithTheirClasses(t *testing.T) {
 	require.Len(t, res.Children, 2)
 	require.Equal(t, "Amelia Siti", res.Children[0].FullName)
 	require.Equal(t, "Mawar", res.Children[0].ClassName)
+	require.Equal(t, "K7M2QX4R", res.Children[0].JoinCode)
 	require.Equal(t, classID, res.Children[1].ClassID)
+	require.Equal(t, "K7M2QX4R", res.Children[1].JoinCode)
 }
 
 func TestChildrenOfAParentWithoutChildrenIsAnEmptyListAndNotNull(t *testing.T) {
@@ -245,6 +247,7 @@ func TestAddChildStoresTrimmedInputAndDropsTheLeaderboardCache(t *testing.T) {
 	repo.findResult = &repository.StudentRow{
 		Student:   entity.Student{ID: uuid.New(), FullName: "Cousin Siti", NISN: "99001", ClassID: classID},
 		ClassName: "Mawar",
+		JoinCode:  "K7M2QX4R",
 	}
 	cache := &fakeCache{}
 
@@ -259,6 +262,32 @@ func TestAddChildStoresTrimmedInputAndDropsTheLeaderboardCache(t *testing.T) {
 	require.Equal(t, repo.addedStudent.ID, *repo.findRequested, "the answer is the child that was just stored")
 	require.Equal(t, []string{constants.LeaderboardKeyPrefix + classID.String()}, cache.deleted)
 	require.Equal(t, "Mawar", res.ClassName)
+	require.Equal(t, "K7M2QX4R", res.JoinCode)
+}
+
+func TestDashboardAndChildIncludeClassJoinCode(t *testing.T) {
+	classID := uuid.New()
+	childID := uuid.New()
+	repo := parentRepo()
+	repo.findResult = &repository.StudentRow{
+		Student:      entity.Student{ID: childID, FullName: "Amelia Siti", NISN: "12345", ClassID: classID},
+		ClassName:    "Mawar",
+		JoinCode:     "R9T4WX2B",
+		GradeLevel:   "Class A",
+		SchoolName:   "TK Pertiwi",
+		AcademicYear: "2026/2027",
+	}
+	repo.guardian = &repository.GuardianRow{FullName: "Sarah", Email: "sarah@example.com"}
+
+	uc := newUseCase(repo, &fakeCache{})
+
+	dash, err := uc.Dashboard(context.Background(), uuid.New(), nil)
+	require.NoError(t, err)
+	require.Equal(t, "R9T4WX2B", dash.Student.JoinCode)
+
+	profile, err := uc.Child(context.Background(), uuid.New(), childID)
+	require.NoError(t, err)
+	require.Equal(t, "R9T4WX2B", profile.JoinCode)
 }
 
 func TestAddChildFailures(t *testing.T) {

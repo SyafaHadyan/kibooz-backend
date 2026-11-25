@@ -13,6 +13,7 @@ type WaliStudent struct {
 	FullName  string    `json:"fullName"`
 	ClassID   uuid.UUID `json:"classId"`
 	ClassName string    `json:"className"`
+	JoinCode  string    `json:"joinCode"`
 	AvatarURL *string   `json:"avatarUrl"`
 	NISN      string    `json:"nisn"`
 	// NISNVerified is true while a teacher vouched for the NISN
@@ -87,6 +88,7 @@ type ChildProfile struct {
 	AvatarURL       *string   `json:"avatarUrl"`
 	ClassID         uuid.UUID `json:"classId"`
 	ClassName       string    `json:"className"`
+	JoinCode        string    `json:"joinCode"`
 	GradeLevel      string    `json:"gradeLevel"`
 	SchoolName      string    `json:"schoolName"`
 	AcademicYear    string    `json:"academicYear"`
@@ -120,6 +122,7 @@ type ChildSummary struct {
 	AvatarURL       *string   `json:"avatarUrl"`
 	ClassID         uuid.UUID `json:"classId"`
 	ClassName       string    `json:"className"`
+	JoinCode        string    `json:"joinCode"`
 	// ClassArchivedAt is set while the class of the child is archived and read only
 	ClassArchivedAt *time.Time `json:"classArchivedAt,omitempty"`
 }

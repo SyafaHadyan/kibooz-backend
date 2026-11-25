@@ -20,7 +20,7 @@ func TestRotateJoinCode(t *testing.T) {
 	otherGuru := registerGuru(t, "Not Mine")
 	otherClassID, otherCode := classOf(t, otherGuru)
 
-	joined, _ := registerWali(t, oldCode, "Joined Before")
+	joined, joinedChild := registerWali(t, oldCode, "Joined Before")
 
 	path := "/api/v1/guru/classes/" + classID + "/join-code"
 
@@ -49,9 +49,18 @@ func TestRotateJoinCode(t *testing.T) {
 		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
 	})
 
-	t.Run("a parent who joined before is not affected", func(t *testing.T) {
+	t.Run("a parent who joined before stays enrolled and sees the new join code", func(t *testing.T) {
 		dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard", joined.Token, nil)
 		require.Equal(t, http.StatusOK, dashboard.Status, "body %v", dashboard.Body)
+		require.Equal(t, newCode, dashboard.data("student", "joinCode"))
+
+		children := call(t, http.MethodGet, "/api/v1/wali/children", joined.Token, nil)
+		require.Equal(t, http.StatusOK, children.Status, "body %v", children.Body)
+		require.Equal(t, newCode, dig(children.data("children").([]any)[0], "joinCode"))
+
+		child := call(t, http.MethodGet, "/api/v1/wali/child/"+joinedChild, joined.Token, nil)
+		require.Equal(t, http.StatusOK, child.Status, "body %v", child.Body)
+		require.Equal(t, newCode, child.data("joinCode"))
 	})
 
 	t.Run("every rotation makes another code", func(t *testing.T) {

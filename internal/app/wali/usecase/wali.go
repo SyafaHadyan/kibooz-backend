@@ -94,6 +94,7 @@ func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID
 			FullName:  student.FullName,
 			ClassID:   student.ClassID,
 			ClassName: fmt.Sprintf("%s • %s", student.GradeLevel, student.SchoolName),
+			JoinCode:  student.JoinCode,
 			AvatarURL: student.AvatarURL,
 			NISN:      student.NISN,
 
@@ -189,6 +190,7 @@ func (u *WaliUseCase) Child(ctx context.Context, userID uuid.UUID, studentID uui
 		AvatarURL:       student.AvatarURL,
 		ClassID:         student.ClassID,
 		ClassName:       student.ClassName,
+		JoinCode:        student.JoinCode,
 		GradeLevel:      student.GradeLevel,
 		SchoolName:      student.SchoolName,
 		AcademicYear:    student.AcademicYear,
@@ -547,6 +549,7 @@ func childSummary(row *repository.StudentRow) dto.ChildSummary {
 		AvatarURL: row.AvatarURL,
 		ClassID:   row.ClassID,
 		ClassName: row.ClassName,
+		JoinCode:  row.JoinCode,
 
 		NISNVerified:    row.NISNVerified(),
 		NISNNeedsUpdate: row.NISNNeedsUpdate(),

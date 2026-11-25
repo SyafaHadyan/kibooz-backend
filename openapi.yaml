@@ -3248,7 +3248,7 @@ components:
           $ref: "#/components/schemas/RegisterStudent"
     ChildSummary:
       type: object
-      required: [id, fullName, nisn, avatarUrl, classId, className, nisnVerified, nisnNeedsUpdate]
+      required: [id, fullName, nisn, avatarUrl, classId, className, joinCode, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -3272,6 +3272,9 @@ components:
           format: uuid
         className:
           type: string
+        joinCode:
+          type: string
+          description: The current join code of the class that the child belongs to
         classArchivedAt:
           type: string
           format: date-time
@@ -3719,7 +3722,7 @@ components:
           $ref: "#/components/schemas/AuthData"
     WaliStudent:
       type: object
-      required: [id, fullName, classId, className, avatarUrl, nisn, nisnVerified, nisnNeedsUpdate]
+      required: [id, fullName, classId, className, joinCode, avatarUrl, nisn, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -3733,6 +3736,9 @@ components:
         className:
           type: string
           description: The grade level and the school
+        joinCode:
+          type: string
+          description: The current join code of the class that the child belongs to
         avatarUrl:
           type: string
           format: uri
@@ -5474,7 +5480,7 @@ components:
           nullable: true
     ChildProfile:
       type: object
-      required: [id, fullName, nisn, avatarUrl, classId, className, gradeLevel, schoolName, academicYear, currentPoints, seasonPoints, classRank, guardian, nisnVerified, nisnNeedsUpdate]
+      required: [id, fullName, nisn, avatarUrl, classId, className, joinCode, gradeLevel, schoolName, academicYear, currentPoints, seasonPoints, classRank, guardian, nisnVerified, nisnNeedsUpdate]
       properties:
         id:
           type: string
@@ -5499,6 +5505,9 @@ components:
         className:
           type: string
           description: The name of the class only, the grade level is in `gradeLevel`
+        joinCode:
+          type: string
+          description: The current join code of the class that the child belongs to
         gradeLevel:
           type: string
         schoolName:

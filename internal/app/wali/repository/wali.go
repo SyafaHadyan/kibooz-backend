@@ -25,9 +25,12 @@ import (
 const uniqueViolation = "23505"
 
 // StudentRow is a student joined with the class columns the dashboard needs
+const studentSelectCols = "s.*, c.name AS class_name, c.join_code AS join_code, c.grade_level AS grade_level, c.school_name AS school_name, c.academic_year AS academic_year, c.archived_at AS class_archived_at"
+
 type StudentRow struct {
 	entity.Student `gorm:"embedded"`
 	ClassName      string
+	JoinCode       string
 	GradeLevel     string
 	SchoolName     string
 	AcademicYear   string
@@ -137,7 +140,7 @@ func (r *WaliDB) FindWaliByUserID(ctx context.Context, userID uuid.UUID) (*entit
 func (r *WaliDB) FindStudent(ctx context.Context, waliID uuid.UUID, studentID *uuid.UUID) (*StudentRow, error) {
 	query := r.db.WithContext(ctx).
 		Table("students AS s").
-		Select("s.*, c.name AS class_name, c.grade_level AS grade_level, c.school_name AS school_name, c.academic_year AS academic_year, c.archived_at AS class_archived_at").
+		Select(studentSelectCols).
 		Joins("JOIN classes AS c ON c.id = s.class_id").
 		Where("s.wali_id = ? AND s.deleted_at IS NULL", waliID)
 
@@ -460,7 +463,7 @@ func (r *WaliDB) ListChildren(ctx context.Context, waliID uuid.UUID) ([]StudentR
 
 	err := r.db.WithContext(ctx).
 		Table("students AS s").
-		Select("s.*, c.name AS class_name, c.grade_level AS grade_level, c.school_name AS school_name, c.academic_year AS academic_year, c.archived_at AS class_archived_at").
+		Select(studentSelectCols).
 		Joins("JOIN classes AS c ON c.id = s.class_id").
 		Where("s.wali_id = ? AND s.deleted_at IS NULL", waliID).
 		Order("s.created_at ASC, s.id ASC").

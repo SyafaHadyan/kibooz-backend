@@ -307,6 +307,7 @@ func TestChildProfile(t *testing.T) {
 		require.Nil(t, res.data("avatarUrl"))
 		require.Equal(t, classID, res.data("classId"))
 		require.Equal(t, "Cendana", res.data("className"))
+		require.Equal(t, joinCode, res.data("joinCode"))
 		require.Equal(t, "Class A", res.data("gradeLevel"))
 		require.Equal(t, "TK Pertiwi Harapan Bangsa", res.data("schoolName"))
 		require.Equal(t, "2026/2027", res.data("academicYear"))
