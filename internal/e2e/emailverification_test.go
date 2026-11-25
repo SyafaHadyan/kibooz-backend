@@ -222,7 +222,7 @@ func TestAnAccountWaitsForItsCodeAndTheFirstSessionComesWithIt(t *testing.T) {
 	})
 
 	t.Run("the code works once and the account signs in as any other", func(t *testing.T) {
-		verify(t, target, email, stub.last(t, email)).requireError(t, http.StatusBadRequest, "VERIFICATION_CODE_INVALID")
+		verify(t, target, email, stub.last(t, email)).requireError(t, http.StatusConflict, "EMAIL_ALREADY_VERIFIED")
 
 		var rows int64
 
