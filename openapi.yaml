@@ -4625,7 +4625,7 @@ components:
         scheduledAt:
           type: string
           format: date-time
-          description: A new date for the meeting. A date that is set cannot be removed, so a null here is the same as leaving the field out
+          description: A new date for the meeting. A date that is set cannot be removed
     Module:
       type: object
       required: [id, meetingNumber, title, description, status, scheduledAt, createdAt, updatedAt]

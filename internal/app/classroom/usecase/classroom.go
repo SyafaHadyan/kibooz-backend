@@ -1089,10 +1089,9 @@ func (u *ClassroomUseCase) UpdateModule(
 		})
 	}
 
-	updatedAt := u.timestamp()
-
+	// the time is read inside the callback, which runs after the row lock, so a slower edit cannot write an older time over a newer one
 	module, err := u.repo.UpdateModule(ctx, classID, moduleID, func(module *entity.LearningModule) error {
-		return applyModuleChanges(module, req, updatedAt)
+		return applyModuleChanges(module, req, u.timestamp())
 	})
 	if err != nil {
 		return dto.Module{}, asAppError(err)
