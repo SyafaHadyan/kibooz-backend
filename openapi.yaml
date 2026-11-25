@@ -3375,6 +3375,14 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            The account signs in with Google and has no password, and Google Sign-In is not set up or the keys of Google could not be fetched
+            (`AUTH_GOOGLE_UNAVAILABLE`). Such an account cannot be deleted until Google can be reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /users/me/password:
     put:
       tags: [Account]
@@ -4407,7 +4415,8 @@ components:
           minLength: 1
           maxLength: 4096
         role:
-          $ref: "#/components/schemas/Role"
+          type: string
+          enum: [GURU, WALI]
         deviceToken:
           type: string
           maxLength: 256

@@ -205,6 +205,7 @@ func TestGoogleAuthFlow(t *testing.T) {
 		require.Equal(t, http.StatusOK, session.Status)
 
 		access := session.data("token").(string)
+		refresh := session.data("refreshToken").(string)
 		sub := "linked-sub-" + suffix()
 		fresh := func() string {
 			return signMockGoogleIDToken(t, jwt.MapClaims{
@@ -247,6 +248,10 @@ func TestGoogleAuthFlow(t *testing.T) {
 		unlinked := call(t, http.MethodDelete, "/api/v1/users/me/google", access, map[string]any{"password": guru.Password})
 		require.Equal(t, http.StatusOK, unlinked.Status, "body %v", unlinked.Body)
 
+		// every session ended, so the refresh token of the sign in before is dead
+		call(t, http.MethodPost, "/api/v1/auth/refresh-token", "", map[string]any{"refreshToken": refresh}).
+			requireError(t, http.StatusUnauthorized, "AUTH_REFRESH_INVALID")
+
 		call(t, http.MethodDelete, "/api/v1/users/me/google", loginAs(t, guru.Email, guru.Password, "GURU").data("token").(string), map[string]any{
 			"password": guru.Password,
 		}).requireError(t, http.StatusConflict, "GOOGLE_NOT_LINKED")
@@ -277,6 +282,15 @@ func TestGoogleAuthFlow(t *testing.T) {
 			"idToken": token(), "newPassword": testPassword + "0",
 		})
 		require.Equal(t, http.StatusOK, set.Status, "body %v", set.Body)
+
+		// the new password signs in, and a Google account that is linked to this account is refused for another one
+		require.Equal(t, http.StatusOK, loginAs(t, email, testPassword+"0", "GURU").Status)
+
+		other := loginAs(t, guru.Email, guru.Password, "GURU")
+		require.Equal(t, http.StatusOK, other.Status)
+		call(t, http.MethodPost, "/api/v1/users/me/google", other.data("token").(string), map[string]any{
+			"idToken": token(), "password": guru.Password,
+		}).requireError(t, http.StatusConflict, "GOOGLE_ACCOUNT_IN_USE")
 
 		// a second go answers that the account has a password now
 		call(t, http.MethodPost, "/api/v1/users/me/password", access, map[string]any{

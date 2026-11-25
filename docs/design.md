@@ -18,7 +18,8 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 | Where | Counted per | Allowance |
 |:---|:---|:---|
 | Every route that needs a signed-in user | user id | `USER_LIMITER_MAX`, 120 by default |
-| Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
+| Deleting an account, changing the password, linking and unlinking Google, which confirm the password | user id | `AUTH_LIMITER_MAX`, 10 by default, shared by these routes |
+| Google sign in, Google registration, linking Google and setting the first password, which take a Google token | Google token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Login, register, verify email and resend verification | email, or the device when the request carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | The batch mood route | user id | `MOOD_BATCH_LIMITER_MAX`, 30 by default, on top of the limit of every signed-in route |

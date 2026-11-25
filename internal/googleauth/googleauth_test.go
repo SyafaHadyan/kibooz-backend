@@ -352,3 +352,25 @@ func TestJWKSClientKeepsKnownKeysWhileTheFetchIsDown(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, googleauth.ErrInvalidToken)
 }
+
+func TestJWKSClientRejectsATokenWithoutExpiry(t *testing.T) {
+	signer := newSigner(t, "kid-noexp")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{signer.jwk()}})
+	}))
+	t.Cleanup(server.Close)
+
+	now := time.Unix(1_760_000_000, 0)
+	verifier := googleauth.NewVerifier(
+		[]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(func() time.Time { return now }),
+	)
+
+	token := signer.sign(t, jwt.MapClaims{
+		"iss": "https://accounts.google.com", "aud": testClientID, "sub": "110248495921234",
+		"email": "a@example.test", "email_verified": true, "iat": now.Unix(),
+	})
+
+	_, err := verifier.Verify(context.Background(), token)
+	require.ErrorIs(t, err, googleauth.ErrInvalidToken)
+}

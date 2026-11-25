@@ -583,12 +583,13 @@ func (u *UserUseCase) LinkGoogle(ctx context.Context, userID uuid.UUID, role con
 		return apperror.ErrPasswordNotSet
 	}
 
-	err = u.confirmPassword(ctx, user, req.Password)
+	// the token is checked first, because that costs a signature check and the password costs a bcrypt slot
+	claims, err := u.freshGoogleClaims(ctx, req.IDToken)
 	if err != nil {
 		return err
 	}
 
-	claims, err := u.freshGoogleClaims(ctx, req.IDToken)
+	err = u.confirmPassword(ctx, user, req.Password)
 	if err != nil {
 		return err
 	}

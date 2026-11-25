@@ -62,7 +62,7 @@ For a teacher or a parent account, `DELETE /users/me` asks for the password, or 
 - Clears the addresses of the avatar of the account, of the avatars of its children and of the photos of their trash claims, and queues the files for removal from the bucket. A background job removes them and retries the ones that fail.
 - For a teacher, hands the classes on to another teacher, or archives a class that has no children.
 
-What stays is the other part of the data. The rows are hidden and not erased, so the name, the email, the NISN, the moods with their notes, the claims and the guidance remain in the database, and so do the forum posts, which show as `Deleted account`. The name of a child also stays in the closed semester standings. Erasing a person completely needs the owner of the database to remove those rows by hand, and the API has no route for it.
+What stays is the other part of the data. The rows are hidden and not erased, so the name, the email, the NISN, the moods with their notes, the claims and the guidance remain in the database, and so does the Google subject of an account that was linked, and so do the forum posts, which show as `Deleted account`. The name of a child also stays in the closed semester standings. Erasing a person completely needs the owner of the database to remove those rows by hand, and the API has no route for it.
 
 ## Other places the data goes
 
@@ -76,7 +76,7 @@ What stays is the other part of the data. The rows are hidden and not erased, so
 | Better Stack, when the uptime monitors are set up | The public answer of `GET /healthz`, which holds the status and the version, and the address of the documentation site | To tell the owner when the service is down, see [Operations](operations.md#uptime-monitoring) |
 | Redis | The shared rate limit counters, which hold only hashed identifiers, and the leaderboard cache | A cache, never the source of truth |
 
-The code makes no call to an analytics, advertising or tracking service. When the verification of the email is switched on, it sends the 6 digit code to the address of each new account through Resend, and again when the person asks for a new code. The mail holds no name. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when they are set up, Sentry (`SENTRY_DSN`), Firebase for the chat wake-up push, Resend for the verification mail (`RESEND_API_KEY`) and Grafana Cloud (Alloy, a separate container).
+The code makes no call to an analytics, advertising or tracking service. When the verification of the email is switched on, it sends the 6 digit code to the address of each new account through Resend, and again when the person asks for a new code. The mail holds no name. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when they are set up, Sentry (`SENTRY_DSN`), Firebase for the chat wake-up push, Resend for the verification mail (`RESEND_API_KEY`), Google for its public signing keys when `GOOGLE_CLIENT_IDS` is set (a download that sends no data about a person) and Grafana Cloud (Alloy, a separate container).
 
 ## Keeping the data small
 

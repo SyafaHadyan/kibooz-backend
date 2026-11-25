@@ -423,7 +423,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return auth.CreateRefreshToken(ctx, &entity.RefreshToken{
 			ID: uuid.New(), UserID: parent, TokenHash: fmt.Sprintf("%x%x", md5.Sum([]byte("new")), md5.Sum([]byte("token"))),
 			ExpiresAt: now.Add(7 * 24 * time.Hour), FamilyID: uuid.New(), SessionStartedAt: now,
-		}, "x", 90*24*time.Hour)
+		}, "x", nil, 90*24*time.Hour)
 	})
 	call("auth, swap a refresh token", func(ctx context.Context) error {
 		next := &entity.RefreshToken{

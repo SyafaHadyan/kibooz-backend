@@ -200,6 +200,7 @@ func (c *JWKSClient) Verify(ctx context.Context, idToken string) (Claims, error)
 		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 		jwt.WithTimeFunc(c.now),
 		jwt.WithLeeway(30*time.Second),
+		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
 		var fetchErr *jwksFetchError
@@ -299,7 +300,7 @@ func (c *JWKSClient) refreshKeys(ctx context.Context, neededKID string) (map[str
 		// Google rotates its keys rarely, so a key that is already known still checks tokens while the fetch is down. The wait
 		// before the next fetch keeps a slow answer of Google from holding the lock for every sign in.
 		if key := c.keys[neededKID]; key != nil {
-			c.expiresAt = now.Add(minRefreshInterval)
+			c.expiresAt = c.now().Add(minRefreshInterval)
 
 			return c.keys, nil
 		}

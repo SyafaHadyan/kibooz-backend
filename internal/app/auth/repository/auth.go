@@ -41,9 +41,12 @@ type AuthDBItf interface {
 	CreateWali(
 		ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
 	) (classID uuid.UUID, err error)
-	// CreateRefreshToken stores the first token of a session after a sign in. verifiedHash is the password hash that the
-	// sign in checked, and a user whose hash is another one by now, or who is gone, gets ErrCredentialsChanged and no session.
-	CreateRefreshToken(ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration) error
+	// CreateRefreshToken stores the first token of a session after a sign in. verifiedHash is the password hash and verifiedSub the
+	// Google subject (nil for none) that the sign in read, and a user whose hash or subject is another one by now, or who is gone,
+	// gets ErrCredentialsChanged and no session. So a sign in with Google that raced with an unlink stores nothing.
+	CreateRefreshToken(
+		ctx context.Context, token *entity.RefreshToken, verifiedHash string, verifiedSub *string, sessionMax time.Duration,
+	) error
 	// RotateRefreshToken uses a valid token and stores its replacement in the same session atomically. The row of the
 	// used token stays, so a replay can be recognized. A token that is unknown or expired is only refused, one that
 	// was used within the leeway gets a new token of the same session, and one that was used earlier ends its whole session.
@@ -339,11 +342,20 @@ func mapUniqueViolation(err error) error {
 	}
 }
 
+// sameSub tells whether two Google subjects are the same, where nil is no subject
+func sameSub(a *string, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+
+	return *a == *b
+}
+
 // ErrCredentialsChanged means that the password of the user changed, or the account was deleted, after it was checked
 var ErrCredentialsChanged = errors.New("credentials changed")
 
 func (r *AuthDB) CreateRefreshToken(
-	ctx context.Context, token *entity.RefreshToken, verifiedHash string, sessionMax time.Duration,
+	ctx context.Context, token *entity.RefreshToken, verifiedHash string, verifiedSub *string, sessionMax time.Duration,
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A password change ends the sessions and then updates the hash, and checking a password takes longer than that,
@@ -351,16 +363,19 @@ func (r *AuthDB) CreateRefreshToken(
 		// under a share lock waits for a change that has updated the row and still sees its new value, and a change that
 		// has not reached the row waits for this transaction. The window that is left is the time between the two
 		// statements of the change.
-		var current []string
+		var current []struct {
+			PasswordHash string
+			GoogleSub    *string
+		}
 
 		err := tx.Raw(
-			"SELECT password_hash FROM users WHERE id = ? AND deleted_at IS NULL FOR SHARE", token.UserID,
+			"SELECT password_hash, google_sub FROM users WHERE id = ? AND deleted_at IS NULL FOR SHARE", token.UserID,
 		).Scan(&current).Error
 		if err != nil {
 			return err
 		}
 
-		if len(current) == 0 || current[0] != verifiedHash {
+		if len(current) == 0 || current[0].PasswordHash != verifiedHash || !sameSub(current[0].GoogleSub, verifiedSub) {
 			return ErrCredentialsChanged
 		}
 
