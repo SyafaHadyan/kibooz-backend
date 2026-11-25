@@ -16,6 +16,7 @@ This page describes, from the code, which personal data Kibooz Backend keeps, wh
 | A class | Its name, grade, school, join code and the teachers | `classes` and `class_teachers` |
 | A teacher or a parent | Forum threads and replies, the videos that a teacher added, and the learning modules that a teacher added | `forum_posts`, `learning_videos` and `learning_modules` |
 | A teacher or a parent, with the app installed | The push token that Firebase gave the app, and the platform | `push_tokens`, removed when the account is deleted. When a message is sent to the person, Google gets the token, the id of the conversation and the id of the message, and never the text, the sender or the child |
+| A teacher or a parent who signs in with Google | The subject identifier that Google gives the account, in `google_sub`, and the email, the name and the photo address that Google sent when the account was made. The Google token itself is stored nowhere | `users`, the column is cleared when Google is unlinked |
 | A new teacher or parent, when the verification of the email is on | A hash of the 6 digit code, its expiry, the wrong tries and when codes were sent. The code itself is stored nowhere, and it goes to the email address of the person through Resend, once for each code that is sent | `email_verifications`, removed when the code is used or the account is deleted |
 | A teacher or a parent, in the inbox | A short title and text about an event, such as a mood that a teacher recorded for a child, a guidance that a parent applied (the text names the child), a class move request, a decision about a move, or a video that a teacher added, the kind of the event and whether it was read | `notifications`, removed when the account is deleted and 90 days after they were made |
 | A teacher or a parent, in the chat | Each message with its text, an optional photo or video, its sender and time, and how far each person has read | `chat_conversations`, `chat_messages` and `chat_reads`, and the files in the private bucket |
@@ -54,7 +55,7 @@ The access log holds the time, the client address, the method, the path, the sta
 
 ## What deleting an account does
 
-For a teacher or a parent account, `DELETE /users/me` asks for the password and then does the following in one transaction.
+For a teacher or a parent account, `DELETE /users/me` asks for the password, or for a fresh Google token when the account signs in with Google and has no password, and then does the following in one transaction.
 
 - Hides the account, and for a parent every child, by setting `deleted_at`. The API no longer returns them and the email, NIP and NISN can be used for a new account.
 - Ends every session by deleting the refresh tokens.

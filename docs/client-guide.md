@@ -24,6 +24,18 @@ A server can require that a new account confirms its email. Then registration an
 
 Signing in with the right password before the code is verified answers `403` with `EMAIL_NOT_VERIFIED`. Send the person to the same screen and ask for a new code if the old one is gone. Accounts that were registered before the server turned the check on are verified and sign in as before.
 
+## Sign in with Google
+
+A server can accept Google Sign-In. The app gets an ID token from Google and sends it to the API. The token has to be made for one of the client ids of the server, and its email has to be verified by Google.
+
+1. Send the `idToken` and the `role` to `POST /api/v1/auth/google`. When an account is linked to that Google account, the answer is a session like a login, with `needsRegistration` false.
+2. When no account exists, the answer has `needsRegistration: true` and a `googleProfile` with the email, the name and the photo. Show the registration screen, and send the `idToken` again with the same fields as a registration, except the email and the password, to `POST /api/v1/auth/google/register`. The email of the account is the email that Google verified.
+3. When an account with the same email exists but is not linked to the Google account, the answer is `409` with `AUTH_ACCOUNT_EXISTS`. The API never links by email alone. The person signs in with the password and links Google from the settings.
+4. The settings of a signed in account can link and unlink Google, and set a first password. `POST /api/v1/users/me/google` takes the password and a fresh `idToken`. `DELETE /api/v1/users/me/google` takes the password, and every session ends, so the app signs in again. `POST /api/v1/users/me/password` gives an account that signs in with Google its first password after a fresh `idToken`. An account without a password cannot unlink Google, because it would have no way in.
+5. A fresh `idToken` is one that Google issued in the last 5 minutes, so ask Google for a new one when the person opens these screens, and do not reuse an old one. The answer for an older token is `401` with `AUTH_GOOGLE_STALE`.
+6. An account that signs in with Google and has no password deletes itself with `DELETE /api/v1/users/me` and a fresh `idToken` instead of the password.
+7. Accounts made with Google are verified already, so the code of the email is never asked for them. Changing the password of an account without one answers `AUTH_PASSWORD_NOT_SET`.
+
 ## Keep the device token
 
 Registration and login also return a `deviceToken`. It is not a credential and the app never needs it to sign in. It only gives this device its own login budget for that email, so someone who types wrong passwords for the same email cannot keep the owner from signing in.
@@ -61,6 +73,7 @@ A teacher and a parent who share a class can talk in private, and nobody else ca
 **Read the messages.** `GET /chat/conversations/{conversationId}/messages` always returns the messages in the order they were sent. Without a cursor it returns the latest ones, up to `limit` (50 by default, at most 100). Send `before` with the id of the oldest message on screen to load older ones, and `after` with the highest id you have to load what came later, for example after the app was offline. Send one of the two, not both. `hasMore` tells whether more messages exist in that direction. The `id` of a message only grows inside a conversation, so the highest one is the cursor. Anyone who is not one of the two people, or a member of the class of a room, gets `404` with `CHAT_CONVERSATION_NOT_FOUND`.
 
 **Photos and videos.** A message carries at most one file, and the file is sent first and then named in the message. Both ways need an open conversation and the private bucket, and without the bucket they answer `503` with `STORAGE_UNAVAILABLE`.
+
 - A photo goes through the API. Send `POST /chat/conversations/{conversationId}/media/photo` as a multipart form with the field `file`, a JPEG, PNG or WebP image of at most 4 MiB. The server checks it, removes the metadata such as the location, and answers with a `mediaKey`.
 - A video goes straight to the bucket. Send `POST /chat/conversations/{conversationId}/media/video-upload` with `{"contentType": "video/mp4", "sizeBytes": 123456}`, a type of `video/mp4` or `video/webm` and a size of at most 25 MiB. The answer has `uploadUrl`, `method`, `headers` and a `mediaKey`. Send the file with a PUT to `uploadUrl` with exactly those bytes and headers, before `expiresAt`.
 - Then send the message with `{"mediaKey": "..."}` and an optional `body`. The server only accepts a key that it issued to you for this conversation, and only once the file is there, so a key from another conversation or a file that never arrived gets `400`. A message needs `body` or `mediaKey`. A file that is never sent is removed after a day.
@@ -68,6 +81,7 @@ A teacher and a parent who share a class can talk in private, and nobody else ca
 A message with a file has `media` with the `kind` (`photo` or `video`), `contentType`, `sizeBytes`, a signed `url` and `expiresAt`. The address is made for each answer and stops working at `expiresAt` (an hour by default), so cache the file by the id of the message and ask for the messages again when an address is over. Deleting a message removes its file.
 
 **Send, delete and mark as read.**
+
 - `POST /chat/conversations/{conversationId}/messages` with `{"body": "..."}` sends a message and answers `201`. Send an `Idempotency-Key` as described above, so a try that is repeated after a lost answer writes the message once. A message without text and without `mediaKey` is refused with `400`. When the two no longer share a class, it answers `409` with `CHAT_SENDING_CLOSED`, so keep the history and replace the text box with a note.
 - `DELETE /chat/conversations/{conversationId}/messages/{messageId}` deletes a message of your own. The message stays with an empty `body` and `deleted` set, so the people who can see the message, which in a room means the members who had joined by then, see that a message was deleted. Nobody else can delete it, and deleting it twice changes nothing.
 - `PUT /chat/conversations/{conversationId}/read` with `{"messageId": 12}` moves your read mark to that message. The mark only moves forward and is cut to the newest message, and the answer has the new mark and the `unreadCount` that is left. Send it when the person has seen the messages.
