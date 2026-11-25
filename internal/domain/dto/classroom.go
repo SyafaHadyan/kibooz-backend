@@ -61,6 +61,40 @@ type VideoList struct {
 	PageInfo
 }
 
+type CreateModuleRequest struct {
+	MeetingNumber int                    `json:"meetingNumber" validate:"required,gte=1,lte=100"`
+	Title         string                 `json:"title" validate:"required,max=150"`
+	Description   string                 `json:"description" validate:"omitempty,max=2000"`
+	Status        constants.ModuleStatus `json:"status" validate:"omitempty,oneof=completed ongoing upcoming"`
+	ScheduledAt   *time.Time             `json:"scheduledAt"`
+}
+
+// UpdateModuleRequest changes the details of a learning module. A missing field stays as it is and an empty description
+// clears the text.
+type UpdateModuleRequest struct {
+	MeetingNumber *int                    `json:"meetingNumber" validate:"omitempty,gte=1,lte=100"`
+	Title         *string                 `json:"title" validate:"omitempty,max=150"`
+	Description   *string                 `json:"description" validate:"omitempty,max=2000"`
+	Status        *constants.ModuleStatus `json:"status" validate:"omitempty,oneof=completed ongoing upcoming"`
+	ScheduledAt   *time.Time              `json:"scheduledAt"`
+}
+
+type Module struct {
+	ID            uuid.UUID              `json:"id"`
+	MeetingNumber int                    `json:"meetingNumber"`
+	Title         string                 `json:"title"`
+	Description   *string                `json:"description"`
+	Status        constants.ModuleStatus `json:"status"`
+	ScheduledAt   *time.Time             `json:"scheduledAt"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	UpdatedAt     time.Time              `json:"updatedAt"`
+}
+
+type ModuleList struct {
+	Modules []Module `json:"modules"`
+	PageInfo
+}
+
 type ForumAuthor struct {
 	ID        uuid.UUID      `json:"id"`
 	FullName  string         `json:"fullName"`

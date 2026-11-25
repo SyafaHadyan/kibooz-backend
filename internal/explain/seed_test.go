@@ -103,6 +103,10 @@ func seedOtherTables(t *testing.T, database *gorm.DB, classes int, children int)
 			SELECT md5('class' || c)::uuid, md5('g' || c)::uuid, 'Video ' || v, 'https://files.example.test/videos/' || c || '-' || v || '.mp4',
 				now() - make_interval(mins => v)
 			FROM generate_series(1, ?::int) AS c, generate_series(1, 10) AS v`, []any{classes}},
+		{"modules", `INSERT INTO learning_modules (class_id, added_by_guru_id, meeting_number, title, status, scheduled_at, created_at, updated_at)
+			SELECT md5('class' || c)::uuid, md5('g' || c)::uuid, m, 'Module ' || m, 'upcoming',
+				now() + make_interval(days => m), now() - make_interval(mins => m), now() - make_interval(mins => m)
+			FROM generate_series(1, ?::int) AS c, generate_series(1, 10) AS m`, []any{classes}},
 		{"leaderboard seasons", `INSERT INTO leaderboard_seasons (label, started_at) VALUES
 			('2025-07', now() - interval '16 months'), ('2026-01', now() - interval '10 months') ON CONFLICT DO NOTHING`, nil},
 		{"leaderboard history", `INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position)

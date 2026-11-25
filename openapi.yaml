@@ -1816,6 +1816,139 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/modules:
+    get:
+      tags: [Classroom]
+      operationId: listModules
+      summary: List the learning modules of a class
+      description: Ordered by meeting number. Open to the teachers of the class and the parents of a child in it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The modules of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Classroom]
+      operationId: createModule
+      summary: Add a learning module to a class
+      description: >-
+        Only a teacher of the class can add one. An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModuleRequest"
+      responses:
+        "201":
+          description: Learning module added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/modules/{moduleId}:
+    patch:
+      tags: [Classroom]
+      operationId: updateModule
+      summary: Change the details of a learning module
+      description: >-
+        Any teacher of the class can change it. A missing field stays as it is and an empty `description` clears it.
+        At least one field is required.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ModulePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModuleRequest"
+      responses:
+        "200":
+          description: Learning module updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Classroom]
+      operationId: deleteModule
+      summary: Delete a learning module
+      description: Any teacher of the class can delete a learning module.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ModulePath"
+      responses:
+        "200":
+          description: Learning module deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /classes/{classId}/students:
     get:
       tags: [Classroom]
@@ -3096,6 +3229,14 @@ components:
       schema:
         type: string
         format: uuid
+    ModulePath:
+      name: moduleId
+      in: path
+      required: true
+      description: A learning module of the class
+      schema:
+        type: string
+        format: uuid
     ReplyPath:
       name: replyId
       in: path
@@ -3204,7 +3345,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `NOTIFICATION_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `MODULE_NOT_FOUND`, `NOTIFICATION_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -4523,6 +4664,110 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/VideoList"
+    ModuleStatus:
+      type: string
+      enum: [completed, ongoing, upcoming]
+      description: Schedule state of a class learning module
+    CreateModuleRequest:
+      type: object
+      required: [meetingNumber, title]
+      properties:
+        meetingNumber:
+          type: integer
+          minimum: 1
+          maximum: 100
+        title:
+          type: string
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+    UpdateModuleRequest:
+      type: object
+      minProperties: 1
+      properties:
+        meetingNumber:
+          type: integer
+          minimum: 1
+          maximum: 100
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+          description: An empty text clears the description
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: A new date for the meeting. A date that is set cannot be removed
+    Module:
+      type: object
+      required: [id, meetingNumber, title, description, status, scheduledAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        meetingNumber:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ModuleList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [modules]
+          properties:
+            modules:
+              type: array
+              items:
+                $ref: "#/components/schemas/Module"
+    ModuleEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Module"
+    ModuleListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ModuleList"
     ChatPerson:
       type: object
       required: [id, fullName, role, avatarUrl, deleted]
