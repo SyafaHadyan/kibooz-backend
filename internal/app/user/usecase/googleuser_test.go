@@ -28,7 +28,7 @@ func (s stubVerifier) Verify(context.Context, string) (googleauth.Claims, error)
 }
 
 func googleOnlyAccount(sub string) *entity.User {
-	return &entity.User{ID: uuid.New(), Role: constants.RoleWali, PasswordHash: "google-only", GoogleSub: &sub}
+	return &entity.User{ID: uuid.New(), Role: constants.RoleWali, PasswordHash: "", GoogleSub: &sub}
 }
 
 func freshClaims(sub string) googleauth.Claims {

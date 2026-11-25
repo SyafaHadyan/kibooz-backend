@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -221,7 +222,7 @@ func TestGoogleAuthFlow(t *testing.T) {
 		}).requireError(t, http.StatusUnauthorized, "AUTH_GOOGLE_STALE")
 
 		call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
-			"idToken": fresh(), "password": "not-" + guru.Password,
+			"idToken": fresh(), "password": strings.ToUpper(guru.Password),
 		}).requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
 
 		linked := call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
@@ -240,7 +241,7 @@ func TestGoogleAuthFlow(t *testing.T) {
 
 		// unlinking needs the password and ends every session
 		call(t, http.MethodDelete, "/api/v1/users/me/google", access, map[string]any{
-			"password": "not-" + guru.Password,
+			"password": strings.ToUpper(guru.Password),
 		}).requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
 
 		unlinked := call(t, http.MethodDelete, "/api/v1/users/me/google", access, map[string]any{"password": guru.Password})
@@ -269,17 +270,17 @@ func TestGoogleAuthFlow(t *testing.T) {
 
 		access := registered.data("token").(string)
 		call(t, http.MethodPut, "/api/v1/users/me/password", access, map[string]any{
-			"currentPassword": "anything-" + suffix(), "newPassword": "Brand-new-" + suffix(),
+			"currentPassword": strings.ToUpper(testPassword), "newPassword": testPassword + "0",
 		}).requireError(t, http.StatusConflict, "AUTH_PASSWORD_NOT_SET")
 
 		set := call(t, http.MethodPost, "/api/v1/users/me/password", access, map[string]any{
-			"idToken": token(), "newPassword": "Brand-new-" + suffix(),
+			"idToken": token(), "newPassword": testPassword + "0",
 		})
 		require.Equal(t, http.StatusOK, set.Status, "body %v", set.Body)
 
 		// a second go answers that the account has a password now
 		call(t, http.MethodPost, "/api/v1/users/me/password", access, map[string]any{
-			"idToken": token(), "newPassword": "Brand-new-" + suffix(),
+			"idToken": token(), "newPassword": testPassword + "0",
 		}).requireError(t, http.StatusConflict, "AUTH_PASSWORD_ALREADY_SET")
 	})
 
