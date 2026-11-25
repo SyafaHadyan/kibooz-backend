@@ -289,7 +289,8 @@ if EMAIL_VERIFICATION_ON:
             expect(f"the keeper reads {path}", call("GET", path, keeper_token), 200)
         s, rj = call("POST", "/auth/refresh-token", body={"refreshToken": g4["refresh"], "email": KEEPER_EMAIL})
         check("the keeper refreshes", s == 200 and bool(dig(rj, "data", "refreshToken")), f"{s} {rj}")
-        expect("the keeper logs out", call("POST", "/auth/logout", body={"refreshToken": dig(rj, "data", "refreshToken")}), 200)
+        if s == 200 and dig(rj, "data", "refreshToken"):
+            expect("the keeper logs out", call("POST", "/auth/logout", body={"refreshToken": dig(rj, "data", "refreshToken")}), 200)
     nobody = f"kibooz-smoke-{RUN}-nobody@example.com"
     expect("verify with an email that has no account", call("POST", "/auth/verify-email", body={"email": nobody, "password": PW, "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
     expect("resend for an email that has no account", call("POST", "/auth/resend-verification", body={"email": nobody, "password": PW}), 401, "AUTH_INVALID_CREDENTIALS")
