@@ -172,3 +172,22 @@ var (
 var (
 	ErrNotificationNotFound = New(http.StatusNotFound, "NOTIFICATION_NOT_FOUND", "Notification not found")
 )
+
+// errors of the verification of an email, in a block of their own for the same reason
+var (
+	// ErrEmailNotVerified answers a sign in whose password was right, for an account that still waits for the code of its email
+	ErrEmailNotVerified = New(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Verify your email with the code that was sent to it, then sign in")
+	// ErrVerificationCodeInvalid is the only answer to a wrong, expired or used up code and to an email that no account waits on
+	ErrVerificationCodeInvalid = New(http.StatusBadRequest, "VERIFICATION_CODE_INVALID", "The code is wrong or has expired, ask for a new one")
+	ErrEmailAlreadyVerified    = New(http.StatusConflict, "EMAIL_ALREADY_VERIFIED", "This email is already verified")
+	ErrEmailSendFailed         = New(http.StatusServiceUnavailable, "EMAIL_SEND_FAILED", "The code could not be sent right now, please try again later")
+)
+
+// ErrResendTooSoon answers a request for a new code before the wait between two codes is over, or after the codes of the hour are
+// used. It says for how long to wait.
+func ErrResendTooSoon(retryAfterSeconds int) *Error {
+	return &Error{
+		Status: http.StatusTooManyRequests, Code: "VERIFICATION_RESEND_TOO_SOON", Message: "A code was sent a moment ago, wait before you ask for another",
+		RetryAfterSeconds: retryAfterSeconds,
+	}
+}
