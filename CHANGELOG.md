@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.23.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.22.0...v0.23.0) (2026-11-25)
+
+
+### Features
+
+* **auth:** add the email verification settings, the Resend sender and the pending flag ([7f49a40](https://github.com/SyafaHadyan/kibooz-backend/commit/7f49a40811c2dda61d2ffa824165de1e4045a25f))
+* **auth:** hold a new account until the code of its email is verified ([22b9523](https://github.com/SyafaHadyan/kibooz-backend/commit/22b952353ef65b8b4577553f68e525bb291b3d70))
+* **auth:** verify the email of a new account with a code ([#491](https://github.com/SyafaHadyan/kibooz-backend/issues/491)) ([16dfd56](https://github.com/SyafaHadyan/kibooz-backend/commit/16dfd560c53934647149c63266d5d303c45e26fb))
+
+
+### Bug Fixes
+
+* **auth:** rename the credential check and clear the lint and secret scan findings ([bcc3c60](https://github.com/SyafaHadyan/kibooz-backend/commit/bcc3c60e9e73835eda0a1014cf52276ba0ad3efc))
+* **auth:** require the password to verify, give back a failed send and keep names out of the mail ([df87cb2](https://github.com/SyafaHadyan/kibooz-backend/commit/df87cb2ee422dd24deca50a7e438c496956251bf))
+
 ## [0.22.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.2...v0.22.0) (2026-11-25)
 
 
