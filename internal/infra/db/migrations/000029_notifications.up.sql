@@ -13,4 +13,7 @@ CREATE TABLE notifications (
 );
 
 CREATE INDEX idx_notifications_user_created ON notifications(user_id, created_at DESC, id DESC);
-CREATE INDEX idx_notifications_user_unread ON notifications(user_id) WHERE read_at IS NULL;
+-- the unread list and the unread count read only the unread rows of one user, newest first
+CREATE INDEX idx_notifications_user_unread ON notifications(user_id, created_at DESC, id DESC) WHERE read_at IS NULL;
+-- the hourly purge of the notifications older than the retention finds them without reading the whole table
+CREATE INDEX idx_notifications_created ON notifications(created_at);

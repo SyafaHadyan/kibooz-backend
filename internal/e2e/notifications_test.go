@@ -69,6 +69,7 @@ func TestNotifications(t *testing.T) {
 		require.Equal(t, "move_decided", dig(items[0], "kind"))
 		moodNotifID = dig(items[2], "id").(string)
 		require.Equal(t, "mood_logged", dig(items[2], "kind"))
+		require.Equal(t, "Teacher recorded mood for Mawar: Happy / Cheerful", dig(items[2], "body"))
 
 		guruInbox := call(t, http.MethodGet, "/api/v1/notifications", guru.Token, nil)
 		require.Equal(t, http.StatusOK, guruInbox.Status)
@@ -105,5 +106,24 @@ func TestNotifications(t *testing.T) {
 		require.Equal(t, http.StatusOK, after.Status)
 		require.EqualValues(t, 0, after.data("unreadCount"))
 		require.Empty(t, listOf(t, after, "notifications"))
+	})
+
+	t.Run("deleting the account removes its notifications", func(t *testing.T) {
+		count := func() int64 {
+			var total int64
+
+			require.NoError(t, testDB.Raw(
+				"SELECT COUNT(*) FROM notifications AS n JOIN users AS u ON u.id = n.user_id WHERE u.email = ?", wali.Email,
+			).Scan(&total).Error)
+
+			return total
+		}
+
+		require.EqualValues(t, 3, count(), "the parent has notifications before the deletion")
+
+		res := call(t, http.MethodDelete, "/api/v1/users/me", wali.Token, map[string]any{"password": testPassword})
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		require.EqualValues(t, 0, count())
 	})
 }

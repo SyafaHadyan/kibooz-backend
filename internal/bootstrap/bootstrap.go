@@ -26,6 +26,7 @@ import (
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
 	notificationhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/interface/rest"
 	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/sweep"
 	notificationusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/usecase"
 	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
@@ -73,6 +74,7 @@ type Bootstrap struct {
 	stopSeason    func()
 	stopKeys      func()
 	stopTokens    func()
+	stopNotifs    func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -170,6 +172,14 @@ func Start(version string) (*Bootstrap, error) {
 		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
 	))
 	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
+
+	for _, collector := range notifUC.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register notification metrics: %w", err)
+		}
+	}
+
 	notificationhandler.NewNotificationHandler(app.Router, mw, notifUC)
 
 	waliUC := waliusecase.NewWaliUseCase(
@@ -290,6 +300,9 @@ func Start(version string) (*Bootstrap, error) {
 	stopTokens := sessions.NewSweeper(database, time.Duration(cfg.JWTSessionMaxDays)*24*time.Hour).
 		Observe(stats.Job("refresh_token_purge")).Start(sessions.Interval)
 
+	stopNotifs := notificationsweep.NewSweeper(database).
+		Observe(stats.Job("notification_purge")).Start(notificationsweep.Interval)
+
 	stopCleanup := func() {}
 	if storage.Enabled() {
 		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
@@ -305,7 +318,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -318,6 +331,7 @@ func (b *Bootstrap) Close() {
 	b.stopSeason()
 	b.stopKeys()
 	b.stopTokens()
+	b.stopNotifs()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()

@@ -209,25 +209,39 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		return dto.LogMoodResponse{}, apperror.ErrMoodLimitReached
 	}
 
-	u.notifyMood(ctx, student.ID, moodLog.MoodType, moodLog.ID)
+	u.notifyMood(ctx, student, moodLog.MoodType, moodLog.ID)
 
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
 }
 
-func (u *GuruUseCase) notifyMood(ctx context.Context, studentID uuid.UUID, moodType constants.Mood, logID uuid.UUID) {
+func (u *GuruUseCase) notifyMood(ctx context.Context, student *entity.Student, moodType constants.Mood, logID uuid.UUID) {
 	if u.notifier == nil {
 		return
 	}
 
+	notice := moodNotice(student, moodType, logID)
+
 	u.notifier.NotifyStudentParent(
-		ctx,
-		studentID,
-		constants.NotificationMoodLogged,
-		"Daily mood recorded",
-		fmt.Sprintf("Teacher recorded mood: %s", constants.MoodLabels[moodType]),
-		"mood_log",
-		logID,
+		ctx, student.ID, constants.NotificationMoodLogged, notice.Title, notice.Body, moodReferenceType, logID,
 	)
+}
+
+// moodReferenceType is the reference type of a notification about a mood log
+const moodReferenceType = "mood_log"
+
+// moodNotice is the text for the parent of a child, which names the child because one parent can have up to 10
+func moodNotice(student *entity.Student, moodType constants.Mood, logID uuid.UUID) notifier.StudentNotice {
+	name := "your child"
+	if fields := strings.Fields(student.FullName); len(fields) > 0 {
+		name = fields[0]
+	}
+
+	return notifier.StudentNotice{
+		StudentID: student.ID,
+		Title:     "Daily mood recorded",
+		Body:      fmt.Sprintf("Teacher recorded mood for %s: %s", name, constants.MoodLabels[moodType]),
+		RefID:     logID,
+	}
 }
 
 // moodDay is the local day of recordedAt, which is what the limit of mood logs per child counts in
@@ -301,6 +315,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 	details := map[string]string{}
 	seen := make(map[uuid.UUID]bool, len(req.Entries))
 	moodLogs := make([]entity.MoodLog, 0, len(req.Entries))
+	students := make(map[uuid.UUID]*entity.Student, len(req.Entries))
 
 	for i, entry := range req.Entries {
 		path := "entries[" + strconv.Itoa(i) + "]."
@@ -356,6 +371,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 		}
 
 		moodLogs = append(moodLogs, moodLog)
+		students[student.ID] = student
 	}
 
 	if len(details) > 0 {
@@ -372,9 +388,16 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 	}
 
 	logs := make([]dto.LogMoodBatchItem, len(moodLogs))
+	notices := make([]notifier.StudentNotice, len(moodLogs))
+
 	for i, moodLog := range moodLogs {
 		logs[i] = dto.LogMoodBatchItem{LogID: moodLog.ID, StudentID: moodLog.StudentID, RecordedAt: moodLog.RecordedAt}
-		u.notifyMood(ctx, moodLog.StudentID, moodLog.MoodType, moodLog.ID)
+		notices[i] = moodNotice(students[moodLog.StudentID], moodLog.MoodType, moodLog.ID)
+	}
+
+	// one statement for the whole batch, and a failure never fails the logs that are stored
+	if u.notifier != nil {
+		u.notifier.NotifyStudentParents(ctx, constants.NotificationMoodLogged, moodReferenceType, notices)
 	}
 
 	return dto.LogMoodBatchResponse{Logs: logs}, nil

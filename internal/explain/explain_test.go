@@ -29,6 +29,7 @@ import (
 	classroomrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	gururepository "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/sweep"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	trashrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
@@ -43,6 +44,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -369,6 +371,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		_, _, _, err := notifRepo.List(ctx, parent, false, 20, 0)
 		return err
 	})
+	call("notification, unread list of a parent", func(ctx context.Context) error {
+		_, _, _, err := notifRepo.List(ctx, parent, true, 20, 0)
+		return err
+	})
 	call("trash, find the parent id", func(ctx context.Context) error { return drop(trash.FindWaliIDByUserID(ctx, parent)) })
 	call("trash, find the teacher id", func(ctx context.Context) error { return drop(trash.FindGuruIDByUserID(ctx, teacher)) })
 	call("trash, find an owned student", func(ctx context.Context) error { return drop(trash.FindOwnedStudent(ctx, wali, child)) })
@@ -620,6 +626,14 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("notification, notify student parent", func(ctx context.Context) error {
 		return notifRepo.CreateForStudentParent(ctx, &entity.Notification{Kind: "mood_logged", Title: "T", Body: "B", CreatedAt: now}, child)
 	})
+	call("notification, notify the parents of many students", func(ctx context.Context) error {
+		notices := []notifier.StudentNotice{
+			{StudentID: child, Title: "T", Body: "B", RefID: uuid.New()},
+			{StudentID: secondTwo, Title: "T", Body: "B", RefID: uuid.New()},
+		}
+
+		return notifRepo.CreateForStudentParents(ctx, "mood_logged", "mood_log", now, notices)
+	})
 	call("notification, notify class teachers", func(ctx context.Context) error {
 		return notifRepo.CreateForClassTeachers(ctx, &entity.Notification{Kind: "guidance_applied", Title: "T", Body: "B", CreatedAt: now}, class)
 	})
@@ -660,6 +674,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	// the jobs that run on their own
 	call("job, sweep the refresh tokens", func(ctx context.Context) error {
 		return drop(sessions.NewSweeper(logged, 90*24*time.Hour).Sweep(ctx))
+	})
+	call("job, sweep the notifications", func(ctx context.Context) error {
+		return drop(notificationsweep.NewSweeper(logged).Sweep(ctx))
 	})
 	call("job, sweep the files", func(ctx context.Context) error {
 		return drop(filecleanup.New(logged, s3.Disabled{}).Sweep(ctx))

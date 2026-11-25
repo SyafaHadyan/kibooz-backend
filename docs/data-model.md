@@ -22,7 +22,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `chat_messages` | A message of a conversation. The `id` only grows and is the cursor of the conversation. A message has text, a photo or video, or both, and the four `media_` columns are set or empty together. A deleted message keeps its row with an empty body, no media and `deleted_at` |
 | `push_tokens` | The token that Firebase gave an installed app, one row for each device and each token on one account at a time. The tokens of an account are removed when the account is deleted |
 | `chat_reads` | How far each person of a conversation has read, the id of the last message |
-| `notifications` | One entry of the inbox of a teacher or a parent, with a `kind`, a title, a text, an optional reference to the record that caused it (`reference_type` and `reference_id`), the time it was read and the time it was made |
+| `notifications` | One entry of the inbox of a teacher or a parent, with a `kind`, a title, a text, an optional reference to the record that caused it (`reference_type` and `reference_id`), the time it was read and the time it was made. A notification is removed 90 days after it was made, and with the account when the account is deleted |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |
