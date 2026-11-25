@@ -262,6 +262,18 @@ func (r *UserDB) SoftDeleteAccount(
 				return err
 			}
 
+			// a notification names a child, and the account row stays after a soft delete, so the cascade of the foreign key never runs
+			err = tx.Exec("DELETE FROM notifications WHERE user_id = ?", userID).Error
+			if err != nil {
+				return err
+			}
+
+			// the same holds for the code of an email that was never verified, and its hash is no use to anyone
+			err = tx.Exec("DELETE FROM email_verifications WHERE user_id = ?", userID).Error
+			if err != nil {
+				return err
+			}
+
 			switch role {
 			case constants.RoleWali:
 				deleted.ClassIDs, err = softDeleteWali(tx, userID, &urls)

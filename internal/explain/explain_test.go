@@ -28,6 +28,8 @@ import (
 	chatrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/repository"
 	classroomrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/classroom/repository"
 	gururepository "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
+	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/sweep"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	trashrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
@@ -42,6 +44,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -262,6 +265,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	chat := chatrepository.NewChatDB(logged)
 	classroom := classroomrepository.NewClassroomDB(logged)
 	guruRepo := gururepository.NewGuruDB(logged, keyOf)
+	notifRepo := notificationrepository.NewNotificationDB(logged)
 	pushRepo := pushrepository.NewPushDB(logged)
 	trash := trashrepository.NewTrashDB(logged)
 	userRepo := userrepository.NewUserDB(logged)
@@ -336,6 +340,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, teacher of a class", func(ctx context.Context) error { return drop(classroom.TeacherOfClass(ctx, teacher, class)) })
 	call("classroom, parent in a class", func(ctx context.Context) error { return drop(classroom.ParentInClass(ctx, parent, class)) })
 	call("classroom, videos", func(ctx context.Context) error { return drop2(classroom.ListVideos(ctx, class, 20, 0)) })
+	call("classroom, modules", func(ctx context.Context) error { return drop2(classroom.ListModules(ctx, class, 20, 0)) })
 	call("classroom, find a video", func(ctx context.Context) error { return drop(classroom.FindVideo(ctx, class, video)) })
 	call("classroom, count videos by address", func(ctx context.Context) error {
 		return drop(classroom.CountVideosByURL(ctx, "https://files.example.test/videos/2-1.mp4"))
@@ -349,6 +354,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, guidance reports", func(ctx context.Context) error { return drop2(classroom.ListGuidanceReports(ctx, class, 20, 0)) })
 	call("guru, move requests", func(ctx context.Context) error { return drop(guruRepo.ListMoveRequests(ctx, class)) })
 	call("guru, history of a child", func(ctx context.Context) error { return drop(guruRepo.StudentHistory(ctx, class, child)) })
+	call("guru, class activity history", func(ctx context.Context) error {
+		return drop2(guruRepo.ListClassHistory(ctx, class, "", 20, 0))
+	})
 	call("nisn, verified holder", func(ctx context.Context) error {
 		return drop(nisn.VerifiedHolder(logged.WithContext(ctx), "1000000001", child))
 	})
@@ -365,6 +373,14 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("guru, teachers of a class", func(ctx context.Context) error { return drop(guruRepo.ListTeachers(ctx, class)) })
 	call("push, tokens of the people of a conversation", func(ctx context.Context) error {
 		return drop(pushRepo.TokensOf(ctx, []uuid.UUID{teacher, parent, id("wali2"), id("wali3")}))
+	})
+	call("notification, list of a parent", func(ctx context.Context) error {
+		_, _, _, err := notifRepo.List(ctx, parent, false, 20, 0)
+		return err
+	})
+	call("notification, unread list of a parent", func(ctx context.Context) error {
+		_, _, _, err := notifRepo.List(ctx, parent, true, 20, 0)
+		return err
 	})
 	call("trash, find the parent id", func(ctx context.Context) error { return drop(trash.FindWaliIDByUserID(ctx, parent)) })
 	call("trash, find the teacher id", func(ctx context.Context) error { return drop(trash.FindGuruIDByUserID(ctx, teacher)) })
@@ -397,6 +413,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("parent, find the guardian", func(ctx context.Context) error { return drop(waliRepo.FindGuardian(ctx, parent)) })
 	call("parent, children", func(ctx context.Context) error { return drop(waliRepo.ListChildren(ctx, wali)) })
 	call("parent, previous classes", func(ctx context.Context) error { return drop(waliRepo.PreviousClasses(ctx, wali, child)) })
+	call("parent, child activity history", func(ctx context.Context) error {
+		return drop2(waliRepo.ListChildHistory(ctx, child, "", 20, 0))
+	})
 	call("parent, moves", func(ctx context.Context) error { return drop(waliRepo.ListMoves(ctx, wali, child)) })
 
 	// writing, where the statements around the write are the part that grows with the data
@@ -427,6 +446,36 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		}))
 	})
 	call("auth, delete a refresh token", func(ctx context.Context) error { return auth.DeleteRefreshToken(ctx, spare) })
+	rule := authrepository.SendRule{TTL: 15 * time.Minute, Cooldown: time.Minute, PerHour: 5}
+
+	call("auth, store the first verification code", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "x", now, rule)
+
+		return err
+	})
+	call("auth, store a verification code before the cooldown is over", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "y", now.Add(time.Second), rule)
+
+		return err
+	})
+	call("auth, replace a verification code", func(ctx context.Context) error {
+		_, err := auth.StoreVerification(ctx, parent, "z", now.Add(2*time.Minute), rule)
+
+		return err
+	})
+	call("auth, give back a verification send", func(ctx context.Context) error {
+		return auth.ReleaseVerification(ctx, parent, "z", now.Add(2*time.Minute), time.Minute)
+	})
+	call("auth, check a wrong verification code", func(ctx context.Context) error {
+		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
+
+		return err
+	})
+	call("auth, check the right verification code", func(ctx context.Context) error {
+		_, err := auth.CheckVerification(ctx, parent, "z", now.Add(3*time.Minute), 5)
+
+		return err
+	})
 	call("chat, get or create a conversation", func(ctx context.Context) error {
 		low, high := teacher, parent
 		if strings.Compare(low.String(), high.String()) > 0 {
@@ -476,7 +525,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	var (
 		accepted, rejected, cancelled uuid.UUID
 		addedChild                    = uuid.New()
-		newVideo, newPost             = uuid.New(), uuid.New()
+		newVideo, newModule, newPost  = uuid.New(), uuid.New(), uuid.New()
 		videoURL                      = "https://files.example.test/videos/explain-new.mp4"
 		extraTeacher                  = id("g6")
 		avatarURL                     = "https://files.example.test/avatars/explain.png"
@@ -599,6 +648,20 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		})
 	})
 	call("classroom, delete a video", func(ctx context.Context) error { return okOnly(classroom.DeleteVideo(ctx, class, newVideo)) })
+	call("classroom, add a module", func(ctx context.Context) error {
+		return classroom.CreateModule(ctx, &entity.LearningModule{
+			ID: newModule, ClassID: class, AddedByGuruID: guru, MeetingNumber: 11, Title: "New Module", Status: constants.ModuleUpcoming,
+			CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	call("classroom, change a module", func(ctx context.Context) error {
+		return present(classroom.UpdateModule(ctx, class, newModule, func(module *entity.LearningModule) error {
+			module.Title = "Changed Module"
+
+			return nil
+		}))
+	})
+	call("classroom, delete a module", func(ctx context.Context) error { return okOnly(classroom.DeleteModule(ctx, class, newModule)) })
 	call("classroom, write a thread", func(ctx context.Context) error {
 		title := "Explain"
 
@@ -616,6 +679,37 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return pushRepo.DeleteTokenValues(ctx, []string{
 			fmt.Sprintf("%x%x", md5.Sum([]byte("p2")), md5.Sum([]byte("q2"))), fmt.Sprintf("%x%x", md5.Sum([]byte("p3")), md5.Sum([]byte("q3"))),
 		})
+	})
+	call("notification, notify student parent", func(ctx context.Context) error {
+		return notifRepo.CreateForStudentParent(ctx, &entity.Notification{Kind: "mood_logged", Title: "T", Body: "B", CreatedAt: now}, child)
+	})
+	call("notification, notify the parents of many students", func(ctx context.Context) error {
+		notices := []notifier.StudentNotice{
+			{StudentID: child, Title: "T", Body: "B", RefID: uuid.New()},
+			{StudentID: secondTwo, Title: "T", Body: "B", RefID: uuid.New()},
+		}
+
+		return notifRepo.CreateForStudentParents(ctx, "mood_logged", "mood_log", now, notices)
+	})
+	call("notification, notify class teachers", func(ctx context.Context) error {
+		return notifRepo.CreateForClassTeachers(ctx, &entity.Notification{Kind: "guidance_applied", Title: "T", Body: "B", CreatedAt: now}, class)
+	})
+	call("notification, notify class parents", func(ctx context.Context) error {
+		return notifRepo.CreateForClassParents(ctx, &entity.Notification{Kind: "video_added", Title: "T", Body: "B", CreatedAt: now}, class)
+	})
+	call("notification, notify move request parent", func(ctx context.Context) error {
+		return notifRepo.CreateForMoveRequestParent(ctx, &entity.Notification{Kind: "move_decided", Title: "T", Body: "B", CreatedAt: now}, accepted)
+	})
+	call("notification, mark one read", func(ctx context.Context) error {
+		rows, _, _, err := notifRepo.List(ctx, parent, false, 1, 0)
+		if err != nil || len(rows) == 0 {
+			return err
+		}
+
+		return okOnly(notifRepo.MarkRead(ctx, parent, rows[0].ID, now))
+	})
+	call("notification, mark all read", func(ctx context.Context) error {
+		return notifRepo.MarkAllRead(ctx, parent, now)
 	})
 	call("user, set the avatar of an account", func(ctx context.Context) error { return matched(userRepo.UpdateUserAvatar(ctx, parent, avatarURL)) })
 	call("user, set the avatar of a child", func(ctx context.Context) error {
@@ -637,6 +731,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	// the jobs that run on their own
 	call("job, sweep the refresh tokens", func(ctx context.Context) error {
 		return drop(sessions.NewSweeper(logged, 90*24*time.Hour).Sweep(ctx))
+	})
+	call("job, sweep the notifications", func(ctx context.Context) error {
+		return drop(notificationsweep.NewSweeper(logged).Sweep(ctx))
 	})
 	call("job, sweep the files", func(ctx context.Context) error {
 		return drop(filecleanup.New(logged, s3.Disabled{}).Sweep(ctx))

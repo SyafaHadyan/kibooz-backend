@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"time"
 
@@ -52,6 +53,27 @@ type AuthDBItf interface {
 	) (Rotation, error)
 	// DeleteRefreshToken ends the whole session that the token belongs to
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
+	// StoreVerification keeps the hash of a new code for an account that waits for its email, and replaces the live one. It
+	// refuses with the time to wait when the last code is newer than the cooldown or the codes of the hour are used up, and
+	// then changes nothing.
+	StoreVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, rule SendRule) (wait time.Duration, err error)
+	// CheckVerification compares the hash with the live code of the account. A code that is wrong counts as an attempt, and one
+	// that is expired or used up is only refused. A code that matches ends the wait of the account in the same transaction, so
+	// it works once.
+	CheckVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int) (matched bool, err error)
+	// ReleaseVerification gives back the wait and the send of the hour of a code whose mail was not taken by the mail service, so the
+	// person can ask again at once. It only touches the row of that code, a newer code is left alone.
+	ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error
+}
+
+// SendRule holds the limits of the codes that one account can have sent
+type SendRule struct {
+	// TTL is how long the new code works
+	TTL time.Duration
+	// Cooldown is the shortest time between two codes
+	Cooldown time.Duration
+	// PerHour is the most codes in an hour, the new one included
+	PerHour int
 }
 
 // RotationPolicy holds the limits of swapping a refresh token
@@ -165,6 +187,16 @@ func createAll(tx *gorm.DB, rows ...any) error {
 	return nil
 }
 
+// createSession stores the first session of an account, and does nothing for an account that waits for the code of its email
+// and gets its session when the code is right
+func createSession(tx *gorm.DB, session *entity.RefreshToken) error {
+	if session == nil {
+		return nil
+	}
+
+	return tx.Create(session).Error
+}
+
 func (r *AuthDB) CreateGuru(
 	ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken,
 ) error {
@@ -184,8 +216,13 @@ func (r *AuthDB) CreateGuru(
 			return err
 		}
 
+		err = createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID, IsOwner: true})
+		if err != nil {
+			return err
+		}
+
 		// a new account has no earlier tokens, so there is nothing to purge
-		return createAll(tx, &entity.ClassTeacher{ClassID: class.ID, GuruID: guru.ID, IsOwner: true}, session)
+		return createSession(tx, session)
 	})
 
 	return mapUniqueViolation(err)
@@ -267,7 +304,12 @@ func (r *AuthDB) CreateWali(
 			return err
 		}
 
-		err = createAll(tx, student, session)
+		err = createAll(tx, student)
+		if err != nil {
+			return err
+		}
+
+		err = createSession(tx, session)
 		if err != nil {
 			return err
 		}
@@ -496,5 +538,123 @@ func purgeExpiredTokens(tx *gorm.DB, userID uuid.UUID, now time.Time, sessionMax
 		"DELETE FROM refresh_tokens WHERE id IN (SELECT id FROM refresh_tokens WHERE user_id = ? AND "+
 			"((used_at IS NULL AND expires_at <= ?) OR (used_at IS NOT NULL AND session_started_at <= ?)) FOR UPDATE SKIP LOCKED)",
 		userID, now, now.Add(-sessionMax),
+	).Error
+}
+
+func (r *AuthDB) StoreVerification(
+	ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, rule SendRule,
+) (time.Duration, error) {
+	var wait time.Duration
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []struct {
+			LastSentAt      time.Time
+			WindowStartedAt time.Time
+			SendsInWindow   int
+		}
+
+		// the row of the account is locked, so two requests for a code cannot both pass the cooldown
+		err := tx.Raw(
+			"SELECT last_sent_at, window_started_at, sends_in_window FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
+		).Scan(&rows).Error
+		if err != nil {
+			return err
+		}
+
+		expires := now.Add(rule.TTL)
+
+		if len(rows) == 0 {
+			return tx.Exec(
+				`INSERT INTO email_verifications (user_id, code_hash, expires_at, attempts, last_sent_at, window_started_at, sends_in_window)
+				VALUES (?, ?, ?, 0, ?, ?, 1)`, userID, codeHash, expires, now, now,
+			).Error
+		}
+
+		last := rows[0]
+
+		if elapsed := now.Sub(last.LastSentAt); elapsed < rule.Cooldown {
+			wait = rule.Cooldown - elapsed
+
+			return nil
+		}
+
+		windowStart, sent := last.WindowStartedAt, last.SendsInWindow
+		if now.Sub(windowStart) >= time.Hour {
+			windowStart, sent = now, 0
+		}
+
+		if sent >= rule.PerHour {
+			wait = windowStart.Add(time.Hour).Sub(now)
+
+			return nil
+		}
+
+		return tx.Exec(
+			`UPDATE email_verifications SET code_hash = ?, expires_at = ?, attempts = 0, last_sent_at = ?, window_started_at = ?,
+				sends_in_window = ? WHERE user_id = ?`, codeHash, expires, now, windowStart, sent+1, userID,
+		).Error
+	})
+
+	// two first codes that raced for the same account: the other one won and the cooldown applies to this one
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		return time.Minute, nil
+	}
+
+	return wait, err
+}
+
+func (r *AuthDB) CheckVerification(
+	ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int,
+) (bool, error) {
+	var matched bool
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var rows []struct {
+			CodeHash  string
+			ExpiresAt time.Time
+			Attempts  int
+		}
+
+		err := tx.Raw("SELECT code_hash, expires_at, attempts FROM email_verifications WHERE user_id = ? FOR UPDATE", userID).Scan(&rows).Error
+		if err != nil {
+			return err
+		}
+
+		// no code, an expired one or one that took all its attempts is refused without counting, so it cannot be probed further
+		if len(rows) == 0 || !rows[0].ExpiresAt.After(now) || rows[0].Attempts >= maxAttempts {
+			return nil
+		}
+
+		if subtle.ConstantTimeCompare([]byte(rows[0].CodeHash), []byte(codeHash)) != 1 {
+			return tx.Exec("UPDATE email_verifications SET attempts = attempts + 1 WHERE user_id = ?", userID).Error
+		}
+
+		// the account may have been deleted or verified while the code was on its way
+		done := tx.Exec(
+			"UPDATE users SET email_verification_pending = FALSE, updated_at = ? WHERE id = ? AND deleted_at IS NULL AND email_verification_pending",
+			now, userID,
+		)
+		if done.Error != nil {
+			return done.Error
+		}
+
+		err = tx.Exec("DELETE FROM email_verifications WHERE user_id = ?", userID).Error
+		if err != nil {
+			return err
+		}
+
+		matched = done.RowsAffected == 1
+
+		return nil
+	})
+
+	return matched && err == nil, err
+}
+
+func (r *AuthDB) ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error {
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0)
+		WHERE user_id = ? AND code_hash = ?`, now.Add(-cooldown), userID, codeHash,
 	).Error
 }

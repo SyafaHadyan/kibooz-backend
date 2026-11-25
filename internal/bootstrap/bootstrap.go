@@ -24,6 +24,10 @@ import (
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
+	notificationhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/interface/rest"
+	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/sweep"
+	notificationusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/usecase"
 	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	pushusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/push/usecase"
@@ -50,8 +54,10 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
+	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -71,6 +77,7 @@ type Bootstrap struct {
 	stopSeason    func()
 	stopKeys      func()
 	stopTokens    func()
+	stopNotifs    func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -165,22 +172,45 @@ func Start(version string) (*Bootstrap, error) {
 	hasher := passwords.New(cfg)
 
 	authUseCase := authusecase.NewAuthUseCase(
-		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
+		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)),
 	)
 
+	for _, collector := range authUseCase.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register verification mail metrics: %w", err)
+		}
+	}
+
 	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), app.GoogleTokenLimiter(), authUseCase)
-	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
+	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
+
+	for _, collector := range notifUC.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register notification metrics: %w", err)
+		}
+	}
+
+	notificationhandler.NewNotificationHandler(app.Router, mw, notifUC)
+
+	waliUC := waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
-	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
+	)
+	guruUC := guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
+	)
+	classroomUC := classroomusecase.NewClassroomUseCase(
+		classroomrepository.NewClassroomDB(database), retrying, cfg,
+	)
+	attachNotifier(notifUC, waliUC, guruUC, classroomUC)
+
+	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliUC)
+	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruUC)
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, retrying, cfg,
 	))
-	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
-		classroomrepository.NewClassroomDB(database), retrying, cfg,
-	))
+	classroomhandler.NewClassroomHandler(app.Router, mw, classroomUC)
 	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
 	hub := chatlive.NewHub(chatlive.Config{
 		MaxSockets: cfg.ChatMaxSockets, MaxPerUser: cfg.ChatMaxSocketsPerUser, Bus: chatlive.NewRedisBus(cache),
@@ -282,6 +312,9 @@ func Start(version string) (*Bootstrap, error) {
 	stopTokens := sessions.NewSweeper(database, time.Duration(cfg.JWTSessionMaxDays)*24*time.Hour).
 		Observe(stats.Job("refresh_token_purge")).Start(sessions.Interval)
 
+	stopNotifs := notificationsweep.NewSweeper(database).
+		Observe(stats.Job("notification_purge")).Start(notificationsweep.Interval)
+
 	stopCleanup := func() {}
 	if storage.Enabled() {
 		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
@@ -297,7 +330,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -317,6 +350,7 @@ func (b *Bootstrap) Close() {
 	b.stopSeason()
 	b.stopKeys()
 	b.stopTokens()
+	b.stopNotifs()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()
@@ -328,6 +362,18 @@ func (b *Bootstrap) Close() {
 	_ = b.Redis.Close()
 
 	b.stopReports()
+}
+
+type notifierSetter interface {
+	SetNotifier(n notifier.Notifier)
+}
+
+func attachNotifier(n notifier.Notifier, targets ...any) {
+	for _, target := range targets {
+		if s, ok := target.(notifierSetter); ok {
+			s.SetNotifier(n)
+		}
+	}
 }
 
 type pinger func(ctx context.Context) error

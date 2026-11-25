@@ -87,7 +87,7 @@ func Leave(tx *gorm.DB, userID uuid.UUID, successorEmail string) error {
 			SELECT g.id
 			FROM users AS u
 			JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL
-			WHERE u.email = ? AND u.role = ? AND u.deleted_at IS NULL
+			WHERE u.email = ? AND u.role = ? AND u.deleted_at IS NULL AND NOT u.email_verification_pending
 			LIMIT 1`, successorEmail, constants.RoleGuru).Scan(&found).Error
 		if err != nil {
 			return err

@@ -107,6 +107,7 @@ type WaliDBItf interface {
 	PreviousClasses(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.PreviousRow, error)
 	// ListMoves returns the requests of a child that wait or were rejected, the newest first
 	ListMoves(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) ([]enrollment.ParentRow, error)
+	ListChildHistory(ctx context.Context, studentID uuid.UUID, eventType string, limit int, offset int) ([]WaliHistoryRow, int, error)
 }
 
 type WaliDB struct {

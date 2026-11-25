@@ -19,7 +19,7 @@ No rate limit looks at the IP address. A school network or an ISP puts many peop
 |:---|:---|:---|
 | Every route that needs a signed-in user | user id | `USER_LIMITER_MAX`, 120 by default |
 | Deleting an account, which confirms the password | user id | `AUTH_LIMITER_MAX`, 10 by default |
-| Login and register | email, or the device when the login carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
+| Login, register, verify email and resend verification | email, or the device when the request carries a valid device token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | Refresh token and logout | refresh token | `AUTH_LIMITER_MAX`, 10 by default, separately for each route |
 | The batch mood route | user id | `MOOD_BATCH_LIMITER_MAX`, 30 by default, on top of the limit of every signed-in route |
 | Register with a class code, and adding a child with a class code | every caller of the route | `CLASS_CODE_LIMITER_MAX`, 60 by default, separately for each route and on top of the limit per email |
@@ -59,7 +59,7 @@ limit_req_status 429;
 # server block
 client_max_body_size 8m;
 
-location ~* ^/api/v1/auth/(register|login)/?$ {
+location ~* ^/api/v1/auth/(register|login|verify-email|resend-verification)/?$ {
     limit_req zone=kibooz_hash burst=128 nodelay;
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
@@ -114,7 +114,7 @@ When Redis is unreachable the API logs it once and keeps serving. Calls to Redis
 
 ## Idempotency keys
 
-A client that queues an action while it is offline sends the same `Idempotency-Key` with every try. The middleware in `internal/idempotency` runs after authentication on the eleven routes that create something, and a request without the header passes through untouched.
+A client that queues an action while it is offline sends the same `Idempotency-Key` with every try. The middleware in `internal/idempotency` runs after authentication on the routes that create something, and a request without the header passes through untouched.
 
 The keys live in the PostgreSQL table `idempotency_keys` and not in Redis, because Redis is optional here and an outage would turn every repeat into a duplicate. A row is claimed with one `INSERT ... ON CONFLICT` before the work starts, so two tries at the same time cannot both run. The row holds a SHA-256 fingerprint of the method, the address and the body, the status code and the response. A repeat with another fingerprint is refused, and a repeat of a finished request gets the stored response.
 

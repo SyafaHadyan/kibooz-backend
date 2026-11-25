@@ -261,7 +261,7 @@ func (r *ChatDB) ShareClass(ctx context.Context, a uuid.UUID, b uuid.UUID) (bool
 func (r *ChatDB) ListContacts(
 	ctx context.Context, userID uuid.UUID, peerRole constants.Role, limit int, offset int,
 ) ([]ContactRow, int, error) {
-	filter := "u.deleted_at IS NULL AND u.role = @role AND u.id IN (SELECT id FROM peers)"
+	filter := "u.deleted_at IS NULL AND NOT u.email_verification_pending AND u.role = @role AND u.id IN (SELECT id FROM peers)"
 	user, role := sql.Named("user", userID), sql.Named("role", peerRole)
 
 	var total int64

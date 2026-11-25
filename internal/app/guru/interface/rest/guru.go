@@ -41,6 +41,7 @@ func NewGuruHandler(router fiber.Router, mw middleware.MiddlewareItf, batchLimit
 	group.Post("/classes/:classId/restore", handler.RestoreClass)
 	group.Delete("/classes/:classId/students/:studentId", handler.RemoveStudent)
 	group.Get("/classes/:classId/students/:studentId/history", handler.StudentHistory)
+	group.Get("/history", handler.ClassHistory)
 	group.Post("/classes/:classId/students/:studentId/nisn-verification", handler.VerifyNISN)
 	group.Delete("/classes/:classId/students/:studentId/nisn-verification", handler.UnverifyNISN)
 	group.Get("/classes/:classId/move-requests", handler.MoveRequests)

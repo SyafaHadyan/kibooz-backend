@@ -78,46 +78,42 @@ func As(err error) *Error {
 }
 
 var (
-	ErrInvalidCredentials      = New(http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "Email or password does not match the selected role")
-	ErrGoogleUnavailable       = New(http.StatusServiceUnavailable, "AUTH_GOOGLE_UNAVAILABLE", "Google Sign-In is unavailable")
-	ErrGoogleInvalid           = New(http.StatusUnauthorized, "AUTH_GOOGLE_INVALID", "Invalid or expired Google credential")
-	ErrRoleMismatch            = New(http.StatusConflict, "AUTH_ROLE_MISMATCH", "This Google account is registered under another role")
-	ErrPasswordNotSet          = New(http.StatusConflict, "AUTH_PASSWORD_NOT_SET", "This account signs in with Google and does not have a password set")
-	ErrGoogleAlreadyRegistered = New(http.StatusConflict, "GOOGLE_ALREADY_REGISTERED", "This Google account is already registered")
-	ErrTokenMissing            = New(http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "Authentication token not found")
-	ErrTokenInvalid            = New(http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "Authentication token is invalid or has expired")
-	ErrRefreshInvalid          = New(http.StatusUnauthorized, "AUTH_REFRESH_INVALID", "Your session has ended, please sign in again")
-	ErrForbidden               = New(http.StatusForbidden, "AUTH_FORBIDDEN", "You do not have access to this resource")
-	ErrPasswordIncorrect       = New(http.StatusForbidden, "AUTH_PASSWORD_INCORRECT", "Incorrect password")
-	ErrEmailTaken              = New(http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email is already registered")
-	ErrNIPTaken                = New(http.StatusConflict, "NIP_ALREADY_REGISTERED", "NIP is already registered")
-	ErrNISNTaken               = New(http.StatusConflict, "NISN_ALREADY_REGISTERED", "NISN is already registered")
-	ErrNISNNotSet              = New(http.StatusConflict, "NISN_NOT_SET", "The child has no NISN to verify")
-	ErrClassNotFound           = New(http.StatusNotFound, "CLASS_NOT_FOUND", "Class not found")
-	ErrClassNoTeacher          = New(http.StatusConflict, "CLASS_NO_ACTIVE_TEACHER", "This class has no active teacher and cannot accept new students")
-	ErrClassCodeNotFound       = New(http.StatusNotFound, "CLASS_CODE_NOT_FOUND", "Class code not found")
-	ErrNoChild                 = New(http.StatusNotFound, "NO_CHILD_REGISTERED", "This account has no child, add one with the code of a class")
-	ErrStudentNotFound         = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Student not found")
-	ErrChildLimitReached       = New(http.StatusConflict, "CHILD_LIMIT_REACHED", "This account already has the largest number of children")
-	ErrClassLimitReached       = New(http.StatusConflict, "CLASS_LIMIT_REACHED", "This teacher already teaches the largest number of classes")
-	ErrClassJoiningClosed      = New(http.StatusConflict, "CLASS_JOINING_CLOSED", "This class is not taking new children right now")
-	ErrClassFull               = New(http.StatusConflict, "CLASS_FULL", "This class has the largest number of children")
-	ErrMoodLimitReached        = New(http.StatusConflict, "MOOD_LOG_LIMIT_REACHED", "This child already has the largest number of mood logs for that day")
-	ErrProfileNotFound         = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "User profile not found")
-	ErrGuidanceNotFound        = New(http.StatusNotFound, "GUIDANCE_NOT_FOUND", "Guidance not found")
-	ErrTeacherNotFound         = New(http.StatusNotFound, "TEACHER_NOT_FOUND", "No teacher account has this email")
-	ErrTeacherInClass          = New(http.StatusConflict, "TEACHER_ALREADY_IN_CLASS", "This teacher already teaches the class")
-	ErrTeacherNotInClass       = New(http.StatusNotFound, "TEACHER_NOT_IN_CLASS", "This teacher does not teach the class")
-	ErrNotClassOwner           = New(http.StatusForbidden, "CLASS_OWNER_REQUIRED", "Only the owner of the class can do this")
-	ErrSuccessorRequired       = New(http.StatusConflict, "SUCCESSOR_REQUIRED", "You are the only teacher of a class, so name another teacher as the successor to delete your account")
-	ErrLastTeacher             = New(http.StatusConflict, "LAST_TEACHER", "The only teacher of a class cannot leave it")
-	ErrForumPostNotFound       = New(http.StatusNotFound, "FORUM_POST_NOT_FOUND", "Forum post not found")
-	ErrVideoNotFound           = New(http.StatusNotFound, "VIDEO_NOT_FOUND", "Learning video not found")
-	ErrDailyLimitReached       = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Today's limit for trash sorting point claims has been reached")
-	ErrInvalidImage            = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
-	ErrFileTooLarge            = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
-	ErrBodyTooLarge            = New(http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "The request body exceeds the allowed limit")
-	ErrImageDimensions         = New(http.StatusBadRequest, "IMAGE_DIMENSIONS_TOO_LARGE", "The image may be at most 8192 pixels on a side and 40 megapixels in all")
+	ErrInvalidCredentials = New(http.StatusUnauthorized, "AUTH_INVALID_CREDENTIALS", "Email or password does not match the selected role")
+	ErrTokenMissing       = New(http.StatusUnauthorized, "AUTH_TOKEN_MISSING", "Authentication token not found")
+	ErrTokenInvalid       = New(http.StatusUnauthorized, "AUTH_TOKEN_INVALID", "Authentication token is invalid or has expired")
+	ErrRefreshInvalid     = New(http.StatusUnauthorized, "AUTH_REFRESH_INVALID", "Your session has ended, please sign in again")
+	ErrForbidden          = New(http.StatusForbidden, "AUTH_FORBIDDEN", "You do not have access to this resource")
+	ErrPasswordIncorrect  = New(http.StatusForbidden, "AUTH_PASSWORD_INCORRECT", "Incorrect password")
+	ErrEmailTaken         = New(http.StatusConflict, "EMAIL_ALREADY_REGISTERED", "Email is already registered")
+	ErrNIPTaken           = New(http.StatusConflict, "NIP_ALREADY_REGISTERED", "NIP is already registered")
+	ErrNISNTaken          = New(http.StatusConflict, "NISN_ALREADY_REGISTERED", "NISN is already registered")
+	ErrNISNNotSet         = New(http.StatusConflict, "NISN_NOT_SET", "The child has no NISN to verify")
+	ErrClassNotFound      = New(http.StatusNotFound, "CLASS_NOT_FOUND", "Class not found")
+	ErrClassNoTeacher     = New(http.StatusConflict, "CLASS_NO_ACTIVE_TEACHER", "This class has no active teacher and cannot accept new students")
+	ErrClassCodeNotFound  = New(http.StatusNotFound, "CLASS_CODE_NOT_FOUND", "Class code not found")
+	ErrNoChild            = New(http.StatusNotFound, "NO_CHILD_REGISTERED", "This account has no child, add one with the code of a class")
+	ErrStudentNotFound    = New(http.StatusNotFound, "STUDENT_NOT_FOUND", "Student not found")
+	ErrChildLimitReached  = New(http.StatusConflict, "CHILD_LIMIT_REACHED", "This account already has the largest number of children")
+	ErrClassLimitReached  = New(http.StatusConflict, "CLASS_LIMIT_REACHED", "This teacher already teaches the largest number of classes")
+	ErrClassJoiningClosed = New(http.StatusConflict, "CLASS_JOINING_CLOSED", "This class is not taking new children right now")
+	ErrClassFull          = New(http.StatusConflict, "CLASS_FULL", "This class has the largest number of children")
+	ErrMoodLimitReached   = New(http.StatusConflict, "MOOD_LOG_LIMIT_REACHED", "This child already has the largest number of mood logs for that day")
+	ErrProfileNotFound    = New(http.StatusNotFound, "PROFILE_NOT_FOUND", "User profile not found")
+	ErrGuidanceNotFound   = New(http.StatusNotFound, "GUIDANCE_NOT_FOUND", "Guidance not found")
+	ErrTeacherNotFound    = New(http.StatusNotFound, "TEACHER_NOT_FOUND", "No teacher account has this email")
+	ErrTeacherInClass     = New(http.StatusConflict, "TEACHER_ALREADY_IN_CLASS", "This teacher already teaches the class")
+	ErrTeacherNotInClass  = New(http.StatusNotFound, "TEACHER_NOT_IN_CLASS", "This teacher does not teach the class")
+	ErrNotClassOwner      = New(http.StatusForbidden, "CLASS_OWNER_REQUIRED", "Only the owner of the class can do this")
+	ErrSuccessorRequired  = New(http.StatusConflict, "SUCCESSOR_REQUIRED", "You are the only teacher of a class, so name another teacher as the successor to delete your account")
+	ErrLastTeacher        = New(http.StatusConflict, "LAST_TEACHER", "The only teacher of a class cannot leave it")
+	ErrForumPostNotFound  = New(http.StatusNotFound, "FORUM_POST_NOT_FOUND", "Forum post not found")
+	ErrVideoNotFound      = New(http.StatusNotFound, "VIDEO_NOT_FOUND", "Learning video not found")
+	ErrModuleNotFound     = New(http.StatusNotFound, "MODULE_NOT_FOUND", "Learning module not found")
+	ErrDailyLimitReached  = New(http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED", "Today's limit for trash sorting point claims has been reached")
+	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
+	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
+	ErrBodyTooLarge       = New(http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "The request body exceeds the allowed limit")
+	ErrImageDimensions    = New(http.StatusBadRequest, "IMAGE_DIMENSIONS_TOO_LARGE", "The image may be at most 8192 pixels on a side and 40 megapixels in all")
 	// ErrServerTimeout answers a request that did not finish before its deadline, or whose work was cancelled
 	ErrServerTimeout = &Error{
 		Status: http.StatusServiceUnavailable, Code: "SERVER_TIMEOUT", Message: "The server took too long, please try again in a moment", RetryAfterSeconds: 1,
@@ -170,4 +166,37 @@ var (
 var (
 	ErrClassArchived    = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
 	ErrClassNotArchived = New(http.StatusConflict, "CLASS_NOT_ARCHIVED", "This class is not archived")
+)
+
+// errors of notifications, in a block of their own for the same reason
+var (
+	ErrNotificationNotFound = New(http.StatusNotFound, "NOTIFICATION_NOT_FOUND", "Notification not found")
+)
+
+// errors of the verification of an email, in a block of their own for the same reason
+var (
+	// ErrEmailNotVerified answers a sign in whose password was right, for an account that still waits for the code of its email
+	ErrEmailNotVerified = New(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Verify your email with the code that was sent to it, then sign in")
+	// ErrVerificationCodeInvalid is the only answer to a wrong, expired or used up code and to an email that no account waits on
+	ErrVerificationCodeInvalid = New(http.StatusBadRequest, "VERIFICATION_CODE_INVALID", "The code is wrong or has expired, ask for a new one")
+	ErrEmailAlreadyVerified    = New(http.StatusConflict, "EMAIL_ALREADY_VERIFIED", "This email is already verified")
+	ErrEmailSendFailed         = New(http.StatusServiceUnavailable, "EMAIL_SEND_FAILED", "The code could not be sent right now, please try again later")
+)
+
+// ErrResendTooSoon answers a request for a new code before the wait between two codes is over, or after the codes of the hour are
+// used. It says for how long to wait.
+func ErrResendTooSoon(retryAfterSeconds int) *Error {
+	return &Error{
+		Status: http.StatusTooManyRequests, Code: "VERIFICATION_RESEND_TOO_SOON", Message: "A code was sent a moment ago, wait before you ask for another",
+		RetryAfterSeconds: retryAfterSeconds,
+	}
+}
+
+// errors of Google Sign-In, in a block of their own for the same reason
+var (
+	ErrGoogleUnavailable       = New(http.StatusServiceUnavailable, "AUTH_GOOGLE_UNAVAILABLE", "Google Sign-In is unavailable")
+	ErrGoogleInvalid           = New(http.StatusUnauthorized, "AUTH_GOOGLE_INVALID", "Invalid or expired Google credential")
+	ErrRoleMismatch            = New(http.StatusConflict, "AUTH_ROLE_MISMATCH", "This Google account is registered under another role")
+	ErrPasswordNotSet          = New(http.StatusConflict, "AUTH_PASSWORD_NOT_SET", "This account signs in with Google and does not have a password set")
+	ErrGoogleAlreadyRegistered = New(http.StatusConflict, "GOOGLE_ALREADY_REGISTERED", "This Google account is already registered")
 )

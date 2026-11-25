@@ -19,8 +19,11 @@ type User struct {
 	FullName     string         `gorm:"size:150;not null"`
 	PhoneNumber  *string        `gorm:"size:30"`
 	AvatarURL    *string
-	CreatedAt    time.Time `gorm:"autoCreateTime"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
+	// EmailVerificationPending is true while the account waits for the code of its email. It is false for every older account,
+	// and a new row that does not set it counts as verified, which is what a copy that predates the column inserts.
+	EmailVerificationPending bool      `gorm:"not null;default:false"`
+	CreatedAt                time.Time `gorm:"autoCreateTime"`
+	UpdatedAt                time.Time `gorm:"autoUpdateTime"`
 	// DeletedAt hides the row from every GORM query once it is set
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
@@ -167,6 +170,20 @@ type LearningVideo struct {
 	CreatedAt       time.Time `gorm:"autoCreateTime:false;not null"`
 }
 
+// LearningModule stores one scheduled meeting of a class.
+type LearningModule struct {
+	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
+	ClassID       uuid.UUID `gorm:"type:uuid;not null"`
+	AddedByGuruID uuid.UUID `gorm:"type:uuid;not null"`
+	MeetingNumber int       `gorm:"not null"`
+	Title         string    `gorm:"size:150;not null"`
+	Description   *string
+	Status        constants.ModuleStatus `gorm:"size:20;not null"`
+	ScheduledAt   *time.Time
+	CreatedAt     time.Time `gorm:"autoCreateTime:false;not null"`
+	UpdatedAt     time.Time `gorm:"autoUpdateTime:false;not null"`
+}
+
 // ForumPost is a thread when ParentID is nil and a reply to that thread otherwise
 type ForumPost struct {
 	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
@@ -215,4 +232,17 @@ type PushToken struct {
 	Platform  string    `gorm:"size:10;not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime:false;not null"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime:false;not null"`
+}
+
+// Notification is one in-app update queued for a teacher or parent account.
+type Notification struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	UserID        uuid.UUID  `gorm:"type:uuid;not null"`
+	Kind          string     `gorm:"size:40;not null"`
+	Title         string     `gorm:"size:150;not null"`
+	Body          string     `gorm:"not null"`
+	ReferenceType *string    `gorm:"size:40"`
+	ReferenceID   *uuid.UUID `gorm:"type:uuid"`
+	ReadAt        *time.Time
+	CreatedAt     time.Time `gorm:"autoCreateTime:false;not null"`
 }

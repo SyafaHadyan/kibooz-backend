@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.23.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.22.0...v0.23.0) (2026-11-25)
+
+
+### Features
+
+* **auth:** add the email verification settings, the Resend sender and the pending flag ([7f49a40](https://github.com/SyafaHadyan/kibooz-backend/commit/7f49a40811c2dda61d2ffa824165de1e4045a25f))
+* **auth:** hold a new account until the code of its email is verified ([22b9523](https://github.com/SyafaHadyan/kibooz-backend/commit/22b952353ef65b8b4577553f68e525bb291b3d70))
+* **auth:** verify the email of a new account with a code ([#491](https://github.com/SyafaHadyan/kibooz-backend/issues/491)) ([16dfd56](https://github.com/SyafaHadyan/kibooz-backend/commit/16dfd560c53934647149c63266d5d303c45e26fb))
+
+
+### Bug Fixes
+
+* **auth:** rename the credential check and clear the lint and secret scan findings ([bcc3c60](https://github.com/SyafaHadyan/kibooz-backend/commit/bcc3c60e9e73835eda0a1014cf52276ba0ad3efc))
+* **auth:** require the password to verify, give back a failed send and keep names out of the mail ([df87cb2](https://github.com/SyafaHadyan/kibooz-backend/commit/df87cb2ee422dd24deca50a7e438c496956251bf))
+
+## [0.22.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.2...v0.22.0) (2026-11-25)
+
+
+### Features
+
+* **classroom:** add learning modules CRUD endpoints ([c5b7467](https://github.com/SyafaHadyan/kibooz-backend/commit/c5b7467404128277dd3cb2100bfecc95c6affbd5))
+* **classroom:** add learning modules CRUD endpoints ([#484](https://github.com/SyafaHadyan/kibooz-backend/issues/484)) ([d8882af](https://github.com/SyafaHadyan/kibooz-backend/commit/d8882aff0e0b64eeef47cdb3d1f144a0b0e0db78))
+* **history:** add cross-date activity timelines for guru and wali ([b711bcf](https://github.com/SyafaHadyan/kibooz-backend/commit/b711bcfe19294808848beebfa8f9571117532c69))
+* **history:** add cross-date activity timelines for guru and wali ([#486](https://github.com/SyafaHadyan/kibooz-backend/issues/486)) ([4bef01d](https://github.com/SyafaHadyan/kibooz-backend/commit/4bef01d3f9450ed9a12af46a95ddad3728a40b66))
+* **notifications:** add in-app notification inbox and event triggers ([c3efa75](https://github.com/SyafaHadyan/kibooz-backend/commit/c3efa75c9ad557b3165b15311a8d97c783def01b))
+* **notifications:** add in-app notification inbox and event triggers ([#485](https://github.com/SyafaHadyan/kibooz-backend/issues/485)) ([c4c1729](https://github.com/SyafaHadyan/kibooz-backend/commit/c4c1729dd0df592d8dd5f1eeeb9bb1f424655e29))
+* **notifications:** add retention, account cleanup, batch mood notices and failure counts ([f3a65dc](https://github.com/SyafaHadyan/kibooz-backend/commit/f3a65dcb52c022183cd1e0ab1005f96b242b8710))
+
+
+### Bug Fixes
+
+* **classroom:** read the update time after the row lock and fix the module wording in the docs ([cff812c](https://github.com/SyafaHadyan/kibooz-backend/commit/cff812c3d8d163adb2cd1cfdf7e1aabb983f2e39))
+* **db:** keep the notifications migration at 000028 until the learning modules one is on main ([77e8be3](https://github.com/SyafaHadyan/kibooz-backend/commit/77e8be3bd6cd2bbf8a7f7a19a81cabce6781b982))
+* **db:** renumber the notifications migration to 000029 after the learning modules one ([79a0ea2](https://github.com/SyafaHadyan/kibooz-backend/commit/79a0ea2f510b573b5ce79ca178f4b3345c2b7190))
+* **db:** renumber the notifications migration to 000029 so that it follows the learning modules one ([449abea](https://github.com/SyafaHadyan/kibooz-backend/commit/449abea52da7d4efa8be4e3f1442f6f321ea31d1))
+* **history:** pick the page before the joins, read one snapshot and mask deleted accounts ([0f04db8](https://github.com/SyafaHadyan/kibooz-backend/commit/0f04db8049ac91166a048ee990d64ee3e88e3d77))
+
 ## [0.21.2](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.21.1...v0.21.2) (2026-11-24)
 
 

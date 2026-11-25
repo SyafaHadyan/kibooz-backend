@@ -11,7 +11,7 @@ The PRD leaves a few gaps that this implementation fills. The backend PRD in the
 
 ## Endpoints
 
-- `POST /auth/register`, `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` (with an optional `successorEmail` for a teacher who is the only teacher of a class with children, and a class without children is archived instead only when no `successorEmail` is sent) were added, and `GET /healthz` reports the health of the service.
+- `POST /auth/register`, `POST /auth/verify-email` and `POST /auth/resend-verification` (the code of an email, only when the server requires it, see [Operations](operations.md#email-verification)), `POST /auth/refresh-token`, `POST /auth/logout`, `POST /users/avatar` and `DELETE /users/me` (with an optional `successorEmail` for a teacher who is the only teacher of a class with children, and a class without children is archived instead only when no `successorEmail` is sent) were added, and `GET /healthz` reports the health of the service.
 - `PUT /users/me/password` changes the password for both roles from the current password and a new one. It covers the change password link of the parent profile (FR-7.1), ends every session of the account and needs no email. A forgotten password cannot be reset, because the API has no email service.
 - A refresh token works once, and every successful refresh returns a new one.
 - `POST /auth/login` accepts an optional `deviceToken`, and login and registration both return one. It gives a device its own login budget for an email.
