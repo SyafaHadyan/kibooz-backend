@@ -79,6 +79,11 @@ thread_id="$(pick "$thread" '.data.id')"
 reply="$(post_as "/classes/$class/forum/$thread_id/replies" "$guru_session" '{"body": "ZAP reply"}')"
 reply_id="$(pick "$reply" '.data.id')"
 
+# one learning module, and the inbox of the parent, which already holds the notification that the video above made
+module="$(post_as "/classes/$class/modules" "$guru_session" '{"meetingNumber": 1, "title": "ZAP module"}')"
+module_id="$(pick "$module" '.data.id')"
+notification_id="$(pick "$(get /notifications "$wali_session")" '.data.notifications[0].id')"
+
 # a conversation between the teacher and the parent with one message in it, so that the chat routes answer real data
 parent_user="$(pick "$(get /chat/contacts "$guru_session")" '.data.contacts[0].id')"
 teacher_user="$(pick "$(get /chat/contacts "$wali_session")" '.data.contacts[0].id')"
@@ -154,7 +159,8 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   --arg p "$pass" --arg w "$pass-wrong" --arg x "$suffix" --arg photo "$photo" --arg pw "$pw_token" --arg lt "$leaver_token" \
   --arg lc "$leaver_code" --arg past "$past" --arg future "$future" --arg ancient "$ancient" --arg ci "$conversation_id" --arg ri "$room_id" \
   --arg mi "$message_id" --arg tu "$teacher_user" --arg lk "$target_class" --arg mt "$target_token" --arg mc "$target_code" --arg ac "$accept_child" --arg ar "$accept_request" \
-  --arg rc "$reject_child" --arg rr "$reject_request" --arg cc "$cancel_child" --arg cr "$cancel_request" '[
+  --arg rc "$reject_child" --arg rr "$reject_request" --arg cc "$cancel_child" --arg cr "$cancel_request" \
+  --arg md "$module_id" --arg nt "$notification_id" '[
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.teacher." + $x + "@example.com"), password: $p, fullName: "ZAP Second Teacher", role: "GURU", class: {name: "zap three"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.second.parent." + $x + "@example.com"), password: $p, fullName: "ZAP Second Parent", role: "WALI", classCode: $code, student: {nisn: "223456789012", fullName: "ZAP Second Child"}}},
   {method: "POST", path: "/api/v1/auth/register", body: {email: ("zap.nocode." + $x + "@example.com"), password: $p, fullName: "ZAP No Code", role: "WALI", classCode: "ZZZZZZZZ", student: {nisn: "323456789012", fullName: "ZAP Nobody"}}},
@@ -324,6 +330,59 @@ extra="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$stude
   {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, key: ("bad key with spaces " + $x), body: {studentId: $s, moodType: "BINGUNG"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/forum"), token: $gt, key: ("zapkey-" + $x + "-2"), body: {title: "ZAP keyed thread", body: "ZAP keyed body"}},
   {method: "POST", path: ("/api/v1/classes/" + $c + "/forum"), token: $gt, key: ("zapkey-" + $x + "-2"), body: {title: "ZAP keyed thread", body: "ZAP keyed body"}},
+  {method: "GET", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt},
+  {method: "GET", path: ("/api/v1/classes/" + $c + "/modules?page=2&limit=1"), token: $wt},
+  {method: "GET", path: ("/api/v1/classes/" + $c + "/modules?limit=500"), token: $gt},
+  {method: "GET", path: ("/api/v1/classes/" + $c + "/modules"), token: $pw},
+  {method: "GET", path: ("/api/v1/classes/" + $c + "/modules")},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 2, title: "ZAP module two", description: "ZAP module text", status: "ongoing", scheduledAt: "2030-01-01T08:00:00Z"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 3, title: "ZAP keyed module"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, key: ("zapkey-" + $x + "-3"), body: {meetingNumber: 4, title: "ZAP other body"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $wt, body: {meetingNumber: 5, title: "parent module"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 0, title: "zero"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 101, title: "too high"}},
+  {method: "POST", path: ("/api/v1/classes/" + $c + "/modules"), token: $gt, body: {meetingNumber: 6, title: "bad status", status: "unknown"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {title: "ZAP module renamed", status: "completed"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt, body: {meetingNumber: 101}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $wt, body: {title: "not a teacher"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $c + "/modules/not-a-uuid"), token: $gt, body: {title: "x"}},
+  {method: "PATCH", path: ("/api/v1/classes/" + $lk + "/modules/" + $md), token: $gt, body: {title: "another class"}},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $wt},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt},
+  {method: "DELETE", path: ("/api/v1/classes/" + $c + "/modules/" + $md), token: $gt},
+  {method: "GET", path: "/api/v1/notifications", token: $wt},
+  {method: "GET", path: "/api/v1/notifications?unreadOnly=true&limit=1", token: $wt},
+  {method: "GET", path: "/api/v1/notifications?limit=500", token: $wt},
+  {method: "GET", path: "/api/v1/notifications?unreadOnly=maybe", token: $wt},
+  {method: "GET", path: "/api/v1/notifications", token: $gt},
+  {method: "GET", path: "/api/v1/notifications"},
+  {method: "POST", path: ("/api/v1/notifications/" + $nt + "/read"), token: $wt},
+  {method: "POST", path: ("/api/v1/notifications/" + $nt + "/read"), token: $wt},
+  {method: "POST", path: ("/api/v1/notifications/" + $nt + "/read"), token: $gt},
+  {method: "POST", path: "/api/v1/notifications/not-a-uuid/read", token: $wt},
+  {method: "POST", path: "/api/v1/notifications/read-all", token: $wt},
+  {method: "POST", path: "/api/v1/notifications/read-all"},
+  {method: "GET", path: ("/api/v1/guru/history?classId=" + $c), token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?type=mood&page=1&limit=1", token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?type=video", token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?type=guidance", token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?type=nothing", token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?limit=500&page=0", token: $gt},
+  {method: "GET", path: "/api/v1/guru/history?classId=not-a-uuid", token: $gt},
+  {method: "GET", path: ("/api/v1/guru/history?classId=" + $lk), token: $gt},
+  {method: "GET", path: "/api/v1/guru/history", token: $wt},
+  {method: "GET", path: "/api/v1/guru/history"},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history"), token: $wt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history?type=trash&page=1&limit=1"), token: $wt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history?type=mood"), token: $wt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history?type=nothing"), token: $wt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history?limit=500"), token: $wt},
+  {method: "GET", path: "/api/v1/wali/children/not-a-uuid/history", token: $wt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history"), token: $gt},
+  {method: "GET", path: ("/api/v1/wali/children/" + $s + "/history")},
   {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: $p, newPassword: ($p + "-new")}},
   {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: $p, newPassword: ($p + "-newer")}},
   {method: "PUT", path: "/api/v1/users/me/password", token: $pw, body: {currentPassword: ($p + "-new"), newPassword: ($p + "-new")}},
