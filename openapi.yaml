@@ -640,7 +640,9 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "404":
-          description: The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`)
+          description: >-
+            The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`), or the parent has no profile
+            (`PROFILE_NOT_FOUND`)
           content:
             application/json:
               schema:
@@ -848,7 +850,8 @@ paths:
       summary: List class activity history for a teacher
       description: |
         Returns chronological activity entries (mood logs, applied parent guides, and added learning videos) for the selected
-        class, or the teacher's first class when `classId` is omitted, newest first.
+        class, newest first. Without `classId` it takes the oldest class of the teacher that is not archived, and an archived
+        class only when no other is left.
       parameters:
         - $ref: "#/components/parameters/ClassId"
         - name: type
