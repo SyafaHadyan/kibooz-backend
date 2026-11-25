@@ -69,6 +69,14 @@ const (
 	EnrollmentRejected EnrollmentStatus = "rejected"
 )
 
+const (
+	NotificationMoodLogged      = "mood_logged"
+	NotificationGuidanceApplied = "guidance_applied"
+	NotificationMoveRequested   = "move_requested"
+	NotificationMoveDecided     = "move_decided"
+	NotificationVideoAdded      = "video_added"
+)
+
 // ModuleStatus describes the schedule progress of a class learning module.
 type ModuleStatus string
 

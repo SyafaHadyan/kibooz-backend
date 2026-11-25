@@ -15,7 +15,7 @@ import (
 // explainVariables names the variable that internal/explain/explain_test.go gives the repository of each package under internal/app
 var explainVariables = map[string]string{
 	"auth": "auth", "chat": "chat", "classroom": "classroom", "guru": "guruRepo",
-	"push": "pushRepo", "trash": "trash", "user": "userRepo", "wali": "waliRepo",
+	"notification": "notifRepo", "push": "pushRepo", "trash": "trash", "user": "userRepo", "wali": "waliRepo",
 }
 
 // noPlanNeeded lists the exported methods of a repository that the Explain plans test does not call, each with the reason. It starts

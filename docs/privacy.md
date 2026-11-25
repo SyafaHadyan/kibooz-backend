@@ -16,6 +16,7 @@ This page describes, from the code, which personal data Kibooz Backend keeps, wh
 | A class | Its name, grade, school, join code and the teachers | `classes` and `class_teachers` |
 | A teacher or a parent | Forum threads and replies, the videos that a teacher added, and the learning modules that a teacher added | `forum_posts`, `learning_videos` and `learning_modules` |
 | A teacher or a parent, with the app installed | The push token that Firebase gave the app, and the platform | `push_tokens`, removed when the account is deleted. When a message is sent to the person, Google gets the token, the id of the conversation and the id of the message, and never the text, the sender or the child |
+| A teacher or a parent, in the inbox | A short title and text about an event, such as a mood that a teacher recorded for a child, a guidance that a parent applied (the text names the child), a class move request, a decision about a move, or a video that a teacher added, the kind of the event and whether it was read | `notifications`, removed when the account is deleted and 90 days after they were made |
 | A teacher or a parent, in the chat | Each message with its text, an optional photo or video, its sender and time, and how far each person has read | `chat_conversations`, `chat_messages` and `chat_reads`, and the files in the private bucket |
 | A session | A SHA-256 hash of each refresh token, never the token | `refresh_tokens` |
 
@@ -38,6 +39,7 @@ Passwords are never stored in clear text or logged. The server holds the hash on
 |:---|:---|
 | Account, child, mood, scan, guidance, forum, chat and video rows | Until the project owner removes them from the database. Nothing in the code removes them on a timer |
 | Refresh tokens | Until they expire or the session ends. A used token stays while its session lives and goes once the session has reached `JWT_SESSION_MAX_DAYS`, 90 days by default, at a later sign in or refresh of that user or at the hourly purge of every account, so that a replay can be recognized however late it comes |
+| Notifications of the inbox, read or not | 90 days from the time they were made, removed by an hourly job, or when the account is deleted |
 | Remembered `Idempotency-Key` rows, which hold the response of the request | `IDEMPOTENCY_TTL_HOURS`, 7 days by default, and an hourly job removes the older ones |
 | A deleted chat message | The row stays with an empty body, so the text is gone and a placeholder is left in the conversation. Its photo or video is queued for removal from the private bucket in the same step and is deleted within minutes |
 | Chat photos and videos | In the private bucket until the message is deleted by its author. A file that was uploaded and never sent is removed after one day by the lifecycle rule on `pending/`. A message stays after its sender deletes the account, and so does its file, because the other people of the conversation still need the history |
