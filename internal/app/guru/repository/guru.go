@@ -575,7 +575,7 @@ func (r *GuruDB) AddTeacher(ctx context.Context, classID uuid.UUID, actorGuruID 
 		err := tx.Table("users AS u").
 			Select("g.id").
 			Joins("JOIN gurus AS g ON g.user_id = u.id AND g.deleted_at IS NULL").
-			Where("u.email = ? AND u.role = ? AND u.deleted_at IS NULL", email, constants.RoleGuru).
+			Where("u.email = ? AND u.role = ? AND u.deleted_at IS NULL AND NOT u.email_verification_pending", email, constants.RoleGuru).
 			Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate, Table: clause.Table{Name: "g"}}).
 			Limit(1).
 			Scan(&guruIDs).Error

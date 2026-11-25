@@ -16,7 +16,8 @@ type AuthHandler struct {
 	useCase usecase.AuthUseCaseItf
 }
 
-// NewAuthHandler registers the public auth routes. Register and login are limited per email, refresh and logout per refresh token,
+// NewAuthHandler registers the public auth routes. Register, login and the two routes of the email verification are limited per
+// email, refresh and logout per refresh token,
 // and register is also limited for every caller of the route when it names a class code.
 func NewAuthHandler(
 	router fiber.Router, emailLimiter fiber.Handler, classCodeLimiter fiber.Handler, tokenLimiter fiber.Handler, useCase usecase.AuthUseCaseItf,
@@ -27,6 +28,8 @@ func NewAuthHandler(
 
 	group.Post("/register", emailLimiter, classCodeLimiter, handler.Register)
 	group.Post("/login", emailLimiter, handler.Login)
+	group.Post("/verify-email", emailLimiter, handler.VerifyEmail)
+	group.Post("/resend-verification", emailLimiter, handler.ResendVerification)
 	group.Post("/refresh-token", tokenLimiter, handler.Refresh)
 	group.Post("/logout", tokenLimiter, handler.Logout)
 }
@@ -61,6 +64,38 @@ func (h *AuthHandler) Login(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Login successful", res)
+}
+
+func (h *AuthHandler) VerifyEmail(c fiber.Ctx) error {
+	var req dto.VerifyEmailRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.VerifyEmail(c.Context(), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Email verified", res)
+}
+
+func (h *AuthHandler) ResendVerification(c fiber.Ctx) error {
+	var req dto.ResendVerificationRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.ResendVerification(c.Context(), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Verification code sent", res)
 }
 
 func (h *AuthHandler) Refresh(c fiber.Ctx) error {

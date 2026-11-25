@@ -136,6 +136,21 @@ const (
 	// MaxChildrenPerClass is the most active children of one class, counted when a child joins
 	MaxChildrenPerClass = 60
 
+	// EmailCodeDigits is the length of the code that the mail of a new account carries
+	EmailCodeDigits = 6
+
+	// EmailCodeTTLMinutes is how long a code can be used after it was sent
+	EmailCodeTTLMinutes = 15
+
+	// EmailCodeMaxAttempts is how many wrong codes a live code takes before it stops working. A new code starts again.
+	EmailCodeMaxAttempts = 5
+
+	// EmailResendCooldownSeconds is the shortest time between two codes for one account
+	EmailResendCooldownSeconds = 60
+
+	// EmailSendsPerHour is the most codes that one account can have sent in an hour, the first one included
+	EmailSendsPerHour = 5
+
 	// JSONBodyMaxBytes is the largest body of any request except the three photo uploads (the avatar, the trash photo and the photo of a chat message). The largest real
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024

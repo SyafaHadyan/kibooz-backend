@@ -53,6 +53,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
+	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
 	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
@@ -168,9 +169,18 @@ func Start(version string) (*Bootstrap, error) {
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
 
-	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
-		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
-	))
+	authUC := authusecase.NewAuthUseCase(
+		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)),
+	)
+
+	for _, collector := range authUC.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register verification mail metrics: %w", err)
+		}
+	}
+
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authUC)
 	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
 
 	for _, collector := range notifUC.Collectors() {

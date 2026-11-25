@@ -18,8 +18,11 @@ type User struct {
 	FullName     string         `gorm:"size:150;not null"`
 	PhoneNumber  *string        `gorm:"size:30"`
 	AvatarURL    *string
-	CreatedAt    time.Time `gorm:"autoCreateTime"`
-	UpdatedAt    time.Time `gorm:"autoUpdateTime"`
+	// EmailVerificationPending is true while the account waits for the code of its email. It is false for every older account,
+	// and a new row that does not set it counts as verified, which is what a copy that predates the column inserts.
+	EmailVerificationPending bool      `gorm:"not null;default:false"`
+	CreatedAt                time.Time `gorm:"autoCreateTime"`
+	UpdatedAt                time.Time `gorm:"autoUpdateTime"`
 	// DeletedAt hides the row from every GORM query once it is set
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 }

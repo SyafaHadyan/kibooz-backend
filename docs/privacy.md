@@ -16,6 +16,7 @@ This page describes, from the code, which personal data Kibooz Backend keeps, wh
 | A class | Its name, grade, school, join code and the teachers | `classes` and `class_teachers` |
 | A teacher or a parent | Forum threads and replies, the videos that a teacher added, and the learning modules that a teacher added | `forum_posts`, `learning_videos` and `learning_modules` |
 | A teacher or a parent, with the app installed | The push token that Firebase gave the app, and the platform | `push_tokens`, removed when the account is deleted. When a message is sent to the person, Google gets the token, the id of the conversation and the id of the message, and never the text, the sender or the child |
+| A new teacher or parent, when the verification of the email is on | A hash of the 6 digit code, its expiry, the wrong tries and when codes were sent. The code itself is stored nowhere, and it goes to the email address of the person through Resend, once for each code that is sent | `email_verifications`, removed when the code is used or the account is deleted |
 | A teacher or a parent, in the inbox | A short title and text about an event, such as a mood that a teacher recorded for a child, a guidance that a parent applied (the text names the child), a class move request, a decision about a move, or a video that a teacher added, the kind of the event and whether it was read | `notifications`, removed when the account is deleted and 90 days after they were made |
 | A teacher or a parent, in the chat | Each message with its text, an optional photo or video, its sender and time, and how far each person has read | `chat_conversations`, `chat_messages` and `chat_reads`, and the files in the private bucket |
 | A session | A SHA-256 hash of each refresh token, never the token | `refresh_tokens` |
@@ -74,7 +75,7 @@ What stays is the other part of the data. The rows are hidden and not erased, so
 | Better Stack, when the uptime monitors are set up | The public answer of `GET /healthz`, which holds the status and the version, and the address of the documentation site | To tell the owner when the service is down, see [Operations](operations.md#uptime-monitoring) |
 | Redis | The shared rate limit counters, which hold only hashed identifiers, and the leaderboard cache | A cache, never the source of truth |
 
-The code makes no call to an analytics, advertising or tracking service, and it sends no email. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when they are set up, Sentry (`SENTRY_DSN`), Firebase for the chat wake-up push and Grafana Cloud (Alloy, a separate container).
+The code makes no call to an analytics, advertising or tracking service. When the verification of the email is switched on, it sends the 6 digit code to the address of each new account through Resend, and again when the person asks for a new code. The mail holds no name. Its only outgoing connections are to PostgreSQL, Redis, the bucket and, when they are set up, Sentry (`SENTRY_DSN`), Firebase for the chat wake-up push, Resend for the verification mail (`RESEND_API_KEY`) and Grafana Cloud (Alloy, a separate container).
 
 ## Keeping the data small
 
