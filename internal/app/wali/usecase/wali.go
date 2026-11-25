@@ -23,6 +23,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -62,14 +63,19 @@ type WaliUseCaseItf interface {
 const MaxChildren = 10
 
 type WaliUseCase struct {
-	repo  repository.WaliDBItf
-	cache redis.CacheItf
-	cfg   *env.Env
-	now   func() time.Time
+	repo     repository.WaliDBItf
+	cache    redis.CacheItf
+	cfg      *env.Env
+	now      func() time.Time
+	notifier notifier.Notifier
 }
 
 func NewWaliUseCase(repo repository.WaliDBItf, cache redis.CacheItf, cfg *env.Env) WaliUseCaseItf {
 	return &WaliUseCase{repo: repo, cache: cache, cfg: cfg, now: time.Now}
+}
+
+func (u *WaliUseCase) SetNotifier(n notifier.Notifier) {
+	u.notifier = n
 }
 
 func (u *WaliUseCase) Dashboard(ctx context.Context, userID uuid.UUID, studentID *uuid.UUID) (dto.WaliDashboardResponse, error) {
@@ -162,6 +168,18 @@ func (u *WaliUseCase) ApplyGuidance(ctx context.Context, userID uuid.UUID, req d
 	err = u.repo.CreateGuidanceApplication(ctx, application)
 	if err != nil {
 		return apperror.Internal(err)
+	}
+
+	if u.notifier != nil {
+		u.notifier.NotifyClassTeachers(
+			ctx,
+			student.ClassID,
+			constants.NotificationGuidanceApplied,
+			"Parent applied mood guidance",
+			fmt.Sprintf("Parent of %s applied guidance in class", student.FullName),
+			"guidance_application",
+			application.ID,
+		)
 	}
 
 	return nil
@@ -608,6 +626,18 @@ func (u *WaliUseCase) RequestMove(
 	row, err := u.repo.RequestMove(ctx, wali.ID, studentID, strings.ToUpper(strings.TrimSpace(req.ClassCode)))
 	if err != nil {
 		return dto.MoveRequest{}, appOrInternal(err)
+	}
+
+	if u.notifier != nil {
+		u.notifier.NotifyClassTeachers(
+			ctx,
+			row.ClassID,
+			constants.NotificationMoveRequested,
+			"New class move request",
+			fmt.Sprintf("A parent requested to move a student into %s", row.ClassName),
+			"move_request",
+			row.ID,
+		)
 	}
 
 	return moveRequest(&row), nil

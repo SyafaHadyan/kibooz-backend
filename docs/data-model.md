@@ -17,11 +17,13 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `trash_scans` | One verified trash sorting claim, with the category, the points awarded and the photo |
 | `guidance_applications` | A parent who applied a piece of emotional guidance to a child, with their notes |
 | `learning_videos` | A video that a teacher added to a class |
+| `learning_modules` | A meeting of a class that a teacher added, with its number from 1 to 100, a title, an optional description, a status of `upcoming`, `ongoing` or `completed`, and an optional date |
 | `forum_posts` | A thread or a reply in the forum of a class |
 | `chat_conversations` | A conversation, either `direct` or `class`. A direct one is between a teacher and a parent, one for each pair of accounts, and the smaller id of the two is always `user_low_id`. A class room has a `class_id`, one room for each class, and no pair. Its members are not stored, they are the teachers of the class and the parents with an active child in it, and each sees the messages from the time they joined |
 | `chat_messages` | A message of a conversation. The `id` only grows and is the cursor of the conversation. A message has text, a photo or video, or both, and the four `media_` columns are set or empty together. A deleted message keeps its row with an empty body, no media and `deleted_at` |
 | `push_tokens` | The token that Firebase gave an installed app, one row for each device and each token on one account at a time. The tokens of an account are removed when the account is deleted |
 | `chat_reads` | How far each person of a conversation has read, the id of the last message |
+| `notifications` | One entry of the inbox of a teacher or a parent, with a `kind`, a title, a text, an optional reference to the record that caused it (`reference_type` and `reference_id`), the time it was read and the time it was made. A notification is removed 90 days after it was made, and with the account when the account is deleted |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |

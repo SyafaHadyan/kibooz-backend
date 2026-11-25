@@ -4,6 +4,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
 )
 
@@ -77,14 +79,19 @@ type GuruUseCaseItf interface {
 }
 
 type GuruUseCase struct {
-	repo  repository.GuruDBItf
-	cache redis.CacheItf
-	cfg   *env.Env
-	now   func() time.Time
+	repo     repository.GuruDBItf
+	cache    redis.CacheItf
+	cfg      *env.Env
+	now      func() time.Time
+	notifier notifier.Notifier
 }
 
 func NewGuruUseCase(repo repository.GuruDBItf, cache redis.CacheItf, cfg *env.Env) GuruUseCaseItf {
 	return &GuruUseCase{repo: repo, cache: cache, cfg: cfg, now: time.Now}
+}
+
+func (u *GuruUseCase) SetNotifier(n notifier.Notifier) {
+	u.notifier = n
 }
 
 func (u *GuruUseCase) Dashboard(ctx context.Context, userID uuid.UUID, classID *uuid.UUID) (dto.GuruDashboardResponse, error) {
@@ -203,7 +210,39 @@ func (u *GuruUseCase) LogMood(ctx context.Context, userID uuid.UUID, req dto.Log
 		return dto.LogMoodResponse{}, apperror.ErrMoodLimitReached
 	}
 
+	u.notifyMood(ctx, student, moodLog.MoodType, moodLog.ID)
+
 	return dto.LogMoodResponse{LogID: moodLog.ID, RecordedAt: moodLog.RecordedAt}, nil
+}
+
+func (u *GuruUseCase) notifyMood(ctx context.Context, student *entity.Student, moodType constants.Mood, logID uuid.UUID) {
+	if u.notifier == nil {
+		return
+	}
+
+	notice := moodNotice(student, moodType, logID)
+
+	u.notifier.NotifyStudentParent(
+		ctx, student.ID, constants.NotificationMoodLogged, notice.Title, notice.Body, moodReferenceType, logID,
+	)
+}
+
+// moodReferenceType is the reference type of a notification about a mood log
+const moodReferenceType = "mood_log"
+
+// moodNotice is the text for the parent of a child, which names the child because one parent can have up to 10
+func moodNotice(student *entity.Student, moodType constants.Mood, logID uuid.UUID) notifier.StudentNotice {
+	name := "your child"
+	if fields := strings.Fields(student.FullName); len(fields) > 0 {
+		name = fields[0]
+	}
+
+	return notifier.StudentNotice{
+		StudentID: student.ID,
+		Title:     "Daily mood recorded",
+		Body:      fmt.Sprintf("Teacher recorded mood for %s: %s", name, constants.MoodLabels[moodType]),
+		RefID:     logID,
+	}
 }
 
 // moodDay is the local day of recordedAt, which is what the limit of mood logs per child counts in
@@ -277,6 +316,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 	details := map[string]string{}
 	seen := make(map[uuid.UUID]bool, len(req.Entries))
 	moodLogs := make([]entity.MoodLog, 0, len(req.Entries))
+	students := make(map[uuid.UUID]*entity.Student, len(req.Entries))
 
 	for i, entry := range req.Entries {
 		path := "entries[" + strconv.Itoa(i) + "]."
@@ -332,6 +372,7 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 		}
 
 		moodLogs = append(moodLogs, moodLog)
+		students[student.ID] = student
 	}
 
 	if len(details) > 0 {
@@ -348,8 +389,16 @@ func (u *GuruUseCase) LogMoodBatch(ctx context.Context, userID uuid.UUID, req dt
 	}
 
 	logs := make([]dto.LogMoodBatchItem, len(moodLogs))
+	notices := make([]notifier.StudentNotice, len(moodLogs))
+
 	for i, moodLog := range moodLogs {
 		logs[i] = dto.LogMoodBatchItem{LogID: moodLog.ID, StudentID: moodLog.StudentID, RecordedAt: moodLog.RecordedAt}
+		notices[i] = moodNotice(students[moodLog.StudentID], moodLog.MoodType, moodLog.ID)
+	}
+
+	// one statement for the whole batch, and a failure never fails the logs that are stored
+	if u.notifier != nil {
+		u.notifier.NotifyStudentParents(ctx, constants.NotificationMoodLogged, moodReferenceType, notices)
 	}
 
 	return dto.LogMoodBatchResponse{Logs: logs}, nil
@@ -929,6 +978,11 @@ func (u *GuruUseCase) AcceptMove(ctx context.Context, userID uuid.UUID, classID 
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+class.ID.String())
 	_ = u.cache.Del(ctx, constants.LeaderboardKeyPrefix+left.String())
 
+	if u.notifier != nil {
+		u.notifier.NotifyMoveRequestParent(ctx, requestID, constants.NotificationMoveDecided,
+			"Move request approved", "Your child's class move request was approved")
+	}
+
 	return nil
 }
 
@@ -941,6 +995,11 @@ func (u *GuruUseCase) RejectMove(ctx context.Context, userID uuid.UUID, classID 
 	err = u.repo.RejectMove(ctx, class.ID, requestID, guru.ID)
 	if err != nil {
 		return appOrInternal(err)
+	}
+
+	if u.notifier != nil {
+		u.notifier.NotifyMoveRequestParent(ctx, requestID, constants.NotificationMoveDecided,
+			"Move request declined", "Your child's class move request was declined")
 	}
 
 	return nil

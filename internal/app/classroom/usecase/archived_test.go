@@ -53,6 +53,14 @@ func TestAnArchivedClassRefusesEveryChangeOfItsForumAndVideos(t *testing.T) {
 
 	_, err = u.CreateVideoUpload(ctx, author, classID, dto.VideoUploadRequest{})
 	require.ErrorIs(t, err, apperror.ErrClassArchived)
+
+	_, err = u.CreateModule(ctx, author, classID, dto.CreateModuleRequest{MeetingNumber: 1, Title: "T"})
+	require.ErrorIs(t, err, apperror.ErrClassArchived)
+
+	_, err = u.UpdateModule(ctx, author, classID, uuid.New(), dto.UpdateModuleRequest{Title: &body})
+	require.ErrorIs(t, err, apperror.ErrClassArchived)
+
+	require.ErrorIs(t, u.DeleteModule(ctx, author, classID, uuid.New()), apperror.ErrClassArchived)
 }
 
 func TestAnArchivedClassStillAnswersWhoMayNotWrite(t *testing.T) {

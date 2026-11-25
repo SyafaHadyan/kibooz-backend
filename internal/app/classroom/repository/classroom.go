@@ -72,6 +72,15 @@ type ClassroomDBItf interface {
 	UpdateVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID, change func(video *entity.LearningVideo) error) (*entity.LearningVideo, error)
 	// DeleteVideo reports whether a video was removed
 	DeleteVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (bool, error)
+	// ListModules lists the learning modules of a class in meeting order
+	ListModules(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]entity.LearningModule, int, error)
+	// CreateModule stores a learning module for a class
+	CreateModule(ctx context.Context, module *entity.LearningModule) error
+	// UpdateModule locks the module, applies change to the current row and writes editable fields back.
+	// It returns nil when the class has no such module.
+	UpdateModule(ctx context.Context, classID uuid.UUID, moduleID uuid.UUID, change func(module *entity.LearningModule) error) (*entity.LearningModule, error)
+	// DeleteModule removes a learning module and reports whether one was removed
+	DeleteModule(ctx context.Context, classID uuid.UUID, moduleID uuid.UUID) (bool, error)
 	// CountVideosByURL tells how many videos still point at the address
 	CountVideosByURL(ctx context.Context, videoURL string) (int, error)
 	// WithVideoFileLock runs fn in a transaction that holds a lock for the video address until fn returns, so adding a video
@@ -218,6 +227,75 @@ func (r *ClassroomDB) UpdateVideo(
 
 func (r *ClassroomDB) DeleteVideo(ctx context.Context, classID uuid.UUID, videoID uuid.UUID) (bool, error) {
 	res := r.db.WithContext(ctx).Where("id = ? AND class_id = ?", videoID, classID).Delete(&entity.LearningVideo{})
+
+	return res.RowsAffected > 0, res.Error
+}
+
+func (r *ClassroomDB) ListModules(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]entity.LearningModule, int, error) {
+	var (
+		modules []entity.LearningModule
+		total   int64
+	)
+
+	query := r.db.WithContext(ctx).Model(&entity.LearningModule{}).Where("class_id = ?", classID)
+
+	err := query.Count(&total).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	err = query.Order("meeting_number ASC, created_at ASC, id ASC").Limit(limit).Offset(offset).Find(&modules).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return modules, int(total), nil
+}
+
+func (r *ClassroomDB) CreateModule(ctx context.Context, module *entity.LearningModule) error {
+	return r.db.WithContext(ctx).Create(module).Error
+}
+
+func (r *ClassroomDB) UpdateModule(
+	ctx context.Context, classID uuid.UUID, moduleID uuid.UUID, change func(module *entity.LearningModule) error,
+) (*entity.LearningModule, error) {
+	var updated *entity.LearningModule
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var module entity.LearningModule
+
+		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND class_id = ?", moduleID, classID).Limit(1).Find(&module)
+		if found.Error != nil || found.RowsAffected == 0 {
+			return found.Error
+		}
+
+		err := change(&module)
+		if err != nil {
+			return err
+		}
+
+		err = tx.Model(&entity.LearningModule{}).
+			Where("id = ? AND class_id = ?", moduleID, classID).
+			Select("meeting_number", "title", "description", "status", "scheduled_at", "updated_at").
+			Updates(&module).Error
+		if err != nil {
+			return err
+		}
+
+		updated = &module
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return updated, nil
+}
+
+func (r *ClassroomDB) DeleteModule(ctx context.Context, classID uuid.UUID, moduleID uuid.UUID) (bool, error) {
+	res := r.db.WithContext(ctx).Where("id = ? AND class_id = ?", moduleID, classID).Delete(&entity.LearningModule{})
 
 	return res.RowsAffected > 0, res.Error
 }
