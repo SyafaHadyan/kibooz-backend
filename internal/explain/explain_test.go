@@ -333,6 +333,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, teacher of a class", func(ctx context.Context) error { return drop(classroom.TeacherOfClass(ctx, teacher, class)) })
 	call("classroom, parent in a class", func(ctx context.Context) error { return drop(classroom.ParentInClass(ctx, parent, class)) })
 	call("classroom, videos", func(ctx context.Context) error { return drop2(classroom.ListVideos(ctx, class, 20, 0)) })
+	call("classroom, modules", func(ctx context.Context) error { return drop2(classroom.ListModules(ctx, class, 20, 0)) })
 	call("classroom, find a video", func(ctx context.Context) error { return drop(classroom.FindVideo(ctx, class, video)) })
 	call("classroom, count videos by address", func(ctx context.Context) error {
 		return drop(classroom.CountVideosByURL(ctx, "https://files.example.test/videos/2-1.mp4"))
@@ -473,7 +474,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	var (
 		accepted, rejected, cancelled uuid.UUID
 		addedChild                    = uuid.New()
-		newVideo, newPost             = uuid.New(), uuid.New()
+		newVideo, newModule, newPost  = uuid.New(), uuid.New(), uuid.New()
 		videoURL                      = "https://files.example.test/videos/explain-new.mp4"
 		extraTeacher                  = id("g6")
 		avatarURL                     = "https://files.example.test/avatars/explain.png"
@@ -593,6 +594,20 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		})
 	})
 	call("classroom, delete a video", func(ctx context.Context) error { return okOnly(classroom.DeleteVideo(ctx, class, newVideo)) })
+	call("classroom, add a module", func(ctx context.Context) error {
+		return classroom.CreateModule(ctx, &entity.LearningModule{
+			ID: newModule, ClassID: class, AddedByGuruID: guru, MeetingNumber: 11, Title: "New Module", Status: constants.ModuleUpcoming,
+			CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	call("classroom, change a module", func(ctx context.Context) error {
+		return present(classroom.UpdateModule(ctx, class, newModule, func(module *entity.LearningModule) error {
+			module.Title = "Changed Module"
+
+			return nil
+		}))
+	})
+	call("classroom, delete a module", func(ctx context.Context) error { return okOnly(classroom.DeleteModule(ctx, class, newModule)) })
 	call("classroom, write a thread", func(ctx context.Context) error {
 		title := "Explain"
 

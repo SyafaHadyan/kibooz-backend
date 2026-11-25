@@ -69,6 +69,19 @@ const (
 	EnrollmentRejected EnrollmentStatus = "rejected"
 )
 
+// ModuleStatus describes the schedule progress of a class learning module.
+type ModuleStatus string
+
+const (
+	ModuleCompleted ModuleStatus = "completed"
+	ModuleOngoing   ModuleStatus = "ongoing"
+	ModuleUpcoming  ModuleStatus = "upcoming"
+)
+
+func (s ModuleStatus) Valid() bool {
+	return s == ModuleCompleted || s == ModuleOngoing || s == ModuleUpcoming
+}
+
 // Period is a calendar window of the school timezone that the leaderboard and the trash stats can be limited to. An empty
 // period means the default view, the running semester for the leaderboard and all time for the stats.
 type Period string

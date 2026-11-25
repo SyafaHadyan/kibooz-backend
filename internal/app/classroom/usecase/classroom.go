@@ -37,6 +37,16 @@ type ClassroomUseCaseItf interface {
 	) (dto.Video, error)
 	// DeleteVideo removes a video and the file behind it when it was uploaded and no other video uses it
 	DeleteVideo(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoID uuid.UUID) error
+	// ListModules lists the learning modules of a class in meeting order
+	ListModules(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.ModuleList, error)
+	// CreateModule adds a learning module to a class, only for teachers of the class
+	CreateModule(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.CreateModuleRequest) (dto.Module, error)
+	// UpdateModule changes the details of a learning module, any teacher of the class may do it
+	UpdateModule(
+		ctx context.Context, userID uuid.UUID, classID uuid.UUID, moduleID uuid.UUID, req dto.UpdateModuleRequest,
+	) (dto.Module, error)
+	// DeleteModule removes a learning module from a class, any teacher of the class may do it
+	DeleteModule(ctx context.Context, userID uuid.UUID, classID uuid.UUID, moduleID uuid.UUID) error
 	// CreateVideoUpload signs a URL the teacher sends a video file to, the file is then registered with AddVideo
 	CreateVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest) (dto.VideoUpload, error)
 	// DiscardVideoUpload deletes a file that was uploaded for a class and never added as a video, instead of waiting for the bucket to expire it
@@ -996,6 +1006,180 @@ func videoResponse(video *entity.LearningVideo) dto.Video {
 		ThumbnailURL:    video.ThumbnailURL,
 		DurationSeconds: video.DurationSeconds,
 		CreatedAt:       video.CreatedAt.UTC(),
+	}
+}
+
+func (u *ClassroomUseCase) ListModules(
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params,
+) (dto.ModuleList, error) {
+	_, err := u.authorize(ctx, userID, role, classID)
+	if err != nil {
+		return dto.ModuleList{}, err
+	}
+
+	modules, total, err := u.repo.ListModules(ctx, classID, page.Limit, page.Offset())
+	if err != nil {
+		return dto.ModuleList{}, apperror.Internal(err)
+	}
+
+	res := dto.ModuleList{
+		Modules:  make([]dto.Module, 0, len(modules)),
+		PageInfo: dto.PageInfo{Page: page.Page, Limit: page.Limit, Total: total},
+	}
+
+	for i := range modules {
+		res.Modules = append(res.Modules, moduleResponse(&modules[i]))
+	}
+
+	return res, nil
+}
+
+func (u *ClassroomUseCase) CreateModule(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.CreateModuleRequest,
+) (dto.Module, error) {
+	guruID, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return dto.Module{}, err
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return dto.Module{}, apperror.Validation(map[string]string{"title": "is required"})
+	}
+
+	status := req.Status
+	if status == "" {
+		status = constants.ModuleUpcoming
+	}
+
+	now := u.timestamp()
+
+	module := &entity.LearningModule{
+		ID:            uuid.New(),
+		ClassID:       classID,
+		AddedByGuruID: *guruID,
+		MeetingNumber: req.MeetingNumber,
+		Title:         title,
+		Description:   optional(req.Description),
+		Status:        status,
+		ScheduledAt:   utcTime(req.ScheduledAt),
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	err = u.repo.CreateModule(ctx, module)
+	if err != nil {
+		return dto.Module{}, apperror.Internal(err)
+	}
+
+	return moduleResponse(module), nil
+}
+
+func (u *ClassroomUseCase) UpdateModule(
+	ctx context.Context, userID uuid.UUID, classID uuid.UUID, moduleID uuid.UUID, req dto.UpdateModuleRequest,
+) (dto.Module, error) {
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return dto.Module{}, err
+	}
+
+	if req.MeetingNumber == nil && req.Title == nil && req.Description == nil && req.Status == nil && req.ScheduledAt == nil {
+		return dto.Module{}, apperror.Validation(map[string]string{
+			"body": "provide meetingNumber, title, description, status or scheduledAt",
+		})
+	}
+
+	updatedAt := u.timestamp()
+
+	module, err := u.repo.UpdateModule(ctx, classID, moduleID, func(module *entity.LearningModule) error {
+		return applyModuleChanges(module, req, updatedAt)
+	})
+	if err != nil {
+		return dto.Module{}, asAppError(err)
+	}
+
+	if module == nil {
+		return dto.Module{}, apperror.ErrModuleNotFound
+	}
+
+	return moduleResponse(module), nil
+}
+
+func (u *ClassroomUseCase) DeleteModule(ctx context.Context, userID uuid.UUID, classID uuid.UUID, moduleID uuid.UUID) error {
+	_, err := u.authorizeWrite(ctx, userID, constants.RoleGuru, classID)
+	if err != nil {
+		return err
+	}
+
+	deleted, err := u.repo.DeleteModule(ctx, classID, moduleID)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !deleted {
+		return apperror.ErrModuleNotFound
+	}
+
+	return nil
+}
+
+func applyModuleChanges(module *entity.LearningModule, req dto.UpdateModuleRequest, updatedAt time.Time) error {
+	details := map[string]string{}
+
+	if req.MeetingNumber != nil {
+		module.MeetingNumber = *req.MeetingNumber
+	}
+
+	if req.Title != nil {
+		title := strings.TrimSpace(*req.Title)
+		if title == "" {
+			details["title"] = "cannot be empty"
+		} else {
+			module.Title = title
+		}
+	}
+
+	if req.Description != nil {
+		module.Description = optional(*req.Description)
+	}
+
+	if req.Status != nil {
+		module.Status = *req.Status
+	}
+
+	if req.ScheduledAt != nil {
+		module.ScheduledAt = utcTime(req.ScheduledAt)
+	}
+
+	if len(details) > 0 {
+		return apperror.Validation(details)
+	}
+
+	module.UpdatedAt = updatedAt
+
+	return nil
+}
+
+func utcTime(at *time.Time) *time.Time {
+	if at == nil {
+		return nil
+	}
+
+	utc := at.UTC().Truncate(time.Microsecond)
+
+	return &utc
+}
+
+func moduleResponse(module *entity.LearningModule) dto.Module {
+	return dto.Module{
+		ID:            module.ID,
+		MeetingNumber: module.MeetingNumber,
+		Title:         module.Title,
+		Description:   module.Description,
+		Status:        module.Status,
+		ScheduledAt:   utcTime(module.ScheduledAt),
+		CreatedAt:     module.CreatedAt.UTC(),
+		UpdatedAt:     module.UpdatedAt.UTC(),
 	}
 }
 

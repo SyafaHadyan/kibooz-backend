@@ -37,6 +37,10 @@ func NewClassroomHandler(router fiber.Router, mw middleware.MiddlewareItf, useCa
 	group.Delete("/videos/upload-url", mw.RequireRole(constants.RoleGuru), handler.DiscardVideoUpload)
 	group.Patch("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.UpdateVideo)
 	group.Delete("/videos/:videoId", mw.RequireRole(constants.RoleGuru), handler.DeleteVideo)
+	group.Get("/modules", members, handler.ListModules)
+	group.Post("/modules", mw.RequireRole(constants.RoleGuru), idempotent, handler.CreateModule)
+	group.Patch("/modules/:moduleId", mw.RequireRole(constants.RoleGuru), handler.UpdateModule)
+	group.Delete("/modules/:moduleId", mw.RequireRole(constants.RoleGuru), handler.DeleteModule)
 	group.Get("/forum", members, handler.ListThreads)
 	group.Post("/forum", members, idempotent, handler.CreateThread)
 	group.Patch("/forum/:postId", members, handler.UpdateThread)
@@ -158,6 +162,81 @@ func (h *ClassroomHandler) DiscardVideoUpload(c fiber.Ctx) error {
 	}
 
 	return response.JSON(c, http.StatusOK, "Upload deleted", nil)
+}
+
+func (h *ClassroomHandler) ListModules(c fiber.Ctx) error {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return err
+	}
+
+	page, err := pagination.Parse(c)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.ListModules(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, page)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func (h *ClassroomHandler) CreateModule(c fiber.Ctx) error {
+	classID, err := pathUUID(c, "classId")
+	if err != nil {
+		return err
+	}
+
+	var req dto.CreateModuleRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.CreateModule(c.Context(), middleware.UserIDFrom(c), classID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusCreated, "Learning module added", res)
+}
+
+func (h *ClassroomHandler) UpdateModule(c fiber.Ctx) error {
+	classID, moduleID, err := classAndItem(c, "moduleId")
+	if err != nil {
+		return err
+	}
+
+	var req dto.UpdateModuleRequest
+
+	err = validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	res, err := h.useCase.UpdateModule(c.Context(), middleware.UserIDFrom(c), classID, moduleID, req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Learning module updated", res)
+}
+
+func (h *ClassroomHandler) DeleteModule(c fiber.Ctx) error {
+	classID, moduleID, err := classAndItem(c, "moduleId")
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.DeleteModule(c.Context(), middleware.UserIDFrom(c), classID, moduleID)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Learning module deleted", nil)
 }
 
 func (h *ClassroomHandler) ListThreads(c fiber.Ctx) error {
@@ -363,31 +442,25 @@ func classPostAndReply(c fiber.Ctx) (uuid.UUID, uuid.UUID, uuid.UUID, error) {
 }
 
 func classAndVideo(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
-	classID, err := pathUUID(c, "classId")
-	if err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
-
-	videoID, err := pathUUID(c, "videoId")
-	if err != nil {
-		return uuid.Nil, uuid.Nil, err
-	}
-
-	return classID, videoID, nil
+	return classAndItem(c, "videoId")
 }
 
 func classAndPost(c fiber.Ctx) (uuid.UUID, uuid.UUID, error) {
+	return classAndItem(c, "postId")
+}
+
+func classAndItem(c fiber.Ctx, itemParam string) (uuid.UUID, uuid.UUID, error) {
 	classID, err := pathUUID(c, "classId")
 	if err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
 
-	postID, err := pathUUID(c, "postId")
+	itemID, err := pathUUID(c, itemParam)
 	if err != nil {
 		return uuid.Nil, uuid.Nil, err
 	}
 
-	return classID, postID, nil
+	return classID, itemID, nil
 }
 
 func pathUUID(c fiber.Ctx, name string) (uuid.UUID, error) {
