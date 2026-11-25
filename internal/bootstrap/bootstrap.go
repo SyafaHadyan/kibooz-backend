@@ -40,6 +40,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -64,6 +65,7 @@ type Bootstrap struct {
 	Database *gorm.DB
 	Redis    *redis.Redis
 
+	authUseCase   authusecase.AuthUseCaseItf
 	stopKeepalive func()
 	stopCleanup   func()
 	stopSeason    func()
@@ -162,9 +164,11 @@ func Start(version string) (*Bootstrap, error) {
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
 
-	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
+	authUseCase := authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
-	))
+	)
+
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), app.GoogleTokenLimiter(), authUseCase)
 	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
 	))
@@ -292,9 +296,16 @@ func Start(version string) (*Bootstrap, error) {
 	})
 
 	return &Bootstrap{
-		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
+		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
 		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
+}
+
+// SetGoogleVerifier replaces the active Google ID token verifier at runtime (intended for tests).
+func (b *Bootstrap) SetGoogleVerifier(verifier googleauth.Verifier) {
+	if b.authUseCase != nil {
+		b.authUseCase.SetGoogleVerifier(verifier)
+	}
 }
 
 // Close stops the keepalive, then releases the database and Redis connections

@@ -152,6 +152,90 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /auth/google:
+    post:
+      tags: [Auth]
+      operationId: googleLogin
+      summary: Sign in or start onboarding with a Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleLoginRequest"
+      responses:
+        "200":
+          description: Google token verified (authenticated session or onboarding profile required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleAuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, unverified, or mismatched (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The verified Google email is already registered under another role (`AUTH_ROLE_MISMATCH`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /auth/google/register:
+    post:
+      tags: [Auth]
+      operationId: googleRegister
+      summary: Complete registration using a verified Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleRegisterRequest"
+      responses:
+        "201":
+          description: Google registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, or unverified (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Google account, email, NIP, or NISN is already registered, or the class cannot accept students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /auth/refresh-token:
     post:
       tags: [Auth]
@@ -2875,8 +2959,8 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "409":
           description: >-
-            The account is the only teacher of a class that is not archived and still has active children, and no `successorEmail` was sent
-            (`SUCCESSOR_REQUIRED`)
+            The account is the only teacher of a class that is not archived and still has active children and no `successorEmail` was sent
+            (`SUCCESSOR_REQUIRED`), or the account signs in with Google and has no password set (`AUTH_PASSWORD_NOT_SET`)
           content:
             application/json:
               schema:
@@ -2918,6 +3002,12 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "404":
           description: The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The account signs in with Google and does not have a password set (`AUTH_PASSWORD_NOT_SET`)
           content:
             application/json:
               schema:
@@ -3717,6 +3807,101 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/AuthData"
+    GoogleLoginRequest:
+      type: object
+      required: [idToken, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        role:
+          $ref: "#/components/schemas/Role"
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleRegisterRequest:
+      type: object
+      required: [idToken, fullName, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        role:
+          type: string
+          enum: [GURU, WALI]
+        phoneNumber:
+          type: string
+          maxLength: 30
+        nip:
+          type: string
+          maxLength: 50
+        schoolName:
+          type: string
+          maxLength: 150
+        address:
+          type: string
+          maxLength: 1000
+        whatsappNumber:
+          type: string
+          maxLength: 30
+        class:
+          $ref: "#/components/schemas/RegisterClass"
+        classCode:
+          type: string
+          pattern: "^[A-Za-z0-9]+$"
+          minLength: 4
+          maxLength: 12
+        student:
+          $ref: "#/components/schemas/RegisterStudent"
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleProfile:
+      type: object
+      required: [email, fullName, avatarUrl]
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    GoogleAuthData:
+      type: object
+      required: [needsRegistration]
+      properties:
+        needsRegistration:
+          type: boolean
+        googleProfile:
+          $ref: "#/components/schemas/GoogleProfile"
+        token:
+          type: string
+        refreshToken:
+          type: string
+        deviceToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    GoogleAuthEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GoogleAuthData"
     WaliStudent:
       type: object
       required: [id, fullName, classId, className, avatarUrl, nisn, nisnVerified, nisnNeedsUpdate]

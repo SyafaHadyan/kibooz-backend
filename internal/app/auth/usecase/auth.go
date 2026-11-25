@@ -19,6 +19,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
@@ -37,6 +38,9 @@ const (
 type AuthUseCaseItf interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest) (dto.AuthResponse, error)
+	GoogleLogin(ctx context.Context, req dto.GoogleLoginRequest) (dto.GoogleAuthResponse, error)
+	GoogleRegister(ctx context.Context, req dto.GoogleRegisterRequest) (dto.AuthResponse, error)
+	SetGoogleVerifier(verifier googleauth.Verifier)
 	Refresh(ctx context.Context, refreshToken string) (dto.AuthResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 }
@@ -52,10 +56,25 @@ type AuthUseCase struct {
 	hasher *passwords.Hasher
 
 	devices *devicetoken.Tokens
+	google  *googleauth.SwitchableVerifier
 }
 
 func NewAuthUseCase(repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.CacheItf, cfg *env.Env, hasher *passwords.Hasher) AuthUseCaseItf {
-	return &AuthUseCase{repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg), hasher: hasher}
+	var clientIDs []string
+	if cfg != nil {
+		clientIDs = cfg.GoogleClientIDs
+	}
+
+	return &AuthUseCase{
+		repo:    repo,
+		jwt:     jwt,
+		cache:   cache,
+		cfg:     cfg,
+		now:     time.Now,
+		devices: devicetoken.New(cfg),
+		hasher:  hasher,
+		google:  googleauth.NewSwitchableVerifier(googleauth.NewVerifier(clientIDs)),
+	}
 }
 
 // checkNames refuses a name that is only spaces or that is too short once the spaces are gone. The validator counts the text as it was

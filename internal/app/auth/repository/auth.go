@@ -25,6 +25,8 @@ const uniqueViolation = "23505"
 type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
+	FindUserByGoogleSub(ctx context.Context, sub string) (*entity.User, error)
+	LinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string) error
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
@@ -285,6 +287,8 @@ func mapUniqueViolation(err error) error {
 	switch pgErr.ConstraintName {
 	case "users_email_key":
 		return apperror.ErrEmailTaken
+	case "idx_users_google_sub":
+		return apperror.ErrGoogleAlreadyRegistered
 	case "gurus_nip_key":
 		return apperror.ErrNIPTaken
 	case "students_nisn_verified_key":

@@ -228,6 +228,10 @@ func (u *UserUseCase) DeleteAccount(
 		return apperror.ErrForbidden
 	}
 
+	if !strings.HasPrefix(user.PasswordHash, "$2") {
+		return apperror.ErrPasswordNotSet
+	}
+
 	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
 	if len([]byte(req.Password)) > bcryptMaxBytes {
 		return apperror.ErrPasswordIncorrect
@@ -278,6 +282,10 @@ func (u *UserUseCase) ChangePassword(
 
 	if user.Role != role {
 		return apperror.ErrForbidden
+	}
+
+	if !strings.HasPrefix(user.PasswordHash, "$2") {
+		return apperror.ErrPasswordNotSet
 	}
 
 	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them

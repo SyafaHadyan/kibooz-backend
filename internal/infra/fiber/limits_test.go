@@ -618,3 +618,15 @@ func TestClassCodeLimiterSitsBehindTheEmailLimiter(t *testing.T) {
 	// the refused request did not reach the class code budget, so one more guess fits
 	require.Equal(t, http.StatusOK, status(t, app, "/register", `{"email":"two@example.com","classCode":"AAAAAAAA"}`))
 }
+
+func TestGoogleTokenLimiterLimitsPerIDToken(t *testing.T) {
+	server := fiber.New(&env.Env{UserLimiterMax: 100, LimiterExpirationSeconds: 60, AuthLimiterMax: 2, BodyLimitMB: 1}, nil)
+	server.Router.Post("/auth/google", server.GoogleTokenLimiter(), func(c gofiber.Ctx) error {
+		return c.JSON(map[string]string{"ok": "yes"})
+	})
+
+	require.Equal(t, http.StatusOK, status(t, server.Fiber, "/auth/google", `{"idToken":"claim-alpha","role":"WALI"}`))
+	require.Equal(t, http.StatusOK, status(t, server.Fiber, "/auth/google", `{"idToken":"claim-alpha","role":"WALI"}`))
+	require.Equal(t, http.StatusTooManyRequests, status(t, server.Fiber, "/auth/google", `{"idToken":"claim-alpha","role":"WALI"}`))
+	require.Equal(t, http.StatusOK, status(t, server.Fiber, "/auth/google", `{"idToken":"claim-beta","role":"WALI"}`))
+}

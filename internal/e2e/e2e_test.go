@@ -200,6 +200,8 @@ func app(t *testing.T) *fiber.App {
 			return
 		}
 
+		started.SetGoogleVerifier(initMockGoogleVerifier())
+
 		testApp = started.App.Fiber
 		testDB = started.Database
 	})

@@ -297,6 +297,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	// reading
 	call("auth, find a user by email", func(ctx context.Context) error { return drop(auth.FindUserByEmail(ctx, "guru2@example.test")) })
 	call("auth, find a user by id", func(ctx context.Context) error { return drop(auth.FindUserByID(ctx, teacher)) })
+	call("auth, find a user by google sub", func(ctx context.Context) error {
+		return drop(auth.FindUserByGoogleSub(ctx, "explain-sub"))
+	})
 	call("auth, class code exists", func(ctx context.Context) error { return drop(auth.ClassCodeExists(ctx, "00000002")) })
 	call("auth, registration taken", func(ctx context.Context) error {
 		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999")
@@ -494,6 +497,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		student := &entity.Student{ID: uuid.New(), NISN: "9000000001", FullName: "Explain Child"}
 
 		return drop(auth.CreateWali(ctx, user, parentRow, "00000002", student, session2(user.ID, "register-wali")))
+	})
+	call("auth, link a google sub", func(ctx context.Context) error {
+		return auth.LinkGoogleSub(ctx, teacher, "explain-google-sub")
 	})
 	call("parent, add a child", func(ctx context.Context) error {
 		return drop(waliRepo.AddChild(ctx, wali, "00000002", &entity.Student{ID: addedChild, NISN: "9000000002", FullName: "Explain Second"}, 10))

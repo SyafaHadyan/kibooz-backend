@@ -103,6 +103,13 @@ func (f *Fiber) TokenLimiter() fiber.Handler {
 	})
 }
 
+// GoogleTokenLimiter gives each presented Google ID token AUTH_LIMITER_MAX requests per window on the Google auth routes.
+func (f *Fiber) GoogleTokenLimiter() fiber.Handler {
+	return f.accountLimiter(f.authMax, func(body accountRequest) (string, string) {
+		return "idtoken", body.IDToken
+	})
+}
+
 // ClassCodeLimiter gives each route CLASS_CODE_LIMITER_MAX requests per window that name a class code. A code is the
 // only secret between a stranger and a class, and a wrong code is answered at once, so guessing is limited by the number
 // of guesses and not by who sends them. The budget of a route is shared by every caller, because a guesser can use any
@@ -123,6 +130,7 @@ type accountRequest struct {
 	RefreshToken string
 	DeviceToken  string
 	ClassCode    string
+	IDToken      string
 }
 
 // rawAccountRequest reads the same fields as the handlers do and by the same rules, because encoding/json matches the
@@ -133,6 +141,7 @@ type rawAccountRequest struct {
 	RefreshToken jsonText `json:"refreshToken"`
 	DeviceToken  jsonText `json:"deviceToken"`
 	ClassCode    jsonText `json:"classCode"`
+	IDToken      jsonText `json:"idToken"`
 }
 
 // jsonText is the text of a JSON string member, read the way a string field of a handler request is read. The handlers
@@ -187,6 +196,7 @@ func (f *Fiber) accountLimiter(limit int, identify func(accountRequest) (string,
 			RefreshToken: string(raw.RefreshToken),
 			DeviceToken:  string(raw.DeviceToken),
 			ClassCode:    string(raw.ClassCode),
+			IDToken:      string(raw.IDToken),
 		})
 		if identifier == "" {
 			return ""
