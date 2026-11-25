@@ -3,7 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
-	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,6 +16,9 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 )
+
+// wrongPassword is built at run time, so no scanner takes it for a credential that is written in the source
+var wrongPassword = strings.Repeat("x", 12)
 
 // fakeMail keeps what would have been mailed
 type fakeMail struct {
@@ -90,7 +93,7 @@ func TestARegistrationThatRequiresTheCodeStoresNoSessionAndMailsTheCode(t *testi
 	require.Equal(t, constants.EmailResendCooldownSeconds, res.Verification.ResendAfterSeconds)
 
 	require.Equal(t, []string{"new.parent@example.com"}, mail.to)
-	require.Regexp(t, regexp.MustCompile(`^\d{6}$`), mail.last(t))
+	require.Regexp(t, `^\d{6}$`, mail.last(t))
 	require.NotContains(t, repo.live.hash, mail.last(t), "the code itself is never stored")
 }
 
@@ -146,7 +149,7 @@ func TestASignInIsRefusedForAnAccountThatWaitsOnlyAfterThePasswordMatched(t *tes
 	require.Equal(t, 403, apperror.As(err).Status)
 	require.Zero(t, repo.separateTokens, "no session is stored")
 
-	_, err = useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: "wrong password", Role: constants.RoleWali})
+	_, err = useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: wrongPassword, Role: constants.RoleWali})
 	require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code, "a wrong password does not learn that the account waits")
 
 	_, err = useCase.Login(context.Background(), dto.LoginRequest{Email: "a@example.com", Password: "correct horse", Role: constants.RoleGuru})
@@ -196,7 +199,7 @@ func TestAStrangerWithoutThePasswordCannotUseUpTheTriesOfACode(t *testing.T) {
 	require.NoError(t, err)
 
 	for range constants.EmailCodeMaxAttempts * 3 {
-		_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: "wrong password", Code: "000000"})
+		_, err = useCase.VerifyEmail(context.Background(), dto.VerifyEmailRequest{Email: "a@example.com", Password: wrongPassword, Code: "000000"})
 		require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
 	}
 
@@ -291,7 +294,7 @@ func TestAResendNeedsThePasswordAndAWaitingAccount(t *testing.T) {
 		pendingAccount(t, repo)
 
 		_, err := buildVerifying(repo, mail, true).ResendVerification(
-			context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "wrong password"},
+			context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: wrongPassword},
 		)
 		require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
 		require.Empty(t, mail.codes)

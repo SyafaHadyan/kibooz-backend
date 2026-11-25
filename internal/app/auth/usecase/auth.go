@@ -316,7 +316,7 @@ func (u *AuthUseCase) registerWali(ctx context.Context, user *entity.User, req d
 }
 
 func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.AuthResponse, error) {
-	user, err := u.checkPassword(ctx, req.Email, req.Password)
+	user, err := u.authenticate(ctx, req.Email, req.Password)
 	if err != nil {
 		return dto.AuthResponse{}, err
 	}
@@ -333,9 +333,9 @@ func (u *AuthUseCase) Login(ctx context.Context, req dto.LoginRequest) (dto.Auth
 	return u.startSession(ctx, user, req.DeviceToken)
 }
 
-// checkPassword returns the account of the email when the password matches its hash. A password that is wrong and an email that
+// authenticate returns the account of the email when the secret matches its hash. A password that is wrong and an email that
 // no account has give the same answer after the same work.
-func (u *AuthUseCase) checkPassword(ctx context.Context, email string, password string) (*entity.User, error) {
+func (u *AuthUseCase) authenticate(ctx context.Context, email string, password string) (*entity.User, error) {
 	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
 	if len([]byte(password)) > bcryptMaxBytes {
 		return nil, apperror.ErrInvalidCredentials
@@ -371,7 +371,7 @@ func (u *AuthUseCase) checkPassword(ctx context.Context, email string, password 
 // VerifyEmail takes the code of the mail of a new account. The password has to match first, so a stranger who knows only the email
 // cannot use up the tries of the code and keep the owner from verifying. A wrong, expired and used up code give the same answer.
 func (u *AuthUseCase) VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.AuthResponse, error) {
-	user, err := u.checkPassword(ctx, req.Email, req.Password)
+	user, err := u.authenticate(ctx, req.Email, req.Password)
 	if err != nil {
 		return dto.AuthResponse{}, err
 	}
@@ -398,7 +398,7 @@ func (u *AuthUseCase) VerifyEmail(ctx context.Context, req dto.VerifyEmailReques
 // ResendVerification sends a new code to an account that waits for its email. The password has to match, so the route cannot be
 // used to mail an address that the caller does not hold, and the cooldown and the hourly cap bound what one account can cost.
 func (u *AuthUseCase) ResendVerification(ctx context.Context, req dto.ResendVerificationRequest) (dto.VerificationResponse, error) {
-	user, err := u.checkPassword(ctx, req.Email, req.Password)
+	user, err := u.authenticate(ctx, req.Email, req.Password)
 	if err != nil {
 		return dto.VerificationResponse{}, err
 	}

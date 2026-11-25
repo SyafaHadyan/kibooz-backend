@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -118,5 +117,5 @@ func TestAServerThatIsDownIsAnErrorWithoutTheKey(t *testing.T) {
 
 	err := sender(url, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
 	require.Error(t, err)
-	require.False(t, strings.Contains(err.Error(), "re_secretvalue"))
+	require.NotContains(t, err.Error(), "re_secretvalue")
 }
