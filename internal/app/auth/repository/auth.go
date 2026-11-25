@@ -27,7 +27,6 @@ type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	FindUserByGoogleSub(ctx context.Context, sub string) (*entity.User, error)
-	LinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string) error
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)

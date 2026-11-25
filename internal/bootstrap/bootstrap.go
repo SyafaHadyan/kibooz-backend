@@ -272,8 +272,8 @@ func Start(version string) (*Bootstrap, error) {
 	chathandler.NewChatHandler(
 		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), retryingPrivate, cfg, hub, pusher), hub, cfg,
 	)
-	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), retrying, cache, hasher,
+	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), app.GoogleTokenLimiter(), mw, userusecase.NewUserUseCase(
+		userrepository.NewUserDB(database), retrying, cache, hasher, userusecase.WithGoogleVerifier(authUseCase.GoogleVerifier()),
 	))
 
 	stats.AllowRoutes(app.Fiber.GetRoutes())

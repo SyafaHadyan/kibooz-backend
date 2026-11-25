@@ -243,3 +243,112 @@ type verifierFunc func(context.Context, string) (googleauth.Claims, error)
 func (f verifierFunc) Verify(ctx context.Context, idToken string) (googleauth.Claims, error) {
 	return f(ctx, idToken)
 }
+
+func TestClaimsFreshWithin(t *testing.T) {
+	now := time.Unix(1_760_000_000, 0)
+	window := 5 * time.Minute
+
+	cases := map[string]struct {
+		issued time.Time
+		fresh  bool
+	}{
+		"issued a minute ago":                {now.Add(-time.Minute), true},
+		"issued exactly at the edge":         {now.Add(-window), true},
+		"issued a second past the window":    {now.Add(-window - time.Second), false},
+		"issued a little ahead of the clock": {now.Add(10 * time.Second), true},
+		"issued far ahead of the clock":      {now.Add(10 * time.Minute), false},
+		"no issue time":                      {time.Time{}, false},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.fresh, googleauth.Claims{IssuedAt: tc.issued}.FreshWithin(now, window))
+		})
+	}
+}
+
+func TestJWKSClientReadsTheIssueTime(t *testing.T) {
+	signer := newSigner(t, "kid-iat")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{signer.jwk()}})
+	}))
+	t.Cleanup(server.Close)
+
+	now := time.Unix(1_760_000_000, 0)
+	verifier := googleauth.NewVerifier(
+		[]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(func() time.Time { return now }),
+	)
+
+	token := func(extra jwt.MapClaims) string {
+		claims := jwt.MapClaims{
+			"iss": "https://accounts.google.com", "aud": testClientID, "sub": "110248495921234",
+			"email": "a@example.test", "email_verified": true, "exp": now.Add(10 * time.Minute).Unix(),
+		}
+		for key, value := range extra {
+			claims[key] = value
+		}
+
+		return signer.sign(t, claims)
+	}
+
+	claims, err := verifier.Verify(context.Background(), token(jwt.MapClaims{"iat": now.Add(-2 * time.Minute).Unix()}))
+	require.NoError(t, err)
+	require.True(t, claims.FreshWithin(now, 5*time.Minute))
+
+	claims, err = verifier.Verify(context.Background(), token(nil))
+	require.NoError(t, err)
+	require.True(t, claims.IssuedAt.IsZero())
+	require.False(t, claims.FreshWithin(now, 5*time.Minute))
+}
+
+func TestJWKSClientKeepsKnownKeysWhileTheFetchIsDown(t *testing.T) {
+	signer := newSigner(t, "kid-stale")
+
+	var down atomic.Bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if down.Load() {
+			http.Error(w, "down", http.StatusBadGateway)
+
+			return
+		}
+
+		w.Header().Set("Cache-Control", "public, max-age=60")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"keys": []any{signer.jwk()}})
+	}))
+	t.Cleanup(server.Close)
+
+	now := time.Unix(1_760_000_000, 0)
+	verifier := googleauth.NewVerifier(
+		[]string{testClientID}, googleauth.WithJWKSURL(server.URL), googleauth.WithNow(func() time.Time { return now }),
+	)
+
+	token := signer.sign(t, jwt.MapClaims{
+		"iss": "https://accounts.google.com", "aud": testClientID, "sub": "110248495921234",
+		"email": "a@example.test", "email_verified": true, "exp": now.Add(time.Hour).Unix(),
+	})
+
+	_, err := verifier.Verify(context.Background(), token)
+	require.NoError(t, err)
+
+	// the cache has expired and Google does not answer, so the key that is known still checks the token
+	now = now.Add(2 * time.Minute)
+	down.Store(true)
+
+	_, err = verifier.Verify(context.Background(), token)
+	require.NoError(t, err)
+
+	// a token with a key that was never known still fails with the fetch error
+	other := newSigner(t, "kid-unknown")
+	unknown := other.sign(t, jwt.MapClaims{
+		"iss": "https://accounts.google.com", "aud": testClientID, "sub": "1", "email": "a@example.test", "email_verified": true,
+		"exp": now.Add(time.Hour).Unix(),
+	})
+	now = now.Add(time.Minute)
+
+	_, err = verifier.Verify(context.Background(), unknown)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, googleauth.ErrInvalidToken)
+}

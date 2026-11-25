@@ -76,6 +76,14 @@ type fakeRepo struct {
 	passwordUpdates int
 	passwordStale   bool
 	newHash         string
+
+	// linked holds the subject the last link stored, linkTaken makes a link find a subject of another account, and linkStale and
+	// unlinkStale make the guarded update find that the account moved on
+	linked      string
+	linkTaken   bool
+	linkStale   bool
+	unlinked    int
+	unlinkStale bool
 }
 
 func (f *fakeRepo) UpdatePassword(_ context.Context, _ uuid.UUID, _ string, newHash string) (bool, error) {
@@ -83,6 +91,22 @@ func (f *fakeRepo) UpdatePassword(_ context.Context, _ uuid.UUID, _ string, newH
 	f.newHash = newHash
 
 	return !f.passwordStale, f.err
+}
+
+func (f *fakeRepo) LinkGoogleSub(_ context.Context, _ uuid.UUID, sub string, _ string) (bool, error) {
+	if f.linkTaken {
+		return false, apperror.ErrGoogleInUse
+	}
+
+	f.linked = sub
+
+	return !f.linkStale, f.err
+}
+
+func (f *fakeRepo) UnlinkGoogleSub(context.Context, uuid.UUID, string, string) (bool, error) {
+	f.unlinked++
+
+	return !f.unlinkStale, f.err
 }
 
 func (f *fakeRepo) UpdateUserAvatar(context.Context, uuid.UUID, string) (string, bool, error) {

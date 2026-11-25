@@ -51,6 +51,8 @@ type AuthUseCaseItf interface {
 	GoogleLogin(ctx context.Context, req dto.GoogleLoginRequest) (dto.GoogleAuthResponse, error)
 	GoogleRegister(ctx context.Context, req dto.GoogleRegisterRequest) (dto.AuthResponse, error)
 	SetGoogleVerifier(verifier googleauth.Verifier)
+	// GoogleVerifier is the verifier that the use case checks tokens with, so the use cases of the profile check them the same way
+	GoogleVerifier() googleauth.Verifier
 	Refresh(ctx context.Context, refreshToken string) (dto.AuthResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 	// VerifyEmail checks the code of a new account and opens its first session

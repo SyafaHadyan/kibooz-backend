@@ -20,18 +20,34 @@ func (u *AuthUseCase) SetGoogleVerifier(verifier googleauth.Verifier) {
 	}
 }
 
+func (u *AuthUseCase) GoogleVerifier() googleauth.Verifier {
+	return u.google
+}
+
+// GoogleLogin signs in the account that is linked to the Google subject of the token. It never links by email, because a password
+// account that anyone could have registered with the address would then belong to whoever signs in with Google for it. An email that
+// an account holds already is refused with a way to link Google from the settings of that account.
 func (u *AuthUseCase) GoogleLogin(ctx context.Context, req dto.GoogleLoginRequest) (dto.GoogleAuthResponse, error) {
 	claims, err := u.verifyGoogleToken(ctx, req.IDToken)
 	if err != nil {
 		return dto.GoogleAuthResponse{}, err
 	}
 
-	user, err := u.findGoogleUser(ctx, claims)
+	user, err := u.repo.FindUserByGoogleSub(ctx, claims.Subject)
 	if err != nil {
-		return dto.GoogleAuthResponse{}, err
+		return dto.GoogleAuthResponse{}, apperror.Internal(err)
 	}
 
 	if user == nil {
+		holder, err := u.repo.FindUserByEmail(ctx, normalizeEmail(claims.Email))
+		if err != nil {
+			return dto.GoogleAuthResponse{}, apperror.Internal(err)
+		}
+
+		if holder != nil {
+			return dto.GoogleAuthResponse{}, apperror.ErrAccountExists
+		}
+
 		return dto.GoogleAuthResponse{
 			NeedsRegistration: true,
 			GoogleProfile: &dto.GoogleProfile{
@@ -44,15 +60,6 @@ func (u *AuthUseCase) GoogleLogin(ctx context.Context, req dto.GoogleLoginReques
 
 	if user.Role != req.Role {
 		return dto.GoogleAuthResponse{}, apperror.ErrRoleMismatch
-	}
-
-	if user.GoogleSub == nil {
-		if err := u.repo.LinkGoogleSub(ctx, user.ID, claims.Subject); err != nil {
-			return dto.GoogleAuthResponse{}, wrap(err)
-		}
-
-		sub := claims.Subject
-		user.GoogleSub = &sub
 	}
 
 	sessionRes, err := u.startSession(ctx, user, req.DeviceToken)
@@ -193,33 +200,6 @@ func (u *AuthUseCase) verifyGoogleToken(ctx context.Context, idToken string) (go
 	}
 
 	return googleauth.Claims{}, apperror.ErrGoogleUnavailable.WithErr(err)
-}
-
-func (u *AuthUseCase) findGoogleUser(ctx context.Context, claims googleauth.Claims) (*entity.User, error) {
-	user, err := u.repo.FindUserByGoogleSub(ctx, claims.Subject)
-	if err != nil {
-		return nil, apperror.Internal(err)
-	}
-
-	if user != nil {
-		return user, nil
-	}
-
-	user, err = u.repo.FindUserByEmail(ctx, normalizeEmail(claims.Email))
-	if err != nil {
-		return nil, apperror.Internal(err)
-	}
-
-	if user == nil {
-		return nil, nil
-	}
-
-	// Refuse silently switching an existing account that is already bound to a different Google subject.
-	if user.GoogleSub != nil && *user.GoogleSub != claims.Subject {
-		return nil, apperror.ErrGoogleInvalid
-	}
-
-	return user, nil
 }
 
 func optionalHTTPURL(raw string) *string {

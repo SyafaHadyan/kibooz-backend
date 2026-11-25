@@ -199,4 +199,13 @@ var (
 	ErrRoleMismatch            = New(http.StatusConflict, "AUTH_ROLE_MISMATCH", "This Google account is registered under another role")
 	ErrPasswordNotSet          = New(http.StatusConflict, "AUTH_PASSWORD_NOT_SET", "This account signs in with Google and does not have a password set")
 	ErrGoogleAlreadyRegistered = New(http.StatusConflict, "GOOGLE_ALREADY_REGISTERED", "This Google account is already registered")
+	ErrAccountExists           = New(
+		http.StatusConflict, "AUTH_ACCOUNT_EXISTS",
+		"An account with this email exists, sign in with your password and link Google from your settings",
+	)
+	ErrGoogleStale         = New(http.StatusUnauthorized, "AUTH_GOOGLE_STALE", "Sign in with Google again, the credential is older than five minutes")
+	ErrGoogleAlreadyLinked = New(http.StatusConflict, "GOOGLE_ALREADY_LINKED", "This account is linked to a Google account already")
+	ErrGoogleInUse         = New(http.StatusConflict, "GOOGLE_ACCOUNT_IN_USE", "This Google account is linked to another account")
+	ErrGoogleNotLinked     = New(http.StatusConflict, "GOOGLE_NOT_LINKED", "This account is not linked to a Google account")
+	ErrPasswordAlreadySet  = New(http.StatusConflict, "AUTH_PASSWORD_ALREADY_SET", "This account has a password already, change it with the current one")
 )

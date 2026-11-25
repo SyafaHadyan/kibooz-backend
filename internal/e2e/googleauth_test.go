@@ -185,29 +185,126 @@ func TestGoogleAuthFlow(t *testing.T) {
 		require.Equal(t, http.StatusOK, call(t, http.MethodGet, "/api/v1/guru/dashboard", guruToken, nil).Status)
 	})
 
-	t.Run("existing password account auto-links google_sub and rejects conflicting sub", func(t *testing.T) {
-		firstSub := "linked-sub-" + suffix()
-		token1 := signMockGoogleIDToken(t, jwt.MapClaims{
-			"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": firstSub,
+	t.Run("an email that a password account holds is never linked by email", func(t *testing.T) {
+		token := signMockGoogleIDToken(t, jwt.MapClaims{
+			"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": "pre-hijack-sub-" + suffix(),
 			"email": guru.Email, "email_verified": true, "exp": now.Add(10 * time.Minute).Unix(),
 		})
 
-		linked := call(t, http.MethodPost, "/api/v1/auth/google", "", map[string]any{
-			"idToken": token1, "role": "GURU",
+		call(t, http.MethodPost, "/api/v1/auth/google", "", map[string]any{
+			"idToken": token, "role": "GURU",
+		}).requireError(t, http.StatusConflict, "AUTH_ACCOUNT_EXISTS")
+
+		// the password of the account still works and the account has no link
+		require.Equal(t, http.StatusOK, loginAs(t, guru.Email, guru.Password, "GURU").Status)
+	})
+
+	t.Run("a signed in account links Google with its password and a fresh token, then unlinks it", func(t *testing.T) {
+		session := loginAs(t, guru.Email, guru.Password, "GURU")
+		require.Equal(t, http.StatusOK, session.Status)
+
+		access := session.data("token").(string)
+		sub := "linked-sub-" + suffix()
+		fresh := func() string {
+			return signMockGoogleIDToken(t, jwt.MapClaims{
+				"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": sub,
+				"email": guru.Email, "email_verified": true, "iat": time.Now().Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+			})
+		}
+		stale := signMockGoogleIDToken(t, jwt.MapClaims{
+			"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": sub,
+			"email": guru.Email, "email_verified": true, "iat": time.Now().Add(-time.Hour).Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+		})
+
+		call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
+			"idToken": stale, "password": guru.Password,
+		}).requireError(t, http.StatusUnauthorized, "AUTH_GOOGLE_STALE")
+
+		call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
+			"idToken": fresh(), "password": "not-" + guru.Password,
+		}).requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
+
+		linked := call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
+			"idToken": fresh(), "password": guru.Password,
 		})
 		require.Equal(t, http.StatusOK, linked.Status, "body %v", linked.Body)
-		require.Equal(t, false, linked.data("needsRegistration"))
 
-		// Existing password still works after Google link
-		require.Equal(t, http.StatusOK, loginAs(t, guru.Email, guru.Password, "GURU").Status)
+		call(t, http.MethodPost, "/api/v1/users/me/google", access, map[string]any{
+			"idToken": fresh(), "password": guru.Password,
+		}).requireError(t, http.StatusConflict, "GOOGLE_ALREADY_LINKED")
 
-		// Another sub claiming the same email is rejected
-		otherSubToken := signMockGoogleIDToken(t, jwt.MapClaims{
-			"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": "other-sub-" + suffix(),
-			"email": guru.Email, "email_verified": true, "exp": now.Add(10 * time.Minute).Unix(),
+		// signing in with Google now finds the account by its subject
+		signedIn := call(t, http.MethodPost, "/api/v1/auth/google", "", map[string]any{"idToken": fresh(), "role": "GURU"})
+		require.Equal(t, http.StatusOK, signedIn.Status, "body %v", signedIn.Body)
+		require.Equal(t, false, signedIn.data("needsRegistration"))
+
+		// unlinking needs the password and ends every session
+		call(t, http.MethodDelete, "/api/v1/users/me/google", access, map[string]any{
+			"password": "not-" + guru.Password,
+		}).requireError(t, http.StatusForbidden, "AUTH_PASSWORD_INCORRECT")
+
+		unlinked := call(t, http.MethodDelete, "/api/v1/users/me/google", access, map[string]any{"password": guru.Password})
+		require.Equal(t, http.StatusOK, unlinked.Status, "body %v", unlinked.Body)
+
+		call(t, http.MethodDelete, "/api/v1/users/me/google", loginAs(t, guru.Email, guru.Password, "GURU").data("token").(string), map[string]any{
+			"password": guru.Password,
+		}).requireError(t, http.StatusConflict, "GOOGLE_NOT_LINKED")
+	})
+
+	t.Run("a Google only account sets a password and deletes itself with a fresh token", func(t *testing.T) {
+		sub := "only-sub-" + suffix()
+		email := "only-" + suffix() + "@example.test"
+		token := func() string {
+			return signMockGoogleIDToken(t, jwt.MapClaims{
+				"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": sub, "name": "Only Google",
+				"email": email, "email_verified": true, "iat": time.Now().Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+			})
+		}
+
+		registered := call(t, http.MethodPost, "/api/v1/auth/google/register", "", map[string]any{
+			"idToken": token(), "fullName": "Only Google", "role": "GURU",
+			"class": map[string]any{"name": "Anggrek", "gradeLevel": "Class B"},
 		})
-		call(t, http.MethodPost, "/api/v1/auth/google", "", map[string]any{
-			"idToken": otherSubToken, "role": "GURU",
-		}).requireError(t, http.StatusUnauthorized, "AUTH_GOOGLE_INVALID")
+		require.Equal(t, http.StatusCreated, registered.Status, "body %v", registered.Body)
+
+		access := registered.data("token").(string)
+		call(t, http.MethodPut, "/api/v1/users/me/password", access, map[string]any{
+			"currentPassword": "anything-" + suffix(), "newPassword": "Brand-new-" + suffix(),
+		}).requireError(t, http.StatusConflict, "AUTH_PASSWORD_NOT_SET")
+
+		set := call(t, http.MethodPost, "/api/v1/users/me/password", access, map[string]any{
+			"idToken": token(), "newPassword": "Brand-new-" + suffix(),
+		})
+		require.Equal(t, http.StatusOK, set.Status, "body %v", set.Body)
+
+		// a second go answers that the account has a password now
+		call(t, http.MethodPost, "/api/v1/users/me/password", access, map[string]any{
+			"idToken": token(), "newPassword": "Brand-new-" + suffix(),
+		}).requireError(t, http.StatusConflict, "AUTH_PASSWORD_ALREADY_SET")
+	})
+
+	t.Run("a Google only account confirms its deletion with a fresh token", func(t *testing.T) {
+		sub := "gone-sub-" + suffix()
+		token := func(issued time.Time) string {
+			return signMockGoogleIDToken(t, jwt.MapClaims{
+				"iss": "https://accounts.google.com", "aud": testGoogleClientID, "sub": sub, "name": "Gone Google",
+				"email": "gone-" + suffix() + "@example.test", "email_verified": true, "iat": issued.Unix(), "exp": now.Add(10 * time.Minute).Unix(),
+			})
+		}
+
+		registered := call(t, http.MethodPost, "/api/v1/auth/google/register", "", map[string]any{
+			"idToken": token(time.Now()), "fullName": "Gone Google", "role": "GURU",
+			"class": map[string]any{"name": "Anggrek", "gradeLevel": "Class B"},
+		})
+		require.Equal(t, http.StatusCreated, registered.Status, "body %v", registered.Body)
+
+		access := registered.data("token").(string)
+
+		call(t, http.MethodDelete, "/api/v1/users/me", access, map[string]any{
+			"idToken": token(time.Now().Add(-time.Hour)),
+		}).requireError(t, http.StatusUnauthorized, "AUTH_GOOGLE_STALE")
+
+		deleted := call(t, http.MethodDelete, "/api/v1/users/me", access, map[string]any{"idToken": token(time.Now())})
+		require.Equal(t, http.StatusOK, deleted.Status, "body %v", deleted.Body)
 	})
 }

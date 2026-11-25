@@ -44,6 +44,20 @@ type Claims struct {
 	EmailVerified bool
 	FullName      string
 	AvatarURL     string
+	// IssuedAt is when Google issued the token, and a sensitive action only accepts a token that was issued a moment ago
+	IssuedAt time.Time
+}
+
+// maxClockSkew is how far into the future the issue time of a token may be, for a clock that runs a little fast
+const maxClockSkew = 30 * time.Second
+
+// FreshWithin tells whether Google issued the token no longer than window ago. A token that has no issue time is never fresh.
+func (c Claims) FreshWithin(now time.Time, window time.Duration) bool {
+	if c.IssuedAt.IsZero() || c.IssuedAt.After(now.Add(maxClockSkew)) {
+		return false
+	}
+
+	return now.Sub(c.IssuedAt) <= window
 }
 
 // Verifier verifies a raw Google OIDC ID token and returns the verified user claims.
@@ -216,7 +230,16 @@ func (c *JWKSClient) Verify(ctx context.Context, idToken string) (Claims, error)
 		EmailVerified: true,
 		FullName:      strings.TrimSpace(claims.Name),
 		AvatarURL:     strings.TrimSpace(claims.Picture),
+		IssuedAt:      issuedAt(claims.IssuedAt),
 	}, nil
+}
+
+func issuedAt(at *jwt.NumericDate) time.Time {
+	if at == nil {
+		return time.Time{}
+	}
+
+	return at.Time
 }
 
 func isGoogleIssuer(issuer string) bool {
@@ -273,6 +296,14 @@ func (c *JWKSClient) refreshKeys(ctx context.Context, neededKID string) (map[str
 
 	fetched, ttl, err := c.fetchJWKS(ctx)
 	if err != nil {
+		// Google rotates its keys rarely, so a key that is already known still checks tokens while the fetch is down. The wait
+		// before the next fetch keeps a slow answer of Google from holding the lock for every sign in.
+		if key := c.keys[neededKID]; key != nil {
+			c.expiresAt = now.Add(minRefreshInterval)
+
+			return c.keys, nil
+		}
+
 		return nil, err
 	}
 

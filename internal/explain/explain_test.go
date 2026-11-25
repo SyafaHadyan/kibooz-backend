@@ -547,9 +547,6 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 
 		return drop(auth.CreateWali(ctx, user, parentRow, "00000002", student, session2(user.ID, "register-wali")))
 	})
-	call("auth, link a google sub", func(ctx context.Context) error {
-		return auth.LinkGoogleSub(ctx, teacher, "explain-google-sub")
-	})
 	call("parent, add a child", func(ctx context.Context) error {
 		return drop(waliRepo.AddChild(ctx, wali, "00000002", &entity.Student{ID: addedChild, NISN: "9000000002", FullName: "Explain Second"}, 10))
 	})
@@ -722,6 +719,12 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return okOnly(found, err)
 	})
 	call("user, change the password", func(ctx context.Context) error { return okOnly(userRepo.UpdatePassword(ctx, parent, "x", "y")) })
+	call("user, link a google sub", func(ctx context.Context) error {
+		return okOnly(userRepo.LinkGoogleSub(ctx, teacher, "explain-google-sub", "x"))
+	})
+	call("user, unlink a google sub", func(ctx context.Context) error {
+		return okOnly(userRepo.UnlinkGoogleSub(ctx, teacher, "explain-google-sub", "x"))
+	})
 	call("user, take files off the cleanup queue", func(ctx context.Context) error {
 		return userRepo.UnqueueFileCleanups(ctx, []string{"old/1.jpg", "old/2.jpg", "old/3.jpg"})
 	})

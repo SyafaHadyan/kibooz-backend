@@ -90,7 +90,7 @@ func TestGoogleLoginFlowAndErrors(t *testing.T) {
 		require.Equal(t, "AUTH_ROLE_MISMATCH", apperror.As(mismatchErr).Code)
 	})
 
-	t.Run("existing email without google sub links on verified google login", func(t *testing.T) {
+	t.Run("existing email without google sub is never linked by email", func(t *testing.T) {
 		user := accountWith(t, "passphrase-"+uuid.NewString())
 		user.Role = constants.RoleWali
 		user.GoogleSub = nil
@@ -104,10 +104,9 @@ func TestGoogleLoginFlowAndErrors(t *testing.T) {
 		res, err := useCase.GoogleLogin(context.Background(), dto.GoogleLoginRequest{
 			IDToken: testGoogleCredential(), Role: constants.RoleWali,
 		})
-		require.NoError(t, err)
-		require.False(t, res.NeedsRegistration)
-		require.NotNil(t, repo.user.GoogleSub)
-		require.Equal(t, "new-sub-42", *repo.user.GoogleSub)
+		require.Equal(t, "AUTH_ACCOUNT_EXISTS", apperror.As(err).Code)
+		require.Empty(t, res.Token)
+		require.Nil(t, repo.user.GoogleSub)
 	})
 
 	t.Run("unknown user triggers onboarding response without creating account", func(t *testing.T) {
@@ -134,7 +133,7 @@ func TestGoogleLoginFlowAndErrors(t *testing.T) {
 		require.Equal(t, "https://lh3.googleusercontent.com/a/photo", *res.GoogleProfile.AvatarURL)
 	})
 
-	t.Run("existing email bound to different google sub is refused", func(t *testing.T) {
+	t.Run("email of an account that is bound to a different google sub is refused", func(t *testing.T) {
 		otherSub := "original-sub"
 		user := accountWith(t, "passphrase-"+uuid.NewString())
 		user.Role = constants.RoleWali
@@ -158,7 +157,7 @@ func TestGoogleLoginFlowAndErrors(t *testing.T) {
 		_, err := useCase.GoogleLogin(context.Background(), dto.GoogleLoginRequest{
 			IDToken: testGoogleCredential(), Role: constants.RoleWali,
 		})
-		require.Equal(t, "AUTH_GOOGLE_INVALID", apperror.As(err).Code)
+		require.Equal(t, "AUTH_ACCOUNT_EXISTS", apperror.As(err).Code)
 	})
 
 	t.Run("verifier errors map to clear status codes", func(t *testing.T) {
