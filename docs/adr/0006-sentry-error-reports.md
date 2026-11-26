@@ -4,7 +4,7 @@ Status: Accepted, 2026-10-21
 
 ## Context
 
-Grafana shows that the API is unhealthy, and the JSON logs hold each failure, but nobody is told about a new kind of error, and the same error is not grouped across requests with its stack. Sentry does both. The project `kibooz-api` lives in the organization `syafa` in the EU data region.
+Grafana shows that the API is unhealthy, and the JSON logs hold each failure, but nobody is told about a new kind of error, and the same error is not grouped across requests with its stack. Sentry does both. The project `kibooz-backend`, named `kibooz-api` until 2026-11-27, lives in the organization `syafa` in the EU data region.
 
 The messages are about children and their parents, so what leaves the server has to be decided on purpose. A database error text can carry the values of a row, for example `Key (email)=(a@b.c) already exists`, so the safe default is to send little and to scrub what is sent. The plan is the free one after the trial, with 5000 errors a month. A limit for each client key is a feature of the Business plan, so it is not there. Spike protection of the organization is on, and it only works at the level of Sentry.
 
