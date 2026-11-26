@@ -25,7 +25,7 @@ body:
     attributes:
       label: Version
       description: The release, image tag or commit you ran.
-      placeholder: 0.3.0, ghcr.io/syafahadyan/kibooz-backend:0.3.0 or a commit SHA
+      placeholder: 0.3.0, ghcr.io/kiboozapp/kibooz-backend:0.3.0 or a commit SHA
     validations:
       required: true
   - type: input
