@@ -534,7 +534,7 @@ func (u *AuthUseCase) ResendVerification(ctx context.Context, req dto.ResendVeri
 // is an error with the time to wait. A mail that did not go out is not an error, the result says so, because the code is stored
 // and the caller decides what that means for its own answer.
 func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) (bool, error) {
-	sent, _, err := u.issue(ctx, user)
+	sent, _, err := u.issue(ctx, user, false)
 
 	return sent, err
 }
@@ -552,7 +552,10 @@ func (u *AuthUseCase) RetryVerification(ctx context.Context, userID uuid.UUID) e
 		return u.repo.ClearMailRetry(ctx, userID)
 	}
 
-	_, mailErr, err := u.issue(ctx, user)
+	_, mailErr, err := u.issue(ctx, user, true)
+	if errors.Is(err, repository.ErrNoRetry) {
+		return nil
+	}
 
 	var refusal *apperror.Error
 	if errors.As(err, &refusal) {
@@ -570,15 +573,17 @@ func (u *AuthUseCase) RetryVerification(ctx context.Context, userID uuid.UUID) e
 		return err
 	}
 
-	if errors.Is(mailErr, mailer.ErrQuota) {
-		return mailer.ErrQuota
+	for _, refusal := range []error{mailer.ErrQuota, mailer.ErrRateLimit} {
+		if errors.Is(mailErr, refusal) {
+			return refusal
+		}
 	}
 
 	return nil
 }
 
 // issue is issueVerification with the error of the mail service, which the caller may need to tell a quota from another failure
-func (u *AuthUseCase) issue(ctx context.Context, user *entity.User) (sent bool, mailErr error, err error) {
+func (u *AuthUseCase) issue(ctx context.Context, user *entity.User, retry bool) (sent bool, mailErr error, err error) {
 	code, err := newVerificationCode()
 	if err != nil {
 		return false, nil, apperror.Internal(err)
@@ -587,11 +592,15 @@ func (u *AuthUseCase) issue(ctx context.Context, user *entity.User) (sent bool, 
 	codeHash := u.codeHash(user.ID, code)
 
 	wait, err := u.repo.StoreVerification(ctx, user.ID, codeHash, u.now(), repository.SendRule{
-		TTL:      constants.EmailCodeTTLMinutes * time.Minute,
-		Cooldown: constants.EmailResendCooldownSeconds * time.Second,
-		PerHour:  constants.EmailSendsPerHour,
-		MaxTotal: u.cfg.EmailCodesMaxPerAccount,
+		TTL:       constants.EmailCodeTTLMinutes * time.Minute,
+		Cooldown:  constants.EmailResendCooldownSeconds * time.Second,
+		PerHour:   constants.EmailSendsPerHour,
+		MaxTotal:  u.cfg.EmailCodesMaxPerAccount,
+		OnlyRetry: retry,
 	})
+	if errors.Is(err, repository.ErrNoRetry) {
+		return false, nil, err
+	}
 	if errors.Is(err, repository.ErrCodeLimit) {
 		return false, nil, apperror.ErrCodeLimitReached
 	}
@@ -625,9 +634,13 @@ func (u *AuthUseCase) issue(ctx context.Context, user *entity.User) (sent bool, 
 			log.Printf("verification send was not given back %v", releaseErr)
 		}
 
-		// a mail that failed is tried again, except when no key is set, which no retry can mend
+		// a mail that failed is tried again, except when no key is set, which no retry can mend. It has a context of its own, so a
+		// slow release does not lose the retry.
 		if !errors.Is(err, mailer.ErrDisabled) {
-			markErr := u.repo.MarkMailFailed(releaseCtx, user.ID, codeHash, u.now())
+			markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+			defer cancelMark()
+
+			markErr := u.repo.MarkMailFailed(markCtx, user.ID, codeHash, u.now())
 			if markErr != nil {
 				log.Printf("verification mail retry was not scheduled %v", markErr)
 			}

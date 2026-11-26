@@ -278,6 +278,22 @@ func TestRetryVerification(t *testing.T) {
 		require.Equal(t, 2, repo.markedFailed, "both failures are scheduled again")
 	})
 
+	t.Run("a retry that is not wanted any more mails nothing", func(t *testing.T) {
+		repo, mail := &fakeRepo{storeErr: repository.ErrNoRetry}, &fakeMail{}
+		user := pendingAccount(t, repo)
+
+		require.NoError(t, buildVerifying(repo, mail, true).RetryVerification(ctx, user.ID))
+		require.Empty(t, mail.codes)
+	})
+
+	t.Run("an answer about the rate is handed back", func(t *testing.T) {
+		repo := &fakeRepo{}
+		user := pendingAccount(t, repo)
+
+		err := buildVerifying(repo, failingMail(mailer.ErrRateLimit), true).RetryVerification(ctx, user.ID)
+		require.ErrorIs(t, err, mailer.ErrRateLimit)
+	})
+
 	t.Run("a failed lookup is an error", func(t *testing.T) {
 		repo := &fakeRepo{findErr: errors.New("database is down")}
 

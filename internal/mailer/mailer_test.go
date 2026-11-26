@@ -130,4 +130,9 @@ func TestAQuotaAnswerIsToldApartFromOtherFailures(t *testing.T) {
 	err = sender(other.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, mailer.ErrQuota)
+	rate, _ := resendServer(t, http.StatusTooManyRequests, `{"name":"rate_limit_exceeded","message":"Too many requests"}`)
+
+	err = sender(rate.URL, "re_secretvalue").SendVerificationCode(context.Background(), "a@example.com", "123456", 15)
+	require.ErrorIs(t, err, mailer.ErrRateLimit)
+	require.NotErrorIs(t, err, mailer.ErrQuota)
 }

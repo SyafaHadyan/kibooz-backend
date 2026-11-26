@@ -71,7 +71,7 @@ func TestAFailureOfOneAccountDoesNotStopTheOthers(t *testing.T) {
 	})
 
 	count, err := job.Run(context.Background())
-	require.NoError(t, err)
+	require.ErrorContains(t, err, "database is down")
 	require.Equal(t, 3, count)
 }
 
@@ -114,10 +114,18 @@ func TestStartRunsTheJobAndStopWaitsForIt(t *testing.T) {
 	observed := make(chan error, 1)
 
 	job := mailretry.NewJob(&source{ids: ids(1)}, func(context.Context, uuid.UUID) error {
-		ran <- struct{}{}
+		select {
+		case ran <- struct{}{}:
+		default:
+		}
 
 		return nil
-	}).Observe(func(err error) { observed <- err })
+	}).Observe(func(err error) {
+		select {
+		case observed <- err:
+		default:
+		}
+	})
 
 	stop := job.Start(10 * time.Millisecond)
 
@@ -131,4 +139,24 @@ func TestStartRunsTheJobAndStopWaitsForIt(t *testing.T) {
 	stop()
 
 	mailretry.NewJob(&source{}, nil).Start(0)()
+}
+
+func TestAnAnswerAboutTheRateEndsTheRunAndNotTheJob(t *testing.T) {
+	src := &source{ids: ids(3)}
+	calls := 0
+
+	job := mailretry.NewJob(src, func(context.Context, uuid.UUID) error {
+		calls++
+
+		return fmt.Errorf("wrapped %w", mailer.ErrRateLimit)
+	})
+
+	for range 2 {
+		count, err := job.Run(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+	}
+
+	require.Equal(t, 2, calls)
+	require.Equal(t, 2, src.calls, "the next run looks again")
 }

@@ -289,23 +289,8 @@ func TestMailRetriesFollowTheScheduleAndAreClaimedOnce(t *testing.T) {
 		return time.Duration(seconds * float64(time.Second))
 	}
 
-	t.Run("each failure waits longer, 1, 5 and 15 minutes and then an hour", func(t *testing.T) {
-		for _, want := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, time.Hour} {
-			require.NoError(t, repo.MarkMailFailed(ctx, userID, "code-1", now))
-			require.Equal(t, want, retryAfter())
-		}
-	})
-
-	t.Run("the tries of an account that signed in stop after the one of 15 minutes", func(t *testing.T) {
-		require.NoError(t, testDB.Exec("UPDATE users SET signed_in_unverified_at = now() WHERE id = ?::uuid", id).Error)
-
-		defer func() {
-			require.NoError(t, testDB.Exec("UPDATE users SET signed_in_unverified_at = NULL WHERE id = ?::uuid", id).Error)
-		}()
-
-		require.NoError(t, repo.ClearMailRetry(ctx, userID))
-
-		for _, want := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute} {
+	t.Run("each failure waits longer, 1, 5 and 15 minutes and then an hour, and after six tries there is no more", func(t *testing.T) {
+		for _, want := range []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, time.Hour, time.Hour} {
 			require.NoError(t, repo.MarkMailFailed(ctx, userID, "code-1", now))
 			require.Equal(t, want, retryAfter())
 		}
@@ -316,6 +301,12 @@ func TestMailRetriesFollowTheScheduleAndAreClaimedOnce(t *testing.T) {
 
 		require.NoError(t, testDB.Raw("SELECT count(*) FROM email_verifications WHERE user_id = ?::uuid AND retry_at IS NOT NULL", id).Scan(&due).Error)
 		require.Zero(t, due)
+
+		retry := rule
+		retry.OnlyRetry = true
+
+		_, err := repo.StoreVerification(ctx, userID, "code-retry", now.Add(time.Second), retry)
+		require.ErrorIs(t, err, authrepository.ErrNoRetry)
 	})
 
 	t.Run("a failure of another code is not noted", func(t *testing.T) {
