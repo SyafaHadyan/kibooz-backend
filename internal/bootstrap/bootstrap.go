@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	authhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/interface/rest"
+	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/mailretry"
+	pendingsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/pending"
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	authusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
 	chathandler "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/interface/rest"
@@ -24,6 +27,10 @@ import (
 	guruhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/interface/rest"
 	gurure "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
 	guruusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/guru/usecase"
+	notificationhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/interface/rest"
+	notificationrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
+	notificationsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/sweep"
+	notificationusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/notification/usecase"
 	pushhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/push/interface/rest"
 	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
 	pushusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/push/usecase"
@@ -40,6 +47,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -49,8 +57,10 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
+	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
 	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
 	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
 	"github.com/SyafaHadyan/kibooz-backend/internal/push"
 	"github.com/SyafaHadyan/kibooz-backend/internal/season"
 	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
@@ -64,11 +74,15 @@ type Bootstrap struct {
 	Database *gorm.DB
 	Redis    *redis.Redis
 
+	authUseCase   authusecase.AuthUseCaseItf
 	stopKeepalive func()
 	stopCleanup   func()
 	stopSeason    func()
 	stopKeys      func()
 	stopTokens    func()
+	stopNotifs    func()
+	stopPending   func()
+	stopMailRetry func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -162,21 +176,64 @@ func Start(version string) (*Bootstrap, error) {
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
 
-	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authusecase.NewAuthUseCase(
-		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher,
-	))
-	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliusecase.NewWaliUseCase(
+	authRepo := authrepository.NewAuthDB(database)
+	userRepo := userrepository.NewUserDB(database)
+
+	removePending := func(ctx context.Context, account authrepository.PendingAccount, before time.Time) error {
+		deleted, err := userRepo.SoftDeletePendingAccount(ctx, account.ID, account.Role, before)
+		if errors.Is(err, userrepository.ErrNotPending) {
+			// it was verified, signed in or removed meanwhile, which leaves nothing to do
+			return nil
+		}
+
+		// a parent comes with a child, so the cached ranking of the class is stale
+		for _, classID := range deleted.ClassIDs {
+			_ = cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+		}
+
+		return err
+	}
+
+	authUseCase := authusecase.NewAuthUseCase(
+		authRepo, jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)), authusecase.WithAccountRemover(removePending),
+	)
+
+	for _, collector := range authUseCase.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register verification mail metrics: %w", err)
+		}
+	}
+
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), app.GoogleTokenLimiter(), authUseCase)
+	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
+
+	for _, collector := range notifUC.Collectors() {
+		err = stats.Registry().Register(collector)
+		if err != nil {
+			return nil, fmt.Errorf("register notification metrics: %w", err)
+		}
+	}
+
+	notificationhandler.NewNotificationHandler(app.Router, mw, notifUC)
+
+	waliUC := waliusecase.NewWaliUseCase(
 		walirepository.NewWaliDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
-	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruusecase.NewGuruUseCase(
+	)
+	guruUC := guruusecase.NewGuruUseCase(
 		gurure.NewGuruDB(database, filecleanup.OwnFiles(storage, constants.AvatarDirectory, constants.TrashDirectory)), cache, cfg,
-	))
+	)
+	classroomUC := classroomusecase.NewClassroomUseCase(
+		classroomrepository.NewClassroomDB(database), retrying, cfg,
+	)
+	attachNotifier(notifUC, waliUC, guruUC, classroomUC)
+
+	walihandler.NewWaliHandler(app.Router, mw, app.ClassCodeLimiter(), waliUC)
+	guruhandler.NewGuruHandler(app.Router, mw, app.MoodBatchLimiter(middleware.UserKey), guruUC)
 	trashhandler.NewTrashHandler(app.Router, mw, trashusecase.NewTrashUseCase(
 		trashrepository.NewTrashDB(database), cache, retrying, cfg,
 	))
-	classroomhandler.NewClassroomHandler(app.Router, mw, classroomusecase.NewClassroomUseCase(
-		classroomrepository.NewClassroomDB(database), retrying, cfg,
-	))
+	classroomhandler.NewClassroomHandler(app.Router, mw, classroomUC)
 	// the hub delivers chat events to the sockets of this copy, and to the other copies over Redis, which is only a shortcut
 	hub := chatlive.NewHub(chatlive.Config{
 		MaxSockets: cfg.ChatMaxSockets, MaxPerUser: cfg.ChatMaxSocketsPerUser, Bus: chatlive.NewRedisBus(cache),
@@ -238,8 +295,8 @@ func Start(version string) (*Bootstrap, error) {
 	chathandler.NewChatHandler(
 		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), retryingPrivate, cfg, hub, pusher), hub, cfg,
 	)
-	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), retrying, cache, hasher,
+	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), app.GoogleTokenLimiter(), mw, userusecase.NewUserUseCase(
+		userRepo, retrying, cache, hasher, userusecase.WithGoogleVerifier(authUseCase.GoogleVerifier()),
 	))
 
 	stats.AllowRoutes(app.Fiber.GetRoutes())
@@ -278,6 +335,19 @@ func Start(version string) (*Bootstrap, error) {
 	stopTokens := sessions.NewSweeper(database, time.Duration(cfg.JWTSessionMaxDays)*24*time.Hour).
 		Observe(stats.Job("refresh_token_purge")).Start(sessions.Interval)
 
+	stopNotifs := notificationsweep.NewSweeper(database).
+		Observe(stats.Job("notification_purge")).Start(notificationsweep.Interval)
+
+	// accounts that wait for a code can sign in while the verification is off, so nothing may remove them then
+	stopPending, stopMailRetry := func() {}, func() {}
+	if cfg.EmailVerificationRequired {
+		stopMailRetry = mailretry.NewJob(authRepo, authUseCase.RetryVerification).
+			Observe(stats.Job("verification_mail_retry")).Start(mailretry.Interval)
+
+		stopPending = pendingsweep.NewSweeper(authRepo, removePending).
+			Observe(stats.Job("pending_account_purge")).Start(pendingsweep.Interval)
+	}
+
 	stopCleanup := func() {}
 	if storage.Enabled() {
 		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
@@ -292,9 +362,16 @@ func Start(version string) (*Bootstrap, error) {
 	})
 
 	return &Bootstrap{
-		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopPending: stopPending, stopMailRetry: stopMailRetry, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
+}
+
+// SetGoogleVerifier replaces the active Google ID token verifier at runtime (intended for tests).
+func (b *Bootstrap) SetGoogleVerifier(verifier googleauth.Verifier) {
+	if b.authUseCase != nil {
+		b.authUseCase.SetGoogleVerifier(verifier)
+	}
 }
 
 // Close stops the keepalive, then releases the database and Redis connections
@@ -306,6 +383,9 @@ func (b *Bootstrap) Close() {
 	b.stopSeason()
 	b.stopKeys()
 	b.stopTokens()
+	b.stopNotifs()
+	b.stopPending()
+	b.stopMailRetry()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()
@@ -317,6 +397,18 @@ func (b *Bootstrap) Close() {
 	_ = b.Redis.Close()
 
 	b.stopReports()
+}
+
+type notifierSetter interface {
+	SetNotifier(n notifier.Notifier)
+}
+
+func attachNotifier(n notifier.Notifier, targets ...any) {
+	for _, target := range targets {
+		if s, ok := target.(notifierSetter); ok {
+			s.SetNotifier(n)
+		}
+	}
 }
 
 type pinger func(ctx context.Context) error

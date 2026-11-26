@@ -16,6 +16,8 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/imageutil"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
@@ -25,6 +27,9 @@ import (
 
 const (
 	bcryptMaxBytes = 72
+
+	// freshGoogleWindow is how old the Google token of an action that changes how the account signs in may be
+	freshGoogleWindow = 5 * time.Minute
 
 	// a parent can have many trash photos, so the files of a deleted account are removed a few at a time
 	discardConcurrency = 8
@@ -38,6 +43,13 @@ type UserUseCaseItf interface {
 	// ChangePassword swaps the password of the caller after checking the current one and ends every session, so each
 	// device has to sign in again with the new password.
 	ChangePassword(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.ChangePasswordRequest) error
+	// SetPassword gives an account that signs in with Google its first password, after a fresh token of its Google account, and ends
+	// every session
+	SetPassword(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.SetPasswordRequest) error
+	// LinkGoogle adds a Google account to an account that has none, after the password and a fresh token of that Google account
+	LinkGoogle(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.LinkGoogleRequest) error
+	// UnlinkGoogle removes the Google account of an account that has a password, after the password, and ends every session
+	UnlinkGoogle(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.UnlinkGoogleRequest) error
 }
 
 type UserUseCase struct {
@@ -46,10 +58,29 @@ type UserUseCase struct {
 	cache   redis.CacheItf
 	// hasher is shared with the other use cases, because its slots are the budget of the whole process
 	hasher *passwords.Hasher
+	// google checks the tokens of the actions that need a fresh Google sign in, and is nil when Google Sign-In is not set up
+	google googleauth.Verifier
+	now    func() time.Time
 }
 
-func NewUserUseCase(repo repository.UserDBItf, storage s3.StorageItf, cache redis.CacheItf, hasher *passwords.Hasher) UserUseCaseItf {
-	return &UserUseCase{repo: repo, storage: storage, cache: cache, hasher: hasher}
+// Option changes how the use case is built
+type Option func(*UserUseCase)
+
+// WithGoogleVerifier sets what checks the Google tokens of the actions that need one
+func WithGoogleVerifier(verifier googleauth.Verifier) Option {
+	return func(u *UserUseCase) { u.google = verifier }
+}
+
+func NewUserUseCase(
+	repo repository.UserDBItf, storage s3.StorageItf, cache redis.CacheItf, hasher *passwords.Hasher, options ...Option,
+) UserUseCaseItf {
+	u := &UserUseCase{repo: repo, storage: storage, cache: cache, hasher: hasher, now: time.Now}
+
+	for _, option := range options {
+		option(u)
+	}
+
+	return u
 }
 
 func (u *UserUseCase) UploadAvatar(
@@ -228,19 +259,9 @@ func (u *UserUseCase) DeleteAccount(
 		return apperror.ErrForbidden
 	}
 
-	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
-	if len([]byte(req.Password)) > bcryptMaxBytes {
-		return apperror.ErrPasswordIncorrect
-	}
-
-	matches, err := u.hasher.Matches(ctx, user.PasswordHash, req.Password)
+	err = u.confirmDeletion(ctx, user, req)
 	if err != nil {
-		// the server is busy hashing, or the request ended
-		return apperror.As(err)
-	}
-
-	if !matches {
-		return apperror.ErrPasswordIncorrect
+		return err
 	}
 
 	// a refusal such as SUCCESSOR_REQUIRED is an answer for the caller, anything else is a failure
@@ -278,6 +299,10 @@ func (u *UserUseCase) ChangePassword(
 
 	if user.Role != role {
 		return apperror.ErrForbidden
+	}
+
+	if !strings.HasPrefix(user.PasswordHash, "$2") {
+		return apperror.ErrPasswordNotSet
 	}
 
 	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
@@ -407,4 +432,231 @@ func inDirectory(key string, directories ...constants.StorageDirectory) bool {
 	}
 
 	return false
+}
+
+// hasPassword tells whether the account has a password, an account that signs in with Google only has a placeholder that is no hash
+func hasPassword(user *entity.User) bool {
+	return strings.HasPrefix(user.PasswordHash, "$2")
+}
+
+// confirmDeletion asks an account that has a password for it, and an account that signs in with Google only for a fresh token of
+// its Google account, because there is no password to ask for
+func (u *UserUseCase) confirmDeletion(ctx context.Context, user *entity.User, req dto.DeleteAccountRequest) error {
+	if !hasPassword(user) {
+		if strings.TrimSpace(req.IDToken) == "" {
+			return apperror.Validation(map[string]string{"idToken": "is required"})
+		}
+
+		return u.confirmGoogle(ctx, user, req.IDToken)
+	}
+
+	if req.Password == "" {
+		return apperror.Validation(map[string]string{"password": "is required"})
+	}
+
+	return u.confirmPassword(ctx, user, req.Password)
+}
+
+// confirmPassword checks the password of the account
+func (u *UserUseCase) confirmPassword(ctx context.Context, user *entity.User, password string) error {
+	// bcrypt only reads the first 72 bytes, so a longer password could match a shorter one that shares them
+	if len([]byte(password)) > bcryptMaxBytes {
+		return apperror.ErrPasswordIncorrect
+	}
+
+	matches, err := u.hasher.Matches(ctx, user.PasswordHash, password)
+	if err != nil {
+		// the server is busy hashing, or the request ended
+		return apperror.As(err)
+	}
+
+	if !matches {
+		return apperror.ErrPasswordIncorrect
+	}
+
+	return nil
+}
+
+// confirmGoogle checks that the token is a fresh one of the Google account that is linked to the account
+func (u *UserUseCase) confirmGoogle(ctx context.Context, user *entity.User, idToken string) error {
+	if user.GoogleSub == nil {
+		return apperror.ErrGoogleNotLinked
+	}
+
+	claims, err := u.freshGoogleClaims(ctx, idToken)
+	if err != nil {
+		return err
+	}
+
+	if claims.Subject != *user.GoogleSub {
+		return apperror.ErrGoogleInvalid
+	}
+
+	return nil
+}
+
+// freshGoogleClaims verifies the token and refuses one that Google issued more than five minutes ago, so a token that was seen once
+// cannot be used later for an action that changes how the account signs in
+func (u *UserUseCase) freshGoogleClaims(ctx context.Context, idToken string) (googleauth.Claims, error) {
+	if u.google == nil {
+		return googleauth.Claims{}, apperror.ErrGoogleUnavailable
+	}
+
+	claims, err := u.google.Verify(ctx, strings.TrimSpace(idToken))
+	if err != nil {
+		switch {
+		case errors.Is(err, googleauth.ErrNotConfigured):
+			return googleauth.Claims{}, apperror.ErrGoogleUnavailable
+		case errors.Is(err, googleauth.ErrInvalidToken):
+			return googleauth.Claims{}, apperror.ErrGoogleInvalid
+		default:
+			return googleauth.Claims{}, apperror.ErrGoogleUnavailable.WithErr(err)
+		}
+	}
+
+	if !claims.FreshWithin(u.now(), freshGoogleWindow) {
+		return googleauth.Claims{}, apperror.ErrGoogleStale
+	}
+
+	return claims, nil
+}
+
+func (u *UserUseCase) SetPassword(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.SetPasswordRequest) error {
+	user, err := u.findOwn(ctx, userID, role)
+	if err != nil {
+		return err
+	}
+
+	if hasPassword(user) {
+		return apperror.ErrPasswordAlreadySet
+	}
+
+	err = u.confirmGoogle(ctx, user, req.IDToken)
+	if err != nil {
+		return err
+	}
+
+	if len([]byte(req.NewPassword)) > bcryptMaxBytes {
+		//nolint:gosec // this is a validation message and not a credential
+		return apperror.Validation(map[string]string{"newPassword": "too long, maximum 72 bytes"})
+	}
+
+	identities := []string{user.Email, user.FullName}
+	if user.PhoneNumber != nil {
+		identities = append(identities, *user.PhoneNumber)
+	}
+
+	if validation.ContainsIdentity(req.NewPassword, identities...) {
+		return apperror.Validation(map[string]string{"newPassword": validation.OwnDetailsMessage})
+	}
+
+	hash, err := u.hasher.Hash(ctx, req.NewPassword)
+	if err != nil {
+		return apperror.As(err)
+	}
+
+	// the stored value is the placeholder that was read, so a password that was set in between is not overwritten
+	changed, err := u.repo.UpdatePassword(ctx, userID, user.PasswordHash, hash)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !changed {
+		return apperror.ErrPasswordAlreadySet
+	}
+
+	return nil
+}
+
+func (u *UserUseCase) LinkGoogle(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.LinkGoogleRequest) error {
+	user, err := u.findOwn(ctx, userID, role)
+	if err != nil {
+		return err
+	}
+
+	if user.GoogleSub != nil {
+		return apperror.ErrGoogleAlreadyLinked
+	}
+
+	// an account without a password and without a link cannot exist, but a refusal is better than a link that nobody confirmed
+	if !hasPassword(user) {
+		return apperror.ErrPasswordNotSet
+	}
+
+	// the token is checked first, because that costs a signature check and the password costs a bcrypt slot
+	claims, err := u.freshGoogleClaims(ctx, req.IDToken)
+	if err != nil {
+		return err
+	}
+
+	err = u.confirmPassword(ctx, user, req.Password)
+	if err != nil {
+		return err
+	}
+
+	linked, err := u.repo.LinkGoogleSub(ctx, userID, claims.Subject, user.PasswordHash)
+	if err != nil {
+		var refusal *apperror.Error
+		if errors.As(err, &refusal) {
+			return refusal
+		}
+
+		return apperror.Internal(err)
+	}
+
+	if !linked {
+		return apperror.ErrGoogleAlreadyLinked
+	}
+
+	return nil
+}
+
+func (u *UserUseCase) UnlinkGoogle(ctx context.Context, userID uuid.UUID, role constants.Role, req dto.UnlinkGoogleRequest) error {
+	user, err := u.findOwn(ctx, userID, role)
+	if err != nil {
+		return err
+	}
+
+	if user.GoogleSub == nil {
+		return apperror.ErrGoogleNotLinked
+	}
+
+	// without a password the account would have no way in once the link is gone
+	if !hasPassword(user) {
+		return apperror.ErrPasswordNotSet
+	}
+
+	err = u.confirmPassword(ctx, user, req.Password)
+	if err != nil {
+		return err
+	}
+
+	unlinked, err := u.repo.UnlinkGoogleSub(ctx, userID, *user.GoogleSub, user.PasswordHash)
+	if err != nil {
+		return apperror.Internal(err)
+	}
+
+	if !unlinked {
+		return apperror.ErrGoogleNotLinked
+	}
+
+	return nil
+}
+
+// findOwn returns the account of the caller, or the error that the routes answer
+func (u *UserUseCase) findOwn(ctx context.Context, userID uuid.UUID, role constants.Role) (*entity.User, error) {
+	user, err := u.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		return nil, apperror.Internal(err)
+	}
+
+	if user == nil {
+		return nil, apperror.ErrProfileNotFound
+	}
+
+	if user.Role != role {
+		return nil, apperror.ErrForbidden
+	}
+
+	return user, nil
 }

@@ -103,6 +103,10 @@ func seedOtherTables(t *testing.T, database *gorm.DB, classes int, children int)
 			SELECT md5('class' || c)::uuid, md5('g' || c)::uuid, 'Video ' || v, 'https://files.example.test/videos/' || c || '-' || v || '.mp4',
 				now() - make_interval(mins => v)
 			FROM generate_series(1, ?::int) AS c, generate_series(1, 10) AS v`, []any{classes}},
+		{"modules", `INSERT INTO learning_modules (class_id, added_by_guru_id, meeting_number, title, status, scheduled_at, created_at, updated_at)
+			SELECT md5('class' || c)::uuid, md5('g' || c)::uuid, m, 'Module ' || m, 'upcoming',
+				now() + make_interval(days => m), now() - make_interval(mins => m), now() - make_interval(mins => m)
+			FROM generate_series(1, ?::int) AS c, generate_series(1, 10) AS m`, []any{classes}},
 		{"leaderboard seasons", `INSERT INTO leaderboard_seasons (label, started_at) VALUES
 			('2025-07', now() - interval '16 months'), ('2026-01', now() - interval '10 months') ON CONFLICT DO NOTHING`, nil},
 		{"leaderboard history", `INSERT INTO leaderboard_history (class_id, student_id, student_name, season_label, points, rank_position)
@@ -116,6 +120,9 @@ func seedOtherTables(t *testing.T, database *gorm.DB, classes int, children int)
 				CASE WHEN i % 5 = 0 THEN now() - interval '31 days' ELSE NULL END
 			FROM generate_series(1, ?::int) AS i`, []any{children}},
 		{"push tokens", `INSERT INTO push_tokens (user_id, token) SELECT md5('wali' || i)::uuid, md5('p' || i) || md5('q' || i)
+			FROM generate_series(1, ?::int) AS i`, []any{children}},
+		{"notifications", `INSERT INTO notifications (user_id, kind, title, body, created_at)
+			SELECT md5('wali' || i)::uuid, 'mood_logged', 'Daily mood recorded', 'Happy mood', now() - make_interval(mins => i % 60)
 			FROM generate_series(1, ?::int) AS i`, []any{children}},
 		{"reads of the other person", `INSERT INTO chat_reads (conversation_id, user_id, last_read_message_id)
 			SELECT c.id, c.user_high_id, 0 FROM chat_conversations AS c ON CONFLICT DO NOTHING`, nil},

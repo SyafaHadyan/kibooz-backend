@@ -84,7 +84,7 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `REQUEST_TIMEOUT_SECONDS` | `10` | Time a request may spend on the database, the cache and the storage before they are cancelled, it must be between 1 and 14, because a stop signal gives running requests 15 seconds and the API refuses to start with a longer timeout |
 | `CLASS_VIDEO_MAX_MB`, `VIDEO_UPLOAD_URL_SECONDS` | `100`, `900` | Largest video file a teacher may upload for a class, and how long the signed upload address works for the videos of a class and of the chat |
 | `USER_LIMITER_MAX`, `LIMITER_EXPIRATION_SECONDS` | `120`, `60` | Requests each signed-in user may send per window, in seconds |
-| `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, refresh and logout, and per user for deleting an account |
+| `AUTH_LIMITER_MAX` | `10` | Requests per account and window for login, register, the two routes of the email verification, refresh and logout, and per user for the routes that confirm the password (delete the account, change the password, link and unlink Google), and per Google token for Google sign in and registration |
 | `MOOD_BATCH_LIMITER_MAX` | `30` | Requests per user and window for `POST /guru/mood/log/batch`, on top of `USER_LIMITER_MAX`, at least 1 |
 | `CLASS_CODE_LIMITER_MAX` | `60` | Requests per window that name a class code, counted for each route (register and adding a child) and shared by every caller of that route, at least 1. It limits guessing a join code, so raise it only when many parents sign up at the same time |
 | `PASSWORD_HASH_CONCURRENCY`, `PASSWORD_HASH_WAIT_MILLISECONDS` | `0`, `1000` | How many passwords the server hashes or checks at the same time, and `0` means one for each CPU except one, with at least one. A request that finds every slot taken waits this many milliseconds, at least 1, and is then refused with `429` and a `Retry-After`, and one that cannot get a slot in that time by the length of the line is refused at once |
@@ -104,6 +104,10 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `JWT_SESSION_MAX_DAYS` | `90` | The longest a sign in can last, however often its refresh token is used. After that the user signs in again |
 | `DEVICE_TOKEN_TTL_DAYS` | `90` | How long the device token from login stays valid, at least 1. A device that sends it has its own login rate limit for the email |
 | `FIREBASE_CREDENTIALS_FILE` | empty | The key file of the Firebase service account, mounted read only into the container. With it a closed app is woken when a chat message arrives, without it no push is sent. The wake-up carries ids and no text, see [ADR 0013](docs/adr/0013-chat-push-notifications.md) |
+| `GOOGLE_CLIENT_IDS` | empty | The Google OAuth client ids, separated by commas, that a Google ID token may be made for. Empty switches Google Sign-In off, and its routes answer `503` |
+| `EMAIL_CODES_MAX_PER_ACCOUNT` | `20` | The most codes that are ever mailed to one account that waits for its code, at least 1 while the verification is required. An account that signed in while the verification was off has no cap. |
+| `EMAIL_VERIFICATION_REQUIRED` | `false` | With `true` a new account gets a 6 digit code by mail and cannot sign in before it sends the code back. Accounts that exist stay verified. It needs `RESEND_API_KEY`, and the server refuses to start without it. Turn it on only when the app has a screen for the code, see [Operations](docs/operations.md#email-verification) |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `RESEND_API_URL` | empty, `no-reply@mail.syafahadyan.com`, `https://api.resend.com` | The Resend key that sends the code, the sender address (its domain has to be verified in Resend, and the mail shows it as `Kibooz <address>`) and the address of the API. Only a test changes the address, and it has to be https or a loopback address |
 | `CHAT_MAX_SOCKETS`, `CHAT_MAX_SOCKETS_PER_USER` | `1000`, `5` | How many chat sockets one API copy holds and how many one account keeps open, see [Chat socket](docs/websocket.md) |
 | `UPLOAD_CONCURRENCY` | `4` | How many photo uploads (avatar, scan claim, chat photo) one API copy handles at the same time, at least 1. The next one is refused with `429`, the code `RATE_LIMITED` and `Retry-After: 1`. The body of a request is already in memory when the check runs, so it bounds the work after the body arrives and not the bodies themselves |
 | `UPLOAD_CONCURRENCY_PER_ACCOUNT` | `2` | How many of those uploads one account may have running in one API copy, at least 1, so a client that loops cannot take every slot from the others. The next upload of that account is refused with `429`, the code `RATE_LIMITED`, `Retry-After: 1` and a message that says a photo of the account is still being received |
@@ -154,7 +158,7 @@ internal/middleware/      authentication and role checks
 internal/e2e/             end to end tests
 ```
 
-Modules are `auth`, `wali`, `guru`, `classroom` (learning videos and the class forum), `chat` (conversations of a teacher and a parent, and the room of each class), `push` (the tokens of the installed apps), `trash` (claims and leaderboard) and `user` (avatars).
+Modules are `auth`, `wali`, `guru`, `classroom` (learning videos, learning modules and the class forum), `chat` (conversations of a teacher and a parent, and the room of each class), `push` (the tokens of the installed apps), `trash` (claims and leaderboard) and `user` (avatars).
 
 ## Contributing and security
 

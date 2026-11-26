@@ -21,13 +21,67 @@ type UserHandler struct {
 	useCase usecase.UserUseCaseItf
 }
 
-func NewUserHandler(router fiber.Router, passwordLimiter fiber.Handler, mw middleware.MiddlewareItf, useCase usecase.UserUseCaseItf) {
+func NewUserHandler(
+	router fiber.Router, passwordLimiter fiber.Handler, googleLimiter fiber.Handler, mw middleware.MiddlewareItf, useCase usecase.UserUseCaseItf,
+) {
 	handler := UserHandler{useCase: useCase}
 
 	router.Post("/users/avatar", mw.Authentication, mw.RequireRole(constants.RoleGuru, constants.RoleWali), mw.Upload(), handler.UploadAvatar)
 	// the password is checked here, so the same strict limit as the login route applies per user, and it needs the user to be known
 	router.Delete("/users/me", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.DeleteAccount)
 	router.Put("/users/me/password", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.ChangePassword)
+	// the first password of an account that signs in with Google, proved with a fresh token of that Google account
+	router.Post("/users/me/password", mw.Authentication, googleLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.SetPassword)
+	router.Post("/users/me/google", mw.Authentication, passwordLimiter, googleLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.LinkGoogle)
+	router.Delete("/users/me/google", mw.Authentication, passwordLimiter, mw.RequireRole(constants.RoleGuru, constants.RoleWali), handler.UnlinkGoogle)
+}
+
+func (h *UserHandler) SetPassword(c fiber.Ctx) error {
+	var req dto.SetPasswordRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.SetPassword(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Password set", nil)
+}
+
+func (h *UserHandler) LinkGoogle(c fiber.Ctx) error {
+	var req dto.LinkGoogleRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.LinkGoogle(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Google account linked", nil)
+}
+
+func (h *UserHandler) UnlinkGoogle(c fiber.Ctx) error {
+	var req dto.UnlinkGoogleRequest
+
+	err := validation.BindBody(c, &req)
+	if err != nil {
+		return err
+	}
+
+	err = h.useCase.UnlinkGoogle(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), req)
+	if err != nil {
+		return err
+	}
+
+	return response.JSON(c, http.StatusOK, "Google account unlinked", nil)
 }
 
 func (h *UserHandler) ChangePassword(c fiber.Ctx) error {

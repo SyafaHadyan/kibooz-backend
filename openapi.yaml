@@ -55,6 +55,8 @@ tags:
     description: Conversations between a teacher and a parent who share a class
   - name: Push
     description: The push tokens of the installed apps, which wake a closed chat app
+  - name: Notifications
+    description: In-app notifications for teachers and parents
   - name: Trash
     description: Claiming points and the leaderboard
   - name: Account
@@ -103,7 +105,10 @@ paths:
                     fullName: Ani
       responses:
         "201":
-          description: Registration successful
+          description: |
+            Registration successful. When the server requires the verification of the email (`EMAIL_VERIFICATION_REQUIRED`), the answer has
+            `verificationRequired: true`, empty `token` and `refreshToken`, and a `verification` object that says whether the code went out.
+            The account then cannot sign in before `POST /auth/verify-email` accepts the code, which also opens its first session.
           content:
             application/json:
               schema:
@@ -150,8 +155,205 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+        "403":
+          description: |
+            The password was right, but the account still waits for the code of its email (`EMAIL_NOT_VERIFIED`). Only a server that
+            requires the verification answers it. Send the code to `POST /auth/verify-email`, or ask for a new one with
+            `POST /auth/resend-verification`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Confirm the email of a new account with its code
+      description: |
+        The code is 6 digits, comes in the mail that registration sent and works for 15 minutes. The password of the account is checked
+        first and answers `401` like a login, so a stranger who knows only the email cannot use up the tries. A code takes 5 wrong tries,
+        and then it is refused even when it is right, until a new one is sent. A wrong, expired and used up code give the same answer.
+        A right code works once and opens the first session of the account, in the same shape as a login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          description: The input is invalid (`VALIDATION_ERROR`), or the code is wrong, expired or used up (`VERIFICATION_CODE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "401":
+          description: The email or password does not match an account (`AUTH_INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The email of the account is verified already (`EMAIL_ALREADY_VERIFIED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      operationId: resendVerification
+      summary: Send a new code to an account that waits for its email
+      description: |
+        The password has to be the one of the account. It proves that the caller made the account and not that the caller holds the
+        mailbox, so the limits bound what one account can cost. A new code replaces the old one and starts with 5 tries. One code can be
+        sent every 60 seconds and 5 in an hour for an account, and a request before that is refused with `VERIFICATION_RESEND_TOO_SOON`
+        and a `Retry-After` header. A mail that the mail service did not take gives its wait and its send of the hour back.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerificationRequest"
+      responses:
+        "200":
+          description: The code was handed to the mail service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The email or password does not match an account (`AUTH_INVALID_CREDENTIALS`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The email of the account is verified already (`EMAIL_ALREADY_VERIFIED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          description: |
+            Too many requests for this account (`RATE_LIMITED`), or a code was sent a moment ago or the codes of the hour are used up
+            (`VERIFICATION_RESEND_TOO_SOON`), or the account was sent all the codes that it may have
+            (`VERIFICATION_CODE_LIMIT_REACHED`, which has no `Retry-After`, because waiting does not help)
+          headers:
+            Retry-After:
+              description: Seconds to wait before the next try, except for `VERIFICATION_CODE_LIMIT_REACHED`
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "503":
+          description: The mail service did not take the code, so no mail is on its way (`EMAIL_SEND_FAILED`). Ask again after a while.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /auth/google:
+    post:
+      tags: [Auth]
+      operationId: googleLogin
+      summary: Sign in or start onboarding with a Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleLoginRequest"
+      responses:
+        "200":
+          description: Google token verified (authenticated session or onboarding profile required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleAuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, unverified, or mismatched (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The Google account is registered under another role (`AUTH_ROLE_MISMATCH`), or its email belongs to an account that is not linked to it
+            (`AUTH_ACCOUNT_EXISTS`), which signs in with its password and links Google with `POST /users/me/google`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /auth/google/register:
+    post:
+      tags: [Auth]
+      operationId: googleRegister
+      summary: Complete registration using a verified Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleRegisterRequest"
+      responses:
+        "201":
+          description: Google registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, or unverified (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Google account, email, NIP, or NISN is already registered, or the class cannot accept students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /auth/refresh-token:
     post:
       tags: [Auth]
@@ -608,6 +810,47 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /wali/children/{studentId}/history:
+    get:
+      tags: [Parent]
+      operationId: getChildHistory
+      summary: List cross-date activity history of a child
+      description: |
+        Returns the child's chronological activity timeline (mood logs, trash scans, and applied guides) within the child's
+        current class enrollment, newest first. Supports filtering by type and pagination.
+      parameters:
+        - $ref: "#/components/parameters/StudentPath"
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, mood, trash, guidance]
+            default: all
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The child activity timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WaliHistoryResponseEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: >-
+            The signed in parent has no active child with this id (`STUDENT_NOT_FOUND`), or the parent has no profile
+            (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /wali/children/{studentId}/move-requests/{requestId}:
     delete:
       tags: [Parent]
@@ -792,6 +1035,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MoodAnalyticsEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /guru/history:
+    get:
+      tags: [Teacher]
+      operationId: getGuruHistory
+      summary: List class activity history for a teacher
+      description: |
+        Returns chronological activity entries (mood logs, applied parent guides, and added learning videos) for the selected
+        class, newest first. Without `classId` it takes the oldest class of the teacher that is not archived, and an archived
+        class only when no other is left.
+      parameters:
+        - $ref: "#/components/parameters/ClassId"
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, mood, guidance, video]
+            default: all
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The class activity timeline
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuruHistoryResponseEnvelope"
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -1814,6 +2093,139 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/modules:
+    get:
+      tags: [Classroom]
+      operationId: listModules
+      summary: List the learning modules of a class
+      description: Ordered by meeting number. Open to the teachers of the class and the parents of a child in it.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The modules of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Classroom]
+      operationId: createModule
+      summary: Add a learning module to a class
+      description: >-
+        Only a teacher of the class can add one. An archived class is read only, so this answers `409` with `CLASS_ARCHIVED` for it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/ClassPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModuleRequest"
+      responses:
+        "201":
+          description: Learning module added
+          headers:
+            Idempotent-Replayed:
+              $ref: "#/components/headers/IdempotentReplayed"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/IdempotencyInProgress"
+        "422":
+          $ref: "#/components/responses/IdempotencyKeyReused"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /classes/{classId}/modules/{moduleId}:
+    patch:
+      tags: [Classroom]
+      operationId: updateModule
+      summary: Change the details of a learning module
+      description: >-
+        Any teacher of the class can change it. A missing field stays as it is and an empty `description` clears it.
+        At least one field is required.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ModulePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModuleRequest"
+      responses:
+        "200":
+          description: Learning module updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Classroom]
+      operationId: deleteModule
+      summary: Delete a learning module
+      description: Any teacher of the class can delete a learning module.
+      parameters:
+        - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/ModulePath"
+      responses:
+        "200":
+          description: Learning module deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The class is archived and read only (`CLASS_ARCHIVED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /classes/{classId}/students:
     get:
       tags: [Classroom]
@@ -2769,6 +3181,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List in-app notifications for the signed in user
+      description: Newest first, together with the total number of unread notifications.
+      parameters:
+        - name: unreadOnly
+          in: query
+          required: false
+          description: Set to true to list unread notifications only
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The notifications of the requested page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllNotificationsRead
+      summary: Mark all unread notifications as read
+      description: Marks every unread notification belonging to the signed in user as read.
+      responses:
+        "200":
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      summary: Mark one notification as read
+      description: Marks the requested notification of the signed in user as read.
+      parameters:
+        - $ref: "#/components/parameters/NotificationPath"
+      responses:
+        "200":
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /push/tokens:
     post:
       tags: [Push]
@@ -2834,7 +3320,8 @@ paths:
       operationId: deleteAccount
       summary: Delete the own account
       description: |
-        Soft deletes the account after the password is confirmed. The sessions are revoked, the account can no longer
+        Soft deletes the account after the password is confirmed. An account that signs in with Google and has no password confirms it with
+        a fresh `idToken` of its Google account instead, which Google issued in the last 5 minutes. The sessions are revoked, the account can no longer
         sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
         children and the photos of their trash scans are deleted too.
 
@@ -2860,7 +3347,13 @@ paths:
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid, issued for another Google account (`AUTH_GOOGLE_INVALID`),
+            or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "403":
           description: The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
           content:
@@ -2885,6 +3378,14 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            The account signs in with Google and has no password, and Google Sign-In is not set up or the keys of Google could not be fetched
+            (`AUTH_GOOGLE_UNAVAILABLE`). Such an account cannot be deleted until Google can be reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /users/me/password:
     put:
       tags: [Account]
@@ -2920,6 +3421,177 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "404":
           description: The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The account signs in with Google and has no password yet (`AUTH_PASSWORD_NOT_SET`), see `POST /users/me/password`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Account]
+      operationId: setPassword
+      summary: Set the first password of an account that signs in with Google
+      description: |
+        An account that was created with Google has no password. This gives it one, after a fresh `idToken` of the linked Google account,
+        which Google issued in the last 5 minutes, proves that the caller holds that account right now. Every session of the account ends,
+        so the app has to sign in again on every device. The new password follows the rules of the registration. An account that has a
+        password answers `AUTH_PASSWORD_ALREADY_SET` and changes it with `PUT` and the current password. The request is limited per Google token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPasswordRequest"
+      responses:
+        "200":
+          description: Password set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid, issued for another Google account (`AUTH_GOOGLE_INVALID`), or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account has a password already (`AUTH_PASSWORD_ALREADY_SET`), or it is not linked to a Google account (`GOOGLE_NOT_LINKED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            Google Sign-In is not set up or the keys of Google could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /users/me/google:
+    post:
+      tags: [Account]
+      operationId: linkGoogle
+      summary: Link a Google account to the own account
+      description: |
+        Adds Google as a second way to sign in. The password of the account and a fresh `idToken` are both needed, so a stolen access token
+        alone cannot add a way in that outlives it. The token has to be one that Google issued in the last 5 minutes. A Google account
+        that another account uses answers `GOOGLE_ACCOUNT_IN_USE`, and an account that is linked already answers `GOOGLE_ALREADY_LINKED`.
+        The request is limited per account and per Google token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkGoogleRequest"
+      responses:
+        "200":
+          description: Google account linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid (`AUTH_GOOGLE_INVALID`), or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "403":
+          description: >-
+            The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account is linked already (`GOOGLE_ALREADY_LINKED`), the Google account belongs to another account (`GOOGLE_ACCOUNT_IN_USE`), or the account has no password (`AUTH_PASSWORD_NOT_SET`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            Google Sign-In is not set up or the keys of Google could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+    delete:
+      tags: [Account]
+      operationId: unlinkGoogle
+      summary: Unlink the Google account of the own account
+      description: |
+        Removes the link after the password is confirmed, and every session of the account ends. An account that has no password cannot unlink,
+        because it would have no way in, so it sets a password first with `POST /users/me/password`. The Google account can be linked again later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnlinkGoogleRequest"
+      responses:
+        "200":
+          description: Google account unlinked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account is not linked to a Google account (`GOOGLE_NOT_LINKED`), or it has no password (`AUTH_PASSWORD_NOT_SET`)
           content:
             application/json:
               schema:
@@ -3011,6 +3683,22 @@ components:
       in: path
       required: true
       description: A learning video of the class
+      schema:
+        type: string
+        format: uuid
+    NotificationPath:
+      name: notificationId
+      in: path
+      required: true
+      description: An in-app notification of the user
+      schema:
+        type: string
+        format: uuid
+    ModulePath:
+      name: moduleId
+      in: path
+      required: true
+      description: A learning module of the class
       schema:
         type: string
         format: uuid
@@ -3122,7 +3810,7 @@ components:
     NotFound:
       description: |
         The resource does not exist or is not visible to this user (`CLASS_NOT_FOUND`, `CLASS_CODE_NOT_FOUND`,
-        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
+        `STUDENT_NOT_FOUND`, `NO_CHILD_REGISTERED`, `PROFILE_NOT_FOUND`, `GUIDANCE_NOT_FOUND`, `FORUM_POST_NOT_FOUND`, `VIDEO_NOT_FOUND`, `MODULE_NOT_FOUND`, `NOTIFICATION_NOT_FOUND`, `CHAT_CONVERSATION_NOT_FOUND`, `CHAT_MESSAGE_NOT_FOUND`)
       content:
         application/json:
           schema:
@@ -3659,6 +4347,164 @@ components:
           description: >-
             The `deviceToken` that an earlier registration or login on this device returned. It is never needed to sign in,
             and it only gives this device its own rate limit for the email. Send it whenever the app has one.
+    VerifyEmailRequest:
+      type: object
+      required: [email, password, code]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          maxLength: 72
+          description: The password of the account. It is checked first, so a stranger who knows only the email cannot use up the tries of the code.
+        deviceToken:
+          type: string
+          maxLength: 256
+          description: The `deviceToken` that registration or login returned. It only gives this device its own rate limit for the email.
+        code:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: The 6 digits of the mail. Keep them as text, because a code can start with 0.
+          example: "012345"
+    ResendVerificationRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          maxLength: 72
+        deviceToken:
+          type: string
+          maxLength: 256
+          description: The `deviceToken` that registration or login returned. It only gives this device its own rate limit for the email.
+    Verification:
+      type: object
+      required: [sent, expiresInSeconds, resendAfterSeconds]
+      properties:
+        sent:
+          type: boolean
+          description: False when the mail service did not take the code. The account exists, and a new code can be asked for after `resendAfterSeconds`.
+        expiresInSeconds:
+          type: integer
+          description: How long the code works, 900 seconds
+        resendAfterSeconds:
+          type: integer
+          description: How long to wait before a new code can be asked for, 60 seconds
+    VerificationEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Verification"
+    GoogleLoginRequest:
+      type: object
+      required: [idToken, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        role:
+          type: string
+          enum: [GURU, WALI]
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleRegisterRequest:
+      type: object
+      required: [idToken, fullName, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        role:
+          type: string
+          enum: [GURU, WALI]
+        phoneNumber:
+          type: string
+          maxLength: 30
+        nip:
+          type: string
+          maxLength: 50
+        schoolName:
+          type: string
+          maxLength: 150
+        address:
+          type: string
+          maxLength: 1000
+        whatsappNumber:
+          type: string
+          maxLength: 30
+        class:
+          $ref: "#/components/schemas/RegisterClass"
+        classCode:
+          type: string
+          pattern: "^[A-Za-z0-9]+$"
+          minLength: 4
+          maxLength: 12
+        student:
+          $ref: "#/components/schemas/RegisterStudent"
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleProfile:
+      type: object
+      required: [email, fullName, avatarUrl]
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    GoogleAuthData:
+      type: object
+      required: [needsRegistration]
+      properties:
+        needsRegistration:
+          type: boolean
+        googleProfile:
+          $ref: "#/components/schemas/GoogleProfile"
+        token:
+          type: string
+        refreshToken:
+          type: string
+        deviceToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    GoogleAuthEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GoogleAuthData"
     RefreshRequest:
       type: object
       required: [refreshToken]
@@ -3697,10 +4543,15 @@ components:
       properties:
         token:
           type: string
-          description: The access token, valid for 15 minutes by default
+          description: The access token, valid for 15 minutes by default. Empty when `verificationRequired` is true.
         refreshToken:
           type: string
-          description: Single use, valid for 30 days by default
+          description: Single use, valid for 30 days by default. Empty when `verificationRequired` is true.
+        verificationRequired:
+          type: boolean
+          description: Only in the answer of a registration, and only when it is true. The account waits for the code of its email and has no session yet.
+        verification:
+          $ref: "#/components/schemas/Verification"
         deviceToken:
           type: string
           description: >-
@@ -4251,12 +5102,16 @@ components:
           $ref: "#/components/schemas/AvatarData"
     DeleteAccountRequest:
       type: object
-      required: [password]
+      description: An account that has a password sends `password`, and an account that signs in with Google and has none sends `idToken`
       properties:
         password:
           type: string
           format: password
           maxLength: 72
+        idToken:
+          type: string
+          maxLength: 4096
+          description: A Google ID token of the linked Google account that Google issued in the last 5 minutes
         successorEmail:
           type: string
           format: email
@@ -4264,6 +5119,41 @@ components:
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
             the account is the only teacher of a class that is not archived and has active children, and ignored for a parent. It cannot be the email of the account itself.
+    SetPasswordRequest:
+      type: object
+      required: [idToken, newPassword]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: A Google ID token of the linked Google account that Google issued in the last 5 minutes
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+    LinkGoogleRequest:
+      type: object
+      required: [idToken, password]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: A Google ID token that Google issued in the last 5 minutes
+        password:
+          type: string
+          format: password
+          maxLength: 72
+    UnlinkGoogleRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+          maxLength: 72
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]
@@ -4446,6 +5336,110 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/VideoList"
+    ModuleStatus:
+      type: string
+      enum: [completed, ongoing, upcoming]
+      description: Schedule state of a class learning module
+    CreateModuleRequest:
+      type: object
+      required: [meetingNumber, title]
+      properties:
+        meetingNumber:
+          type: integer
+          minimum: 1
+          maximum: 100
+        title:
+          type: string
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+    UpdateModuleRequest:
+      type: object
+      minProperties: 1
+      properties:
+        meetingNumber:
+          type: integer
+          minimum: 1
+          maximum: 100
+        title:
+          type: string
+          minLength: 1
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+          description: An empty text clears the description
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          description: A new date for the meeting. A date that is set cannot be removed
+    Module:
+      type: object
+      required: [id, meetingNumber, title, description, status, scheduledAt, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        meetingNumber:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/ModuleStatus"
+        scheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ModuleList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [modules]
+          properties:
+            modules:
+              type: array
+              items:
+                $ref: "#/components/schemas/Module"
+    ModuleEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/Module"
+    ModuleListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ModuleList"
     ChatPerson:
       type: object
       required: [id, fullName, role, avatarUrl, deleted]
@@ -4723,6 +5717,65 @@ components:
           minLength: 20
           maxLength: 4096
           description: The token to forget, trimmed and checked the same way as the one that was registered
+    Notification:
+      type: object
+      required: [id, kind, title, body, referenceType, referenceId, readAt, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [mood_logged, guidance_applied, move_requested, move_decided, video_added]
+          description: >-
+            What happened. `mood_logged` goes to the parent of the child, `guidance_applied` and `move_requested` go to the
+            teachers of the class, `move_decided` goes to the parent who asked for the move, and `video_added` goes to the
+            parents of the class.
+        title:
+          type: string
+        body:
+          type: string
+        referenceType:
+          type: string
+          nullable: true
+          enum: [mood_log, guidance_application, move_request, video]
+          description: The kind of record that caused the notification, or null when there is none
+        referenceId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The id of the record that caused the notification, or null when there is none
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    NotificationList:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [notifications, unreadCount]
+          properties:
+            notifications:
+              type: array
+              items:
+                $ref: "#/components/schemas/Notification"
+            unreadCount:
+              type: integer
+              minimum: 0
+    NotificationListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/NotificationList"
     ChatPhotoUpload:
       type: object
       required: [mediaKey, kind, contentType, sizeBytes]
@@ -5632,3 +6685,124 @@ components:
             storage:
               type: string
               enum: [ok, disabled, down]
+    GuruHistoryEvent:
+      type: object
+      required: [id, type, classId, className, title, occurredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [mood, guidance, video]
+        classId:
+          type: string
+          format: uuid
+        className:
+          type: string
+        studentId:
+          type: string
+          format: uuid
+        studentName:
+          type: string
+        actorName:
+          type: string
+          description: The teacher or parent who did the event. A deleted account shows as `Deleted account`.
+        moodType:
+          $ref: "#/components/schemas/Mood"
+        confidenceScore:
+          type: number
+          format: float
+        title:
+          type: string
+        description:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    GuruHistoryResponse:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [events]
+          properties:
+            events:
+              type: array
+              items:
+                $ref: "#/components/schemas/GuruHistoryEvent"
+    GuruHistoryResponseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GuruHistoryResponse"
+    WaliHistoryStudent:
+      type: object
+      required: [id, fullName, className]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        className:
+          type: string
+    WaliHistoryEvent:
+      type: object
+      required: [id, type, title, occurredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [mood, trash, guidance]
+        moodType:
+          $ref: "#/components/schemas/Mood"
+        trashType:
+          type: string
+          enum: [ORGANIK, ANORGANIK, B3]
+        pointsAwarded:
+          type: integer
+          minimum: 0
+        guidanceId:
+          type: string
+        guidanceTitle:
+          type: string
+        guidanceCategory:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+    WaliHistoryResponse:
+      allOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - type: object
+          required: [student, events]
+          properties:
+            student:
+              $ref: "#/components/schemas/WaliHistoryStudent"
+            events:
+              type: array
+              items:
+                $ref: "#/components/schemas/WaliHistoryEvent"
+    WaliHistoryResponseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/WaliHistoryResponse"

@@ -6,7 +6,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 
 | Table | What a row is |
 |:---|:---|
-| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number and an avatar address |
+| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number, an avatar address, the `google_sub` of the linked Google account and `email_verification_pending`, which is true while a new account waits for the code of its email, and `signed_in_unverified_at`, set when such an account signed in while the verification was off |
 | `gurus` | The teacher part of a `GURU` account, with a NIP, a school name and an address |
 | `walis` | The parent part of a `WALI` account, with an address and a WhatsApp number |
 | `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set while the class is archived, which makes it read only, and it is also set when the only teacher of a class without an active child deletes the account. `join_open` is false while its teachers do not want new children |
@@ -17,12 +17,15 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `trash_scans` | One verified trash sorting claim, with the category, the points awarded and the photo |
 | `guidance_applications` | A parent who applied a piece of emotional guidance to a child, with their notes |
 | `learning_videos` | A video that a teacher added to a class |
+| `learning_modules` | A meeting of a class that a teacher added, with its number from 1 to 100, a title, an optional description, a status of `upcoming`, `ongoing` or `completed`, and an optional date |
 | `forum_posts` | A thread or a reply in the forum of a class |
 | `chat_conversations` | A conversation, either `direct` or `class`. A direct one is between a teacher and a parent, one for each pair of accounts, and the smaller id of the two is always `user_low_id`. A class room has a `class_id`, one room for each class, and no pair. Its members are not stored, they are the teachers of the class and the parents with an active child in it, and each sees the messages from the time they joined |
 | `chat_messages` | A message of a conversation. The `id` only grows and is the cursor of the conversation. A message has text, a photo or video, or both, and the four `media_` columns are set or empty together. A deleted message keeps its row with an empty body, no media and `deleted_at` |
 | `push_tokens` | The token that Firebase gave an installed app, one row for each device and each token on one account at a time. The tokens of an account are removed when the account is deleted |
 | `chat_reads` | How far each person of a conversation has read, the id of the last message |
+| `notifications` | One entry of the inbox of a teacher or a parent, with a `kind`, a title, a text, an optional reference to the record that caused it (`reference_type` and `reference_id`), the time it was read and the time it was made. A notification is removed 90 days after it was made, and with the account when the account is deleted |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
+| `email_verifications` | The one live code of an account that waits for its email, stored as a keyed hash, with the time it expires, the wrong tries so far, the time of the last send, the sends of the current hour, the number of codes that were sent in all, and when the mail of the code is tried again after it failed. The row is removed with the account, and when the code is used |
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |
 | `leaderboard_history` | The final standings of a class for a semester that ended, one row for each class, child and semester (unique key `leaderboard_history_unique`), so a second save of the same semester is skipped and not stored again |

@@ -44,6 +44,8 @@ jobs:
             # the scan sends thousands of requests and the default limits would answer 429 and hide the real responses
             echo "USER_LIMITER_MAX=10000000"
             echo "AUTH_LIMITER_MAX=10000000"
+            # a client id that Google never issued, so the routes of Google Sign-In check a token and do not answer that the sign in is off
+            echo "GOOGLE_CLIENT_IDS=zap-client.example.test"
             echo "CLASS_CODE_LIMITER_MAX=10000000"
             # a child can claim five times a day, and the scan would use them up on the first requests and never reach the photo check
             echo "TRASH_DAILY_LIMIT=1000000"

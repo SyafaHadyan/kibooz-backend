@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -30,28 +31,29 @@ type Env struct {
 	MoodBatchLimiterMax      int    `env:"MOOD_BATCH_LIMITER_MAX" envDefault:"30"`
 	// MetricsAddress is where the Prometheus endpoint listens, such as ":9100", and empty switches it off. It is a listener of
 	// its own and must only be reachable from the private network of the scraper.
-	MetricsAddress          string `env:"METRICS_ADDRESS"`
-	TrustProxy              bool   `env:"TRUST_PROXY" envDefault:"false"`
-	ProxyHeader             string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
-	DBHost                  string `env:"DB_HOST" envDefault:"127.0.0.1"`
-	DBPort                  uint   `env:"DB_PORT" envDefault:"5432"`
-	DBName                  string `env:"DB_NAME,required"`
-	DBUsername              string `env:"DB_USERNAME,required"`
-	DBPassword              string `env:"DB_PASSWORD,required"`
-	DBSSLMode               string `env:"DB_SSL_MODE" envDefault:"disable"`
-	RedisAddress            string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
-	RedisPort               uint   `env:"REDIS_PORT" envDefault:"6379"`
-	RedisTLS                bool   `env:"REDIS_TLS" envDefault:"false"`
-	RedisUsername           string `env:"REDIS_USERNAME"`
-	RedisPassword           string `env:"REDIS_PASSWORD"`
-	RedisKeyPrefix          string `env:"REDIS_KEY_PREFIX"`
-	RedisDatabase           int    `env:"REDIS_DATABASE" envDefault:"0"`
-	LeaderboardCacheSeconds int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
-	KeepaliveSeconds        int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
-	JWTSecretKey            string `env:"JWT_SECRET_KEY,required"`
-	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
-	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
-	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
+	MetricsAddress          string   `env:"METRICS_ADDRESS"`
+	TrustProxy              bool     `env:"TRUST_PROXY" envDefault:"false"`
+	ProxyHeader             string   `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
+	DBHost                  string   `env:"DB_HOST" envDefault:"127.0.0.1"`
+	DBPort                  uint     `env:"DB_PORT" envDefault:"5432"`
+	DBName                  string   `env:"DB_NAME,required"`
+	DBUsername              string   `env:"DB_USERNAME,required"`
+	DBPassword              string   `env:"DB_PASSWORD,required"`
+	DBSSLMode               string   `env:"DB_SSL_MODE" envDefault:"disable"`
+	RedisAddress            string   `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
+	RedisPort               uint     `env:"REDIS_PORT" envDefault:"6379"`
+	RedisTLS                bool     `env:"REDIS_TLS" envDefault:"false"`
+	RedisUsername           string   `env:"REDIS_USERNAME"`
+	RedisPassword           string   `env:"REDIS_PASSWORD"`
+	RedisKeyPrefix          string   `env:"REDIS_KEY_PREFIX"`
+	RedisDatabase           int      `env:"REDIS_DATABASE" envDefault:"0"`
+	LeaderboardCacheSeconds int      `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
+	KeepaliveSeconds        int      `env:"KEEPALIVE_SECONDS" envDefault:"60"`
+	JWTSecretKey            string   `env:"JWT_SECRET_KEY,required"`
+	JWTAccessExpiredMinutes int      `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
+	JWTRefreshExpiredDays   int      `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
+	JWTSessionMaxDays       int      `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
+	GoogleClientIDs         []string `env:"GOOGLE_CLIENT_IDS" envSeparator:","`
 	// RefreshReuseLeewaySeconds is how long after its use a refresh token can be shown again and get a new token of the same
 	// session, for a client that lost the answer to its first call. 0 switches it off, and any reuse ends the session.
 	RefreshReuseLeewaySeconds int    `env:"REFRESH_REUSE_LEEWAY_SECONDS" envDefault:"10"`
@@ -71,8 +73,22 @@ type Env struct {
 	// ChatMaxSockets is how many chat sockets one API copy holds, and ChatMaxSocketsPerUser how many one account keeps open
 	// FirebaseCredentialsFile is the key file of the Firebase service account. Empty switches the push notifications off.
 	FirebaseCredentialsFile string `env:"FIREBASE_CREDENTIALS_FILE"`
-	ChatMaxSockets          int    `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
-	ChatMaxSocketsPerUser   int    `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
+
+	// EmailVerificationRequired makes a new account confirm its email with a code before it can sign in. Accounts that exist
+	// stay verified. It needs ResendAPIKey, and switching it off leaves the accounts that wait able to sign in.
+	EmailVerificationRequired bool `env:"EMAIL_VERIFICATION_REQUIRED" envDefault:"false"`
+	// EmailCodesMaxPerAccount is the most codes that are ever mailed to one account that waits for its email, the first one included.
+	// It only counts when EmailVerificationRequired is on. An account that reached it asks for no more, and is replaced or purged later.
+	EmailCodesMaxPerAccount int `env:"EMAIL_CODES_MAX_PER_ACCOUNT" envDefault:"20"`
+	// ResendAPIKey is the key of the Resend account that sends the mail. A key with sending access to the domain of EmailFrom is enough.
+	ResendAPIKey string `env:"RESEND_API_KEY"`
+	// EmailFrom is the address that sends the mail. The mail shows it as "Kibooz <address>", and a value that already has a name
+	// in angle brackets is used as it is. Its domain has to be verified in Resend.
+	EmailFrom string `env:"EMAIL_FROM" envDefault:"no-reply@mail.syafahadyan.com"`
+	// ResendAPIURL is the address of the Resend API. Only a test needs another value.
+	ResendAPIURL          string `env:"RESEND_API_URL" envDefault:"https://api.resend.com"`
+	ChatMaxSockets        int    `env:"CHAT_MAX_SOCKETS" envDefault:"1000"`
+	ChatMaxSocketsPerUser int    `env:"CHAT_MAX_SOCKETS_PER_USER" envDefault:"5"`
 	// UploadConcurrency is how many photo uploads one API copy handles at the same time, and the next one is refused with 429 and
 	// a Retry-After, because each upload holds several copies of its photo in memory
 	UploadConcurrency int `env:"UPLOAD_CONCURRENCY" envDefault:"4"`
@@ -158,6 +174,31 @@ func refuseRenamed(lookup func(string) (string, bool)) error {
 	return fmt.Errorf("rename these settings, the old names are not read any more: %s", strings.Join(found, ", "))
 }
 
+// checkResendURL lets the mail API be reached over https, or over plain http on this machine for a test. The key travels in
+// every call, so a plain http address anywhere else would send it in the clear.
+func (e *Env) checkResendURL() error {
+	// the loader always fills the default, so an empty value only comes from a struct that was built by hand
+	if e.ResendAPIURL == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(e.ResendAPIURL)
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("RESEND_API_URL must be an address such as https://api.resend.com, got %q", e.ResendAPIURL)
+	}
+
+	if parsed.Scheme == "https" {
+		return nil
+	}
+
+	ip := net.ParseIP(parsed.Hostname())
+	if parsed.Scheme == "http" && ip != nil && ip.IsLoopback() {
+		return nil
+	}
+
+	return fmt.Errorf("RESEND_API_URL must use https, only a loopback address may use http, got %q", e.ResendAPIURL)
+}
+
 // placeholderSecretPrefix starts the sample JWT secret of .env.example, which anyone can read in the repository
 const placeholderSecretPrefix = "change-me"
 
@@ -197,6 +238,20 @@ func (e *Env) validate() error {
 	// the chat media would be served to anyone from the public bucket, so the two names must differ
 	if e.S3PrivateBucketName != "" && e.S3PrivateBucketName == e.S3PublicBucketName {
 		return errors.New("S3_PRIVATE_BUCKET_NAME must not be the public bucket S3_PUBLIC_BUCKET_NAME")
+	}
+
+	// a verification with no way to send the code would lock every new account out
+	if e.EmailVerificationRequired && strings.TrimSpace(e.ResendAPIKey) == "" {
+		return errors.New("EMAIL_VERIFICATION_REQUIRED needs RESEND_API_KEY, or no new account could get its code")
+	}
+
+	if e.EmailVerificationRequired && e.EmailCodesMaxPerAccount < 1 {
+		return errors.New("EMAIL_CODES_MAX_PER_ACCOUNT has to be at least 1, or no account could get a code")
+	}
+
+	err = e.checkResendURL()
+	if err != nil {
+		return err
 	}
 
 	if len(e.SemesterStartMonths) == 0 {

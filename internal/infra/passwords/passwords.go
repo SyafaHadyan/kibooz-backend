@@ -8,6 +8,7 @@ import (
 	"context"
 	"log"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -169,6 +170,13 @@ func (h *Hasher) Matches(ctx context.Context, hash string, password string) (boo
 	defer release()
 
 	defer h.took(time.Now())
+
+	if !strings.HasPrefix(hash, "$2") {
+		// Consume a real bcrypt comparison cost on passwordless accounts so timing does not leak auth provider.
+		_ = bcrypt.CompareHashAndPassword([]byte(h.dummy), []byte(password))
+
+		return false, nil
+	}
 
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil, nil
 }

@@ -30,6 +30,23 @@ import (
 )
 
 type fakeRepo struct {
+	// joinChecks holds the codes of the classes that were asked whether they take a child, and joinErr is the answer
+	joinChecks []string
+	joinErr    error
+	// takenElse is what is taken apart from the accounts that a lookup leaves out, which are recorded in ignored
+	takenElse error
+	ignored   []uuid.UUID
+	// findErr makes the lookup of a user by id fail
+	findErr error
+	// markedFailed and clearedRetry count the calls that schedule and stop the retries of a mail
+	markedFailed int
+	clearedRetry int
+
+	// stale is what the lookup of accounts that waited too long finds, staleBefore the time it was asked about and staleErr makes it fail
+	stale       []repository.PendingAccount
+	staleBefore time.Time
+	staleErr    error
+
 	user        *entity.User
 	rotateErrs  []error
 	rotateCalls int
@@ -58,11 +75,29 @@ type fakeRepo struct {
 	// taken is what the check of the email, the NIP and the NISN answers, and takenChecks keeps what it was asked
 	taken       error
 	takenChecks [][3]string
+
+	// createdUser is the account that a registration stored, and live holds the code of the account that waits for its email
+	createdUser *entity.User
+	live        liveCode
+	storeWait   time.Duration
+	storeErr    error
+	checkErr    error
+	stores      int
+	releases    int
+}
+
+// liveCode is the one code of an account that waits for its email, as the repository would keep it
+type liveCode struct {
+	userID   uuid.UUID
+	hash     string
+	attempts int
 }
 
 func (f *fakeRepo) FindUserByEmail(context.Context, string) (*entity.User, error) { return f.user, nil }
 
-func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) { return f.user, nil }
+func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error) {
+	return f.user, f.findErr
+}
 
 func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, error) {
 	f.classLookups++
@@ -71,35 +106,50 @@ func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, er
 	return !f.unknownClassCode, f.lookupErr
 }
 
-func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string) error {
+func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error {
+	// a lookup that leaves accounts out asks what else is taken
+	if len(ignore) > 0 {
+		f.ignored = ignore
+
+		return f.takenElse
+	}
+
 	f.takenChecks = append(f.takenChecks, [3]string{email, nip, nisn})
 
 	return f.taken
 }
 
-func (f *fakeRepo) CreateGuru(_ context.Context, _ *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
+func (f *fakeRepo) ClassTakesChildren(_ context.Context, joinCode string) error {
+	f.joinChecks = append(f.joinChecks, joinCode)
+
+	return f.joinErr
+}
+
+func (f *fakeRepo) CreateGuru(_ context.Context, user *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
 	if f.createErr != nil {
 		return f.createErr
 	}
 
+	f.createdUser = user
 	f.registered = session
 
 	return nil
 }
 
 func (f *fakeRepo) CreateWali(
-	_ context.Context, _ *entity.User, _ *entity.Wali, _ string, _ *entity.Student, session *entity.RefreshToken,
+	_ context.Context, user *entity.User, _ *entity.Wali, _ string, _ *entity.Student, session *entity.RefreshToken,
 ) (uuid.UUID, error) {
 	if f.createErr != nil {
 		return uuid.Nil, f.createErr
 	}
 
+	f.createdUser = user
 	f.registered = session
 
 	return uuid.Nil, nil
 }
 
-func (f *fakeRepo) CreateRefreshToken(_ context.Context, _ *entity.RefreshToken, verifiedHash string, _ time.Duration) error {
+func (f *fakeRepo) CreateRefreshToken(_ context.Context, _ *entity.RefreshToken, verifiedHash string, _ *string, _ time.Duration) error {
 	f.separateTokens++
 	f.verifiedHash = verifiedHash
 
@@ -133,6 +183,75 @@ func (f *fakeRepo) RotateRefreshToken(
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
+
+func (f *fakeRepo) MarkMailFailed(context.Context, uuid.UUID, string, time.Time) error {
+	f.markedFailed++
+
+	return nil
+}
+
+func (f *fakeRepo) ClearMailRetry(context.Context, uuid.UUID) error {
+	f.clearedRetry++
+
+	return nil
+}
+
+func (f *fakeRepo) ClaimMailRetries(context.Context, time.Time, time.Duration, int) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (f *fakeRepo) StalePendingAccounts(_ context.Context, _ string, _ string, before time.Time) ([]repository.PendingAccount, error) {
+	f.staleBefore = before
+
+	return f.stale, f.staleErr
+}
+
+func (f *fakeRepo) OlderPendingAccounts(context.Context, time.Time, int) ([]repository.PendingAccount, error) {
+	return f.stale, f.staleErr
+}
+
+func (f *fakeRepo) StoreVerification(
+	_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ repository.SendRule,
+) (time.Duration, error) {
+	f.stores++
+
+	if f.storeErr != nil || f.storeWait > 0 {
+		return f.storeWait, f.storeErr
+	}
+
+	f.live = liveCode{userID: userID, hash: codeHash}
+
+	return 0, nil
+}
+
+func (f *fakeRepo) ReleaseVerification(_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ time.Duration) error {
+	if f.live.userID == userID && f.live.hash == codeHash {
+		f.releases++
+	}
+
+	return nil
+}
+
+// CheckVerification follows the contract of the real one, a wrong code counts an attempt and a used up code is only refused
+func (f *fakeRepo) CheckVerification(_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, maxAttempts int) (bool, error) {
+	if f.checkErr != nil {
+		return false, f.checkErr
+	}
+
+	if f.live.userID != userID || f.live.hash == "" || f.live.attempts >= maxAttempts {
+		return false, nil
+	}
+
+	if f.live.hash != codeHash {
+		f.live.attempts++
+
+		return false, nil
+	}
+
+	f.live = liveCode{}
+
+	return true, nil
+}
 
 // fakeCache follows the contract of the real cache, a missing key is never flagged as used
 type fakeCache struct{ keys map[string]string }

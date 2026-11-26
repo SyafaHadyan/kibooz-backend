@@ -56,7 +56,7 @@ The latency limits in the scripts are placeholders that were set from the first 
 
 ## Security scan with ZAP
 
-The `dast.yaml` workflow starts the compose stack and runs the ZAP baseline scan, which is a passive scan that only reads responses and never attacks. The API is plain JSON without links, so the spider finds almost nothing by itself. `.zap/seed.sh` therefore registers a teacher and a parent with throwaway credentials and `.zap/hook.py` replays a dozen requests through ZAP, including authenticated, rejected and unknown routes. Every warning fails the build. A rule that does not apply can be set to `IGNORE` with a reason in `.zap/rules.tsv`. The report is uploaded as the `zap-reports` artifact.
+The `dast.yaml` workflow starts the compose stack and runs the ZAP baseline scan, which is a passive scan that only reads responses and never attacks. The API is plain JSON without links, so the spider finds almost nothing by itself. `.zap/seed.sh` therefore registers a teacher and a parent with throwaway credentials and `.zap/hook.py` replays a few dozen requests through ZAP, including authenticated, rejected and unknown routes. Every warning fails the build. A rule that does not apply can be set to `IGNORE` with a reason in `.zap/rules.tsv`. The report is uploaded as the `zap-reports` artifact.
 
 The scan is passive, so it checks headers and information leaks but does not try injections. The ZAP image is pinned by digest in `.github/tools/Dockerfile`, where the update bot can bump it, and the workflow reads it with `.github/tools/image.sh zaproxy`.
 
@@ -69,6 +69,8 @@ The `Smoke` workflow runs `smoke/smoke.py` against the API that is deployed, and
 Give it the version that `/healthz` has to report. The test registers throwaway teachers and parents, replays the main routes and the refusals, uploads a small file through a signed address and discards it, and then deletes its accounts. One keeper teacher stays, because deleting the last teacher of a class that has children needs a successor. The first run registers the keeper when it does not exist yet.
 
 The keeper email is the variable `SMOKE_KEEPER_EMAIL` and its password is the secret `SMOKE_KEEPER_PASSWORD`, both in the `smoke-production` environment. That environment only accepts runs from `main`, so a workflow edited on another branch cannot read the password. Add a check to the script in the same change that adds or changes a route.
+
+With `email_verification` turned on the run is a short one for a server that requires the verification of the email. It creates no account and sends no mail. It signs in as the keeper, which has to be verified before the switch, and it checks the two routes of the verification with requests that cannot send a mail, which are for accounts that do not exist or are verified already, a wrong password and input that does not pass validation. The parent side and the flows with a second account are covered by the end to end tests of CI in that case. This short run is only tried against production, because the throwaway stack of CI runs with the setting off.
 
 To run it from a terminal, set `BASE_URL`, `EXPECTED_VERSION`, `SMOKE_KEEPER_EMAIL` and `SMOKE_KEEPER_PASSWORD` and run `python3 -I smoke/smoke.py`. It talks to the API with curl and exits with an error when a check fails.
 

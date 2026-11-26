@@ -10,6 +10,9 @@ Settings come from the environment
   SMOKE_KEEPER_EMAIL     the keeper teacher, registered by the first run when it does not exist yet
   SMOKE_KEEPER_PASSWORD  its password, and the object storage has to be configured for the upload checks
   SMOKE_STORAGE          off for a stack that has no bucket. The upload checks then expect STORAGE_UNAVAILABLE instead
+  SMOKE_EMAIL_VERIFICATION  on when the server requires the code of the email for a new account. The run then creates no account,
+                         because every registration would mail a code to an address that nobody reads, and it checks only what
+                         the keeper can do and the routes of the verification, with requests that send no mail
   SMOKE_CHAT_MEDIA       on when the private bucket of the chat photos and videos is set up, off by default because the public
                          bucket says nothing about it. The chat media checks then expect STORAGE_UNAVAILABLE instead
 """
@@ -28,6 +31,7 @@ PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4
 
 STORAGE_ON = os.environ.get("SMOKE_STORAGE", "on") != "off"
 CHAT_MEDIA_ON = os.environ.get("SMOKE_CHAT_MEDIA", "off") == "on"
+EMAIL_VERIFICATION_ON = os.environ.get("SMOKE_EMAIL_VERIFICATION", "off") == "on"
 # The address is parsed and not matched by its start, because curl reads the text before an @ as a login, so
 # http://127.0.0.1:8080@other.example would pass a prefix check and send the tokens to another host
 URL = urlsplit(BASE)
@@ -270,6 +274,34 @@ for m, p in [("GET", "/wali/dashboard"), ("GET", "/guru/dashboard"), ("GET", "/l
     expect(f"{m} {p} needs a token", call(m, p), 401, "AUTH_TOKEN_MISSING")
 expect("bad token", call("GET", "/guru/dashboard", "not-a-token"), 401)
 
+# ---------- email verification is on ----------
+# A registration would mail a real code to an address at example.com, which bounces and uses the quota of the mail service, so a run
+# with the verification on creates no account. The keeper was verified before the switch, and the parent side and the flows that
+# need a second account are covered by the end to end tests of CI. This part checks what the keeper can do and the routes of the
+# verification with requests that send no mail, because an account that does not exist or is verified never gets one.
+if EMAIL_VERIFICATION_ON:
+    ks, kj = call("POST", "/auth/login", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "role": "GURU"})
+    check("the keeper signs in, so it was verified before the switch", ks == 200 and bool(dig(kj, "data", "token")), f"{ks} {kj}")
+    keeper_token = dig(kj, "data", "token")
+    if keeper_token:
+        g4 = {"email": KEEPER_EMAIL, "token": keeper_token, "refresh": dig(kj, "data", "refreshToken"), "role": "GURU", "pw": KEEPER_PASSWORD, "reused": True}
+        for path in ("/guru/dashboard", "/guru/classes", "/guru/profile", "/notifications"):
+            expect(f"the keeper reads {path}", call("GET", path, keeper_token), 200)
+        s, rj = call("POST", "/auth/refresh-token", body={"refreshToken": g4["refresh"], "email": KEEPER_EMAIL})
+        check("the keeper refreshes", s == 200 and bool(dig(rj, "data", "refreshToken")), f"{s} {rj}")
+        if s == 200 and dig(rj, "data", "refreshToken"):
+            expect("the keeper logs out", call("POST", "/auth/logout", body={"refreshToken": dig(rj, "data", "refreshToken")}), 200)
+    nobody = f"kibooz-smoke-{RUN}-nobody@example.com"
+    expect("verify with an email that has no account", call("POST", "/auth/verify-email", body={"email": nobody, "password": PW, "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("resend for an email that has no account", call("POST", "/auth/resend-verification", body={"email": nobody, "password": PW}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("verify with a wrong password", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD + "x", "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+    expect("verify for an account that is verified", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "code": "123456"}), 409, "EMAIL_ALREADY_VERIFIED")
+    expect("resend for an account that is verified", call("POST", "/auth/resend-verification", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD}), 409, "EMAIL_ALREADY_VERIFIED")
+    expect("a code of five digits is refused", call("POST", "/auth/verify-email", body={"email": KEEPER_EMAIL, "password": KEEPER_PASSWORD, "code": "12345"}), 400, "VALIDATION_ERROR")
+    expect("register validation sends no mail", call("POST", "/auth/register", body={"email": "bad", "password": "x", "role": "GURU"}), 400, "VALIDATION_ERROR")
+    print("email verification is on, so no account was registered and the flows that need one were skipped")
+    sys.exit(1 if failed else 0)
+
 # ---------- registration ----------
 g1 = register_guru("g1", "Smoke A")
 g2 = register_guru("g2", "Smoke B")
@@ -316,6 +348,11 @@ s, js = call("POST", "/auth/login", body={"email": g1["email"], "password": PW, 
 check("login ok", s == 200 and dig(js, "data", "token"), f"{s} {js}")
 expect("login wrong password", call("POST", "/auth/login", body={"email": g1["email"], "password": PW + "x", "role": "GURU"}), 401, "AUTH_INVALID_CREDENTIALS")
 expect("login wrong role", call("POST", "/auth/login", body={"email": g1["email"], "password": PW, "role": "WALI"}), 401, "AUTH_INVALID_CREDENTIALS")
+# the account is verified, so these send no mail whatever the setting of the server is
+expect("verify for an account that is verified", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW, "code": "123456"}), 409, "EMAIL_ALREADY_VERIFIED")
+expect("resend for an account that is verified", call("POST", "/auth/resend-verification", body={"email": g1["email"], "password": PW}), 409, "EMAIL_ALREADY_VERIFIED")
+expect("verify with a wrong password", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW + "x", "code": "123456"}), 401, "AUTH_INVALID_CREDENTIALS")
+expect("a code that is not six digits is refused", call("POST", "/auth/verify-email", body={"email": g1["email"], "password": PW, "code": "+12345"}), 400, "VALIDATION_ERROR")
 old_refresh = dig(js, "data", "refreshToken")
 s, js2 = call("POST", "/auth/refresh-token", body={"refreshToken": old_refresh, "email": g1["email"]})
 check("refresh rotates", s == 200 and dig(js2, "data", "refreshToken") not in (None, old_refresh), f"{s} {js2}")
@@ -650,6 +687,54 @@ if STORAGE_ON:
 expect("delete video", call("DELETE", f"/classes/{cid}/videos/{vid}", g1["token"]), 200)
 expect("deleted video gone", call("PATCH", f"/classes/{cid}/videos/{vid}", g1["token"], {"title": "x"}), 404, "VIDEO_NOT_FOUND")
 expect("other class videos closed", call("GET", f"/classes/{cid}/videos", g2["token"]), 403, "AUTH_FORBIDDEN")
+
+# ---------- learning modules ----------
+mods = f"/classes/{cid}/modules"
+s, js = call("GET", mods, w1["token"])
+check("a class starts without modules", s == 200 and dig(js, "data", "total") == 0 and dig(js, "data", "modules") == [], f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 2, "title": "  Smoke Module 2  ", "description": "bring pencils", "status": "ongoing", "scheduledAt": "2026-12-01T08:00:00Z"})
+mod_two = dig(js, "data", "id")
+check("add module", s == 201 and mod_two and dig(js, "data", "title") == "Smoke Module 2" and dig(js, "data", "status") == "ongoing"
+      and str(dig(js, "data", "scheduledAt")).startswith("2026-12-01T08:00:00"), f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 1, "title": "Smoke Module 1"})
+mod_one = dig(js, "data", "id")
+check("a module starts as upcoming without a text", s == 201 and mod_one and dig(js, "data", "status") == "upcoming" and dig(js, "data", "description") is None, f"{s} {js}")
+s, js = call("POST", mods, g1["token"], {"meetingNumber": 1, "title": "Smoke Module 1b"})
+mod_tie = dig(js, "data", "id")
+check("a second module of the same meeting", s == 201 and mod_tie, f"{s} {js}")
+for name, body in (("number 0", {"meetingNumber": 0, "title": "x"}), ("number 101", {"meetingNumber": 101, "title": "x"}),
+                   ("unknown status", {"meetingNumber": 3, "title": "x", "status": "unknown"}), ("long title", {"meetingNumber": 3, "title": "a" * 151})):
+    expect(f"add module with {name} rejected", call("POST", mods, g1["token"], body), 400, "VALIDATION_ERROR")
+expect("parent cannot add module", call("POST", mods, w1["token"], {"meetingNumber": 3, "title": "x"}), 403, "AUTH_FORBIDDEN")
+expect("other class modules closed", call("GET", mods, g2["token"]), 403, "AUTH_FORBIDDEN")
+s, js = call("GET", mods, w1["token"])
+names = [m.get("title") for m in dig(js, "data", "modules") or []]
+check("parent lists modules by meeting and creation order", s == 200 and dig(js, "data", "total") == 3 and names == ["Smoke Module 1", "Smoke Module 1b", "Smoke Module 2"], f"{s} {names}")
+s, js = call("GET", mods + "?limit=2&page=2", w1["token"])
+check("modules are paged", s == 200 and dig(js, "data", "total") == 3 and [m.get("title") for m in dig(js, "data", "modules") or []] == ["Smoke Module 2"], f"{s} {js}")
+s, js = call("PATCH", f"{mods}/{mod_one}", g1["token"], {"title": " Smoke Module 1 Edited ", "description": "", "status": "completed", "meetingNumber": 3})
+check("edit module", s == 200 and dig(js, "data", "title") == "Smoke Module 1 Edited" and dig(js, "data", "description") is None
+      and dig(js, "data", "status") == "completed" and dig(js, "data", "meetingNumber") == 3, f"{s} {js}")
+expect("edit module empty body", call("PATCH", f"{mods}/{mod_one}", g1["token"], {}), 400, "VALIDATION_ERROR")
+expect("edit module with a bad status", call("PATCH", f"{mods}/{mod_one}", g1["token"], {"status": "unknown"}), 400, "VALIDATION_ERROR")
+expect("parent cannot edit module", call("PATCH", f"{mods}/{mod_one}", w1["token"], {"title": "x"}), 403, "AUTH_FORBIDDEN")
+expect("parent cannot delete module", call("DELETE", f"{mods}/{mod_one}", w1["token"]), 403, "AUTH_FORBIDDEN")
+expect("other teacher cannot edit module", call("PATCH", f"{mods}/{mod_one}", g2["token"], {"title": "x"}), 403, "AUTH_FORBIDDEN")
+module_key = str(uuid.uuid4())
+s, js, replayed = call_key("POST", mods, g1["token"], module_key, {"meetingNumber": 4, "title": "Smoke Module Keyed"})
+mod_key_id = dig(js, "data", "id")
+check("module with a key is added", s == 201 and mod_key_id and not replayed, f"{s} {js} {replayed}")
+s, js, replayed = call_key("POST", mods, g1["token"], module_key, {"meetingNumber": 4, "title": "Smoke Module Keyed"})
+check("repeating the key replays the module", s == 201 and dig(js, "data", "id") == mod_key_id and replayed, f"{s} {js} {replayed}")
+s, js = call("GET", mods, g1["token"])
+check("the replay stored one module", s == 200 and dig(js, "data", "total") == 4, f"{s} {js}")
+for mod_id in (mod_one, mod_two, mod_tie, mod_key_id):
+    if mod_id:
+        expect("delete module", call("DELETE", f"{mods}/{mod_id}", g1["token"]), 200)
+expect("deleted module gone", call("PATCH", f"{mods}/{mod_one}", g1["token"], {"title": "x"}), 404, "MODULE_NOT_FOUND")
+expect("delete a deleted module", call("DELETE", f"{mods}/{mod_one}", g1["token"]), 404, "MODULE_NOT_FOUND")
+s, js = call("GET", mods, w1["token"])
+check("the class has no module left", s == 200 and dig(js, "data", "total") == 0, f"{s} {js}")
 
 # ---------- 0.13.0 class limit of a teacher ----------
 g6 = register_guru("g6", "Smoke Limit 1")

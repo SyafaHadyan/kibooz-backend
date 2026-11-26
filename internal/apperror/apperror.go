@@ -108,6 +108,7 @@ var (
 	ErrLastTeacher        = New(http.StatusConflict, "LAST_TEACHER", "The only teacher of a class cannot leave it")
 	ErrForumPostNotFound  = New(http.StatusNotFound, "FORUM_POST_NOT_FOUND", "Forum post not found")
 	ErrVideoNotFound      = New(http.StatusNotFound, "VIDEO_NOT_FOUND", "Learning video not found")
+	ErrModuleNotFound     = New(http.StatusNotFound, "MODULE_NOT_FOUND", "Learning module not found")
 	ErrInvalidImage       = New(http.StatusBadRequest, "INVALID_IMAGE", "The file must be a JPEG, PNG, or WebP image")
 	ErrFileTooLarge       = New(http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "The file size exceeds the allowed limit")
 	ErrBodyTooLarge       = New(http.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "The request body exceeds the allowed limit")
@@ -164,4 +165,49 @@ var (
 var (
 	ErrClassArchived    = New(http.StatusConflict, "CLASS_ARCHIVED", "This class is archived and read only")
 	ErrClassNotArchived = New(http.StatusConflict, "CLASS_NOT_ARCHIVED", "This class is not archived")
+)
+
+// errors of notifications, in a block of their own for the same reason
+var (
+	ErrNotificationNotFound = New(http.StatusNotFound, "NOTIFICATION_NOT_FOUND", "Notification not found")
+)
+
+// errors of the verification of an email, in a block of their own for the same reason
+var (
+	// ErrEmailNotVerified answers a sign in whose password was right, for an account that still waits for the code of its email
+	ErrEmailNotVerified = New(http.StatusForbidden, "EMAIL_NOT_VERIFIED", "Verify your email with the code that was sent to it, then sign in")
+	// ErrVerificationCodeInvalid is the only answer to a wrong, expired or used up code and to an email that no account waits on
+	ErrVerificationCodeInvalid = New(http.StatusBadRequest, "VERIFICATION_CODE_INVALID", "The code is wrong or has expired, ask for a new one")
+	ErrEmailAlreadyVerified    = New(http.StatusConflict, "EMAIL_ALREADY_VERIFIED", "This email is already verified")
+	ErrEmailSendFailed         = New(http.StatusServiceUnavailable, "EMAIL_SEND_FAILED", "The code could not be sent right now, please try again later")
+)
+
+// ErrResendTooSoon answers a request for a new code before the wait between two codes is over, or after the codes of the hour are
+// used. It says for how long to wait.
+func ErrResendTooSoon(retryAfterSeconds int) *Error {
+	return &Error{
+		Status: http.StatusTooManyRequests, Code: "VERIFICATION_RESEND_TOO_SOON", Message: "A code was sent a moment ago, wait before you ask for another",
+		RetryAfterSeconds: retryAfterSeconds,
+	}
+}
+
+// errors of Google Sign-In, in a block of their own for the same reason
+var (
+	ErrGoogleUnavailable       = New(http.StatusServiceUnavailable, "AUTH_GOOGLE_UNAVAILABLE", "Google Sign-In is unavailable")
+	ErrGoogleInvalid           = New(http.StatusUnauthorized, "AUTH_GOOGLE_INVALID", "Invalid or expired Google credential")
+	ErrRoleMismatch            = New(http.StatusConflict, "AUTH_ROLE_MISMATCH", "This Google account is registered under another role")
+	ErrPasswordNotSet          = New(http.StatusConflict, "AUTH_PASSWORD_NOT_SET", "This account signs in with Google and does not have a password set")
+	ErrGoogleAlreadyRegistered = New(http.StatusConflict, "GOOGLE_ALREADY_REGISTERED", "This Google account is already registered")
+	ErrAccountExists           = New(
+		http.StatusConflict, "AUTH_ACCOUNT_EXISTS",
+		"An account with this email exists, sign in with your password and link Google from your settings",
+	)
+	ErrCodeLimitReached = New(
+		http.StatusTooManyRequests, "VERIFICATION_CODE_LIMIT_REACHED", "No more codes can be sent to this account, register again later",
+	)
+	ErrGoogleStale         = New(http.StatusUnauthorized, "AUTH_GOOGLE_STALE", "Sign in with Google again, the credential is older than five minutes")
+	ErrGoogleAlreadyLinked = New(http.StatusConflict, "GOOGLE_ALREADY_LINKED", "This account is linked to a Google account already")
+	ErrGoogleInUse         = New(http.StatusConflict, "GOOGLE_ACCOUNT_IN_USE", "This Google account is linked to another account")
+	ErrGoogleNotLinked     = New(http.StatusConflict, "GOOGLE_NOT_LINKED", "This account is not linked to a Google account")
+	ErrPasswordAlreadySet  = New(http.StatusConflict, "AUTH_PASSWORD_ALREADY_SET", "This account has a password already, change it with the current one")
 )
