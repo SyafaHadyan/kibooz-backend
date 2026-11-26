@@ -25,13 +25,13 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
 )
 
-// hasher is what every use case of these tests shares, with room for any number of requests at once
 // the passwords of the fixtures are joined at run time, so a secret scanner does not take them for credentials in the source
 var (
 	correctPassword = strings.Join([]string{"correct", "password"}, "-")
 	wrongPassword   = strings.Join([]string{"wrong", "password"}, "-")
 )
 
+// hasher is what every use case of these tests shares, with room for any number of requests at once
 var hasher = passwords.New(&env.Env{PasswordHashConcurrency: 64, PasswordHashWaitMilliseconds: 1000})
 
 func TestUploadAvatarReportsDisabledStorage(t *testing.T) {
