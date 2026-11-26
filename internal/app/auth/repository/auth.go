@@ -80,7 +80,8 @@ type AuthDBItf interface {
 	// it works once.
 	CheckVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int) (matched bool, err error)
 	// MarkMailFailed notes that the mail of the live code of the account was not taken by the mail service, and when it is tried
-	// again, which is after 1, 5 and 15 minutes and then every hour. It does nothing when the live code is another one by now.
+	// again, which is after 1, 5 and 15 minutes and then every hour. An account that signed in while the verification was off has no
+	// end to its wait, so its retries stop after the one of 15 minutes. It does nothing when the live code is another one by now.
 	MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error
 	// ClearMailRetry stops the retries of the account, because a mail went out, the account is verified or the codes are used up
 	ClearMailRetry(ctx context.Context, userID uuid.UUID) error
@@ -809,9 +810,14 @@ func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, lim
 func (r *AuthDB) MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error {
 	// the right side of a SET reads the row as it was, so the wait follows the failures before this one
 	return r.db.WithContext(ctx).Exec(
-		`UPDATE email_verifications SET mail_failures = mail_failures + 1, retry_at = ?::timestamptz + (CASE mail_failures
-			WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '15 minutes'
-			ELSE interval '1 hour' END)
+		`UPDATE email_verifications SET mail_failures = mail_failures + 1, retry_at = CASE
+			WHEN mail_failures >= 3 AND EXISTS (
+				SELECT 1 FROM users u WHERE u.id = email_verifications.user_id AND u.signed_in_unverified_at IS NOT NULL
+			) THEN NULL
+			ELSE ?::timestamptz + (CASE mail_failures
+				WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '15 minutes'
+				ELSE interval '1 hour' END)
+			END
 		WHERE user_id = ? AND code_hash = ?`, now, userID, codeHash,
 	).Error
 }
