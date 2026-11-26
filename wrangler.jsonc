@@ -8,7 +8,7 @@
   },
   // The live site is served on docs.kibooz.syafahadyan.com only, so its workers.dev address is off
   "workers_dev": false,
-  // Other branches get a preview on a workers.dev address, which anyone with the link can open
+  // Preview and version addresses on workers.dev are on, and anyone with the link can open them
   "preview_urls": true,
   // wrangler preview refuses to run without this block
   "previews": {},
