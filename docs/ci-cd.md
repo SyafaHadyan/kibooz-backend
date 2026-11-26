@@ -82,7 +82,7 @@ The Google style release in `.vale.ini` and the Vale image in the commands of th
 
 ## Required checks
 
-A pull request can only be merged into `main` when these checks pass. The repository ruleset pins every check to the app that reports it, so another app cannot post a check with the same name. Add a new check to the ruleset in the same change that introduces it.
+A pull request can only be merged into `main` when these checks pass. The repository ruleset pins every check to the app that reports it, so another app cannot post a check with the same name. Add a new check to the ruleset in the same change that introduces it, after a code owner approves it as [Repository settings](../GOVERNANCE.md#repository-settings) says.
 
 | Check | Reported by |
 |:---|:---|

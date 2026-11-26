@@ -23,11 +23,11 @@ The ruleset does not require an approving review. Review from another person is 
 
 No setting of this repository is changed without the approval of a code owner, which is an account that [.github/CODEOWNERS](.github/CODEOWNERS) names. This holds for everyone who has access, including an account with admin rights, and for every tool or agent that works for them.
 
-A setting is anything that is not a file in the repository. Examples are rulesets and branch protection, required checks, Actions settings, environments, secrets and variables, webhooks, deploy keys, collaborators and teams, installed apps, security features, visibility, merge options, and a transfer or a rename.
+A setting is a configuration of the repository that GitHub or a connected app keeps outside its files. Examples are rulesets and branch protection, required checks, Actions settings, environments, secrets and variables, webhooks, deploy keys, collaborators and teams, installed apps, security features, visibility, merge options, and a transfer or a rename. Everyday work on issues, pull requests, branches and releases is not a change of a setting.
 
 The approval names the change, and each new change needs a new approval. An earlier approval does not cover it. Reading a setting needs no approval.
 
-This is a rule of the project. GitHub does not enforce it, because an admin can change a setting without anyone's approval.
+This is a rule of the project. GitHub does not enforce it, because an account with enough access can change a setting without anyone's approval.
 
 ## Releases
 
@@ -43,4 +43,4 @@ Everyone follows the [Code of Conduct](CODE_OF_CONDUCT.md). Vulnerabilities are 
 
 ## Changing this page
 
-Changes to this page, to [MAINTAINERS.md](MAINTAINERS.md) and to the rulesets go through a pull request like any other change, and the maintainer decides.
+Changes to this page and to [MAINTAINERS.md](MAINTAINERS.md) go through a pull request like any other change, and the maintainer decides. A change of a ruleset follows [Repository settings](#repository-settings).
