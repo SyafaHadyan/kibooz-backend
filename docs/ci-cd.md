@@ -106,8 +106,11 @@ A pull request can only be merged into `main` when these checks pass. The reposi
 | CodeQL and Trivy code scanning results | GitHub Advanced Security |
 | codecov/patch | Codecov |
 | security/snyk | Snyk, a commit status that cannot be pinned to an app |
+| Workers Builds: kibooz-api-docs | Cloudflare Workers and Pages |
 
-OSSF Scorecard is not required because it only runs on `main`, the repeatable build check is not required because it builds the image four times and only runs when the build inputs change, and the Cloudflare docs build is not required because it can be missing on pull requests from forks. DeepSource and Snyk are GitHub apps and are not workflows in this repository.
+OSSF Scorecard is not required because it only runs on `main`, and the repeatable build check is not required because it builds the image four times and only runs when the build inputs change. DeepSource, Snyk and the Cloudflare docs build are GitHub apps and are not workflows in this repository.
+
+The Cloudflare docs build can be missing on a pull request from a fork, and such a pull request cannot be merged. A maintainer then moves the commits to a branch of this repository and opens the pull request from there. On a branch other than `main` the check builds the site and uploads a preview, and only a build of `main` deploys the live site.
 
 The five DeepSource checks (Docker, Go, SQL, Secrets and JavaScript) are not required on purpose. When the free quota of the account runs out, DeepSource posts one skipped check and the five checks never report, so a required DeepSource check would block every pull request. That happened on 2026-10-15. DeepSource still analyzes every pull request and comments on it, so read its comment before a merge. The other checks and the review of the diff carry the load.
 
