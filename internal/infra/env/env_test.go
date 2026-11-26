@@ -390,7 +390,8 @@ func TestThePrivateBucketNeedsTheSharedStorageSettingsToo(t *testing.T) {
 	cfg.S3PrivateBucketName = "kibooz-production-private"
 	require.False(t, cfg.PrivateStorageEnabled(), "the account and the keys are missing")
 
-	cfg.S3PublicBucketName, cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "kibooz-production-media", "id", "secret"
+	cfg.S3PublicBucketName = "kibooz-production-media"
+	cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "id", strings.Repeat("k", 8)
 	cfg.S3PublicURL, cfg.S3AccountID = "https://media.example.test", "account"
 	require.True(t, cfg.PrivateStorageEnabled())
 
