@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
@@ -138,6 +139,35 @@ func TestFileCleanupSweep(t *testing.T) {
 		rows, _ := queuedAttempts(t, stuck)
 		require.Zero(t, rows)
 	})
+}
+
+// One statement cannot hold a row for each of these keys, so the queue has to insert them in batches
+func TestQueueTakesMoreKeysThanOneStatementHolds(t *testing.T) {
+	// testDB is set by the first call of app, and the tests run in shuffled order
+	app(t)
+
+	const files = 70_000
+
+	prefix := "trash/" + uuid.NewString()
+	keys := make([]string, 0, files)
+
+	for i := range files {
+		keys = append(keys, fmt.Sprintf("%s/%d.jpg", prefix, i))
+	}
+
+	errRollback := errors.New("leave the queue of the other tests alone")
+
+	err := testDB.Transaction(func(tx *gorm.DB) error {
+		require.NoError(t, filecleanup.Queue(tx, keys))
+
+		var queued int64
+
+		require.NoError(t, tx.Raw("SELECT count(*) FROM file_cleanups WHERE object_key LIKE ?", prefix+"%").Scan(&queued).Error)
+		require.EqualValues(t, files, queued)
+
+		return errRollback
+	})
+	require.ErrorIs(t, err, errRollback)
 }
 
 // gate holds every delete of the bucket until both sweeps have taken their files, so a file that both of them took would show twice
