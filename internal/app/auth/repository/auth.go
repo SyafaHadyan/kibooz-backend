@@ -25,9 +25,8 @@ const uniqueViolation = "23505"
 
 // PendingAccount is an account that waits for the code of its email, with what its removal needs
 type PendingAccount struct {
-	ID           uuid.UUID
-	Role         constants.Role
-	PasswordHash string
+	ID   uuid.UUID
+	Role constants.Role
 }
 
 type AuthDBItf interface {
@@ -38,14 +37,15 @@ type AuthDBItf interface {
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
 	// RegistrationTaken returns the conflict error of the first of the email, the NIP and the NISN that an active account already
-	// uses, and nil when none is. An empty NIP or NISN is not looked up. It lets a registration that cannot succeed be refused
-	// before the password hash, and the unique indexes still decide when two registrations race.
-	RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error
-	// StalePendingAccounts returns the accounts that wait for the code of their email since before the given time and that use the
-	// email or the NIP, so a new registration can replace them. An empty NIP is not looked up.
+	// uses, and nil when none is. An empty NIP or NISN is not looked up. The email and the NIP of the accounts in ignore do not
+	// count. It lets a registration that cannot succeed be refused before the password hash, and the unique indexes still decide
+	// when two registrations race.
+	RegistrationTaken(ctx context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error
+	// StalePendingAccounts returns the accounts that wait for the code of their email since before the given time, never signed in,
+	// and use the email or the NIP, so a new registration can replace them. An empty NIP is not looked up.
 	StalePendingAccounts(ctx context.Context, email string, nip string, before time.Time) ([]PendingAccount, error)
-	// OlderPendingAccounts returns up to limit accounts that wait for the code of their email since before the given time, the
-	// oldest first
+	// OlderPendingAccounts returns up to limit accounts that wait for the code of their email since before the given time and never
+	// signed in, the oldest first
 	OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]PendingAccount, error)
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
@@ -149,15 +149,24 @@ func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, er
 	return found > 0, err
 }
 
-func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error {
+	// no account has the zero id, so it stands in for an empty list, which SQL has no way to write
+	if len(ignore) == 0 {
+		ignore = []uuid.UUID{uuid.Nil}
+	}
+
 	checks := []struct {
 		value string
 		query string
+		args  []any
 		err   error
 	}{
-		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrEmailTaken},
-		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNIPTaken},
-		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
+		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL AND id NOT IN ? LIMIT 1", []any{email, ignore}, apperror.ErrEmailTaken},
+		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL AND user_id NOT IN ? LIMIT 1", []any{nip, ignore}, apperror.ErrNIPTaken},
+		{
+			nisn, "SELECT 1 FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL LIMIT 1",
+			[]any{nisn}, apperror.ErrNISNTaken,
+		},
 	}
 
 	for _, check := range checks {
@@ -167,7 +176,7 @@ func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string
 
 		var found []int
 
-		err := r.db.WithContext(ctx).Raw(check.query, check.value).Scan(&found).Error
+		err := r.db.WithContext(ctx).Raw(check.query, check.args...).Scan(&found).Error
 		if err != nil {
 			return err
 		}
@@ -386,7 +395,18 @@ func (r *AuthDB) CreateRefreshToken(
 			GoogleSub    *string
 		}
 
-		err := tx.Raw(
+		// An account that still waits for its code only gets here while the verification is off. It is marked before anything is
+		// read, so it is never removed for waiting, and the write comes first so two sign ins cannot deadlock on a lock upgrade.
+		err := tx.Exec(
+			`UPDATE users SET signed_in_unverified_at = ?
+			WHERE id = ? AND deleted_at IS NULL AND email_verification_pending AND signed_in_unverified_at IS NULL`,
+			token.CreatedAt, token.UserID,
+		).Error
+		if err != nil {
+			return err
+		}
+
+		err = tx.Raw(
 			"SELECT password_hash, google_sub FROM users WHERE id = ? AND deleted_at IS NULL FOR SHARE", token.UserID,
 		).Scan(&current).Error
 		if err != nil {
@@ -654,7 +674,13 @@ func (r *AuthDB) CheckVerification(
 			Attempts  int
 		}
 
-		err := tx.Raw("SELECT code_hash, expires_at, attempts FROM email_verifications WHERE user_id = ? FOR UPDATE", userID).Scan(&rows).Error
+		// the user row comes first, which is the order of the deletion of an account, so the two cannot deadlock
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		err = tx.Raw("SELECT code_hash, expires_at, attempts FROM email_verifications WHERE user_id = ? FOR UPDATE", userID).Scan(&rows).Error
 		if err != nil {
 			return err
 		}
@@ -702,8 +728,9 @@ func (r *AuthDB) StalePendingAccounts(ctx context.Context, email string, nip str
 	var accounts []PendingAccount
 
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT id, role, password_hash FROM users
-		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ?
+		`SELECT id, role FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ? AND signed_in_unverified_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.user_id = users.id)
 			AND (email = ? OR (? <> '' AND id IN (SELECT user_id FROM gurus WHERE nip = ? AND deleted_at IS NULL)))
 		LIMIT 5`, before, email, nip, nip,
 	).Scan(&accounts).Error
@@ -715,8 +742,9 @@ func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, lim
 	var accounts []PendingAccount
 
 	err := r.db.WithContext(ctx).Raw(
-		`SELECT id, role, password_hash FROM users
-		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ?
+		`SELECT id, role FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ? AND signed_in_unverified_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.user_id = users.id)
 		ORDER BY created_at LIMIT ?`, before, limit,
 	).Scan(&accounts).Error
 

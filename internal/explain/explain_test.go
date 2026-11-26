@@ -781,6 +781,14 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 
 	// the deletes of an account run last, because they remove what the calls above read
+	call("user, delete an account that waited for its code", func(ctx context.Context) error {
+		_, err := userRepo.SoftDeletePendingAccount(ctx, id("wali6"), constants.RoleWali, now)
+		if errors.Is(err, userrepository.ErrNotPending) {
+			return nil
+		}
+
+		return err
+	})
 	call("user, delete a parent account", func(ctx context.Context) error {
 		return drop(userRepo.SoftDeleteAccount(ctx, id("wali5"), constants.RoleWali, "x", "", func(string) (string, bool) { return "", false }))
 	})

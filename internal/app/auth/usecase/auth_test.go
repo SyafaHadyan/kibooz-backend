@@ -30,6 +30,9 @@ import (
 )
 
 type fakeRepo struct {
+	// takenElse is what is taken apart from the accounts that a lookup leaves out, which are recorded in ignored
+	takenElse error
+	ignored   []uuid.UUID
 	// stale is what the lookup of accounts that waited too long finds, staleBefore the time it was asked about and staleErr makes it fail
 	stale       []repository.PendingAccount
 	staleBefore time.Time
@@ -92,7 +95,14 @@ func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, er
 	return !f.unknownClassCode, f.lookupErr
 }
 
-func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string) error {
+func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error {
+	// a lookup that leaves accounts out asks what else is taken
+	if len(ignore) > 0 {
+		f.ignored = ignore
+
+		return f.takenElse
+	}
+
 	f.takenChecks = append(f.takenChecks, [3]string{email, nip, nisn})
 
 	return f.taken

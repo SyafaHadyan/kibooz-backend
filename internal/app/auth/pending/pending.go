@@ -4,6 +4,7 @@ package pending
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -29,8 +30,8 @@ type Source interface {
 	OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]repository.PendingAccount, error)
 }
 
-// Remover removes one account with everything that hangs on it
-type Remover func(ctx context.Context, account repository.PendingAccount) error
+// Remover removes one account with everything that hangs on it, as long as it still waits since before the given time
+type Remover func(ctx context.Context, account repository.PendingAccount, before time.Time) error
 
 // Sweeper removes the accounts that waited for the code of their email for PendingPurgeAfterDays. It must only run while the
 // verification is required, because an account that waits for a code can sign in when it is not.
@@ -54,8 +55,8 @@ func (s *Sweeper) Observe(observe func(error)) *Sweeper {
 	return s
 }
 
-// Sweep removes the accounts that waited too long and returns how many it removed. An account that cannot be removed is logged and
-// left for the next run, and it does not stop the others.
+// Sweep removes the accounts that waited too long and returns how many it removed. An account that cannot be removed is left for
+// the next run and does not stop the others, and the run then returns the errors.
 func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 	before := s.now().Add(-constants.PendingPurgeAfterDays * 24 * time.Hour)
 
@@ -66,14 +67,16 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 
 	removed := 0
 
+	var failures []error
+
 	for _, account := range accounts {
 		if ctx.Err() != nil {
 			return removed, ctx.Err()
 		}
 
-		err = s.remove(ctx, account)
+		err = s.remove(ctx, account, before)
 		if err != nil {
-			log.Printf("an account that waited for its code was not removed %v", err)
+			failures = append(failures, fmt.Errorf("account %s was not removed: %w", account.ID, err))
 
 			continue
 		}
@@ -81,7 +84,7 @@ func (s *Sweeper) Sweep(ctx context.Context) (int, error) {
 		removed++
 	}
 
-	return removed, nil
+	return removed, errors.Join(failures...)
 }
 
 // run is one sweep with its report to the observer and the log
@@ -93,7 +96,9 @@ func (s *Sweeper) run(ctx context.Context) {
 
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Printf("pending account sweep failed %v", err)
-	} else if removed > 0 {
+	}
+
+	if removed > 0 {
 		log.Printf("pending account sweep removed %d accounts that waited more than %d days for their code", removed, constants.PendingPurgeAfterDays)
 	}
 }

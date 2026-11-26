@@ -28,14 +28,14 @@ func buildReplacing(repo *fakeRepo, required bool, remove usecase.AccountRemover
 
 func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testing.T) {
 	ctx := context.Background()
-	account := repository.PendingAccount{ID: uuid.New(), Role: constants.RoleWali, PasswordHash: "hash"}
+	account := repository.PendingAccount{ID: uuid.New(), Role: constants.RoleWali}
 
 	t.Run("the old account is removed and the registration goes on", func(t *testing.T) {
 		repo := &fakeRepo{taken: apperror.ErrEmailTaken, stale: []repository.PendingAccount{account}}
 
 		var removed []repository.PendingAccount
 
-		useCase := buildReplacing(repo, true, func(_ context.Context, a repository.PendingAccount) error {
+		useCase := buildReplacing(repo, true, func(_ context.Context, a repository.PendingAccount, _ time.Time) error {
 			removed = append(removed, a)
 			repo.taken = nil
 
@@ -52,11 +52,25 @@ func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testi
 		require.WithinDuration(t, before.Add(-constants.PendingReplaceAfterHours*time.Hour), repo.staleBefore, time.Minute)
 	})
 
+	t.Run("nothing is removed when something else is taken too", func(t *testing.T) {
+		repo := &fakeRepo{taken: apperror.ErrEmailTaken, takenElse: apperror.ErrNIPTaken, stale: []repository.PendingAccount{account}}
+		called := false
+
+		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error {
+			called = true
+
+			return nil
+		}).Register(ctx, newParentRegistration())
+		require.Equal(t, "NIP_ALREADY_REGISTERED", apperror.As(err).Code)
+		require.Equal(t, []uuid.UUID{account.ID}, repo.ignored)
+		require.False(t, called)
+	})
+
 	t.Run("an account that waited less than a day keeps its email", func(t *testing.T) {
 		repo := &fakeRepo{taken: apperror.ErrEmailTaken}
 		called := false
 
-		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount) error {
+		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error {
 			called = true
 
 			return nil
@@ -69,7 +83,7 @@ func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testi
 		repo := &fakeRepo{taken: apperror.ErrEmailTaken, stale: []repository.PendingAccount{account}}
 		called := false
 
-		_, err := buildReplacing(repo, false, func(context.Context, repository.PendingAccount) error {
+		_, err := buildReplacing(repo, false, func(context.Context, repository.PendingAccount, time.Time) error {
 			called = true
 
 			return nil
@@ -82,7 +96,7 @@ func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testi
 		repo := &fakeRepo{taken: apperror.ErrNISNTaken, stale: []repository.PendingAccount{account}}
 		called := false
 
-		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount) error {
+		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error {
 			called = true
 
 			return nil
@@ -94,14 +108,14 @@ func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testi
 	t.Run("a failed removal or lookup leaves the answer as it was", func(t *testing.T) {
 		repo := &fakeRepo{taken: apperror.ErrEmailTaken, stale: []repository.PendingAccount{account}}
 
-		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount) error {
+		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error {
 			return errors.New("database is down")
 		}).Register(ctx, newParentRegistration())
 		require.Equal(t, "EMAIL_ALREADY_REGISTERED", apperror.As(err).Code)
 
 		repo = &fakeRepo{taken: apperror.ErrEmailTaken, staleErr: errors.New("database is down")}
 
-		_, err = buildReplacing(repo, true, func(context.Context, repository.PendingAccount) error { return nil }).Register(ctx, newParentRegistration())
+		_, err = buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error { return nil }).Register(ctx, newParentRegistration())
 		require.Equal(t, "EMAIL_ALREADY_REGISTERED", apperror.As(err).Code)
 	})
 

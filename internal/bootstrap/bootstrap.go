@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -176,9 +177,17 @@ func Start(version string) (*Bootstrap, error) {
 	authRepo := authrepository.NewAuthDB(database)
 	userRepo := userrepository.NewUserDB(database)
 
-	// an account that waits for its code has no files and no children, so the removal of an account has nothing to queue
-	removePending := func(ctx context.Context, account authrepository.PendingAccount) error {
-		_, err := userRepo.SoftDeleteAccount(ctx, account.ID, account.Role, account.PasswordHash, "", func(string) (string, bool) { return "", false })
+	removePending := func(ctx context.Context, account authrepository.PendingAccount, before time.Time) error {
+		deleted, err := userRepo.SoftDeletePendingAccount(ctx, account.ID, account.Role, before)
+		if errors.Is(err, userrepository.ErrNotPending) {
+			// it was verified, signed in or removed meanwhile, which leaves nothing to do
+			return nil
+		}
+
+		// a parent comes with a child, so the cached ranking of the class is stale
+		for _, classID := range deleted.ClassIDs {
+			_ = cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+		}
 
 		return err
 	}

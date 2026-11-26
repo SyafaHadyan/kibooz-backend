@@ -87,7 +87,7 @@ type AuthUseCase struct {
 }
 
 // AccountRemover removes an account that waits for the code of its email, with everything that hangs on it
-type AccountRemover func(ctx context.Context, account repository.PendingAccount) error
+type AccountRemover func(ctx context.Context, account repository.PendingAccount, before time.Time) error
 
 // Option changes how the use case is built, and the tests use it to put a fake in place of a part
 type Option func(*AuthUseCase)
@@ -218,7 +218,7 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 		nisn = strings.TrimSpace(req.Student.NISN)
 	}
 
-	err := u.registrationTaken(ctx, normalizeEmail(req.Email), nip, nisn)
+	stale, err := u.replaceable(ctx, normalizeEmail(req.Email), nip, nisn)
 	if err != nil {
 		return dto.AuthResponse{}, apperror.As(err)
 	}
@@ -226,6 +226,12 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	hash, err := u.hasher.Hash(ctx, req.Password)
 	if err != nil {
 		// the server is busy hashing, or the request ended
+		return dto.AuthResponse{}, apperror.As(err)
+	}
+
+	// an old account is only removed once nothing else stands in the way of the new one
+	err = u.replace(ctx, stale, normalizeEmail(req.Email), nip, nisn)
+	if err != nil {
 		return dto.AuthResponse{}, apperror.As(err)
 	}
 
@@ -279,34 +285,58 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	return u.withDeviceToken(res, user, "")
 }
 
-// registrationTaken is RegistrationTaken, except that an email or a NIP that only an account holds that has waited for its code for
-// more than a day is let go. That account is removed and the registration goes on. It only works while the verification of the
-// email is required, because an account that waits for a code can sign in when it is not.
-func (u *AuthUseCase) registrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+// replaceable is RegistrationTaken, except that an email or a NIP does not count when only accounts hold it that have waited for
+// their code for more than a day and never signed in. It returns those accounts, which replace removes. When anything else is taken
+// too, it returns the conflict and nothing is to be removed. It only works while the verification of the email is required,
+// because an account that waits for a code can sign in when it is not.
+func (u *AuthUseCase) replaceable(ctx context.Context, email string, nip string, nisn string) ([]repository.PendingAccount, error) {
 	err := u.repo.RegistrationTaken(ctx, email, nip, nisn)
 	if err == nil || !u.cfg.EmailVerificationRequired || u.removeAccount == nil {
-		return err
+		return nil, err
 	}
 
 	if code := apperror.As(err).Code; code != apperror.ErrEmailTaken.Code && code != apperror.ErrNIPTaken.Code {
-		return err
+		return nil, err
 	}
 
-	stale, lookupErr := u.repo.StalePendingAccounts(ctx, email, nip, u.now().Add(-constants.PendingReplaceAfterHours*time.Hour))
+	stale, lookupErr := u.repo.StalePendingAccounts(ctx, email, nip, u.pendingReplaceBefore())
 	if lookupErr != nil || len(stale) == 0 {
-		return err
+		return nil, err
+	}
+
+	ids := make([]uuid.UUID, len(stale))
+	for i, account := range stale {
+		ids[i] = account.ID
+	}
+
+	if rest := u.repo.RegistrationTaken(ctx, email, nip, nisn, ids...); rest != nil {
+		return nil, rest
+	}
+
+	return stale, nil
+}
+
+// replace removes the accounts that replaceable returned. When one cannot be removed, or something is taken after the removal,
+// it returns the conflict.
+func (u *AuthUseCase) replace(ctx context.Context, stale []repository.PendingAccount, email string, nip string, nisn string) error {
+	if len(stale) == 0 {
+		return nil
 	}
 
 	for _, account := range stale {
-		removeErr := u.removeAccount(ctx, account)
-		if removeErr != nil {
-			log.Printf("an account that waited for its code was not replaced %v", removeErr)
+		err := u.removeAccount(ctx, account, u.pendingReplaceBefore())
+		if err != nil {
+			log.Printf("an account that waited for its code was not replaced %v", err)
 
-			return err
+			break
 		}
 	}
 
 	return u.repo.RegistrationTaken(ctx, email, nip, nisn)
+}
+
+func (u *AuthUseCase) pendingReplaceBefore() time.Time {
+	return u.now().Add(-constants.PendingReplaceAfterHours * time.Hour)
 }
 
 // pendingRegistration answers the registration of an account that waits for its code, after it sent the first one. The account

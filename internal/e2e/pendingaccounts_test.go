@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
+	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
+	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 )
 
 // The queries that find an account that waited for its code, and the cap of codes, run against the real database.
@@ -24,7 +27,8 @@ func TestPendingAccountQueriesAndTheCodeCap(t *testing.T) {
 	require.NoError(t, testDB.Raw("SELECT nip FROM gurus WHERE user_id = ?::uuid", id).Scan(&nip).Error)
 	require.NotEmpty(t, nip)
 
-	// the account waits for its code, since a day and a half ago
+	// the account waits for its code since a day and a half ago, and never signed in
+	require.NoError(t, testDB.Exec("DELETE FROM refresh_tokens WHERE user_id = ?::uuid", id).Error)
 	require.NoError(t, testDB.Exec(
 		"UPDATE users SET email_verification_pending = TRUE, created_at = now() - interval '36 hours' WHERE id = ?::uuid", id,
 	).Error)
@@ -42,7 +46,6 @@ func TestPendingAccountQueriesAndTheCodeCap(t *testing.T) {
 		require.Len(t, byEmail, 1)
 		require.Equal(t, id, byEmail[0].ID.String())
 		require.Equal(t, "GURU", string(byEmail[0].Role))
-		require.NotEmpty(t, byEmail[0].PasswordHash)
 
 		byNIP, err := repo.StalePendingAccounts(ctx, "nobody@example.com", nip, day)
 		require.NoError(t, err)
@@ -105,6 +108,96 @@ func TestPendingAccountQueriesAndTheCodeCap(t *testing.T) {
 		// a rule without a cap sends on
 		_, err = repo.StoreVerification(ctx, userID, "hash-5", now.Add(6*time.Second), authrepository.SendRule{TTL: time.Hour, PerHour: 100})
 		require.NoError(t, err)
+	})
+}
+
+// ageAccount makes the account of the email as old as the interval says and returns its id
+func ageAccount(t *testing.T, email string, interval string) uuid.UUID {
+	t.Helper()
+
+	var id string
+
+	require.NoError(t, testDB.Raw(
+		"UPDATE users SET created_at = now() - ?::interval WHERE email = ? AND deleted_at IS NULL RETURNING id::text", interval, email,
+	).Scan(&id).Error)
+
+	return uuid.MustParse(id)
+}
+
+func deletedAccounts(t *testing.T, email string) (active int64, deleted int64) {
+	t.Helper()
+
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE email = ? AND deleted_at IS NULL", email).Scan(&active).Error)
+	require.NoError(t, testDB.Raw("SELECT count(*) FROM users WHERE email = ? AND deleted_at IS NOT NULL", email).Scan(&deleted).Error)
+
+	return active, deleted
+}
+
+func TestAWaitingAccountIsReplacedOrRemovedUnlessItSignedIn(t *testing.T) {
+	ctx := context.Background()
+	verifying, _ := startVerifying(t)
+	off := app(t)
+	repo := authrepository.NewAuthDB(testDB)
+	users := userrepository.NewUserDB(testDB)
+
+	t.Run("a registration replaces the account that waited more than a day", func(t *testing.T) {
+		email, _ := registerWaitingGuru(t, verifying)
+		ageAccount(t, email, "36 hours")
+
+		res := callApp(t, verifying, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": email, "password": testPassword, "fullName": "Second Teacher", "role": "GURU", "class": map[string]any{"name": "Again"},
+		})
+		require.Equal(t, http.StatusCreated, res.Status, "body %v", res.Body)
+
+		active, deleted := deletedAccounts(t, email)
+		require.Equal(t, int64(1), active)
+		require.Equal(t, int64(1), deleted)
+	})
+
+	t.Run("an account that never signed in is removed after the time", func(t *testing.T) {
+		email, _ := registerWaitingGuru(t, verifying)
+		id := ageAccount(t, email, "8 days")
+
+		_, err := users.SoftDeletePendingAccount(ctx, id, constants.RoleGuru, time.Now().Add(-9*24*time.Hour))
+		require.ErrorIs(t, err, userrepository.ErrNotPending, "it is newer than the limit")
+
+		_, err = users.SoftDeletePendingAccount(ctx, id, constants.RoleGuru, time.Now().Add(-7*24*time.Hour))
+		require.NoError(t, err)
+
+		active, deleted := deletedAccounts(t, email)
+		require.Zero(t, active)
+		require.Equal(t, int64(1), deleted)
+	})
+
+	t.Run("an account that signed in while the verification was off is kept", func(t *testing.T) {
+		email, _ := registerWaitingGuru(t, verifying)
+		require.Equal(t, http.StatusOK, login(t, off, email, testPassword).Status)
+
+		id := ageAccount(t, email, "8 days")
+
+		// the mark stays after the session is gone
+		require.NoError(t, testDB.Exec("DELETE FROM refresh_tokens WHERE user_id = ?", id).Error)
+
+		before := time.Now().Add(-7 * 24 * time.Hour)
+
+		_, err := users.SoftDeletePendingAccount(ctx, id, constants.RoleGuru, before)
+		require.ErrorIs(t, err, userrepository.ErrNotPending)
+
+		older, err := repo.OlderPendingAccounts(ctx, before, 1000)
+		require.NoError(t, err)
+
+		for _, account := range older {
+			require.NotEqual(t, id, account.ID)
+		}
+
+		stale, err := repo.StalePendingAccounts(ctx, email, "", before)
+		require.NoError(t, err)
+		require.Empty(t, stale)
+
+		res := callApp(t, verifying, http.MethodPost, "/api/v1/auth/register", "", map[string]any{
+			"email": email, "password": testPassword, "fullName": "Second Teacher", "role": "GURU", "class": map[string]any{"name": "Again"},
+		})
+		res.requireError(t, http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
 	})
 }
 

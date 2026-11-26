@@ -41,7 +41,7 @@ func TestSweepRemovesTheAccountsThatWaitedAWeek(t *testing.T) {
 
 	var removed []uuid.UUID
 
-	sweeper := pending.NewSweeper(src, func(_ context.Context, a repository.PendingAccount) error {
+	sweeper := pending.NewSweeper(src, func(_ context.Context, a repository.PendingAccount, _ time.Time) error {
 		removed = append(removed, a.ID)
 
 		return nil
@@ -58,7 +58,7 @@ func TestSweepRemovesTheAccountsThatWaitedAWeek(t *testing.T) {
 
 func TestSweepSkipsAnAccountThatCannotBeRemoved(t *testing.T) {
 	list := accounts(3)
-	sweeper := pending.NewSweeper(&source{accounts: list}, func(_ context.Context, a repository.PendingAccount) error {
+	sweeper := pending.NewSweeper(&source{accounts: list}, func(_ context.Context, a repository.PendingAccount, _ time.Time) error {
 		if a.ID == list[1].ID {
 			return errors.New("refused")
 		}
@@ -67,12 +67,12 @@ func TestSweepSkipsAnAccountThatCannotBeRemoved(t *testing.T) {
 	})
 
 	count, err := sweeper.Sweep(context.Background())
-	require.NoError(t, err)
+	require.ErrorContains(t, err, list[1].ID.String())
 	require.Equal(t, 2, count)
 }
 
 func TestSweepReportsAFailedLookup(t *testing.T) {
-	sweeper := pending.NewSweeper(&source{err: errors.New("database is down")}, func(context.Context, repository.PendingAccount) error { return nil })
+	sweeper := pending.NewSweeper(&source{err: errors.New("database is down")}, func(context.Context, repository.PendingAccount, time.Time) error { return nil })
 
 	_, err := sweeper.Sweep(context.Background())
 	require.Error(t, err)
@@ -82,7 +82,7 @@ func TestSweepStopsWhenTheContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	sweeper := pending.NewSweeper(&source{accounts: accounts(2)}, func(context.Context, repository.PendingAccount) error { return nil })
+	sweeper := pending.NewSweeper(&source{accounts: accounts(2)}, func(context.Context, repository.PendingAccount, time.Time) error { return nil })
 
 	count, err := sweeper.Sweep(ctx)
 	require.ErrorIs(t, err, context.Canceled)
@@ -93,11 +93,19 @@ func TestStartRunsTheSweepAndStopWaitsForIt(t *testing.T) {
 	ran := make(chan struct{}, 1)
 	observed := make(chan error, 1)
 
-	sweeper := pending.NewSweeper(&source{accounts: accounts(1)}, func(context.Context, repository.PendingAccount) error {
-		ran <- struct{}{}
+	sweeper := pending.NewSweeper(&source{accounts: accounts(1)}, func(context.Context, repository.PendingAccount, time.Time) error {
+		select {
+		case ran <- struct{}{}:
+		default:
+		}
 
 		return nil
-	}).Observe(func(err error) { observed <- err })
+	}).Observe(func(err error) {
+		select {
+		case observed <- err:
+		default:
+		}
+	})
 
 	// the first run happens a minute after the start, so a short interval makes it sooner
 	stop := sweeper.Start(10 * time.Millisecond)
