@@ -47,6 +47,17 @@ student="$(get /wali/dashboard "$wali_session" | jq -r '.data.student.id')"
 
 requests="$(jq -n --arg gt "$guru_session" --arg wt "$wali_session" --arg s "$student" --arg e "$wali_email" --arg p "$pass" --arg w "$pass-wrong" '[
   {method: "GET", path: "/healthz"},
+  {method: "POST", path: "/api/v1/auth/google", body: {idToken: "zap-not-a-token", role: "WALI"}},
+  {method: "POST", path: "/api/v1/auth/google", body: {}},
+  {method: "POST", path: "/api/v1/auth/google/register", body: {idToken: "zap-not-a-token", fullName: "ZAP Google", role: "GURU", class: {name: "zap", gradeLevel: "Class Z"}}},
+  {method: "POST", path: "/api/v1/auth/google/register", body: {}},
+  {method: "POST", path: "/api/v1/users/me/google", token: $wt, body: {idToken: "zap-not-a-token", password: $w}},
+  {method: "POST", path: "/api/v1/users/me/google", token: $wt, body: {}},
+  {method: "POST", path: "/api/v1/users/me/google", body: {idToken: "zap-not-a-token", password: $p}},
+  {method: "DELETE", path: "/api/v1/users/me/google", token: $wt, body: {password: $w}},
+  {method: "DELETE", path: "/api/v1/users/me/google", token: $wt, body: {}},
+  {method: "POST", path: "/api/v1/users/me/password", token: $gt, body: {idToken: "zap-not-a-token", newPassword: ($p + "-google")}},
+  {method: "POST", path: "/api/v1/users/me/password", token: $gt, body: {}},
   {method: "GET", path: "/api/v1/guru/dashboard", token: $gt},
   {method: "GET", path: "/api/v1/guru/mood/analytics?range=monthly", token: $gt},
   {method: "POST", path: "/api/v1/guru/mood/log", token: $gt, body: {studentId: $s, moodType: "SENANG"}},
