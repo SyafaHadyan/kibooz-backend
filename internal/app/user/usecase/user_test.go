@@ -150,6 +150,10 @@ func (f *fakeRepo) FindUserByID(context.Context, uuid.UUID) (*entity.User, error
 	return f.user, f.lookupErr
 }
 
+func (f *fakeRepo) SoftDeletePendingAccount(context.Context, uuid.UUID, constants.Role, time.Time) (repository.DeletedAccount, error) {
+	return repository.DeletedAccount{}, f.err
+}
+
 func (f *fakeRepo) SoftDeleteAccount(
 	_ context.Context, _ uuid.UUID, _ constants.Role, verifiedHash string, successorEmail string, fileKey repository.FileKeyFunc,
 ) (repository.DeletedAccount, error) {

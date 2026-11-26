@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 
 	authhandler "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/interface/rest"
+	pendingsweep "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/pending"
 	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
 	authusecase "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
 	chathandler "github.com/SyafaHadyan/kibooz-backend/internal/app/chat/interface/rest"
@@ -78,6 +80,7 @@ type Bootstrap struct {
 	stopKeys      func()
 	stopTokens    func()
 	stopNotifs    func()
+	stopPending   func()
 	stopReports   func()
 	stopLive      func()
 	stopPush      func()
@@ -171,8 +174,26 @@ func Start(version string) (*Bootstrap, error) {
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
 
+	authRepo := authrepository.NewAuthDB(database)
+	userRepo := userrepository.NewUserDB(database)
+
+	removePending := func(ctx context.Context, account authrepository.PendingAccount, before time.Time) error {
+		deleted, err := userRepo.SoftDeletePendingAccount(ctx, account.ID, account.Role, before)
+		if errors.Is(err, userrepository.ErrNotPending) {
+			// it was verified, signed in or removed meanwhile, which leaves nothing to do
+			return nil
+		}
+
+		// a parent comes with a child, so the cached ranking of the class is stale
+		for _, classID := range deleted.ClassIDs {
+			_ = cache.Del(ctx, constants.LeaderboardKeyPrefix+classID.String())
+		}
+
+		return err
+	}
+
 	authUseCase := authusecase.NewAuthUseCase(
-		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)),
+		authRepo, jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)), authusecase.WithAccountRemover(removePending),
 	)
 
 	for _, collector := range authUseCase.Collectors() {
@@ -273,7 +294,7 @@ func Start(version string) (*Bootstrap, error) {
 		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), retryingPrivate, cfg, hub, pusher), hub, cfg,
 	)
 	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), app.GoogleTokenLimiter(), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), retrying, cache, hasher, userusecase.WithGoogleVerifier(authUseCase.GoogleVerifier()),
+		userRepo, retrying, cache, hasher, userusecase.WithGoogleVerifier(authUseCase.GoogleVerifier()),
 	))
 
 	stats.AllowRoutes(app.Fiber.GetRoutes())
@@ -315,6 +336,13 @@ func Start(version string) (*Bootstrap, error) {
 	stopNotifs := notificationsweep.NewSweeper(database).
 		Observe(stats.Job("notification_purge")).Start(notificationsweep.Interval)
 
+	// accounts that wait for a code can sign in while the verification is off, so nothing may remove them then
+	stopPending := func() {}
+	if cfg.EmailVerificationRequired {
+		stopPending = pendingsweep.NewSweeper(authRepo, removePending).
+			Observe(stats.Job("pending_account_purge")).Start(pendingsweep.Interval)
+	}
+
 	stopCleanup := func() {}
 	if storage.Enabled() {
 		stopCleanup = filecleanup.New(database, storage).WithPrivate(privateStorage).
@@ -330,7 +358,7 @@ func Start(version string) (*Bootstrap, error) {
 
 	return &Bootstrap{
 		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
-		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
+		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopPending: stopPending, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
 }
 
@@ -351,6 +379,7 @@ func (b *Bootstrap) Close() {
 	b.stopKeys()
 	b.stopTokens()
 	b.stopNotifs()
+	b.stopPending()
 	b.metrics.Close()
 
 	_ = b.healthDB.Close()

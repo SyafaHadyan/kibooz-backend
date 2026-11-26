@@ -23,6 +23,12 @@ import (
 
 const uniqueViolation = "23505"
 
+// PendingAccount is an account that waits for the code of its email, with what its removal needs
+type PendingAccount struct {
+	ID   uuid.UUID
+	Role constants.Role
+}
+
 type AuthDBItf interface {
 	FindUserByEmail(ctx context.Context, email string) (*entity.User, error)
 	FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
@@ -30,10 +36,20 @@ type AuthDBItf interface {
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
+	// ClassTakesChildren answers the refusal that CreateWali would give for the class of joinCode, such as a class that is closed
+	// or full, and nil when it takes a new child
+	ClassTakesChildren(ctx context.Context, joinCode string) error
 	// RegistrationTaken returns the conflict error of the first of the email, the NIP and the NISN that an active account already
-	// uses, and nil when none is. An empty NIP or NISN is not looked up. It lets a registration that cannot succeed be refused
-	// before the password hash, and the unique indexes still decide when two registrations race.
-	RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error
+	// uses, and nil when none is. An empty NIP or NISN is not looked up. What the accounts in ignore hold, their children included,
+	// does not count. It lets a registration that cannot succeed be refused before the password hash, and the unique indexes still decide
+	// when two registrations race.
+	RegistrationTaken(ctx context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error
+	// StalePendingAccounts returns the accounts that wait for the code of their email since before the given time, never signed in,
+	// and use the email or the NIP, so a new registration can replace them. An empty NIP is not looked up.
+	StalePendingAccounts(ctx context.Context, email string, nip string, before time.Time) ([]PendingAccount, error)
+	// OlderPendingAccounts returns up to limit accounts that wait for the code of their email since before the given time and never
+	// signed in, the oldest first
+	OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]PendingAccount, error)
 	// CreateGuru stores the user, the guru profile, a fresh class, the teaching link and the first refresh token atomically,
 	// so an account never exists without the session it was registered with
 	CreateGuru(ctx context.Context, user *entity.User, guru *entity.Guru, class *entity.Class, session *entity.RefreshToken) error
@@ -76,7 +92,16 @@ type SendRule struct {
 	Cooldown time.Duration
 	// PerHour is the most codes in an hour, the new one included
 	PerHour int
+	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap, and an
+	// account that signed in while the verification was off has none either.
+	MaxTotal int
 }
+
+// ErrNotWaiting means that the account was verified or deleted, so no code is stored for it
+var ErrNotWaiting = errors.New("the account does not wait for a code")
+
+// ErrCodeLimit means that the account has had all the codes that it may have, so no new code is stored
+var ErrCodeLimit = errors.New("the account reached the cap of codes")
 
 // RotationPolicy holds the limits of swapping a refresh token
 type RotationPolicy struct {
@@ -131,15 +156,25 @@ func (r *AuthDB) ClassCodeExists(ctx context.Context, joinCode string) (bool, er
 	return found > 0, err
 }
 
-func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string) error {
+func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error {
+	// no account has the zero id, so it stands in for an empty list, which SQL has no way to write
+	if len(ignore) == 0 {
+		ignore = []uuid.UUID{uuid.Nil}
+	}
+
 	checks := []struct {
 		value string
 		query string
+		args  []any
 		err   error
 	}{
-		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrEmailTaken},
-		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL LIMIT 1", apperror.ErrNIPTaken},
-		{nisn, "SELECT 1 FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL LIMIT 1", apperror.ErrNISNTaken},
+		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL AND id NOT IN ? LIMIT 1", []any{email, ignore}, apperror.ErrEmailTaken},
+		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL AND user_id NOT IN ? LIMIT 1", []any{nip, ignore}, apperror.ErrNIPTaken},
+		{
+			nisn, `SELECT 1 FROM students s WHERE s.nisn = ? AND s.nisn_verified_at IS NOT NULL AND s.deleted_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM walis w WHERE w.id = s.wali_id AND w.user_id IN ?) LIMIT 1`,
+			[]any{nisn, ignore}, apperror.ErrNISNTaken,
+		},
 	}
 
 	for _, check := range checks {
@@ -149,7 +184,7 @@ func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string
 
 		var found []int
 
-		err := r.db.WithContext(ctx).Raw(check.query, check.value).Scan(&found).Error
+		err := r.db.WithContext(ctx).Raw(check.query, check.args...).Scan(&found).Error
 		if err != nil {
 			return err
 		}
@@ -230,48 +265,61 @@ func (r *AuthDB) CreateGuru(
 	return mapUniqueViolation(err)
 }
 
+// openClass returns the class of the code when it takes a new child, and locks it for the rest of the transaction
+func openClass(tx *gorm.DB, joinCode string) (uuid.UUID, error) {
+	var class entity.Class
+
+	err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return uuid.Nil, apperror.ErrClassCodeNotFound
+	}
+
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
+	// while the class is being archived
+	err = classteam.LockOpen(tx, class.ID, joinCode)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// a class whose teachers were all deleted keeps its code but must not take in new children
+	var teachers int64
+
+	err = tx.Table("class_teachers AS ct").
+		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+		Where("ct.class_id = ?", class.ID).
+		Count(&teachers).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if teachers == 0 {
+		return uuid.Nil, apperror.ErrClassNoTeacher
+	}
+
+	return class.ID, classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+}
+
+func (r *AuthDB) ClassTakesChildren(ctx context.Context, joinCode string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		_, err := openClass(tx, joinCode)
+
+		return err
+	})
+}
+
 func (r *AuthDB) CreateWali(
 	ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
 ) (uuid.UUID, error) {
 	var classID uuid.UUID
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var class entity.Class
+		var err error
 
-		err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.ErrClassCodeNotFound
-		}
-
-		if err != nil {
-			return err
-		}
-
-		classID = class.ID
-
-		// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
-		// while the class is being archived
-		err = classteam.LockOpen(tx, class.ID, joinCode)
-		if err != nil {
-			return err
-		}
-
-		// a class whose teachers were all deleted keeps its code but must not take in new children
-		var teachers int64
-
-		err = tx.Table("class_teachers AS ct").
-			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
-			Where("ct.class_id = ?", class.ID).
-			Count(&teachers).Error
-		if err != nil {
-			return err
-		}
-
-		if teachers == 0 {
-			return apperror.ErrClassNoTeacher
-		}
-
-		err = classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+		classID, err = openClass(tx, joinCode)
 		if err != nil {
 			return err
 		}
@@ -287,10 +335,10 @@ func (r *AuthDB) CreateWali(
 		}
 
 		student.WaliID = wali.ID
-		student.ClassID = class.ID
+		student.ClassID = classID
 
 		// the lock of the class comes before the lock of the NISN, the order that a verification and a change of the number take them in
-		err = ranking.Lock(tx, class.ID)
+		err = ranking.Lock(tx, classID)
 		if err != nil {
 			return err
 		}
@@ -316,7 +364,7 @@ func (r *AuthDB) CreateWali(
 			return err
 		}
 
-		return ranking.Recompute(tx, class.ID)
+		return ranking.Recompute(tx, classID)
 	})
 
 	return classID, mapUniqueViolation(err)
@@ -368,7 +416,18 @@ func (r *AuthDB) CreateRefreshToken(
 			GoogleSub    *string
 		}
 
-		err := tx.Raw(
+		// An account that still waits for its code only gets here while the verification is off. It is marked before anything is
+		// read, so it is never removed for waiting, and the write comes first so two sign ins cannot deadlock on a lock upgrade.
+		err := tx.Exec(
+			`UPDATE users SET signed_in_unverified_at = ?
+			WHERE id = ? AND deleted_at IS NULL AND email_verification_pending AND signed_in_unverified_at IS NULL`,
+			token.CreatedAt, token.UserID,
+		).Error
+		if err != nil {
+			return err
+		}
+
+		err = tx.Raw(
 			"SELECT password_hash, google_sub FROM users WHERE id = ? AND deleted_at IS NULL FOR SHARE", token.UserID,
 		).Scan(&current).Error
 		if err != nil {
@@ -565,11 +624,37 @@ func (r *AuthDB) StoreVerification(
 			LastSentAt      time.Time
 			WindowStartedAt time.Time
 			SendsInWindow   int
+			SendsTotal      int
 		}
 
-		// the row of the account is locked, so two requests for a code cannot both pass the cooldown
-		err := tx.Raw(
-			"SELECT last_sent_at, window_started_at, sends_in_window FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
+		// the user row comes first, which is the order of the deletion of an account. A request that raced with a removal or a
+		// verification then stores nothing, so no code is left behind for a deleted account.
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		var waiting []struct {
+			SignedInUnverifiedAt *time.Time
+		}
+
+		err = tx.Raw(
+			"SELECT signed_in_unverified_at FROM users WHERE id = ? AND deleted_at IS NULL AND email_verification_pending", userID,
+		).Scan(&waiting).Error
+		if err != nil {
+			return err
+		}
+
+		if len(waiting) == 0 {
+			return ErrNotWaiting
+		}
+
+		// an account that signed in is never replaced or removed, so a cap would leave it with no way to ever verify
+		capped := rule.MaxTotal > 0 && waiting[0].SignedInUnverifiedAt == nil
+
+		// the row of the code is locked, so two requests for a code cannot both pass the cooldown
+		err = tx.Raw(
+			"SELECT last_sent_at, window_started_at, sends_in_window, sends_total FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
 		).Scan(&rows).Error
 		if err != nil {
 			return err
@@ -579,12 +664,17 @@ func (r *AuthDB) StoreVerification(
 
 		if len(rows) == 0 {
 			return tx.Exec(
-				`INSERT INTO email_verifications (user_id, code_hash, expires_at, attempts, last_sent_at, window_started_at, sends_in_window)
-				VALUES (?, ?, ?, 0, ?, ?, 1)`, userID, codeHash, expires, now, now,
+				`INSERT INTO email_verifications (user_id, code_hash, expires_at, attempts, last_sent_at, window_started_at, sends_in_window, sends_total)
+				VALUES (?, ?, ?, 0, ?, ?, 1, 1)`, userID, codeHash, expires, now, now,
 			).Error
 		}
 
 		last := rows[0]
+
+		// the cap comes before the waits, because waiting does not help an account that has no codes left
+		if capped && last.SendsTotal >= rule.MaxTotal {
+			return ErrCodeLimit
+		}
 
 		if elapsed := now.Sub(last.LastSentAt); elapsed < rule.Cooldown {
 			wait = rule.Cooldown - elapsed
@@ -605,7 +695,7 @@ func (r *AuthDB) StoreVerification(
 
 		return tx.Exec(
 			`UPDATE email_verifications SET code_hash = ?, expires_at = ?, attempts = 0, last_sent_at = ?, window_started_at = ?,
-				sends_in_window = ? WHERE user_id = ?`, codeHash, expires, now, windowStart, sent+1, userID,
+				sends_in_window = ?, sends_total = sends_total + 1 WHERE user_id = ?`, codeHash, expires, now, windowStart, sent+1, userID,
 		).Error
 	})
 
@@ -630,7 +720,13 @@ func (r *AuthDB) CheckVerification(
 			Attempts  int
 		}
 
-		err := tx.Raw("SELECT code_hash, expires_at, attempts FROM email_verifications WHERE user_id = ? FOR UPDATE", userID).Scan(&rows).Error
+		// the user row comes first, which is the order of the deletion of an account, so the two cannot deadlock
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		err = tx.Raw("SELECT code_hash, expires_at, attempts FROM email_verifications WHERE user_id = ? FOR UPDATE", userID).Scan(&rows).Error
 		if err != nil {
 			return err
 		}
@@ -668,7 +764,35 @@ func (r *AuthDB) CheckVerification(
 
 func (r *AuthDB) ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error {
 	return r.db.WithContext(ctx).Exec(
-		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0)
+		`UPDATE email_verifications SET last_sent_at = ?, sends_in_window = GREATEST(sends_in_window - 1, 0),
+			sends_total = GREATEST(sends_total - 1, 0)
 		WHERE user_id = ? AND code_hash = ?`, now.Add(-cooldown), userID, codeHash,
 	).Error
+}
+
+func (r *AuthDB) StalePendingAccounts(ctx context.Context, email string, nip string, before time.Time) ([]PendingAccount, error) {
+	var accounts []PendingAccount
+
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT id, role FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ? AND signed_in_unverified_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.user_id = users.id)
+			AND (email = ? OR (? <> '' AND id IN (SELECT user_id FROM gurus WHERE nip = ? AND deleted_at IS NULL)))
+		LIMIT 5`, before, email, nip, nip,
+	).Scan(&accounts).Error
+
+	return accounts, err
+}
+
+func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, limit int) ([]PendingAccount, error) {
+	var accounts []PendingAccount
+
+	err := r.db.WithContext(ctx).Raw(
+		`SELECT id, role FROM users
+		WHERE email_verification_pending AND deleted_at IS NULL AND created_at < ? AND signed_in_unverified_at IS NULL
+			AND NOT EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.user_id = users.id)
+		ORDER BY created_at LIMIT ?`, before, limit,
+	).Scan(&accounts).Error
+
+	return accounts, err
 }

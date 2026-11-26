@@ -308,6 +308,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("auth, registration taken", func(ctx context.Context) error {
 		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999")
 	})
+	call("auth, registration taken apart from the accounts it replaces", func(ctx context.Context) error {
+		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999", parent)
+	})
+	call("auth, class takes children", func(ctx context.Context) error { return auth.ClassTakesChildren(ctx, "00000002") })
 	call("chat, find an account", func(ctx context.Context) error { return drop(chat.FindAccount(ctx, parent)) })
 	call("chat, share a class", func(ctx context.Context) error { return drop(chat.ShareClass(ctx, teacher, parent)) })
 	call("chat, contacts of a teacher", func(ctx context.Context) error {
@@ -448,6 +452,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("auth, delete a refresh token", func(ctx context.Context) error { return auth.DeleteRefreshToken(ctx, spare) })
 	rule := authrepository.SendRule{TTL: 15 * time.Minute, Cooldown: time.Minute, PerHour: 5}
 
+	// a code is only stored for an account that waits for one
+	require.NoError(t, quiet.Exec("UPDATE users SET email_verification_pending = TRUE WHERE id = ?", parent).Error)
+
 	call("auth, store the first verification code", func(ctx context.Context) error {
 		_, err := auth.StoreVerification(ctx, parent, "x", now, rule)
 
@@ -465,6 +472,12 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 	call("auth, give back a verification send", func(ctx context.Context) error {
 		return auth.ReleaseVerification(ctx, parent, "z", now.Add(2*time.Minute), time.Minute)
+	})
+	call("auth, find the accounts that waited a day for their code", func(ctx context.Context) error {
+		return drop(auth.StalePendingAccounts(ctx, "explain-wali@example.test", "123456", now.Add(-24*time.Hour)))
+	})
+	call("auth, find the accounts that waited a week for their code", func(ctx context.Context) error {
+		return drop(auth.OlderPendingAccounts(ctx, now.Add(-7*24*time.Hour), 100))
 	})
 	call("auth, check a wrong verification code", func(ctx context.Context) error {
 		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
@@ -775,6 +788,14 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 
 	// the deletes of an account run last, because they remove what the calls above read
+	call("user, delete an account that waited for its code", func(ctx context.Context) error {
+		_, err := userRepo.SoftDeletePendingAccount(ctx, id("wali6"), constants.RoleWali, now)
+		if errors.Is(err, userrepository.ErrNotPending) {
+			return nil
+		}
+
+		return err
+	})
 	call("user, delete a parent account", func(ctx context.Context) error {
 		return drop(userRepo.SoftDeleteAccount(ctx, id("wali5"), constants.RoleWali, "x", "", func(string) (string, bool) { return "", false }))
 	})

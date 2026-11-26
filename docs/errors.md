@@ -45,6 +45,7 @@ The `message` is English text for people and can be reworded, so an app branches
 | Code | Status | Meaning | What the app does |
 |:---|:---|:---|:---|
 | `EMAIL_NOT_VERIFIED` | 403 | The password was right, but the account waits for the code of its email | Show the screen for the code |
+| `VERIFICATION_CODE_LIMIT_REACHED` | 429 | The account was sent all the codes that it may have. The answer has no `Retry-After`, because waiting does not help | Tell the person to register again later, which replaces the account after a day |
 | `VERIFICATION_CODE_INVALID` | 400 | The code is wrong, expired or used up, or no account waits on this email. The answer is the same for all of them | Ask the person to check the code, or send a new one |
 | `VERIFICATION_RESEND_TOO_SOON` | 429 | A code was sent less than 60 seconds ago, or 5 were sent in the last hour. `Retry-After` says how long to wait | Disable the button and count down |
 | `EMAIL_ALREADY_VERIFIED` | 409 | The email of this account is verified already | Send the person to sign in |

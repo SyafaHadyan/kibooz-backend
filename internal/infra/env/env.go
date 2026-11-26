@@ -77,6 +77,9 @@ type Env struct {
 	// EmailVerificationRequired makes a new account confirm its email with a code before it can sign in. Accounts that exist
 	// stay verified. It needs ResendAPIKey, and switching it off leaves the accounts that wait able to sign in.
 	EmailVerificationRequired bool `env:"EMAIL_VERIFICATION_REQUIRED" envDefault:"false"`
+	// EmailCodesMaxPerAccount is the most codes that are ever mailed to one account that waits for its email, the first one included.
+	// It only counts when EmailVerificationRequired is on. An account that reached it asks for no more, and is replaced or purged later.
+	EmailCodesMaxPerAccount int `env:"EMAIL_CODES_MAX_PER_ACCOUNT" envDefault:"20"`
 	// ResendAPIKey is the key of the Resend account that sends the mail. A key with sending access to the domain of EmailFrom is enough.
 	ResendAPIKey string `env:"RESEND_API_KEY"`
 	// EmailFrom is the address that sends the mail. The mail shows it as "Kibooz <address>", and a value that already has a name
@@ -239,6 +242,10 @@ func (e *Env) validate() error {
 	// a verification with no way to send the code would lock every new account out
 	if e.EmailVerificationRequired && strings.TrimSpace(e.ResendAPIKey) == "" {
 		return errors.New("EMAIL_VERIFICATION_REQUIRED needs RESEND_API_KEY, or no new account could get its code")
+	}
+
+	if e.EmailVerificationRequired && e.EmailCodesMaxPerAccount < 1 {
+		return errors.New("EMAIL_CODES_MAX_PER_ACCOUNT has to be at least 1, or no account could get a code")
 	}
 
 	err = e.checkResendURL()

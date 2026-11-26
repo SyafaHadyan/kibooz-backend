@@ -30,6 +30,17 @@ import (
 )
 
 type fakeRepo struct {
+	// joinChecks holds the codes of the classes that were asked whether they take a child, and joinErr is the answer
+	joinChecks []string
+	joinErr    error
+	// takenElse is what is taken apart from the accounts that a lookup leaves out, which are recorded in ignored
+	takenElse error
+	ignored   []uuid.UUID
+	// stale is what the lookup of accounts that waited too long finds, staleBefore the time it was asked about and staleErr makes it fail
+	stale       []repository.PendingAccount
+	staleBefore time.Time
+	staleErr    error
+
 	user        *entity.User
 	rotateErrs  []error
 	rotateCalls int
@@ -87,10 +98,23 @@ func (f *fakeRepo) ClassCodeExists(_ context.Context, joinCode string) (bool, er
 	return !f.unknownClassCode, f.lookupErr
 }
 
-func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string) error {
+func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error {
+	// a lookup that leaves accounts out asks what else is taken
+	if len(ignore) > 0 {
+		f.ignored = ignore
+
+		return f.takenElse
+	}
+
 	f.takenChecks = append(f.takenChecks, [3]string{email, nip, nisn})
 
 	return f.taken
+}
+
+func (f *fakeRepo) ClassTakesChildren(_ context.Context, joinCode string) error {
+	f.joinChecks = append(f.joinChecks, joinCode)
+
+	return f.joinErr
 }
 
 func (f *fakeRepo) CreateGuru(_ context.Context, user *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
@@ -151,6 +175,16 @@ func (f *fakeRepo) RotateRefreshToken(
 }
 
 func (f *fakeRepo) DeleteRefreshToken(context.Context, string) error { return nil }
+
+func (f *fakeRepo) StalePendingAccounts(_ context.Context, _ string, _ string, before time.Time) ([]repository.PendingAccount, error) {
+	f.staleBefore = before
+
+	return f.stale, f.staleErr
+}
+
+func (f *fakeRepo) OlderPendingAccounts(context.Context, time.Time, int) ([]repository.PendingAccount, error) {
+	return f.stale, f.staleErr
+}
 
 func (f *fakeRepo) StoreVerification(
 	_ context.Context, userID uuid.UUID, codeHash string, _ time.Time, _ repository.SendRule,

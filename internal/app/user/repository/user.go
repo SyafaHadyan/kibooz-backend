@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -45,6 +46,10 @@ type UserDBItf interface {
 	SoftDeleteAccount(
 		ctx context.Context, userID uuid.UUID, role constants.Role, verifiedHash string, successorEmail string, fileKey FileKeyFunc,
 	) (DeletedAccount, error)
+	// SoftDeletePendingAccount deletes an account that waited for the code of its email the way SoftDeleteAccount does, but only
+	// while it still waits, was made before the given time and never signed in. Otherwise it returns ErrNotPending and changes
+	// nothing, so an account that was verified or signed in meanwhile stays.
+	SoftDeletePendingAccount(ctx context.Context, userID uuid.UUID, role constants.Role, before time.Time) (DeletedAccount, error)
 	// UpdatePassword stores newHash and ends every session of the account, but only while the stored hash is still
 	// oldHash, so a change that was made in between is not overwritten. It returns false when nothing was changed.
 	UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash string, newHash string) (bool, error)
@@ -227,6 +232,50 @@ func (r *UserDB) FindUserByID(ctx context.Context, id uuid.UUID) (*entity.User, 
 func (r *UserDB) SoftDeleteAccount(
 	ctx context.Context, userID uuid.UUID, role constants.Role, verifiedHash string, successorEmail string, fileKey FileKeyFunc,
 ) (DeletedAccount, error) {
+	// The password was checked before the transaction, so it only counts while it is still the password of the account. A change
+	// that committed in between, or a deletion that came first, ends the request without deleting anything.
+	confirm := func(tx *gorm.DB) error {
+		var current int64
+
+		err := tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
+		if err == nil && current == 0 {
+			err = apperror.ErrPasswordIncorrect
+		}
+
+		return err
+	}
+
+	return r.softDelete(ctx, userID, role, confirm, successorEmail, fileKey)
+}
+
+// ErrNotPending means that the account no longer waits for its code, signed in, is newer than the limit or is gone
+var ErrNotPending = errors.New("the account does not wait for its code")
+
+func (r *UserDB) SoftDeletePendingAccount(
+	ctx context.Context, userID uuid.UUID, role constants.Role, before time.Time,
+) (DeletedAccount, error) {
+	confirm := func(tx *gorm.DB) error {
+		var waiting int64
+
+		err := tx.Model(&entity.User{}).Where(
+			`id = ? AND email_verification_pending AND created_at < ? AND signed_in_unverified_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM refresh_tokens t WHERE t.user_id = users.id)`, userID, before,
+		).Count(&waiting).Error
+		if err == nil && waiting == 0 {
+			err = ErrNotPending
+		}
+
+		return err
+	}
+
+	// an account that never signed in has uploaded nothing
+	return r.softDelete(ctx, userID, role, confirm, "", func(string) (string, bool) { return "", false })
+}
+
+// softDelete is the deletion of an account. confirm runs after the user row is locked and refuses the deletion with an error.
+func (r *UserDB) softDelete(
+	ctx context.Context, userID uuid.UUID, role constants.Role, confirm func(*gorm.DB) error, successorEmail string, fileKey FileKeyFunc,
+) (DeletedAccount, error) {
 	var deleted DeletedAccount
 
 	err := ranking.Retry(func() error {
@@ -243,15 +292,7 @@ func (r *UserDB) SoftDeleteAccount(
 				return err
 			}
 
-			// The password was checked before this transaction, so it only counts while it is still the password of the account.
-			// A change that committed in between, or a deletion that came first, ends the request without deleting anything.
-			var current int64
-
-			err = tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, verifiedHash).Count(&current).Error
-			if err == nil && current == 0 {
-				err = apperror.ErrPasswordIncorrect
-			}
-
+			err = confirm(tx)
 			if err != nil {
 				return err
 			}

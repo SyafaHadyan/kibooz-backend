@@ -6,7 +6,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 
 | Table | What a row is |
 |:---|:---|
-| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number, an avatar address, the `google_sub` of the linked Google account and `email_verification_pending`, which is true while a new account waits for the code of its email |
+| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number, an avatar address, the `google_sub` of the linked Google account and `email_verification_pending`, which is true while a new account waits for the code of its email, and `signed_in_unverified_at`, set when such an account signed in while the verification was off |
 | `gurus` | The teacher part of a `GURU` account, with a NIP, a school name and an address |
 | `walis` | The parent part of a `WALI` account, with an address and a WhatsApp number |
 | `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set while the class is archived, which makes it read only, and it is also set when the only teacher of a class without an active child deletes the account. `join_open` is false while its teachers do not want new children |
@@ -25,7 +25,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 | `chat_reads` | How far each person of a conversation has read, the id of the last message |
 | `notifications` | One entry of the inbox of a teacher or a parent, with a `kind`, a title, a text, an optional reference to the record that caused it (`reference_type` and `reference_id`), the time it was read and the time it was made. A notification is removed 90 days after it was made, and with the account when the account is deleted |
 | `refresh_tokens` | A refresh token of a session, stored only as a SHA-256 hash |
-| `email_verifications` | The one live code of an account that waits for its email, stored as a keyed hash, with the time it expires, the wrong tries so far, the time of the last send and the sends of the current hour. The row is removed with the account, and when the code is used |
+| `email_verifications` | The one live code of an account that waits for its email, stored as a keyed hash, with the time it expires, the wrong tries so far, the time of the last send, the sends of the current hour and the number of codes that were sent in all. The row is removed with the account, and when the code is used |
 | `leaderboard_seasons` | One row for every semester that has begun |
 | `class_seasons` | The label of the semester that the points of a class belong to, so the reset of a new semester can go one class at a time and continue where an instance stopped. A trigger on `classes` adds the row |
 | `leaderboard_history` | The final standings of a class for a semester that ended, one row for each class, child and semester (unique key `leaderboard_history_unique`), so a second save of the same semester is skipped and not stored again |

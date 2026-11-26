@@ -144,7 +144,17 @@ func (u *AuthUseCase) GoogleRegister(ctx context.Context, req dto.GoogleRegister
 		nisn = strings.TrimSpace(req.Student.NISN)
 	}
 
-	if err := u.repo.RegistrationTaken(ctx, normalizeEmail(claims.Email), nip, nisn); err != nil {
+	stale, err := u.replaceable(ctx, normalizeEmail(claims.Email), nip, nisn)
+	if err == nil {
+		classCode := ""
+		if req.Role == constants.RoleWali {
+			classCode = normalizeClassCode(req.ClassCode)
+		}
+
+		err = u.replace(ctx, stale, normalizeEmail(claims.Email), nip, nisn, classCode)
+	}
+
+	if err != nil {
 		return dto.AuthResponse{}, wrap(err)
 	}
 

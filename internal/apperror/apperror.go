@@ -203,6 +203,9 @@ var (
 		http.StatusConflict, "AUTH_ACCOUNT_EXISTS",
 		"An account with this email exists, sign in with your password and link Google from your settings",
 	)
+	ErrCodeLimitReached = New(
+		http.StatusTooManyRequests, "VERIFICATION_CODE_LIMIT_REACHED", "No more codes can be sent to this account, register again later",
+	)
 	ErrGoogleStale         = New(http.StatusUnauthorized, "AUTH_GOOGLE_STALE", "Sign in with Google again, the credential is older than five minutes")
 	ErrGoogleAlreadyLinked = New(http.StatusConflict, "GOOGLE_ALREADY_LINKED", "This account is linked to a Google account already")
 	ErrGoogleInUse         = New(http.StatusConflict, "GOOGLE_ACCOUNT_IN_USE", "This Google account is linked to another account")

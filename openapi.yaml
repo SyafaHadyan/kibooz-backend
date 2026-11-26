@@ -251,10 +251,11 @@ paths:
         "429":
           description: |
             Too many requests for this account (`RATE_LIMITED`), or a code was sent a moment ago or the codes of the hour are used up
-            (`VERIFICATION_RESEND_TOO_SOON`)
+            (`VERIFICATION_RESEND_TOO_SOON`), or the account was sent all the codes that it may have
+            (`VERIFICATION_CODE_LIMIT_REACHED`, which has no `Retry-After`, because waiting does not help)
           headers:
             Retry-After:
-              description: Seconds to wait before the next try
+              description: Seconds to wait before the next try, except for `VERIFICATION_CODE_LIMIT_REACHED`
               schema:
                 type: string
           content:
