@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.24.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.23.0...v0.24.0) (2026-11-26)
+
+
+### Features
+
+* **auth:** add Google Sign-In and onboarding endpoints ([#488](https://github.com/SyafaHadyan/kibooz-backend/issues/488)) ([abf27ae](https://github.com/SyafaHadyan/kibooz-backend/commit/abf27aebd312c1f52c3bdcd2b4b0f3b1dfc965c9))
+
+
+### Bug Fixes
+
+* **auth:** download the Google keys outside the cache lock and wait after a failure ([b3e5ea7](https://github.com/SyafaHadyan/kibooz-backend/commit/b3e5ea7d11e89b19036e50009cc9e5045efde646))
+* **auth:** end a racing Google sign in after unlink, require exp and fix the review findings ([963a1d9](https://github.com/SyafaHadyan/kibooz-backend/commit/963a1d98bd277389ea814bc896d53256a8fb43be))
+* **auth:** link Google by subject only and add password, link and unlink routes ([08e052c](https://github.com/SyafaHadyan/kibooz-backend/commit/08e052c61d4aece96a8139704b3105362eb3c958))
+* **smoke:** skip the logout of a failed refresh and place the verification paragraph after the normal run ([6b2da9e](https://github.com/SyafaHadyan/kibooz-backend/commit/6b2da9e76566c6dfa73152266aecb9b55ad0b645))
+
 ## [0.23.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.22.0...v0.23.0) (2026-11-25)
 
 
