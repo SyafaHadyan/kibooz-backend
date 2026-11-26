@@ -67,6 +67,11 @@ func TestTheOtherRulesStillApply(t *testing.T) {
 	limit := valid()
 	limit.TrashDailyLimit = 0
 	require.ErrorContains(t, limit.validate(), "TRASH_DAILY_LIMIT")
+
+	// a negative reward would break the check constraint on the points of every claim past the limit
+	overLimit := valid()
+	overLimit.TrashOverLimitPoints = -1
+	require.ErrorContains(t, overLimit.validate(), "TRASH_OVER_LIMIT_POINTS")
 }
 
 func TestARequestTimeoutThatIsNotPositiveIsRejected(t *testing.T) {
@@ -385,7 +390,8 @@ func TestThePrivateBucketNeedsTheSharedStorageSettingsToo(t *testing.T) {
 	cfg.S3PrivateBucketName = "kibooz-production-private"
 	require.False(t, cfg.PrivateStorageEnabled(), "the account and the keys are missing")
 
-	cfg.S3PublicBucketName, cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "kibooz-production-media", "id", "secret"
+	cfg.S3PublicBucketName = "kibooz-production-media"
+	cfg.S3AccessKeyID, cfg.S3AccessKeySecret = "id", strings.Repeat("k", 8)
 	cfg.S3PublicURL, cfg.S3AccountID = "https://media.example.test", "account"
 	require.True(t, cfg.PrivateStorageEnabled())
 

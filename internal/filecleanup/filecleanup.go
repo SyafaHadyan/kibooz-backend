@@ -235,6 +235,9 @@ type queued struct {
 
 func (queued) TableName() string { return "file_cleanups" }
 
+// queueBatch keeps one insert far below the 65535 parameters that PostgreSQL takes in one statement
+const queueBatch = 1000
+
 // Queue adds the keys to the cleanup queue in the transaction of the change that dropped their addresses, and keeps the
 // ones that are already there as they are. The sweep removes them from the bucket.
 func Queue(tx *gorm.DB, keys []string) error {
@@ -248,7 +251,7 @@ func Queue(tx *gorm.DB, keys []string) error {
 	}
 
 	// attempts and queued_at are left to the defaults of the table
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(&rows, queueBatch).Error
 }
 
 // retryingStorage queues the key of every delete that the bucket refused, so the object does not stay for good

@@ -57,10 +57,11 @@ jobs:
             echo "DB_PASSWORD=$(openssl rand -hex 16)"
             echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
             echo "JWT_SECRET_KEY=$(openssl rand -hex 32)"
-            # the default limits would answer 429 and fail every claim during the test
+            # the default rate limits would answer 429 and fail claims during the test
             echo "USER_LIMITER_MAX=1000000"
             echo "AUTH_LIMITER_MAX=1000000"
             echo "CLASS_CODE_LIMITER_MAX=1000000"
+            # keeps every claim of the test on the full points
             echo "TRASH_DAILY_LIMIT=1000000"
             echo "KEEPALIVE_SECONDS=0"
             echo "GO_IMAGE=$(grep -oE 'golang:[0-9][^ "]*@sha256:[0-9a-f]{64}' Dockerfile | head -1)"

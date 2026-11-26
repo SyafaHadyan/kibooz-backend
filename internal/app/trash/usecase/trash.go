@@ -93,16 +93,7 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 	now := u.now()
 	from, to := clock.DayBounds(now, u.cfg.Location())
 
-	// cheap early check so a rejected claim never uploads a photo
-	used, err := u.repo.CountScans(ctx, student.ID, from, to)
-	if err != nil {
-		return dto.ScanClaimResponse{}, apperror.Internal(err)
-	}
-
-	if used >= u.cfg.TrashDailyLimit {
-		return dto.ScanClaimResponse{}, apperror.ErrDailyLimitReached
-	}
-
+	// the full points of the type, which the repository lowers when the claim comes after the daily limit
 	scan := &entity.TrashScan{
 		ID:              uuid.New(),
 		StudentID:       student.ID,
@@ -126,7 +117,7 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 		photoKey = key
 	}
 
-	result, err := u.repo.Claim(ctx, scan, student.ClassID, u.cfg.TrashDailyLimit, from, to)
+	result, err := u.repo.Claim(ctx, scan, student.ClassID, u.cfg.TrashDailyLimit, u.cfg.TrashOverLimitPoints, from, to)
 	if err != nil {
 		// the claim lost a race or failed, so nothing will ever point at the photo
 		if photoKey != "" {
@@ -145,6 +136,7 @@ func (u *TrashUseCase) ScanClaim(ctx context.Context, userID uuid.UUID, req dto.
 		SeasonPoints:        result.SeasonPoints,
 		NewRank:             result.Rank,
 		RemainingDailyScans: result.Remaining,
+		ReducedPoints:       result.Reduced,
 	}, nil
 }
 

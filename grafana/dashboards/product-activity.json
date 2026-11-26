@@ -451,7 +451,7 @@
     {
       "type": "timeseries",
       "title": "Trash scans",
-      "description": "A 429 here is the daily limit of the child or a rate limit",
+      "description": "A 429 here is a rate limit. A claim past the daily limit of the child succeeds with fewer points",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -500,7 +500,7 @@
           },
           "expr": "sum(rate(kibooz_http_requests_total{host=~\"$host\", instance=~\"$instance\", method=\"POST\", status=\"429\", route=~\".*/scan-claim\"}[$__rate_interval])) * 3600",
           "interval": "1m",
-          "legendFormat": "refused by the daily limit per hour"
+          "legendFormat": "refused by a rate limit per hour"
         }
       ],
       "id": 8,

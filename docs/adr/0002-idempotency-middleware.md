@@ -4,7 +4,7 @@ Status: Accepted, 2026-10-18
 
 ## Context
 
-The app queues actions while the phone is offline and repeats them until one works. Without protection, a repeated mood log is stored twice and a repeated trash claim spends the daily limit of five. A response can be lost on the way back even when the work succeeded, so the app cannot know whether to repeat.
+The app queues actions while the phone is offline and repeats them until one works. Without protection, a repeated mood log is stored twice and a repeated trash claim is stored twice and can earn points twice. A response can be lost on the way back even when the work succeeded, so the app cannot know whether to repeat.
 
 ## Decision
 

@@ -27,6 +27,11 @@ type claimRepo struct {
 
 	student  *entity.Student
 	claimErr error
+	reduced  bool
+
+	gotLimit     int
+	gotOverLimit int
+	gotPoints    int
 }
 
 func (r *claimRepo) FindWaliIDByUserID(context.Context, uuid.UUID) (*uuid.UUID, error) {
@@ -39,12 +44,16 @@ func (r *claimRepo) FindOwnedStudent(context.Context, uuid.UUID, uuid.UUID) (*en
 	return r.student, nil
 }
 
-func (r *claimRepo) CountScans(context.Context, uuid.UUID, time.Time, time.Time) (int, error) {
-	return 0, nil
-}
+func (r *claimRepo) Claim(
+	_ context.Context, scan *entity.TrashScan, _ uuid.UUID, limit int, overLimitPoints int, _ time.Time, _ time.Time,
+) (repository.ClaimResult, error) {
+	r.gotLimit, r.gotOverLimit, r.gotPoints = limit, overLimitPoints, scan.PointsAwarded
 
-func (r *claimRepo) Claim(context.Context, *entity.TrashScan, uuid.UUID, int, time.Time, time.Time) (repository.ClaimResult, error) {
-	return repository.ClaimResult{TotalPoints: 10, Rank: 1, Remaining: 4}, r.claimErr
+	if r.reduced {
+		scan.PointsAwarded = min(scan.PointsAwarded, overLimitPoints)
+	}
+
+	return repository.ClaimResult{TotalPoints: 10, Rank: 1, Remaining: 4, Reduced: r.reduced}, r.claimErr
 }
 
 type quietCache struct{ redis.CacheItf }
@@ -78,7 +87,7 @@ func (s *recordingStorage) Delete(_ context.Context, key string) error {
 func claimWith(t *testing.T, repo *claimRepo, storage *recordingStorage, photo string) (dto.ScanClaimResponse, error) {
 	t.Helper()
 
-	cfg := &env.Env{AppTimezone: "Asia/Jakarta", TrashDailyLimit: 5, PointsOrganik: 10}
+	cfg := &env.Env{AppTimezone: "Asia/Jakarta", TrashDailyLimit: 5, TrashOverLimitPoints: 1, PointsOrganik: 10}
 	useCase := NewTrashUseCase(repo, quietCache{}, storage, cfg)
 
 	return useCase.ScanClaim(context.Background(), uuid.New(), dto.ScanClaimRequest{
@@ -93,9 +102,9 @@ func newClaimRepo(claimErr error) *claimRepo {
 func TestFailedClaimRemovesItsUploadedPhoto(t *testing.T) {
 	storage := &recordingStorage{}
 
-	_, err := claimWith(t, newClaimRepo(apperror.ErrDailyLimitReached), storage, tinyPNGDataURI)
+	_, err := claimWith(t, newClaimRepo(apperror.ErrStudentNotFound), storage, tinyPNGDataURI)
 
-	require.Equal(t, "TRASH_DAILY_LIMIT_REACHED", apperror.As(err).Code)
+	require.Equal(t, "STUDENT_NOT_FOUND", apperror.As(err).Code)
 	require.Len(t, storage.uploaded, 1)
 	require.Equal(t, storage.uploaded, storage.deleted, "the photo that was stored is the one removed")
 }
@@ -114,7 +123,7 @@ func TestSuccessfulClaimKeepsItsPhoto(t *testing.T) {
 func TestClaimWithoutAPhotoTouchesNoStorage(t *testing.T) {
 	storage := &recordingStorage{}
 
-	_, err := claimWith(t, newClaimRepo(apperror.ErrDailyLimitReached), storage, "")
+	_, err := claimWith(t, newClaimRepo(apperror.ErrStudentNotFound), storage, "")
 
 	require.Error(t, err)
 	require.Empty(t, storage.uploaded)
@@ -124,8 +133,32 @@ func TestClaimWithoutAPhotoTouchesNoStorage(t *testing.T) {
 func TestFailedCleanupDoesNotReplaceTheClaimError(t *testing.T) {
 	storage := &recordingStorage{deleteErr: errors.New("bucket unreachable")}
 
-	_, err := claimWith(t, newClaimRepo(apperror.ErrDailyLimitReached), storage, tinyPNGDataURI)
+	_, err := claimWith(t, newClaimRepo(apperror.ErrStudentNotFound), storage, tinyPNGDataURI)
 
-	require.Equal(t, "TRASH_DAILY_LIMIT_REACHED", apperror.As(err).Code)
+	require.Equal(t, "STUDENT_NOT_FOUND", apperror.As(err).Code)
 	require.Len(t, storage.deleted, 1)
+}
+
+func TestClaimPassesTheFullPointsAndTheOverLimitRuleToTheRepository(t *testing.T) {
+	repo := newClaimRepo(nil)
+
+	res, err := claimWith(t, repo, &recordingStorage{}, "")
+
+	require.NoError(t, err)
+	require.Equal(t, 5, repo.gotLimit)
+	require.Equal(t, 1, repo.gotOverLimit)
+	require.Equal(t, 10, repo.gotPoints, "the use case asks for the full points and the repository lowers them")
+	require.False(t, res.ReducedPoints)
+	require.Equal(t, 10, res.PointsAdded)
+}
+
+func TestClaimPastTheDailyLimitReportsTheReducedPoints(t *testing.T) {
+	repo := newClaimRepo(nil)
+	repo.reduced = true
+
+	res, err := claimWith(t, repo, &recordingStorage{}, "")
+
+	require.NoError(t, err)
+	require.True(t, res.ReducedPoints)
+	require.Equal(t, 1, res.PointsAdded)
 }
