@@ -8,7 +8,7 @@ Kibooz Backend is below version 1.0.0. Only the latest release and the `main` br
 
 Please do not open a public issue for a security problem.
 
-Use GitHub private vulnerability reporting instead. Open the [Security tab](https://github.com/kiboozapp/kibooz-backend/security) and choose **Report a vulnerability**, or go straight to the [advisory form](https://github.com/kiboozapp/kibooz-backend/security/advisories/new). Only the maintainer can see the report.
+Use GitHub private vulnerability reporting instead. Open the [Security tab](https://github.com/kiboozapp/kibooz-backend/security) and choose **Report a vulnerability**, or go straight to the [advisory form](https://github.com/kiboozapp/kibooz-backend/security/advisories/new). The admins of the repository, which include the owners of the organization, can see the report.
 
 A good report includes the following.
 
