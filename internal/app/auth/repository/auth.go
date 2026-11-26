@@ -11,14 +11,14 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/classcode"
-	"github.com/SyafaHadyan/kibooz-backend/internal/classteam"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/nisn"
-	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
-	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/classcode"
+	"github.com/kiboozapp/kibooz-backend/internal/classteam"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/nisn"
+	"github.com/kiboozapp/kibooz-backend/internal/ranking"
+	"github.com/kiboozapp/kibooz-backend/internal/sessions"
 )
 
 const uniqueViolation = "23505"

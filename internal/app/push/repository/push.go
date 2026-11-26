@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/push"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/push"
 )
 
 // MaxTokensPerUser is how many devices of one account keep a token. A phone that is replaced leaves its token behind until

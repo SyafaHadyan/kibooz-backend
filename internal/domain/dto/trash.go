@@ -3,7 +3,7 @@ package dto
 import (
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 type ScanClaimRequest struct {

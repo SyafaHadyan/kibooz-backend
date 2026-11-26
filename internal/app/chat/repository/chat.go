@@ -11,9 +11,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/filecleanup"
 )
 
 // ErrConversationGone is returned when a message is stored in a conversation that no longer exists

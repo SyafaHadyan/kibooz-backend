@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/app/guru/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
 )
 
 const moodBatchPath = "/api/v1/guru/mood/log/batch"

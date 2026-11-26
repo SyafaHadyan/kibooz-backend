@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
+	"github.com/kiboozapp/kibooz-backend/internal/mailer"
 )
 
 const (

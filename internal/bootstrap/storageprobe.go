@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
 )
 
 const (

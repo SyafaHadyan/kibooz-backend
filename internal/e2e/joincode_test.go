@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/app/guru/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 func TestRotateJoinCode(t *testing.T) {

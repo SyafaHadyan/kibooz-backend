@@ -17,16 +17,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/passwords"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/usecase"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/devicetoken"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/jwt"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/passwords"
 )
 
 type fakeRepo struct {

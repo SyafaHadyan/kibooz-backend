@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/mailretry"
-	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/mailretry"
+	"github.com/kiboozapp/kibooz-backend/internal/mailer"
 )
 
 type source struct {

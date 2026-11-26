@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 const (

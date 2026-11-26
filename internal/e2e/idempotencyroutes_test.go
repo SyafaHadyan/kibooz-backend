@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
+	"github.com/kiboozapp/kibooz-backend/internal/idempotency"
 )
 
 // requireRepeatIsReplay sends the same request twice with one key. The second answer has to be the first one, marked as a replay.

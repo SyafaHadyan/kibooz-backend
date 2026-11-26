@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	userrepository "github.com/kiboozapp/kibooz-backend/internal/app/user/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/filecleanup"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
 )
 
 // bucketStub deletes what it is asked to, except the keys it is told to refuse

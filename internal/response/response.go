@@ -7,7 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 type Success struct {

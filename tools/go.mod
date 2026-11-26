@@ -1,4 +1,4 @@
-module github.com/SyafaHadyan/kibooz-backend/tools
+module github.com/kiboozapp/kibooz-backend/tools
 
 go 1.27.1
 

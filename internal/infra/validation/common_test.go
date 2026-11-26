@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/validation"
 )
 
 func TestACommonPasswordIsRecognizedWhateverItsCase(t *testing.T) {

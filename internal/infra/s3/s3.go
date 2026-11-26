@@ -19,8 +19,8 @@ import (
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 type StorageItf interface {

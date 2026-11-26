@@ -13,7 +13,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 const (

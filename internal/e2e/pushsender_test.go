@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	pushrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/push/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	pushrepository "github.com/kiboozapp/kibooz-backend/internal/app/push/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
 )
 
 // The sender reads the tokens of the people who should be woken and forgets the ones that Firebase refused

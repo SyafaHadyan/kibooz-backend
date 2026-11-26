@@ -10,11 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/fiber"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/jwt"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
 )
 
 type fixture struct {

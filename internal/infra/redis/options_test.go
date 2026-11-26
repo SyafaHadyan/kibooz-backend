@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 func TestOptionsUsePlainTCPByDefault(t *testing.T) {

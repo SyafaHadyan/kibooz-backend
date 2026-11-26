@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
 )
 
 // TestRateLimitsFollowUsersAndAccounts starts a second app with tiny limits. The requests of the whole test come from

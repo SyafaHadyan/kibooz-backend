@@ -16,13 +16,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/chat/usecase"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/app/chat/usecase"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/chatlive"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/jwt"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
 )
 
 // testSecret is made at run time, so no key-shaped value sits in the source

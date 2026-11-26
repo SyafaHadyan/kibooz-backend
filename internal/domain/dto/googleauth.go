@@ -1,6 +1,6 @@
 package dto
 
-import "github.com/SyafaHadyan/kibooz-backend/internal/constants"
+import "github.com/kiboozapp/kibooz-backend/internal/constants"
 
 type GoogleLoginRequest struct {
 	IDToken     string         `json:"idToken" validate:"required,max=4096"`

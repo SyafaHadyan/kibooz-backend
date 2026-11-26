@@ -11,9 +11,9 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/fiber"
 )
 
 // photo is a body that is larger than a JSON request may be, so it can only be a photo

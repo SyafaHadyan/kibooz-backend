@@ -1,4 +1,4 @@
-module github.com/SyafaHadyan/kibooz-backend
+module github.com/kiboozapp/kibooz-backend
 
 go 1.27.4
 

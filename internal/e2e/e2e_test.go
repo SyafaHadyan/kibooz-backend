@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
 )
 
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="

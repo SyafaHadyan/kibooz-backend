@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 const stripMaxBytes = 1 << 20

@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/app/guru/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
 )
 
 var weekdayNames = []string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday"}

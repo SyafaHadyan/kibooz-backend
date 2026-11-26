@@ -10,7 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 // None of these limits looks at the IP address. A school network or an ISP puts many people behind one public address,

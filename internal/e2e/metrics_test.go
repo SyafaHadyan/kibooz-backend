@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
 )
 
 func TestMetricsAreServedOnAListenerOfTheirOwn(t *testing.T) {

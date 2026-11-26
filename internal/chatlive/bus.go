@@ -4,7 +4,7 @@ import (
 	"context"
 	"log"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/redis"
 )
 
 // channelName is the Redis channel that every API copy publishes chat events to and listens on

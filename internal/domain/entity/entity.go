@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 type User struct {

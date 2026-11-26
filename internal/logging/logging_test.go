@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/logging"
+	"github.com/kiboozapp/kibooz-backend/internal/logging"
 )
 
 func TestALineIsOneJSONObjectWithTheDate(t *testing.T) {

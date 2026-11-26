@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	authrepository "github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	userrepository "github.com/kiboozapp/kibooz-backend/internal/app/user/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 // The queries that find an account that waited for its code, and the cap of codes, run against the real database.

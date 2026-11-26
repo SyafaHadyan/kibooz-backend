@@ -9,14 +9,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/app/trash/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/redis"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
 )
 
 // a 1x1 PNG as a data URI

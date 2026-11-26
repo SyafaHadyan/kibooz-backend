@@ -14,10 +14,10 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
-	"github.com/SyafaHadyan/kibooz-backend/internal/logging"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/fiber"
+	"github.com/kiboozapp/kibooz-backend/internal/logging"
 )
 
 // syncBuffer is a log destination that a test reads after the requests, and the handler may write from another goroutine

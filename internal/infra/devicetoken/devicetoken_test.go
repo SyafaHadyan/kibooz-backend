@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/devicetoken"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 // the keys are built and not written out, because they are only test values

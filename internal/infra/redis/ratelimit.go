@@ -8,7 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
+	"github.com/kiboozapp/kibooz-backend/internal/ratelimit"
 )
 
 // RateStore counts requests in Redis, so every instance that shares the Redis shares the limit. A request is counted by

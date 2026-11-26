@@ -3,8 +3,8 @@ package validation_test
 import (
 	"testing"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/validation"
 )
 
 // Struct runs on the body of every request that has one

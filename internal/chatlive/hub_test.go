@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
 )
 
 // fakeBus connects hubs in memory, the way Redis connects API copies

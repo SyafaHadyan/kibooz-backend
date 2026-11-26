@@ -13,7 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
 )
 
 var mailedCode = regexp.MustCompile(`adalah (\d{6})\.`)

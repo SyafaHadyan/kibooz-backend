@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 // GuruHistoryEvent is one entry in a class activity timeline across dates

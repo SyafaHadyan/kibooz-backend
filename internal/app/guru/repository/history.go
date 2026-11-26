@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 // GuruHistoryRow holds one timeline entry returned from the class history query

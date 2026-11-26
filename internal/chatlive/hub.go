@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
 )
 
 // The kinds of event that a socket receives

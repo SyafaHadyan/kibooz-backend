@@ -10,13 +10,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/usecase"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/mailer"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/usecase"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/mailer"
 )
 
 func buildReplacing(repo *fakeRepo, required bool, remove usecase.AccountRemover) usecase.AuthUseCaseItf {

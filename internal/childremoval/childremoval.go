@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
-	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/filecleanup"
+	"github.com/kiboozapp/kibooz-backend/internal/ranking"
 )
 
 // Scope narrows the query of the child, for example to the class of a teacher or to the children of a parent

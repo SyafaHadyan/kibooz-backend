@@ -18,7 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
+	"github.com/kiboozapp/kibooz-backend/internal/googleauth"
 )
 
 const testClientID = "test-web-client-id.example.test"
