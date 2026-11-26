@@ -230,7 +230,12 @@ func (u *AuthUseCase) Register(ctx context.Context, req dto.RegisterRequest) (dt
 	}
 
 	// an old account is only removed once nothing else stands in the way of the new one
-	err = u.replace(ctx, stale, normalizeEmail(req.Email), nip, nisn)
+	classCode := ""
+	if req.Role == constants.RoleWali {
+		classCode = normalizeClassCode(req.ClassCode)
+	}
+
+	err = u.replace(ctx, stale, normalizeEmail(req.Email), nip, nisn, classCode)
 	if err != nil {
 		return dto.AuthResponse{}, apperror.As(err)
 	}
@@ -316,15 +321,33 @@ func (u *AuthUseCase) replaceable(ctx context.Context, email string, nip string,
 	return stale, nil
 }
 
-// replace removes the accounts that replaceable returned. When one cannot be removed, or something is taken after the removal,
-// it returns the conflict.
-func (u *AuthUseCase) replace(ctx context.Context, stale []repository.PendingAccount, email string, nip string, nisn string) error {
+// replace removes the accounts that replaceable returned. It first asks again for everything that could refuse the new account,
+// so that nothing is removed for a registration that fails. A classCode is empty for a teacher. When an account cannot be removed,
+// or something is taken after the removal, it returns the conflict.
+func (u *AuthUseCase) replace(
+	ctx context.Context, stale []repository.PendingAccount, email string, nip string, nisn string, classCode string,
+) error {
 	if len(stale) == 0 {
 		return nil
 	}
 
+	ids := make([]uuid.UUID, len(stale))
+	for i, account := range stale {
+		ids[i] = account.ID
+	}
+
+	// time passed since the first look, such as the hash of the password
+	err := u.repo.RegistrationTaken(ctx, email, nip, nisn, ids...)
+	if err == nil && classCode != "" {
+		err = u.repo.ClassTakesChildren(ctx, classCode)
+	}
+
+	if err != nil {
+		return err
+	}
+
 	for _, account := range stale {
-		err := u.removeAccount(ctx, account, u.pendingReplaceBefore())
+		err = u.removeAccount(ctx, account, u.pendingReplaceBefore())
 		if err != nil {
 			log.Printf("an account that waited for its code was not replaced %v", err)
 
@@ -522,6 +545,11 @@ func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) 
 	})
 	if errors.Is(err, repository.ErrCodeLimit) {
 		return false, apperror.ErrCodeLimitReached
+	}
+
+	// the account was removed or verified after its password was checked
+	if errors.Is(err, repository.ErrNotWaiting) {
+		return false, apperror.ErrInvalidCredentials
 	}
 
 	if err != nil {

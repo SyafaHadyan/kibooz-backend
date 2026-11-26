@@ -146,7 +146,12 @@ func (u *AuthUseCase) GoogleRegister(ctx context.Context, req dto.GoogleRegister
 
 	stale, err := u.replaceable(ctx, normalizeEmail(claims.Email), nip, nisn)
 	if err == nil {
-		err = u.replace(ctx, stale, normalizeEmail(claims.Email), nip, nisn)
+		classCode := ""
+		if req.Role == constants.RoleWali {
+			classCode = normalizeClassCode(req.ClassCode)
+		}
+
+		err = u.replace(ctx, stale, normalizeEmail(claims.Email), nip, nisn, classCode)
 	}
 
 	if err != nil {

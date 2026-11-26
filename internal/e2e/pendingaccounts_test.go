@@ -17,9 +17,8 @@ import (
 // The queries that find an account that waited for its code, and the cap of codes, run against the real database.
 func TestPendingAccountQueriesAndTheCodeCap(t *testing.T) {
 	ctx := context.Background()
-	repo := authrepository.NewAuthDB(testDB)
-
 	guru := registerGuru(t, "Menunggu Kode")
+	repo := authrepository.NewAuthDB(testDB)
 
 	var id, nip string
 
@@ -167,6 +166,33 @@ func TestAWaitingAccountIsReplacedOrRemovedUnlessItSignedIn(t *testing.T) {
 		active, deleted := deletedAccounts(t, email)
 		require.Zero(t, active)
 		require.Equal(t, int64(1), deleted)
+	})
+
+	t.Run("a verified child of the replaced parent does not block the parent, and an account that is gone gets no code", func(t *testing.T) {
+		email, _ := registerWaitingGuru(t, verifying)
+		id := ageAccount(t, email, "36 hours")
+
+		_, err := users.SoftDeletePendingAccount(ctx, id, constants.RoleGuru, time.Now())
+		require.NoError(t, err)
+
+		_, err = repo.StoreVerification(ctx, id, "hash", time.Now(), authrepository.SendRule{TTL: time.Hour, PerHour: 5})
+		require.ErrorIs(t, err, authrepository.ErrNotWaiting)
+
+		_, joinCode := classOf(t, registerGuru(t, "Kelas Anak"))
+		parent, _ := registerWali(t, joinCode, "Anak Menunggu")
+
+		require.NoError(t, repo.ClassTakesChildren(ctx, joinCode))
+
+		var parentID, nisn string
+
+		require.NoError(t, testDB.Raw("SELECT id::text FROM users WHERE email = ?", parent.Email).Scan(&parentID).Error)
+		require.NoError(t, testDB.Raw(
+			`UPDATE students SET nisn_verified_at = now() WHERE wali_id = (SELECT id FROM walis WHERE user_id = ?::uuid) RETURNING nisn`,
+			parentID,
+		).Scan(&nisn).Error)
+
+		require.Error(t, repo.RegistrationTaken(ctx, "", "", nisn))
+		require.NoError(t, repo.RegistrationTaken(ctx, parent.Email, "", nisn, uuid.MustParse(parentID)))
 	})
 
 	t.Run("an account that signed in while the verification was off is kept", func(t *testing.T) {

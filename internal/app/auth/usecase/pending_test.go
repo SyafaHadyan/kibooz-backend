@@ -66,6 +66,20 @@ func TestARegistrationReplacesAnAccountThatWaitedMoreThanADayForItsCode(t *testi
 		require.False(t, called)
 	})
 
+	t.Run("nothing is removed when the class does not take the child", func(t *testing.T) {
+		repo := &fakeRepo{taken: apperror.ErrEmailTaken, joinErr: apperror.ErrClassFull, stale: []repository.PendingAccount{account}}
+		called := false
+
+		_, err := buildReplacing(repo, true, func(context.Context, repository.PendingAccount, time.Time) error {
+			called = true
+
+			return nil
+		}).Register(ctx, newParentRegistration())
+		require.Equal(t, "CLASS_FULL", apperror.As(err).Code)
+		require.NotEmpty(t, repo.joinChecks)
+		require.False(t, called)
+	})
+
 	t.Run("an account that waited less than a day keeps its email", func(t *testing.T) {
 		repo := &fakeRepo{taken: apperror.ErrEmailTaken}
 		called := false
@@ -136,4 +150,14 @@ func TestAnAccountThatHadAllItsCodesGetsNoMore(t *testing.T) {
 	)
 	require.Equal(t, "VERIFICATION_CODE_LIMIT_REACHED", apperror.As(err).Code)
 	require.Equal(t, 429, apperror.As(err).Status)
+}
+
+func TestACodeIsNotStoredForAnAccountThatIsGone(t *testing.T) {
+	repo := &fakeRepo{storeErr: repository.ErrNotWaiting}
+	pendingAccount(t, repo)
+
+	_, err := buildVerifying(repo, &fakeMail{}, true).ResendVerification(
+		context.Background(), dto.ResendVerificationRequest{Email: "a@example.com", Password: "correct horse"},
+	)
+	require.Equal(t, "AUTH_INVALID_CREDENTIALS", apperror.As(err).Code)
 }

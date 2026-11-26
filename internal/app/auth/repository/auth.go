@@ -36,9 +36,12 @@ type AuthDBItf interface {
 	// ClassCodeExists tells whether a class uses joinCode, so a registration with a code that nobody has can be refused
 	// before it spends the time of a password hash
 	ClassCodeExists(ctx context.Context, joinCode string) (bool, error)
+	// ClassTakesChildren answers the refusal that CreateWali would give for the class of joinCode, such as a class that is closed
+	// or full, and nil when it takes a new child
+	ClassTakesChildren(ctx context.Context, joinCode string) error
 	// RegistrationTaken returns the conflict error of the first of the email, the NIP and the NISN that an active account already
-	// uses, and nil when none is. An empty NIP or NISN is not looked up. The email and the NIP of the accounts in ignore do not
-	// count. It lets a registration that cannot succeed be refused before the password hash, and the unique indexes still decide
+	// uses, and nil when none is. An empty NIP or NISN is not looked up. What the accounts in ignore hold, their children included,
+	// does not count. It lets a registration that cannot succeed be refused before the password hash, and the unique indexes still decide
 	// when two registrations race.
 	RegistrationTaken(ctx context.Context, email string, nip string, nisn string, ignore ...uuid.UUID) error
 	// StalePendingAccounts returns the accounts that wait for the code of their email since before the given time, never signed in,
@@ -92,6 +95,9 @@ type SendRule struct {
 	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap.
 	MaxTotal int
 }
+
+// ErrNotWaiting means that the account was verified or deleted, so no code is stored for it
+var ErrNotWaiting = errors.New("the account does not wait for a code")
 
 // ErrCodeLimit means that the account has had all the codes that it may have, so no new code is stored
 var ErrCodeLimit = errors.New("the account reached the cap of codes")
@@ -164,8 +170,9 @@ func (r *AuthDB) RegistrationTaken(ctx context.Context, email string, nip string
 		{email, "SELECT 1 FROM users WHERE email = ? AND deleted_at IS NULL AND id NOT IN ? LIMIT 1", []any{email, ignore}, apperror.ErrEmailTaken},
 		{nip, "SELECT 1 FROM gurus WHERE nip = ? AND deleted_at IS NULL AND user_id NOT IN ? LIMIT 1", []any{nip, ignore}, apperror.ErrNIPTaken},
 		{
-			nisn, "SELECT 1 FROM students WHERE nisn = ? AND nisn_verified_at IS NOT NULL AND deleted_at IS NULL LIMIT 1",
-			[]any{nisn}, apperror.ErrNISNTaken,
+			nisn, `SELECT 1 FROM students s WHERE s.nisn = ? AND s.nisn_verified_at IS NOT NULL AND s.deleted_at IS NULL
+				AND NOT EXISTS (SELECT 1 FROM walis w WHERE w.id = s.wali_id AND w.user_id IN ?) LIMIT 1`,
+			[]any{nisn, ignore}, apperror.ErrNISNTaken,
 		},
 	}
 
@@ -257,48 +264,61 @@ func (r *AuthDB) CreateGuru(
 	return mapUniqueViolation(err)
 }
 
+// openClass returns the class of the code when it takes a new child, and locks it for the rest of the transaction
+func openClass(tx *gorm.DB, joinCode string) (uuid.UUID, error) {
+	var class entity.Class
+
+	err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return uuid.Nil, apperror.ErrClassCodeNotFound
+	}
+
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
+	// while the class is being archived
+	err = classteam.LockOpen(tx, class.ID, joinCode)
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	// a class whose teachers were all deleted keeps its code but must not take in new children
+	var teachers int64
+
+	err = tx.Table("class_teachers AS ct").
+		Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
+		Where("ct.class_id = ?", class.ID).
+		Count(&teachers).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+
+	if teachers == 0 {
+		return uuid.Nil, apperror.ErrClassNoTeacher
+	}
+
+	return class.ID, classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+}
+
+func (r *AuthDB) ClassTakesChildren(ctx context.Context, joinCode string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		_, err := openClass(tx, joinCode)
+
+		return err
+	})
+}
+
 func (r *AuthDB) CreateWali(
 	ctx context.Context, user *entity.User, wali *entity.Wali, joinCode string, student *entity.Student, session *entity.RefreshToken,
 ) (uuid.UUID, error) {
 	var classID uuid.UUID
 
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var class entity.Class
+		var err error
 
-		err := tx.Where("join_code = ? AND archived_at IS NULL", joinCode).Take(&class).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apperror.ErrClassCodeNotFound
-		}
-
-		if err != nil {
-			return err
-		}
-
-		classID = class.ID
-
-		// the teachers of the class are counted under the lock that a teacher takes when leaving, so a child cannot join
-		// while the class is being archived
-		err = classteam.LockOpen(tx, class.ID, joinCode)
-		if err != nil {
-			return err
-		}
-
-		// a class whose teachers were all deleted keeps its code but must not take in new children
-		var teachers int64
-
-		err = tx.Table("class_teachers AS ct").
-			Joins("JOIN gurus AS g ON g.id = ct.guru_id AND g.deleted_at IS NULL").
-			Where("ct.class_id = ?", class.ID).
-			Count(&teachers).Error
-		if err != nil {
-			return err
-		}
-
-		if teachers == 0 {
-			return apperror.ErrClassNoTeacher
-		}
-
-		err = classteam.CheckRoom(tx, class.ID, constants.MaxChildrenPerClass)
+		classID, err = openClass(tx, joinCode)
 		if err != nil {
 			return err
 		}
@@ -314,10 +334,10 @@ func (r *AuthDB) CreateWali(
 		}
 
 		student.WaliID = wali.ID
-		student.ClassID = class.ID
+		student.ClassID = classID
 
 		// the lock of the class comes before the lock of the NISN, the order that a verification and a change of the number take them in
-		err = ranking.Lock(tx, class.ID)
+		err = ranking.Lock(tx, classID)
 		if err != nil {
 			return err
 		}
@@ -343,7 +363,7 @@ func (r *AuthDB) CreateWali(
 			return err
 		}
 
-		return ranking.Recompute(tx, class.ID)
+		return ranking.Recompute(tx, classID)
 	})
 
 	return classID, mapUniqueViolation(err)
@@ -606,8 +626,26 @@ func (r *AuthDB) StoreVerification(
 			SendsTotal      int
 		}
 
-		// the row of the account is locked, so two requests for a code cannot both pass the cooldown
-		err := tx.Raw(
+		// the user row comes first, which is the order of the deletion of an account. A request that raced with a removal or a
+		// verification then stores nothing, so no code is left behind for a deleted account.
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		var waiting int64
+
+		err = tx.Model(&entity.User{}).Where("id = ? AND email_verification_pending", userID).Count(&waiting).Error
+		if err != nil {
+			return err
+		}
+
+		if waiting == 0 {
+			return ErrNotWaiting
+		}
+
+		// the row of the code is locked, so two requests for a code cannot both pass the cooldown
+		err = tx.Raw(
 			"SELECT last_sent_at, window_started_at, sends_in_window, sends_total FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
 		).Scan(&rows).Error
 		if err != nil {

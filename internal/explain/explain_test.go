@@ -308,6 +308,10 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("auth, registration taken", func(ctx context.Context) error {
 		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999")
 	})
+	call("auth, registration taken apart from the accounts it replaces", func(ctx context.Context) error {
+		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999", parent)
+	})
+	call("auth, class takes children", func(ctx context.Context) error { return auth.ClassTakesChildren(ctx, "00000002") })
 	call("chat, find an account", func(ctx context.Context) error { return drop(chat.FindAccount(ctx, parent)) })
 	call("chat, share a class", func(ctx context.Context) error { return drop(chat.ShareClass(ctx, teacher, parent)) })
 	call("chat, contacts of a teacher", func(ctx context.Context) error {
@@ -447,6 +451,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	})
 	call("auth, delete a refresh token", func(ctx context.Context) error { return auth.DeleteRefreshToken(ctx, spare) })
 	rule := authrepository.SendRule{TTL: 15 * time.Minute, Cooldown: time.Minute, PerHour: 5}
+
+	// a code is only stored for an account that waits for one
+	require.NoError(t, quiet.Exec("UPDATE users SET email_verification_pending = TRUE WHERE id = ?", parent).Error)
 
 	call("auth, store the first verification code", func(ctx context.Context) error {
 		_, err := auth.StoreVerification(ctx, parent, "x", now, rule)

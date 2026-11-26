@@ -30,6 +30,9 @@ import (
 )
 
 type fakeRepo struct {
+	// joinChecks holds the codes of the classes that were asked whether they take a child, and joinErr is the answer
+	joinChecks []string
+	joinErr    error
 	// takenElse is what is taken apart from the accounts that a lookup leaves out, which are recorded in ignored
 	takenElse error
 	ignored   []uuid.UUID
@@ -106,6 +109,12 @@ func (f *fakeRepo) RegistrationTaken(_ context.Context, email string, nip string
 	f.takenChecks = append(f.takenChecks, [3]string{email, nip, nisn})
 
 	return f.taken
+}
+
+func (f *fakeRepo) ClassTakesChildren(_ context.Context, joinCode string) error {
+	f.joinChecks = append(f.joinChecks, joinCode)
+
+	return f.joinErr
 }
 
 func (f *fakeRepo) CreateGuru(_ context.Context, user *entity.User, _ *entity.Guru, _ *entity.Class, session *entity.RefreshToken) error {
