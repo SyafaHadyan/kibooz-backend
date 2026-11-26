@@ -58,6 +58,7 @@ Names are checked in the pull request, so it is quicker to follow them from the 
 - Pull requests are merged with a merge commit, never squashed or rebased.
 - Every required check must pass. They are listed in the repository rules and described in [docs/ci-cd.md](docs/ci-cd.md).
 - Read the bot comments on your pull request. DeepSource and code scanning report findings there.
+- Do not change a setting of the repository without the approval of a code owner, see [Repository settings](GOVERNANCE.md#repository-settings). This also applies when a pull request needs the change, such as a new required check.
 
 ## Reporting problems
 

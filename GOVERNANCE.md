@@ -19,6 +19,16 @@ Every change reaches `main` through a pull request. The ruleset on `main` requir
 
 The ruleset does not require an approving review. Review from another person is welcome on any pull request and expected on a change to the API contract, but it is a habit and not a rule that GitHub enforces. [CONTRIBUTING.md](CONTRIBUTING.md) has the practical steps.
 
+## Repository settings
+
+No setting of this repository is changed without the approval of a code owner, which is an account that [.github/CODEOWNERS](.github/CODEOWNERS) names. This holds for everyone who has access, including an account with admin rights, and for every tool or agent that works for them.
+
+A setting is anything that is not a file in the repository. Examples are rulesets and branch protection, required checks, Actions settings, environments, secrets and variables, webhooks, deploy keys, collaborators and teams, installed apps, security features, visibility, merge options, and a transfer or a rename.
+
+The approval names the change, and each new change needs a new approval. An earlier approval does not cover it. Reading a setting needs no approval.
+
+This is a rule of the project. GitHub does not enforce it, because an admin can change a setting without anyone's approval.
+
 ## Releases
 
 Releases are automated. Release Please opens a release pull request from the commit messages that reach `main`, and the maintainer merges it when the release is ready. Merging creates the tag and the GitHub release through the release GitHub App, which is the only account allowed to create a `v*` tag. That rule stops a pushed tag and anyone who is not a repository admin. An admin can still edit the ruleset, so it does not stop a stolen owner login either. The release App key and the Docker Hub token are secrets of environments that accept no branch, only `main` (and `v*.*.*` tags for the Docker Hub one), so a workflow on a branch cannot read them. Someone with write access who gets a workflow change merged into `main` still could, because the ruleset needs no approval. So the guarantee holds while nobody with write access does that. Releases are immutable once published, so a wrong release gets a new version and not an edit.
