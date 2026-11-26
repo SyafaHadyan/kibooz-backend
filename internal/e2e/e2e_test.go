@@ -753,17 +753,29 @@ func TestTrashClaimsAndLeaderboard(t *testing.T) {
 		call(t, http.MethodGet, "/api/v1/leaderboard?classId=not-a-uuid", amelia.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
 
-	t.Run("daily limit of five claims", func(t *testing.T) {
+	t.Run("claims past the daily limit of five earn the reduced points", func(t *testing.T) {
 		// Amelia already used two claims
 		for i := range 3 {
 			res := claim(amelia.Token, ameliaID, "ORGANIK")
 			require.Equal(t, http.StatusOK, res.Status, "claim %d body %v", i, res.Body)
+			require.Equal(t, false, res.data("reducedPoints"), "claim %d", i)
 		}
 
-		claim(amelia.Token, ameliaID, "ORGANIK").requireError(t, http.StatusTooManyRequests, "TRASH_DAILY_LIMIT_REACHED")
+		sixth := claim(amelia.Token, ameliaID, "ANORGANIK")
+		require.Equal(t, http.StatusOK, sixth.Status, "body %v", sixth.Body)
+		require.EqualValues(t, 1, sixth.data("pointsAdded"))
+		require.Equal(t, true, sixth.data("reducedPoints"))
+		require.EqualValues(t, 0, sixth.data("remainingDailyScans"))
+		require.EqualValues(t, 56, sixth.data("totalPoints"))
+
+		// B3 earns nothing within the limit, so it earns nothing past it either
+		seventh := claim(amelia.Token, ameliaID, "B3")
+		require.Equal(t, http.StatusOK, seventh.Status, "body %v", seventh.Body)
+		require.EqualValues(t, 0, seventh.data("pointsAdded"))
+		require.Equal(t, true, seventh.data("reducedPoints"))
 
 		dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard", amelia.Token, nil)
-		require.EqualValues(t, 55, dashboard.data("pointsSummary", "totalPoints"))
+		require.EqualValues(t, 56, dashboard.data("pointsSummary", "totalPoints"))
 	})
 
 	t.Run("validation and ownership", func(t *testing.T) {
@@ -804,14 +816,14 @@ func dashboardStudentID(t *testing.T, wali account) string {
 	return call(t, http.MethodGet, "/api/v1/wali/dashboard", wali.Token, nil).data("student", "id").(string)
 }
 
-func TestConcurrentClaimsNeverExceedDailyLimit(t *testing.T) {
+func TestConcurrentClaimsAwardFullPointsOnlyWithinLimit(t *testing.T) {
 	guru := registerGuru(t, "Konkuren")
 	_, joinCode := classOf(t, guru)
 	wali, studentID := registerWali(t, joinCode, "Fast Child")
 
 	const attempts = 12
 
-	statuses := make(chan int, attempts)
+	results := make(chan result, attempts)
 
 	var wg sync.WaitGroup
 
@@ -821,35 +833,35 @@ func TestConcurrentClaimsNeverExceedDailyLimit(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			res := call(t, http.MethodPost, "/api/v1/trash/scan-claim", wali.Token, map[string]any{
+			results <- call(t, http.MethodPost, "/api/v1/trash/scan-claim", wali.Token, map[string]any{
 				"studentId": studentID, "trashType": "ORGANIK", "confidenceScore": 0.95,
 			})
-
-			statuses <- res.Status
 		}()
 	}
 
 	wg.Wait()
-	close(statuses)
+	close(results)
 
-	succeeded, limited := 0, 0
+	full, reduced := 0, 0
 
-	for status := range statuses {
-		switch status {
-		case http.StatusOK:
-			succeeded++
-		case http.StatusTooManyRequests:
-			limited++
-		default:
-			t.Fatalf("unexpected status %d", status)
+	for res := range results {
+		require.Equal(t, http.StatusOK, res.Status, "body %v", res.Body)
+
+		if res.data("reducedPoints") == true {
+			require.EqualValues(t, 1, res.data("pointsAdded"))
+			reduced++
+		} else {
+			require.EqualValues(t, 10, res.data("pointsAdded"))
+			full++
 		}
 	}
 
-	require.Equal(t, 5, succeeded)
-	require.Equal(t, attempts-5, limited)
+	// every claim is stored, and the lock of the class makes sure exactly the first five earn the full points
+	require.Equal(t, 5, full)
+	require.Equal(t, attempts-5, reduced)
 
 	dashboard := call(t, http.MethodGet, "/api/v1/wali/dashboard", wali.Token, nil)
-	require.EqualValues(t, 50, dashboard.data("pointsSummary", "totalPoints"))
+	require.EqualValues(t, 5*10+(attempts-5)*1, dashboard.data("pointsSummary", "totalPoints"))
 }
 
 func upload(t *testing.T, token string, fields map[string]string, filename string, content []byte) result {

@@ -110,7 +110,8 @@ Every value is an environment variable. A `.env` file is read when present. See 
 | `S3_PRIVATE_BUCKET_NAME`, `CHAT_PHOTO_MAX_MB`, `CHAT_VIDEO_MAX_MB`, `CHAT_MEDIA_URL_SECONDS` | empty, `4`, `25`, `3600` | The private bucket of the chat photos and videos, which uses the account and keys of `S3_*` and is never public, the largest photo and video, and how long a signed read address works. Chat media is off while the bucket name is empty, and the bucket needs the same lifecycle rule on `pending/` |
 | `S3_*` | empty | Object storage, uploads are disabled when it is not fully configured. `S3_PUBLIC_BUCKET_NAME` is the bucket that `S3_PUBLIC_URL` serves publicly, and the bucket needs a lifecycle rule that expires the `pending/` prefix after one day and never `videos/`, see [Architecture](docs/architecture.md) |
 | `POINTS_ORGANIK`, `POINTS_ANORGANIK`, `POINTS_B3` | `10`, `15`, `0` | Reward per verified action |
-| `TRASH_DAILY_LIMIT` | `5` | Claims per student per day |
+| `TRASH_DAILY_LIMIT` | `5` | Claims per student per day that earn the full points |
+| `TRASH_OVER_LIMIT_POINTS` | `1` | What each claim past `TRASH_DAILY_LIMIT` on the same day earns, at least 0 and never more than the full points of its type |
 | `IDEMPOTENCY_TTL_HOURS` | `168` | How long an `Idempotency-Key` is remembered, at least 1. A repeat inside this time gets the first response again instead of doing the work twice |
 | `SENTRY_DSN` | empty | Where error reports go, and empty switches them off. A 5xx and a panic are sent with a scrubbed error text, the stack, the route pattern, the request id and the account id, and never with the request, see [Privacy](docs/privacy.md) |
 | `SENTRY_ENVIRONMENT`, `SENTRY_SERVER_NAME` | `production`, empty | The environment and the host name that each error report carries |

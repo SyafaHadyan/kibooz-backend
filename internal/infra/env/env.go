@@ -83,6 +83,7 @@ type Env struct {
 	PointsAnorganik             int `env:"POINTS_ANORGANIK" envDefault:"15"`
 	PointsB3                    int `env:"POINTS_B3" envDefault:"0"`
 	TrashDailyLimit             int `env:"TRASH_DAILY_LIMIT" envDefault:"5"`
+	TrashOverLimitPoints        int `env:"TRASH_OVER_LIMIT_POINTS" envDefault:"1"`
 	IdempotencyTTLHours         int `env:"IDEMPOTENCY_TTL_HOURS" envDefault:"168"`
 	// SentryDSN is where the error reports go, and empty switches them off. SentryEventsPerMinute is the cap on how many leave in a minute.
 	SentryDSN             string `env:"SENTRY_DSN"`
@@ -259,6 +260,7 @@ func (e *Env) validate() error {
 		{"POINTS_ORGANIK", e.PointsOrganik, 0},
 		{"POINTS_ANORGANIK", e.PointsAnorganik, 0},
 		{"POINTS_B3", e.PointsB3, 0},
+		{"TRASH_OVER_LIMIT_POINTS", e.TrashOverLimitPoints, 0},
 	} {
 		if rule.value < rule.min {
 			return fmt.Errorf("%s must be at least %d", rule.name, rule.min)
