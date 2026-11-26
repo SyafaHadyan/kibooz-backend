@@ -6,9 +6,12 @@
   "assets": {
     "directory": "./dist"
   },
-  // The site is served on docs.kibooz.syafahadyan.com only, so the workers.dev address and the version URLs are off
+  // The live site is served on docs.kibooz.syafahadyan.com only, so its workers.dev address is off
   "workers_dev": false,
-  "preview_urls": false,
+  // Other branches get a preview on a workers.dev address, which anyone with the link can open
+  "preview_urls": true,
+  // wrangler preview refuses to run without this block
+  "previews": {},
   // The domain is already attached to this Worker in the dashboard. Declaring it keeps this file and Cloudflare in step,
   // and a deploy attaches it again if it is ever removed. It needs the zone to be on the same Cloudflare account
   "routes": [
