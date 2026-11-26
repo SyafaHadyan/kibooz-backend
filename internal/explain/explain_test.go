@@ -479,6 +479,13 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("auth, find the accounts that waited a week for their code", func(ctx context.Context) error {
 		return drop(auth.OlderPendingAccounts(ctx, now.Add(-7*24*time.Hour), 100))
 	})
+	call("auth, schedule the retry of a mail that failed", func(ctx context.Context) error {
+		return auth.MarkMailFailed(ctx, parent, "z", now.Add(2*time.Minute))
+	})
+	call("auth, claim the mails that are due for a retry", func(ctx context.Context) error {
+		return drop(auth.ClaimMailRetries(ctx, now.Add(24*time.Hour), 5*time.Minute, 10))
+	})
+	call("auth, stop the retries of a mail", func(ctx context.Context) error { return auth.ClearMailRetry(ctx, parent) })
 	call("auth, check a wrong verification code", func(ctx context.Context) error {
 		_, err := auth.CheckVerification(ctx, parent, "wrong", now.Add(3*time.Minute), 5)
 

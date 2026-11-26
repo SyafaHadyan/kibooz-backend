@@ -158,6 +158,9 @@ const (
 	// PendingPurgeAfterDays is how long an account waits for the code of its email before a job removes it
 	PendingPurgeAfterDays = 7
 
+	// EmailMailRetries is how many times the mail of a code that failed is tried again on its own
+	EmailMailRetries = 6
+
 	// JSONBodyMaxBytes is the largest body of any request except the three photo uploads (the avatar, the trash photo and the photo of a chat message). The largest real
 	// body is a batch of mood logs with 500 character notes, which stays well below this.
 	JSONBodyMaxBytes = 64 * 1024

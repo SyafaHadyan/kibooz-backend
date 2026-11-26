@@ -59,6 +59,9 @@ type AuthUseCaseItf interface {
 	VerifyEmail(ctx context.Context, req dto.VerifyEmailRequest) (dto.AuthResponse, error)
 	// ResendVerification sends a new code to an account that still waits for its email
 	ResendVerification(ctx context.Context, req dto.ResendVerificationRequest) (dto.VerificationResponse, error)
+	// RetryVerification mails a new code to an account whose last mail failed. It returns mailer.ErrQuota when the mail service
+	// refused for its quota, and nil when the retry is over or not needed, so the job that calls it stops only for a quota.
+	RetryVerification(ctx context.Context, userID uuid.UUID) error
 	// Collectors are the metrics of the mail that the use case sends
 	Collectors() []prometheus.Collector
 }
@@ -531,34 +534,88 @@ func (u *AuthUseCase) ResendVerification(ctx context.Context, req dto.ResendVeri
 // is an error with the time to wait. A mail that did not go out is not an error, the result says so, because the code is stored
 // and the caller decides what that means for its own answer.
 func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) (bool, error) {
+	sent, _, err := u.issue(ctx, user, false)
+
+	return sent, err
+}
+
+// RetryVerification mails a new code to an account whose last mail failed. Every try is a new code, because the earlier one went
+// nowhere, and a try that fails is scheduled again like any failed mail.
+func (u *AuthUseCase) RetryVerification(ctx context.Context, userID uuid.UUID) error {
+	user, err := u.repo.FindUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// an account that was verified, deleted or whose verification is off needs no code
+	if user == nil || !user.EmailVerificationPending || !u.cfg.EmailVerificationRequired {
+		return u.repo.ClearMailRetry(ctx, userID)
+	}
+
+	_, mailErr, err := u.issue(ctx, user, true)
+	if errors.Is(err, repository.ErrNoRetry) {
+		return nil
+	}
+
+	var refusal *apperror.Error
+	if errors.As(err, &refusal) {
+		switch refusal.Code {
+		case apperror.ErrCodeLimitReached.Code, apperror.ErrInvalidCredentials.Code:
+			// no more codes will ever be sent to the account, or it was removed or verified a moment ago
+			return u.repo.ClearMailRetry(ctx, userID)
+		case "VERIFICATION_RESEND_TOO_SOON":
+			// the person asked for a code in the meantime, and the next try comes after the lease
+			return nil
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	for _, refusal := range []error{mailer.ErrQuota, mailer.ErrRateLimit} {
+		if errors.Is(mailErr, refusal) {
+			return refusal
+		}
+	}
+
+	return nil
+}
+
+// issue is issueVerification with the error of the mail service, which the caller may need to tell a quota from another failure
+func (u *AuthUseCase) issue(ctx context.Context, user *entity.User, retry bool) (sent bool, mailErr error, err error) {
 	code, err := newVerificationCode()
 	if err != nil {
-		return false, apperror.Internal(err)
+		return false, nil, apperror.Internal(err)
 	}
 
 	codeHash := u.codeHash(user.ID, code)
 
 	wait, err := u.repo.StoreVerification(ctx, user.ID, codeHash, u.now(), repository.SendRule{
-		TTL:      constants.EmailCodeTTLMinutes * time.Minute,
-		Cooldown: constants.EmailResendCooldownSeconds * time.Second,
-		PerHour:  constants.EmailSendsPerHour,
-		MaxTotal: u.cfg.EmailCodesMaxPerAccount,
+		TTL:       constants.EmailCodeTTLMinutes * time.Minute,
+		Cooldown:  constants.EmailResendCooldownSeconds * time.Second,
+		PerHour:   constants.EmailSendsPerHour,
+		MaxTotal:  u.cfg.EmailCodesMaxPerAccount,
+		OnlyRetry: retry,
 	})
+	if errors.Is(err, repository.ErrNoRetry) {
+		return false, nil, err
+	}
 	if errors.Is(err, repository.ErrCodeLimit) {
-		return false, apperror.ErrCodeLimitReached
+		return false, nil, apperror.ErrCodeLimitReached
 	}
 
 	// the account was removed or verified after its password was checked
 	if errors.Is(err, repository.ErrNotWaiting) {
-		return false, apperror.ErrInvalidCredentials
+		return false, nil, apperror.ErrInvalidCredentials
 	}
 
 	if err != nil {
-		return false, apperror.Internal(err)
+		return false, nil, apperror.Internal(err)
 	}
 
 	if wait > 0 {
-		return false, apperror.ErrResendTooSoon(int((wait + time.Second - 1) / time.Second))
+		return false, nil, apperror.ErrResendTooSoon(int((wait + time.Second - 1) / time.Second))
 	}
 
 	err = u.mail.SendVerificationCode(ctx, user.Email, code, constants.EmailCodeTTLMinutes)
@@ -577,12 +634,33 @@ func (u *AuthUseCase) issueVerification(ctx context.Context, user *entity.User) 
 			log.Printf("verification send was not given back %v", releaseErr)
 		}
 
-		return false, nil
+		// a mail that failed is tried again, except when no key is set, which no retry can mend. It has a context of its own, so a
+		// slow release does not lose the retry.
+		if !errors.Is(err, mailer.ErrDisabled) {
+			markCtx, cancelMark := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+			defer cancelMark()
+
+			markErr := u.repo.MarkMailFailed(markCtx, user.ID, codeHash, u.now())
+			if markErr != nil {
+				log.Printf("verification mail retry was not scheduled %v", markErr)
+			}
+		}
+
+		return false, err, nil
 	}
 
 	u.mails.WithLabelValues("sent").Inc()
 
-	return true, nil
+	// a mail went out, so the retries of an earlier failure are over
+	clearCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+
+	clearErr := u.repo.ClearMailRetry(clearCtx, user.ID)
+	if clearErr != nil {
+		log.Printf("verification mail retries were not cleared %v", clearErr)
+	}
+
+	return true, nil, nil
 }
 
 // codeHash is what is stored for a code. A keyed hash of the account and the code means a copy of the table is no use without the

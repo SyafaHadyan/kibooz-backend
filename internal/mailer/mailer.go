@@ -25,6 +25,12 @@ const defaultURL = "https://api.resend.com"
 // ErrDisabled is returned when no key is set, so nothing can be sent
 var ErrDisabled = errors.New("mail is not configured, RESEND_API_KEY is empty")
 
+// ErrQuota is returned when Resend answers 429 and names a quota of the plan. A retry job stops for a while then.
+var ErrQuota = errors.New("resend refused the mail for its quota")
+
+// ErrRateLimit is returned when Resend answers any other 429, which is a limit of requests in a moment
+var ErrRateLimit = errors.New("resend refused the mail for its rate")
+
 // Sender sends the mail of the API
 type Sender interface {
 	// SendVerificationCode mails the code of an email verification to the address, and says how many minutes it works. The mail
@@ -121,6 +127,16 @@ func (r *Resend) SendVerificationCode(ctx context.Context, to string, code strin
 
 	// the body names the reason, such as a daily quota, and holds no secret
 	detail, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+
+	if response.StatusCode == http.StatusTooManyRequests {
+		refusal := ErrRateLimit
+		// the names of the refusals of the plan, daily_quota_exceeded and monthly_quota_exceeded, both hold the word
+		if strings.Contains(string(detail), "quota") {
+			refusal = ErrQuota
+		}
+
+		return fmt.Errorf("%w, resend answered 429 %s", refusal, strings.TrimSpace(string(detail)))
+	}
 
 	return fmt.Errorf("resend answered %d %s", response.StatusCode, strings.TrimSpace(string(detail)))
 }

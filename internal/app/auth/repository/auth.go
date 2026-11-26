@@ -79,6 +79,16 @@ type AuthDBItf interface {
 	// that is expired or used up is only refused. A code that matches ends the wait of the account in the same transaction, so
 	// it works once.
 	CheckVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, maxAttempts int) (matched bool, err error)
+	// MarkMailFailed notes that the mail of the live code of the account was not taken by the mail service, and when it is tried
+	// again, which is after 1, 5 and 15 minutes and then every hour. After EmailMailRetries tries there is no more, until a mail goes
+	// out. It does nothing when the live code is another one by now.
+	MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error
+	// ClearMailRetry stops the retries of the account, because a mail went out, the account is verified or the codes are used up
+	ClearMailRetry(ctx context.Context, userID uuid.UUID) error
+	// ClaimMailRetries returns the accounts that wait for a code and whose mail is due for another try, at most limit of them, and
+	// puts the next try of each after the lease, so two copies of the API never take the same account. A row that another
+	// transaction holds is skipped.
+	ClaimMailRetries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]uuid.UUID, error)
 	// ReleaseVerification gives back the wait and the send of the hour of a code whose mail was not taken by the mail service, so the
 	// person can ask again at once. It only touches the row of that code, a newer code is left alone.
 	ReleaseVerification(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time, cooldown time.Duration) error
@@ -92,10 +102,15 @@ type SendRule struct {
 	Cooldown time.Duration
 	// PerHour is the most codes in an hour, the new one included
 	PerHour int
+	// OnlyRetry stores the code only while a retry of the account is still wanted, and answers ErrNoRetry otherwise
+	OnlyRetry bool
 	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap, and an
 	// account that signed in while the verification was off has none either.
 	MaxTotal int
 }
+
+// ErrNoRetry means that a mail went out or the retries ended after the retry was claimed, so no new code is stored
+var ErrNoRetry = errors.New("no retry is wanted any more")
 
 // ErrNotWaiting means that the account was verified or deleted, so no code is stored for it
 var ErrNotWaiting = errors.New("the account does not wait for a code")
@@ -625,6 +640,7 @@ func (r *AuthDB) StoreVerification(
 			WindowStartedAt time.Time
 			SendsInWindow   int
 			SendsTotal      int
+			RetryAt         *time.Time
 		}
 
 		// the user row comes first, which is the order of the deletion of an account. A request that raced with a removal or a
@@ -654,10 +670,15 @@ func (r *AuthDB) StoreVerification(
 
 		// the row of the code is locked, so two requests for a code cannot both pass the cooldown
 		err = tx.Raw(
-			"SELECT last_sent_at, window_started_at, sends_in_window, sends_total FROM email_verifications WHERE user_id = ? FOR UPDATE", userID,
+			`SELECT last_sent_at, window_started_at, sends_in_window, sends_total, retry_at
+			FROM email_verifications WHERE user_id = ? FOR UPDATE`, userID,
 		).Scan(&rows).Error
 		if err != nil {
 			return err
+		}
+
+		if rule.OnlyRetry && (len(rows) == 0 || rows[0].RetryAt == nil) {
+			return ErrNoRetry
 		}
 
 		expires := now.Add(rule.TTL)
@@ -795,4 +816,42 @@ func (r *AuthDB) OlderPendingAccounts(ctx context.Context, before time.Time, lim
 	).Scan(&accounts).Error
 
 	return accounts, err
+}
+
+func (r *AuthDB) MarkMailFailed(ctx context.Context, userID uuid.UUID, codeHash string, now time.Time) error {
+	// the right side of a SET reads the row as it was, so the wait follows the failures before this one
+	return r.db.WithContext(ctx).Exec(
+		`UPDATE email_verifications SET mail_failures = mail_failures + 1, retry_at = CASE
+			WHEN mail_failures >= ? THEN NULL
+			ELSE ?::timestamptz + (CASE mail_failures
+				WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '15 minutes'
+				ELSE interval '1 hour' END)
+			END
+		WHERE user_id = ? AND code_hash = ?`, constants.EmailMailRetries, now, userID, codeHash,
+	).Error
+}
+
+func (r *AuthDB) ClearMailRetry(ctx context.Context, userID uuid.UUID) error {
+	return r.db.WithContext(ctx).Exec(
+		"UPDATE email_verifications SET retry_at = NULL, mail_failures = 0 WHERE user_id = ? AND (retry_at IS NOT NULL OR mail_failures > 0)", userID,
+	).Error
+}
+
+func (r *AuthDB) ClaimMailRetries(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+
+	err := r.db.WithContext(ctx).Raw(
+		// the accounts are picked once, because a subquery with FOR UPDATE SKIP LOCKED and a limit can be run again by the planner
+		// and then claim more than the limit
+		`WITH due AS MATERIALIZED (
+			SELECT ev.user_id FROM email_verifications ev JOIN users u ON u.id = ev.user_id
+			WHERE ev.retry_at IS NOT NULL AND ev.retry_at <= ? AND u.email_verification_pending AND u.deleted_at IS NULL
+			ORDER BY ev.retry_at LIMIT ? FOR UPDATE OF ev SKIP LOCKED
+		)
+		UPDATE email_verifications e SET retry_at = ?::timestamptz + make_interval(secs => ?)
+		FROM due WHERE e.user_id = due.user_id
+		RETURNING e.user_id`, now, limit, now, lease.Seconds(),
+	).Scan(&ids).Error
+
+	return ids, err
 }
