@@ -44,7 +44,7 @@
 #   EXTRAS        services that run the same image and are recreated after all copies are healthy, default all, which is every other service of the image, set it to an empty value for none or name services, for example "bucket-sizes", see Extra services above
 #   IMAGE         the image that holds the version, default syafa/kibooz-backend
 #   TIMEOUT       seconds to wait for one copy or one extra to become healthy, default 120
-#   REPO          the GitHub repository that the migration check asks, default SyafaHadyan/kibooz-backend
+#   REPO          the GitHub repository that the migration check asks, default kiboozapp/kibooz-backend
 #   GITHUB_TOKEN  optional token for the migration check, the anonymous limit is 60 requests an hour for each address
 #   ROLLBACK_OK   the version that you confirm to go back to when there is no terminal
 #   MIGRATIONS_HANDLED  1 when the database is ready for the older version, after a restore, the down files or a check by hand
@@ -63,7 +63,7 @@ compose_dir="${COMPOSE_DIR:-$(dirname "$script")}"
 env_file="${ENV_FILE:-.env}"
 image="${IMAGE:-syafa/kibooz-backend}"
 timeout="${TIMEOUT:-120}"
-repo="${REPO:-SyafaHadyan/kibooz-backend}"
+repo="${REPO:-kiboozapp/kibooz-backend}"
 
 case "${DRY_RUN:-0}" in
   1 | true | yes) dry_run=1 ;;
