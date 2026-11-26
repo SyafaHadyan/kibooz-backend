@@ -1,6 +1,6 @@
 # 0004 Only the release GitHub App creates version tags
 
-Status: Accepted, 2026-10-18
+Status: Accepted, 2026-10-18. Updated 2026-11-26, when the repository moved to the `kiboozapp` organization and the App was installed on all its repositories.
 
 ## Context
 
@@ -8,7 +8,7 @@ A tag that matches `v*` starts the Docker workflow and publishes an image, and a
 
 ## Decision
 
-The release workflow gets its token from a GitHub App that is installed only on this repository. Two tag rulesets protect `v*`. `release-tags` forbids deleting, moving and updating a tag for everyone. `release-tags-creation` forbids creating one, and its only bypass actor is the App. The repository admin role is not a bypass on purpose. Releases are immutable, so the tag and the assets of a published release cannot change. Commits that an App makes through the API are signed by GitHub, which is also what lets the ruleset of `main` require signed commits.
+The release workflow gets its token from a GitHub App that is installed on all repositories of the `kiboozapp` organization. Two tag rulesets protect `v*`. `release-tags` forbids deleting, moving and updating a tag for everyone. `release-tags-creation` forbids creating one, and its only bypass actor is the App. The repository admin role is not a bypass on purpose. Releases are immutable, so the tag and the assets of a published release cannot change. Commits that an App makes through the API are signed by GitHub, which is also what lets the ruleset of `main` require signed commits.
 
 ## Consequences
 
