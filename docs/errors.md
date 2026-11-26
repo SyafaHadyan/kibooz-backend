@@ -22,7 +22,23 @@ The `message` is English text for people and can be reworded, so an app branches
 | `AUTH_REFRESH_INVALID` | 401 | The refresh token was used more than the reuse leeway ago, expired, or its session ended | Send the user to sign in again, a session that ended cannot be revived |
 | `AUTH_FORBIDDEN` | 403 | The signed in role may not use this route. On the `/classes/{classId}` routes (students, videos, forum, guidance reports) and on the leaderboard it is also the answer for a class that the account is not a member of, and for a class that does not exist. This holds for an id that is a valid UUID, a malformed one answers `400` with `VALIDATION_ERROR` | Do not show the action to that role, and treat it as a class that is gone on the class routes |
 | `CHAT_CONTACT_NOT_ALLOWED` | 403 | A new conversation needs a teacher and a parent who share an active class, and a room needs an account that belongs to the class. A person who does not exist, was deleted, has the same role or shares no class, and a class that does not exist or that the account is not in, get this same answer | Show that this person cannot be contacted, and offer the contact list instead |
-| `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account or change the password is wrong | Ask for the password again |
+| `AUTH_PASSWORD_INCORRECT` | 403 | The current password sent to delete the account, change the password or link or unlink Google is wrong | Ask for the password again |
+
+## Google Sign-In
+
+| Code | Status | Meaning | What the app does |
+|:---|:---|:---|:---|
+| `AUTH_GOOGLE_INVALID` | 401 | The Google token is malformed, expired, for another app, without a verified email, or for another Google account than the one that is linked | Start the Google sign in again |
+| `AUTH_GOOGLE_STALE` | 401 | The Google token was issued more than 5 minutes ago, and this action needs a fresh one | Ask Google for a new token and repeat |
+| `AUTH_GOOGLE_UNAVAILABLE` | 503 | Google Sign-In is not set up on the server, or the keys of Google could not be fetched | Offer the password sign in and try again later |
+| `AUTH_ROLE_MISMATCH` | 409 | The Google account is registered under the other role | Tell the person which role it is |
+| `AUTH_ACCOUNT_EXISTS` | 409 | An account with the email of the Google account exists and is not linked to it | Sign in with the password and link Google from the settings |
+| `GOOGLE_ALREADY_REGISTERED` | 409 | The Google account has an account already | Sign in with Google |
+| `GOOGLE_ALREADY_LINKED` | 409 | The account is linked to a Google account already | Show it as linked |
+| `GOOGLE_ACCOUNT_IN_USE` | 409 | The Google account is linked to another account | Tell the person to use another Google account |
+| `GOOGLE_NOT_LINKED` | 409 | The account is not linked to a Google account | Show it as not linked |
+| `AUTH_PASSWORD_NOT_SET` | 409 | The account signs in with Google and has no password, so a request that needs the password cannot work | Offer to set a password with `POST /users/me/password` |
+| `AUTH_PASSWORD_ALREADY_SET` | 409 | The account has a password already, so the first password cannot be set | Use the change password screen |
 
 ## Email verification
 

@@ -25,6 +25,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
 	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/jwt"
@@ -47,6 +48,11 @@ const (
 type AuthUseCaseItf interface {
 	Register(ctx context.Context, req dto.RegisterRequest) (dto.AuthResponse, error)
 	Login(ctx context.Context, req dto.LoginRequest) (dto.AuthResponse, error)
+	GoogleLogin(ctx context.Context, req dto.GoogleLoginRequest) (dto.GoogleAuthResponse, error)
+	GoogleRegister(ctx context.Context, req dto.GoogleRegisterRequest) (dto.AuthResponse, error)
+	SetGoogleVerifier(verifier googleauth.Verifier)
+	// GoogleVerifier is the verifier that the use case checks tokens with, so the use cases of the profile check them the same way
+	GoogleVerifier() googleauth.Verifier
 	Refresh(ctx context.Context, refreshToken string) (dto.AuthResponse, error)
 	Logout(ctx context.Context, refreshToken string) error
 	// VerifyEmail checks the code of a new account and opens its first session
@@ -69,6 +75,8 @@ type AuthUseCase struct {
 
 	devices *devicetoken.Tokens
 
+	google *googleauth.SwitchableVerifier
+
 	mail mailer.Sender
 	// mails counts the codes that were handed to the mail service, by result
 	mails *prometheus.CounterVec
@@ -87,9 +95,15 @@ func WithMailer(sender mailer.Sender) Option {
 func NewAuthUseCase(
 	repo repository.AuthDBItf, jwt jwt.JWTItf, cache redis.CacheItf, cfg *env.Env, hasher *passwords.Hasher, options ...Option,
 ) AuthUseCaseItf {
+	var clientIDs []string
+	if cfg != nil {
+		clientIDs = cfg.GoogleClientIDs
+	}
+
 	u := &AuthUseCase{
 		repo: repo, jwt: jwt, cache: cache, cfg: cfg, now: time.Now, devices: devicetoken.New(cfg), hasher: hasher,
-		mail: noMail{},
+		google: googleauth.NewSwitchableVerifier(googleauth.NewVerifier(clientIDs)),
+		mail:   noMail{},
 		mails: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "kibooz", Name: "verification_emails_total", Help: "Verification codes handed to the mail service, by result.",
 		}, []string{"result"}),
@@ -565,7 +579,7 @@ func (u *AuthUseCase) issueSession(ctx context.Context, user *entity.User) (dto.
 	raw, row := u.newRefreshToken()
 	row.UserID = user.ID
 
-	err := u.repo.CreateRefreshToken(ctx, row, user.PasswordHash, time.Duration(u.cfg.JWTSessionMaxDays)*24*time.Hour)
+	err := u.repo.CreateRefreshToken(ctx, row, user.PasswordHash, user.GoogleSub, time.Duration(u.cfg.JWTSessionMaxDays)*24*time.Hour)
 	if errors.Is(err, repository.ErrCredentialsChanged) {
 		return dto.AuthResponse{}, apperror.ErrInvalidCredentials
 	}

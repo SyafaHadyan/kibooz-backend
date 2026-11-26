@@ -44,6 +44,7 @@ import (
 	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
 	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
 	"github.com/SyafaHadyan/kibooz-backend/internal/filecleanup"
+	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
 	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/db"
 	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
@@ -70,6 +71,7 @@ type Bootstrap struct {
 	Database *gorm.DB
 	Redis    *redis.Redis
 
+	authUseCase   authusecase.AuthUseCaseItf
 	stopKeepalive func()
 	stopCleanup   func()
 	stopSeason    func()
@@ -169,18 +171,18 @@ func Start(version string) (*Bootstrap, error) {
 	// one pool for every use case that hashes or checks a password, so the slots are the budget of the whole process
 	hasher := passwords.New(cfg)
 
-	authUC := authusecase.NewAuthUseCase(
+	authUseCase := authusecase.NewAuthUseCase(
 		authrepository.NewAuthDB(database), jwtService, cache, cfg, hasher, authusecase.WithMailer(mailer.New(cfg)),
 	)
 
-	for _, collector := range authUC.Collectors() {
+	for _, collector := range authUseCase.Collectors() {
 		err = stats.Registry().Register(collector)
 		if err != nil {
 			return nil, fmt.Errorf("register verification mail metrics: %w", err)
 		}
 	}
 
-	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), authUC)
+	authhandler.NewAuthHandler(app.Router, app.EmailLimiter(), app.ClassCodeLimiter(), app.TokenLimiter(), app.GoogleTokenLimiter(), authUseCase)
 	notifUC := notificationusecase.NewNotificationUseCase(notificationrepository.NewNotificationDB(database))
 
 	for _, collector := range notifUC.Collectors() {
@@ -270,8 +272,8 @@ func Start(version string) (*Bootstrap, error) {
 	chathandler.NewChatHandler(
 		app.Router, mw, chatusecase.NewChatUseCase(chatrepository.NewChatDB(database), retryingPrivate, cfg, hub, pusher), hub, cfg,
 	)
-	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), mw, userusecase.NewUserUseCase(
-		userrepository.NewUserDB(database), retrying, cache, hasher,
+	userhandler.NewUserHandler(app.Router, app.PasswordLimiter(middleware.UserKey), app.GoogleTokenLimiter(), mw, userusecase.NewUserUseCase(
+		userrepository.NewUserDB(database), retrying, cache, hasher, userusecase.WithGoogleVerifier(authUseCase.GoogleVerifier()),
 	))
 
 	stats.AllowRoutes(app.Fiber.GetRoutes())
@@ -327,9 +329,16 @@ func Start(version string) (*Bootstrap, error) {
 	})
 
 	return &Bootstrap{
-		App: app, Config: cfg, Database: database, Redis: cache, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
+		App: app, Config: cfg, Database: database, Redis: cache, authUseCase: authUseCase, stopKeepalive: stopKeepalive, stopCleanup: stopCleanup,
 		stopSeason: stopSeason, stopKeys: stopKeys, stopTokens: stopTokens, stopNotifs: stopNotifs, stopReports: stopReports, stopLive: stopLive, stopPush: stopPush, metrics: metricsListener, healthDB: healthDB,
 	}, nil
+}
+
+// SetGoogleVerifier replaces the active Google ID token verifier at runtime (intended for tests).
+func (b *Bootstrap) SetGoogleVerifier(verifier googleauth.Verifier) {
+	if b.authUseCase != nil {
+		b.authUseCase.SetGoogleVerifier(verifier)
+	}
 }
 
 // Close stops the keepalive, then releases the database and Redis connections

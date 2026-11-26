@@ -14,6 +14,7 @@ type User struct {
 	ID           uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	Email        string         `gorm:"size:255;not null;uniqueIndex"`
 	PasswordHash string         `gorm:"size:255;not null"`
+	GoogleSub    *string        `gorm:"size:255"`
 	Role         constants.Role `gorm:"type:user_role;not null"`
 	FullName     string         `gorm:"size:150;not null"`
 	PhoneNumber  *string        `gorm:"size:30"`

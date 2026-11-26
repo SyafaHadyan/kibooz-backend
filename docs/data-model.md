@@ -6,7 +6,7 @@ PostgreSQL is the only authority for the data of Kibooz. The schema is built by 
 
 | Table | What a row is |
 |:---|:---|
-| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number, an avatar address and `email_verification_pending`, which is true while a new account waits for the code of its email |
+| `users` | One account with an email, a password hash, a role (`GURU`, `WALI` or `ADMIN`), a name, a phone number, an avatar address, the `google_sub` of the linked Google account and `email_verification_pending`, which is true while a new account waits for the code of its email |
 | `gurus` | The teacher part of a `GURU` account, with a NIP, a school name and an address |
 | `walis` | The parent part of a `WALI` account, with an address and a WhatsApp number |
 | `classes` | A class with a unique join code, a name, a grade level and an academic year. `archived_at` is set while the class is archived, which makes it read only, and it is also set when the only teacher of a class without an active child deletes the account. `join_open` is false while its teachers do not want new children |

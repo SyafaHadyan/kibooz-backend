@@ -31,28 +31,29 @@ type Env struct {
 	MoodBatchLimiterMax      int    `env:"MOOD_BATCH_LIMITER_MAX" envDefault:"30"`
 	// MetricsAddress is where the Prometheus endpoint listens, such as ":9100", and empty switches it off. It is a listener of
 	// its own and must only be reachable from the private network of the scraper.
-	MetricsAddress          string `env:"METRICS_ADDRESS"`
-	TrustProxy              bool   `env:"TRUST_PROXY" envDefault:"false"`
-	ProxyHeader             string `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
-	DBHost                  string `env:"DB_HOST" envDefault:"127.0.0.1"`
-	DBPort                  uint   `env:"DB_PORT" envDefault:"5432"`
-	DBName                  string `env:"DB_NAME,required"`
-	DBUsername              string `env:"DB_USERNAME,required"`
-	DBPassword              string `env:"DB_PASSWORD,required"`
-	DBSSLMode               string `env:"DB_SSL_MODE" envDefault:"disable"`
-	RedisAddress            string `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
-	RedisPort               uint   `env:"REDIS_PORT" envDefault:"6379"`
-	RedisTLS                bool   `env:"REDIS_TLS" envDefault:"false"`
-	RedisUsername           string `env:"REDIS_USERNAME"`
-	RedisPassword           string `env:"REDIS_PASSWORD"`
-	RedisKeyPrefix          string `env:"REDIS_KEY_PREFIX"`
-	RedisDatabase           int    `env:"REDIS_DATABASE" envDefault:"0"`
-	LeaderboardCacheSeconds int    `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
-	KeepaliveSeconds        int    `env:"KEEPALIVE_SECONDS" envDefault:"60"`
-	JWTSecretKey            string `env:"JWT_SECRET_KEY,required"`
-	JWTAccessExpiredMinutes int    `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
-	JWTRefreshExpiredDays   int    `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
-	JWTSessionMaxDays       int    `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
+	MetricsAddress          string   `env:"METRICS_ADDRESS"`
+	TrustProxy              bool     `env:"TRUST_PROXY" envDefault:"false"`
+	ProxyHeader             string   `env:"PROXY_HEADER" envDefault:"X-Forwarded-For"`
+	DBHost                  string   `env:"DB_HOST" envDefault:"127.0.0.1"`
+	DBPort                  uint     `env:"DB_PORT" envDefault:"5432"`
+	DBName                  string   `env:"DB_NAME,required"`
+	DBUsername              string   `env:"DB_USERNAME,required"`
+	DBPassword              string   `env:"DB_PASSWORD,required"`
+	DBSSLMode               string   `env:"DB_SSL_MODE" envDefault:"disable"`
+	RedisAddress            string   `env:"REDIS_ADDRESS" envDefault:"127.0.0.1"`
+	RedisPort               uint     `env:"REDIS_PORT" envDefault:"6379"`
+	RedisTLS                bool     `env:"REDIS_TLS" envDefault:"false"`
+	RedisUsername           string   `env:"REDIS_USERNAME"`
+	RedisPassword           string   `env:"REDIS_PASSWORD"`
+	RedisKeyPrefix          string   `env:"REDIS_KEY_PREFIX"`
+	RedisDatabase           int      `env:"REDIS_DATABASE" envDefault:"0"`
+	LeaderboardCacheSeconds int      `env:"LEADERBOARD_CACHE_SECONDS" envDefault:"300"`
+	KeepaliveSeconds        int      `env:"KEEPALIVE_SECONDS" envDefault:"60"`
+	JWTSecretKey            string   `env:"JWT_SECRET_KEY,required"`
+	JWTAccessExpiredMinutes int      `env:"JWT_ACCESS_EXPIRED_MINUTES" envDefault:"15"`
+	JWTRefreshExpiredDays   int      `env:"JWT_REFRESH_EXPIRED_DAYS" envDefault:"30"`
+	JWTSessionMaxDays       int      `env:"JWT_SESSION_MAX_DAYS" envDefault:"90"`
+	GoogleClientIDs         []string `env:"GOOGLE_CLIENT_IDS" envSeparator:","`
 	// RefreshReuseLeewaySeconds is how long after its use a refresh token can be shown again and get a new token of the same
 	// session, for a client that lost the answer to its first call. 0 switches it off, and any reuse ends the session.
 	RefreshReuseLeewaySeconds int    `env:"REFRESH_REUSE_LEEWAY_SECONDS" envDefault:"10"`

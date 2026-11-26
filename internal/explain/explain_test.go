@@ -301,6 +301,9 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	// reading
 	call("auth, find a user by email", func(ctx context.Context) error { return drop(auth.FindUserByEmail(ctx, "guru2@example.test")) })
 	call("auth, find a user by id", func(ctx context.Context) error { return drop(auth.FindUserByID(ctx, teacher)) })
+	call("auth, find a user by google sub", func(ctx context.Context) error {
+		return drop(auth.FindUserByGoogleSub(ctx, "explain-sub"))
+	})
 	call("auth, class code exists", func(ctx context.Context) error { return drop(auth.ClassCodeExists(ctx, "00000002")) })
 	call("auth, registration taken", func(ctx context.Context) error {
 		return auth.RegistrationTaken(ctx, "new@example.test", "1999000", "9999999999")
@@ -420,7 +423,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return auth.CreateRefreshToken(ctx, &entity.RefreshToken{
 			ID: uuid.New(), UserID: parent, TokenHash: fmt.Sprintf("%x%x", md5.Sum([]byte("new")), md5.Sum([]byte("token"))),
 			ExpiresAt: now.Add(7 * 24 * time.Hour), FamilyID: uuid.New(), SessionStartedAt: now,
-		}, "x", 90*24*time.Hour)
+		}, "x", nil, 90*24*time.Hour)
 	})
 	call("auth, swap a refresh token", func(ctx context.Context) error {
 		next := &entity.RefreshToken{
@@ -716,6 +719,12 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 		return okOnly(found, err)
 	})
 	call("user, change the password", func(ctx context.Context) error { return okOnly(userRepo.UpdatePassword(ctx, parent, "x", "y")) })
+	call("user, link a google sub", func(ctx context.Context) error {
+		return okOnly(userRepo.LinkGoogleSub(ctx, teacher, "explain-google-sub", "x"))
+	})
+	call("user, unlink a google sub", func(ctx context.Context) error {
+		return okOnly(userRepo.UnlinkGoogleSub(ctx, teacher, "explain-google-sub", "x"))
+	})
 	call("user, take files off the cleanup queue", func(ctx context.Context) error {
 		return userRepo.UnqueueFileCleanups(ctx, []string{"old/1.jpg", "old/2.jpg", "old/3.jpg"})
 	})

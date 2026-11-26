@@ -267,6 +267,92 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Failure"
+  /auth/google:
+    post:
+      tags: [Auth]
+      operationId: googleLogin
+      summary: Sign in or start onboarding with a Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleLoginRequest"
+      responses:
+        "200":
+          description: Google token verified (authenticated session or onboarding profile required)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoogleAuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, unverified, or mismatched (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The Google account is registered under another role (`AUTH_ROLE_MISMATCH`), or its email belongs to an account that is not linked to it
+            (`AUTH_ACCOUNT_EXISTS`), which signs in with its password and links Google with `POST /users/me/google`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /auth/google/register:
+    post:
+      tags: [Auth]
+      operationId: googleRegister
+      summary: Complete registration using a verified Google ID token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GoogleRegisterRequest"
+      responses:
+        "201":
+          description: Google registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: The Google ID token is invalid, expired, or unverified (`AUTH_GOOGLE_INVALID`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The Google account, email, NIP, or NISN is already registered, or the class cannot accept students
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: Google Sign-In is unconfigured or verification keys could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /auth/refresh-token:
     post:
       tags: [Auth]
@@ -3231,7 +3317,8 @@ paths:
       operationId: deleteAccount
       summary: Delete the own account
       description: |
-        Soft deletes the account after the password is confirmed. The sessions are revoked, the account can no longer
+        Soft deletes the account after the password is confirmed. An account that signs in with Google and has no password confirms it with
+        a fresh `idToken` of its Google account instead, which Google issued in the last 5 minutes. The sessions are revoked, the account can no longer
         sign in, and the children of a parent are deleted with it. The profile photo of the account, the photos of the
         children and the photos of their trash scans are deleted too.
 
@@ -3257,7 +3344,13 @@ paths:
         "400":
           $ref: "#/components/responses/ValidationError"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid, issued for another Google account (`AUTH_GOOGLE_INVALID`),
+            or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
         "403":
           description: The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
           content:
@@ -3282,6 +3375,14 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            The account signs in with Google and has no password, and Google Sign-In is not set up or the keys of Google could not be fetched
+            (`AUTH_GOOGLE_UNAVAILABLE`). Such an account cannot be deleted until Google can be reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
   /users/me/password:
     put:
       tags: [Account]
@@ -3317,6 +3418,177 @@ paths:
                 $ref: "#/components/schemas/Failure"
         "404":
           description: The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: The account signs in with Google and has no password yet (`AUTH_PASSWORD_NOT_SET`), see `POST /users/me/password`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Account]
+      operationId: setPassword
+      summary: Set the first password of an account that signs in with Google
+      description: |
+        An account that was created with Google has no password. This gives it one, after a fresh `idToken` of the linked Google account,
+        which Google issued in the last 5 minutes, proves that the caller holds that account right now. Every session of the account ends,
+        so the app has to sign in again on every device. The new password follows the rules of the registration. An account that has a
+        password answers `AUTH_PASSWORD_ALREADY_SET` and changes it with `PUT` and the current password. The request is limited per Google token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetPasswordRequest"
+      responses:
+        "200":
+          description: Password set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid, issued for another Google account (`AUTH_GOOGLE_INVALID`), or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account has a password already (`AUTH_PASSWORD_ALREADY_SET`), or it is not linked to a Google account (`GOOGLE_NOT_LINKED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            Google Sign-In is not set up or the keys of Google could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+  /users/me/google:
+    post:
+      tags: [Account]
+      operationId: linkGoogle
+      summary: Link a Google account to the own account
+      description: |
+        Adds Google as a second way to sign in. The password of the account and a fresh `idToken` are both needed, so a stolen access token
+        alone cannot add a way in that outlives it. The token has to be one that Google issued in the last 5 minutes. A Google account
+        that another account uses answers `GOOGLE_ACCOUNT_IN_USE`, and an account that is linked already answers `GOOGLE_ALREADY_LINKED`.
+        The request is limited per account and per Google token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LinkGoogleRequest"
+      responses:
+        "200":
+          description: Google account linked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          description: >-
+            The access token is missing or invalid, or the Google `idToken` is invalid (`AUTH_GOOGLE_INVALID`), or issued more than 5 minutes ago (`AUTH_GOOGLE_STALE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "403":
+          description: >-
+            The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account is linked already (`GOOGLE_ALREADY_LINKED`), the Google account belongs to another account (`GOOGLE_ACCOUNT_IN_USE`), or the account has no password (`AUTH_PASSWORD_NOT_SET`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          description: >-
+            Google Sign-In is not set up or the keys of Google could not be fetched (`AUTH_GOOGLE_UNAVAILABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+    delete:
+      tags: [Account]
+      operationId: unlinkGoogle
+      summary: Unlink the Google account of the own account
+      description: |
+        Removes the link after the password is confirmed, and every session of the account ends. An account that has no password cannot unlink,
+        because it would have no way in, so it sets a password first with `POST /users/me/password`. The Google account can be linked again later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnlinkGoogleRequest"
+      responses:
+        "200":
+          description: Google account unlinked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmptyEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: >-
+            The role may not do this, or the password is incorrect (`AUTH_FORBIDDEN`, `AUTH_PASSWORD_INCORRECT`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "404":
+          description: >-
+            The account does not exist (`PROFILE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Failure"
+        "409":
+          description: >-
+            The account is not linked to a Google account (`GOOGLE_NOT_LINKED`), or it has no password (`AUTH_PASSWORD_NOT_SET`)
           content:
             application/json:
               schema:
@@ -4134,6 +4406,102 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/Verification"
+    GoogleLoginRequest:
+      type: object
+      required: [idToken, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        role:
+          type: string
+          enum: [GURU, WALI]
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleRegisterRequest:
+      type: object
+      required: [idToken, fullName, role]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 150
+        role:
+          type: string
+          enum: [GURU, WALI]
+        phoneNumber:
+          type: string
+          maxLength: 30
+        nip:
+          type: string
+          maxLength: 50
+        schoolName:
+          type: string
+          maxLength: 150
+        address:
+          type: string
+          maxLength: 1000
+        whatsappNumber:
+          type: string
+          maxLength: 30
+        class:
+          $ref: "#/components/schemas/RegisterClass"
+        classCode:
+          type: string
+          pattern: "^[A-Za-z0-9]+$"
+          minLength: 4
+          maxLength: 12
+        student:
+          $ref: "#/components/schemas/RegisterStudent"
+        deviceToken:
+          type: string
+          maxLength: 256
+    GoogleProfile:
+      type: object
+      required: [email, fullName, avatarUrl]
+      properties:
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    GoogleAuthData:
+      type: object
+      required: [needsRegistration]
+      properties:
+        needsRegistration:
+          type: boolean
+        googleProfile:
+          $ref: "#/components/schemas/GoogleProfile"
+        token:
+          type: string
+        refreshToken:
+          type: string
+        deviceToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    GoogleAuthEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/GoogleAuthData"
     RefreshRequest:
       type: object
       required: [refreshToken]
@@ -4726,12 +5094,16 @@ components:
           $ref: "#/components/schemas/AvatarData"
     DeleteAccountRequest:
       type: object
-      required: [password]
+      description: An account that has a password sends `password`, and an account that signs in with Google and has none sends `idToken`
       properties:
         password:
           type: string
           format: password
           maxLength: 72
+        idToken:
+          type: string
+          maxLength: 4096
+          description: A Google ID token of the linked Google account that Google issued in the last 5 minutes
         successorEmail:
           type: string
           format: email
@@ -4739,6 +5111,41 @@ components:
           description: >-
             The email of another registered teacher who takes over the classes that nobody else teaches. It is needed when
             the account is the only teacher of a class that is not archived and has active children, and ignored for a parent. It cannot be the email of the account itself.
+    SetPasswordRequest:
+      type: object
+      required: [idToken, newPassword]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: A Google ID token of the linked Google account that Google issued in the last 5 minutes
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+    LinkGoogleRequest:
+      type: object
+      required: [idToken, password]
+      properties:
+        idToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: A Google ID token that Google issued in the last 5 minutes
+        password:
+          type: string
+          format: password
+          maxLength: 72
+    UnlinkGoogleRequest:
+      type: object
+      required: [password]
+      properties:
+        password:
+          type: string
+          format: password
+          maxLength: 72
     ChangePasswordRequest:
       type: object
       required: [currentPassword, newPassword]

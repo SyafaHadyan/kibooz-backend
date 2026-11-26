@@ -8,6 +8,7 @@ import (
 	"sort"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -47,6 +48,12 @@ type UserDBItf interface {
 	// UpdatePassword stores newHash and ends every session of the account, but only while the stored hash is still
 	// oldHash, so a change that was made in between is not overwritten. It returns false when nothing was changed.
 	UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash string, newHash string) (bool, error)
+	// LinkGoogleSub links the Google subject to the account while it has none. A subject that another account holds is refused with
+	// ErrGoogleInUse, and false means the account has a link already or is gone.
+	LinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string, passwordHash string) (bool, error)
+	// UnlinkGoogleSub removes the link and ends every session of the account, but only while the link is still sub and the password
+	// is still the one that was checked. It returns false when nothing was changed.
+	UnlinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string, passwordHash string) (bool, error)
 	// UnqueueFileCleanups takes keys off the cleanup queue once their files are gone from the bucket
 	UnqueueFileCleanups(ctx context.Context, keys []string) error
 }
@@ -423,6 +430,56 @@ func (r *UserDB) UpdatePassword(ctx context.Context, userID uuid.UUID, oldHash s
 		}
 
 		res := tx.Model(&entity.User{}).Where("id = ? AND password_hash = ?", userID, oldHash).Update("password_hash", newHash)
+		if res.Error != nil {
+			return res.Error
+		}
+
+		// nothing was changed, so the rollback also keeps the sessions that were just ended
+		if res.RowsAffected == 0 {
+			return errPasswordStale
+		}
+
+		return nil
+	})
+	if errors.Is(err, errPasswordStale) {
+		return false, nil
+	}
+
+	return err == nil, err
+}
+
+func (r *UserDB) LinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string, passwordHash string) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ? AND google_sub IS NULL AND password_hash = ?", userID, passwordHash).
+		Update("google_sub", sub)
+	if res.Error != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(res.Error, &pgErr) && pgErr.Code == "23505" {
+			return false, apperror.ErrGoogleInUse
+		}
+
+		return false, res.Error
+	}
+
+	return res.RowsAffected == 1, nil
+}
+
+func (r *UserDB) UnlinkGoogleSub(ctx context.Context, userID uuid.UUID, sub string, passwordHash string) (bool, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// the same order of locks as UpdatePassword, the user row, then the sessions
+		err := sessions.LockUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		err = sessions.EndUser(tx, userID)
+		if err != nil {
+			return err
+		}
+
+		res := tx.Model(&entity.User{}).
+			Where("id = ? AND google_sub = ? AND password_hash = ?", userID, sub, passwordHash).
+			Update("google_sub", nil)
 		if res.Error != nil {
 			return res.Error
 		}
