@@ -13,7 +13,7 @@ info:
     Protected routes need the access token from login as a bearer token. Rate limits answer `429` with `RATE_LIMITED`
     and a `Retry-After` header. They count requests per signed-in user, and login, registration and token routes per account,
     never per IP address. The daily limit of trash claims never refuses a claim, a claim past it is stored and earns
-    `TRASH_OVER_LIMIT_POINTS` instead of the full points until midnight of the local day. Login, registration, changing the password and deleting the account
+    at most `TRASH_OVER_LIMIT_POINTS`, never more than the full points of its type, until midnight of the local day. Login, registration, changing the password and deleting the account
     also answer `429` with `RATE_LIMITED` and `Retry-After: 1` when the server is busy checking passwords, and the three photo
     uploads (the avatar, a trash claim and a chat photo) answer the same when the server is already receiving as many photos as
     it may, or when the same account already has as many uploads running as one account may. A client can send the same request
@@ -4981,7 +4981,7 @@ components:
           description: How many claims of today still earn the full points. A claim after them earns the reduced points
         reducedPoints:
           type: boolean
-          description: True when this claim came after the daily limit and earned `TRASH_OVER_LIMIT_POINTS` instead of the full points
+          description: True when this claim came after the daily limit, so it earned at most `TRASH_OVER_LIMIT_POINTS`. `pointsAdded` holds the points that it earned
     ScanClaimEnvelope:
       type: object
       required: [success, data]
