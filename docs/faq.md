@@ -29,7 +29,7 @@ The app and the PRD are in Indonesian, and the API keeps a few of those words in
 
 **Why can a teacher delete the account without naming a successor, and another teacher cannot?** A class with active children that nobody else teaches needs a successor, so it never loses its last teacher. A class with no active child is archived when no `successorEmail` is sent, and a named successor takes every class that nobody else teaches, empty ones included. See [Error codes](errors.md#classes-and-teachers).
 
-**Why does a trash claim give no points?** `B3` is worth 0 points by default, set by `POINTS_B3`. A child also earns the full points only for the first `TRASH_DAILY_LIMIT` claims of a day, 5 by default. Each claim after them earns `TRASH_OVER_LIMIT_POINTS`, 1 by default, so a value of 0 gives no points either. The full points start again on the next local day.
+**Why does a trash claim give no points?** `B3` is worth 0 points by default, set by `POINTS_B3`. A child also earns the full points only for the first `TRASH_DAILY_LIMIT` claims of a day, 5 by default. Each claim after them earns `TRASH_OVER_LIMIT_POINTS`, 1 by default, and never more than the full points of its type, so `B3` stays at 0 and a value of 0 gives no points either. The full points start again on the next local day.
 
 **Why did a repeated request not create another entry?** A request that carries the same `Idempotency-Key` as an earlier one that worked gets the first answer again, with the header `Idempotent-Replayed: true`. That is the point of the key, see [the design notes](design.md#idempotency-keys).
 
