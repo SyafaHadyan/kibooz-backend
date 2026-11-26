@@ -2616,7 +2616,7 @@ paths:
       operationId: trashStats
       summary: Trash sorting statistics of a child
       description: |
-        Only for the WALI role. The scans and points of a child for each trash category, and how many scans are left today. Without `studentId` the oldest child is used.
+        Only for the WALI role. The scans and points of a child for each trash category, and how many claims of today still earn the full points. Without `studentId` the oldest child is used.
         With `period` the `breakdown` and `totalScans` only count the scans of that day, week or month, `periodPoints` holds their
         points and `period` repeats the name. The totals of the child (`totalPoints`, `seasonPoints`, `classRank`) do not change.
       parameters:
@@ -6636,12 +6636,15 @@ components:
         todayScans:
           type: integer
           minimum: 0
+          description: All claims of today, which can be more than `dailyLimit`
         dailyLimit:
           type: integer
           minimum: 1
+          description: How many claims of a day earn the full points
         remainingDailyScans:
           type: integer
           minimum: 0
+          description: How many claims of today still earn the full points, and 0 once `todayScans` reaches `dailyLimit`
         period:
           type: string
           enum: [today, week, month]
