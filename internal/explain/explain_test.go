@@ -519,7 +519,7 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("trash, claim a scan", func(ctx context.Context) error {
 		return drop(trash.Claim(ctx, &entity.TrashScan{
 			ID: uuid.New(), StudentID: child, TrashType: constants.TrashOrganik, ConfidenceScore: 0.9, PointsAwarded: 5, ScannedAt: now,
-		}, class, 100, now.Add(-24*time.Hour), now.Add(24*time.Hour)))
+		}, class, 100, 1, now.Add(-24*time.Hour), now.Add(24*time.Hour)))
 	})
 	call("guru, record the moods of a class", func(ctx context.Context) error {
 		logs := []entity.MoodLog{
