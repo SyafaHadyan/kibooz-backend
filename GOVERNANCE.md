@@ -25,7 +25,9 @@ No setting of this repository is changed without the approval of a code owner, w
 
 A setting is a configuration of the repository that GitHub or a connected app keeps outside its files. Examples are rulesets and branch protection, required checks, Actions settings, environments, secrets and variables, webhooks, deploy keys, collaborators and teams, installed apps, security features, visibility, merge options, and a transfer or a rename. Everyday work on issues, pull requests, branches and releases is not a change of a setting.
 
-The approval names the change, and each new change needs a new approval. An earlier approval does not cover it. Reading a setting needs no approval.
+The approval is a direct go-ahead from a code owner that names the change. Each new change needs a new approval, and an earlier approval does not cover it. Reading a setting needs no approval.
+
+A change of [.github/CODEOWNERS](.github/CODEOWNERS) also needs the approval of a code owner, because that file names who may approve.
 
 This is a rule of the project. GitHub does not enforce it, because an account with enough access can change a setting without anyone's approval.
 
