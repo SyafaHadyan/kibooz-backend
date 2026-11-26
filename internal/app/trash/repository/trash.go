@@ -19,7 +19,10 @@ type ClaimResult struct {
 	TotalPoints  int
 	SeasonPoints int
 	Rank         int
-	Remaining    int
+	// Remaining is how many claims of today still earn the full points
+	Remaining int
+	// Reduced says that the claim came after the daily limit and earned the reduced points
+	Reduced bool
 }
 
 // HistoryRow is one saved place of a semester that ended
@@ -35,8 +38,11 @@ type TrashDBItf interface {
 	FindGuruIDByUserID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error)
 	FindOwnedStudent(ctx context.Context, waliID uuid.UUID, studentID uuid.UUID) (*entity.Student, error)
 	CountScans(ctx context.Context, studentID uuid.UUID, from time.Time, to time.Time) (int, error)
-	// Claim checks the daily limit, stores the scan, adds the points and renumbers the class in one transaction
-	Claim(ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, from time.Time, to time.Time) (ClaimResult, error)
+	// Claim counts the claims of the day, lowers the points of the scan to overLimitPoints once limit claims are used, stores the
+	// scan, adds the points and renumbers the class in one transaction
+	Claim(
+		ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, overLimitPoints int, from time.Time, to time.Time,
+	) (ClaimResult, error)
 	ListClassStudents(ctx context.Context, classID uuid.UUID) ([]entity.Student, error)
 	// ListClassStudentsBetween ranks the children of a class by the points of the scans in the window, with SeasonPoints holding those points
 	ListClassStudentsBetween(ctx context.Context, classID uuid.UUID, from time.Time, to time.Time) ([]entity.Student, error)
@@ -114,7 +120,7 @@ func (r *TrashDB) CountScans(ctx context.Context, studentID uuid.UUID, from time
 }
 
 func (r *TrashDB) Claim(
-	ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, from time.Time, to time.Time,
+	ctx context.Context, scan *entity.TrashScan, classID uuid.UUID, limit int, overLimitPoints int, from time.Time, to time.Time,
 ) (ClaimResult, error) {
 	var result ClaimResult
 
@@ -135,8 +141,11 @@ func (r *TrashDB) Claim(
 			return err
 		}
 
-		if used >= limit {
-			return apperror.ErrDailyLimitReached
+		// the count is taken under the lock of the class, so two claims that arrive together cannot both get the full points of the
+		// last claim of the day. A claim past the limit is still stored, with points that never exceed the normal ones, so B3 stays at 0
+		reduced := used >= limit
+		if reduced {
+			scan.PointsAwarded = min(scan.PointsAwarded, overLimitPoints)
 		}
 
 		err = tx.Create(scan).Error
@@ -176,7 +185,8 @@ func (r *TrashDB) Claim(
 			TotalPoints:  student.CurrentPoints,
 			SeasonPoints: student.SeasonPoints,
 			Rank:         student.RankPosition,
-			Remaining:    limit - used - 1,
+			Remaining:    max(limit-used-1, 0),
+			Reduced:      reduced,
 		}
 
 		return nil

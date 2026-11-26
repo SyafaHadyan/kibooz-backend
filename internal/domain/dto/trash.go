@@ -13,12 +13,15 @@ type ScanClaimRequest struct {
 	PhotoBase64     string              `json:"photoBase64" validate:"omitempty"`
 }
 
+// ScanClaimResponse is the result of one claim. RemainingDailyScans is how many claims of today still earn the full points, and
+// ReducedPoints says that this claim came after them and earned TRASH_OVER_LIMIT_POINTS
 type ScanClaimResponse struct {
-	PointsAdded         int `json:"pointsAdded"`
-	TotalPoints         int `json:"totalPoints"`
-	SeasonPoints        int `json:"seasonPoints"`
-	NewRank             int `json:"newRank"`
-	RemainingDailyScans int `json:"remainingDailyScans"`
+	PointsAdded         int  `json:"pointsAdded"`
+	TotalPoints         int  `json:"totalPoints"`
+	SeasonPoints        int  `json:"seasonPoints"`
+	NewRank             int  `json:"newRank"`
+	RemainingDailyScans int  `json:"remainingDailyScans"`
+	ReducedPoints       bool `json:"reducedPoints"`
 }
 
 type LeaderboardEntry struct {

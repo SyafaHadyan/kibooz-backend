@@ -67,6 +67,11 @@ func TestTheOtherRulesStillApply(t *testing.T) {
 	limit := valid()
 	limit.TrashDailyLimit = 0
 	require.ErrorContains(t, limit.validate(), "TRASH_DAILY_LIMIT")
+
+	// a negative reward would break the check constraint on the points of every claim past the limit
+	overLimit := valid()
+	overLimit.TrashOverLimitPoints = -1
+	require.ErrorContains(t, overLimit.validate(), "TRASH_OVER_LIMIT_POINTS")
 }
 
 func TestARequestTimeoutThatIsNotPositiveIsRejected(t *testing.T) {
