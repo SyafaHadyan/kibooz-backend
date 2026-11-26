@@ -322,8 +322,9 @@ func (u *AuthUseCase) replaceable(ctx context.Context, email string, nip string,
 }
 
 // replace removes the accounts that replaceable returned. It first asks again for everything that could refuse the new account,
-// so that nothing is removed for a registration that fails. A classCode is empty for a teacher. When an account cannot be removed,
-// or something is taken after the removal, it returns the conflict.
+// so that a registration that is bound to fail removes nothing. A failure after that, such as a second account that cannot be
+// removed, leaves the first one removed, which the sweep would have removed anyway. A classCode is empty for a teacher. When an
+// account cannot be removed, or something is taken after the removal, it returns the conflict.
 func (u *AuthUseCase) replace(
 	ctx context.Context, stale []repository.PendingAccount, email string, nip string, nisn string, classCode string,
 ) error {

@@ -104,6 +104,22 @@ func TestPendingAccountQueriesAndTheCodeCap(t *testing.T) {
 		_, err = repo.StoreVerification(ctx, userID, "hash-4", now.Add(5*time.Second), rule)
 		require.ErrorIs(t, err, authrepository.ErrCodeLimit)
 
+		// an account that signed in while the verification was off has no cap, and the other limits stay
+		require.NoError(t, testDB.Exec("UPDATE users SET signed_in_unverified_at = now() WHERE id = ?", userID).Error)
+
+		wait, err = repo.StoreVerification(ctx, userID, "hash-marked", now.Add(5*time.Second), rule)
+		require.NoError(t, err)
+		require.Zero(t, wait)
+
+		limited := rule
+		limited.Cooldown = time.Minute
+
+		wait, err = repo.StoreVerification(ctx, userID, "hash-cooldown", now.Add(6*time.Second), limited)
+		require.NoError(t, err)
+		require.Positive(t, wait)
+
+		require.NoError(t, testDB.Exec("UPDATE users SET signed_in_unverified_at = NULL WHERE id = ?", userID).Error)
+
 		// a rule without a cap sends on
 		_, err = repo.StoreVerification(ctx, userID, "hash-5", now.Add(6*time.Second), authrepository.SendRule{TTL: time.Hour, PerHour: 100})
 		require.NoError(t, err)

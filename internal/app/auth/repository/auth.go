@@ -92,7 +92,8 @@ type SendRule struct {
 	Cooldown time.Duration
 	// PerHour is the most codes in an hour, the new one included
 	PerHour int
-	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap.
+	// MaxTotal is the most codes that are ever sent to the account, the new one included. A value below 1 means no cap, and an
+	// account that signed in while the verification was off has none either.
 	MaxTotal int
 }
 
@@ -633,16 +634,23 @@ func (r *AuthDB) StoreVerification(
 			return err
 		}
 
-		var waiting int64
+		var waiting []struct {
+			SignedInUnverifiedAt *time.Time
+		}
 
-		err = tx.Model(&entity.User{}).Where("id = ? AND email_verification_pending", userID).Count(&waiting).Error
+		err = tx.Raw(
+			"SELECT signed_in_unverified_at FROM users WHERE id = ? AND deleted_at IS NULL AND email_verification_pending", userID,
+		).Scan(&waiting).Error
 		if err != nil {
 			return err
 		}
 
-		if waiting == 0 {
+		if len(waiting) == 0 {
 			return ErrNotWaiting
 		}
+
+		// an account that signed in is never replaced or removed, so a cap would leave it with no way to ever verify
+		capped := rule.MaxTotal > 0 && waiting[0].SignedInUnverifiedAt == nil
 
 		// the row of the code is locked, so two requests for a code cannot both pass the cooldown
 		err = tx.Raw(
@@ -664,7 +672,7 @@ func (r *AuthDB) StoreVerification(
 		last := rows[0]
 
 		// the cap comes before the waits, because waiting does not help an account that has no codes left
-		if rule.MaxTotal > 0 && last.SendsTotal >= rule.MaxTotal {
+		if capped && last.SendsTotal >= rule.MaxTotal {
 			return ErrCodeLimit
 		}
 
