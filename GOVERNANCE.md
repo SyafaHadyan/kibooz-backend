@@ -25,13 +25,15 @@ No setting of this repository is changed without the approval of a code owner, w
 
 A setting is a configuration of the repository that GitHub or a connected app keeps outside its files. Examples are rulesets and branch protection, required checks, Actions settings, environments, secrets and variables, webhooks, deploy keys, collaborators and teams, installed apps, security features, visibility, merge options, and a transfer or a rename. Everyday work on issues, pull requests, branches and releases is not a change of a setting.
 
-The approval names the change, and each new change needs a new approval. An earlier approval does not cover it. Reading a setting needs no approval.
+The approval is a direct go-ahead from a code owner that names the change. Each new change needs a new approval, and an earlier approval does not cover it. Reading a setting needs no approval.
 
-This is a rule of the project. GitHub does not enforce it, because an account with enough access can change a setting without anyone's approval.
+A change of [.github/CODEOWNERS](.github/CODEOWNERS) also needs the approval of a code owner, because that file names who may approve.
+
+These are rules of the project, and GitHub does not enforce them. An account with enough access can change a setting without anyone's approval, and the ruleset needs no approval for a change of a file.
 
 ## Releases
 
-Releases are automated. Release Please opens a release pull request from the commit messages that reach `main`, and the maintainer merges it when the release is ready. Merging creates the tag and the GitHub release through the release GitHub App, which is the only account allowed to create a `v*` tag. That rule stops a pushed tag and anyone who is not a repository admin. An admin can still edit the ruleset, so it does not stop a stolen owner login either. The release App key and the Docker Hub token are secrets of environments that accept no branch, only `main` (and `v*.*.*` tags for the Docker Hub one), so a workflow on a branch cannot read them. Someone with write access who gets a workflow change merged into `main` still could, because the ruleset needs no approval. So the guarantee holds while nobody with write access does that. Releases are immutable once published, so a wrong release gets a new version and not an edit.
+Releases are automated. Release Please opens a release pull request from the commit messages that reach `main`, and the maintainer merges it when the release is ready. Merging creates the tag and the GitHub release through the release GitHub App, which is the only account allowed to create a `v*` tag. That rule stops a pushed tag and anyone who is not a repository admin. An admin can still edit the ruleset, so it does not stop a stolen admin login either. The release App key and the Docker Hub token are secrets of environments that accept no branch, only `main` (and `v*.*.*` tags for the Docker Hub one), so a workflow on a branch cannot read them. Someone with write access who gets a workflow change merged into `main` still could, because the ruleset needs no approval. So the guarantee holds while nobody with write access does that. Releases are immutable once published, so a wrong release gets a new version and not an edit.
 
 ## Becoming a collaborator
 
