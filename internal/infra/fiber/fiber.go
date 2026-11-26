@@ -16,14 +16,14 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
-	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
-	"github.com/SyafaHadyan/kibooz-backend/internal/response"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/errorreport"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/devicetoken"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/ratelimit"
+	"github.com/kiboozapp/kibooz-backend/internal/response"
 )
 
 type Fiber struct {

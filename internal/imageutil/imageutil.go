@@ -7,7 +7,7 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 type Image struct {

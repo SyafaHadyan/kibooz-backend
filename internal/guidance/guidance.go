@@ -4,7 +4,7 @@ package guidance
 import (
 	"strings"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 type Guidance struct {

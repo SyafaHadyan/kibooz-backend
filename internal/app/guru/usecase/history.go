@@ -6,12 +6,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/guru/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/guidance"
-	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
+	"github.com/kiboozapp/kibooz-backend/internal/app/guru/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/guidance"
+	"github.com/kiboozapp/kibooz-backend/internal/pagination"
 )
 
 // deletedActorName stands in for the name of a teacher or parent whose account was deleted after the event

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
 )
 
 // recordingStorage counts the calls of the probe and fails the ones it is told to

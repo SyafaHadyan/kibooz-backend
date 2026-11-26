@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/pending"
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/pending"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 type source struct {

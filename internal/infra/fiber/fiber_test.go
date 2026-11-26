@@ -14,10 +14,10 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
-	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/fiber"
+	"github.com/kiboozapp/kibooz-backend/internal/metrics"
 )
 
 // newServer has one public route that is limited per account, with the given number of requests per account

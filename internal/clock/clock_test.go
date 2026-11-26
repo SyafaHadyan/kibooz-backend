@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/clock"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/clock"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 func jakarta(t *testing.T) *time.Location {

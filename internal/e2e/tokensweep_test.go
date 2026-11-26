@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/sessions"
+	"github.com/kiboozapp/kibooz-backend/internal/sessions"
 )
 
 func tokenRows(t *testing.T, token string) int64 {

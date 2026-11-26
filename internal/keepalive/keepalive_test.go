@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/keepalive"
+	"github.com/kiboozapp/kibooz-backend/internal/keepalive"
 )
 
 const tick = 5 * time.Millisecond

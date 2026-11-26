@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
 )
 
 // bucket tells the buckets apart in a test

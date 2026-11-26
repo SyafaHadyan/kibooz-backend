@@ -7,13 +7,13 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/wali/usecase"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
-	"github.com/SyafaHadyan/kibooz-backend/internal/response"
+	"github.com/kiboozapp/kibooz-backend/internal/app/wali/usecase"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/validation"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/response"
 )
 
 type WaliHandler struct {

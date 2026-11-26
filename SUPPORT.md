@@ -16,8 +16,8 @@ Kibooz Backend is an open source project that is maintained by its owners, and t
 
 ## Where each question goes
 
-- **A bug.** Open an issue with the [bug report form](https://github.com/SyafaHadyan/kibooz-backend/issues/new?template=bug_report.yml). Say what happened, the steps to reproduce it, the version from `/healthz` and the logs or responses, with secrets and personal data removed.
-- **An idea or a missing feature.** Open an issue with the [feature request form](https://github.com/SyafaHadyan/kibooz-backend/issues/new?template=feature_request.yml).
+- **A bug.** Open an issue with the [bug report form](https://github.com/kiboozapp/kibooz-backend/issues/new?template=bug_report.yml). Say what happened, the steps to reproduce it, the version from `/healthz` and the logs or responses, with secrets and personal data removed.
+- **An idea or a missing feature.** Open an issue with the [feature request form](https://github.com/kiboozapp/kibooz-backend/issues/new?template=feature_request.yml).
 - **A security problem.** Never open a public issue. Use the private report described in [SECURITY.md](SECURITY.md).
 - **A barrier in the documentation or the API for a person with a disability.** Follow [ACCESSIBILITY.md](ACCESSIBILITY.md).
 - **A question about the Android app.** Ask in the repository of the app, [ValentinusMarvel/kibooz-app](https://github.com/ValentinusMarvel/kibooz-app). The PRD there is the source of the contract that this API follows.

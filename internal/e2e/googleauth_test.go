@@ -16,8 +16,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
-	"github.com/SyafaHadyan/kibooz-backend/internal/googleauth"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/googleauth"
 )
 
 const testGoogleClientID = "e2e-kibooz-web-client.example.test"

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 const (

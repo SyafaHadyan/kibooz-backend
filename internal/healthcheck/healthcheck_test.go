@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/healthcheck"
+	"github.com/kiboozapp/kibooz-backend/internal/healthcheck"
 )
 
 func serving(t *testing.T, status int) *httptest.Server {

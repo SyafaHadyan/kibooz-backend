@@ -17,7 +17,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 // PhonePattern accepts 6 to 30 characters of digits with an optional leading plus, and spaces, dashes and brackets between them

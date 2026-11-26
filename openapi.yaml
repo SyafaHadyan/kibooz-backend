@@ -32,7 +32,7 @@ info:
     deployment, which is `Asia/Jakarta` unless the operator sets another one.
   license:
     name: GNU General Public License v3.0
-    url: https://github.com/SyafaHadyan/kibooz-backend/blob/main/LICENSE
+    url: https://github.com/kiboozapp/kibooz-backend/blob/main/LICENSE
 servers:
   - url: https://{host}/api/v1
     description: A deployment, with the host that its operator gives you

@@ -10,13 +10,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/notification/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
-	"github.com/SyafaHadyan/kibooz-backend/internal/notifier"
-	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
+	"github.com/kiboozapp/kibooz-backend/internal/app/notification/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/errorreport"
+	"github.com/kiboozapp/kibooz-backend/internal/notifier"
+	"github.com/kiboozapp/kibooz-backend/internal/pagination"
 )
 
 type NotificationUseCaseItf interface {

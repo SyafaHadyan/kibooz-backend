@@ -9,8 +9,8 @@ import (
 	golangjwt "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 type JWTItf interface {

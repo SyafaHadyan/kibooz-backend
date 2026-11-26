@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
 )
 
 func (r *AuthDB) FindUserByGoogleSub(ctx context.Context, sub string) (*entity.User, error) {

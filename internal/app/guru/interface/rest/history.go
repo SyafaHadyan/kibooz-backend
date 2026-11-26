@@ -5,9 +5,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
-	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
-	"github.com/SyafaHadyan/kibooz-backend/internal/response"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/pagination"
+	"github.com/kiboozapp/kibooz-backend/internal/response"
 )
 
 func (h *GuruHandler) ClassHistory(c fiber.Ctx) error {

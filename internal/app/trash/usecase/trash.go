@@ -9,17 +9,17 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/trash/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/clock"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
-	"github.com/SyafaHadyan/kibooz-backend/internal/imageutil"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/s3"
-	"github.com/SyafaHadyan/kibooz-backend/internal/pagination"
+	"github.com/kiboozapp/kibooz-backend/internal/app/trash/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/clock"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
+	"github.com/kiboozapp/kibooz-backend/internal/imageutil"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/redis"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/pagination"
 )
 
 const podiumSize = 3

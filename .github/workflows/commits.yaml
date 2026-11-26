@@ -44,7 +44,7 @@ jobs:
         uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
           configFile: ./commitlint.config.mjs
-          helpURL: https://github.com/SyafaHadyan/kibooz-backend/blob/main/CONTRIBUTING.md
+          helpURL: https://github.com/kiboozapp/kibooz-backend/blob/main/CONTRIBUTING.md
 
       # With merge commits the title never reaches main, so commitlint does not see it, and CONTRIBUTING.md asks for the same format
       - name: Pull request title

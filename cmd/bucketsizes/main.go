@@ -10,9 +10,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bucketsizes"
-	"github.com/SyafaHadyan/kibooz-backend/internal/healthcheck"
-	"github.com/SyafaHadyan/kibooz-backend/internal/logging"
+	"github.com/kiboozapp/kibooz-backend/internal/bucketsizes"
+	"github.com/kiboozapp/kibooz-backend/internal/healthcheck"
+	"github.com/kiboozapp/kibooz-backend/internal/logging"
 )
 
 func main() {

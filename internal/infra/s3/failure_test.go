@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
 )
 
 func TestAStorageCallThatRanOutOfTimeIsAServerTimeoutAndNotABadGateway(t *testing.T) {

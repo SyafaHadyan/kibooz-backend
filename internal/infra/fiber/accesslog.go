@@ -12,8 +12,8 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/requestid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/errorreport"
-	"github.com/SyafaHadyan/kibooz-backend/internal/response"
+	"github.com/kiboozapp/kibooz-backend/internal/errorreport"
+	"github.com/kiboozapp/kibooz-backend/internal/response"
 )
 
 // healthPath is the route that a monitor asks every few seconds, so an answer of 200 is logged below the default level

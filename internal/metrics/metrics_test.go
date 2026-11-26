@@ -13,8 +13,8 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/metrics"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/metrics"
 )
 
 // server answers like the API does, an apperror gets its own status and anything else is a 500

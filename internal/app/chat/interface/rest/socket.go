@@ -11,9 +11,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/chatlive"
-	"github.com/SyafaHadyan/kibooz-backend/internal/middleware"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/chatlive"
+	"github.com/kiboozapp/kibooz-backend/internal/middleware"
 )
 
 const (

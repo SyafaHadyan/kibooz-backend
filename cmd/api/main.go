@@ -12,9 +12,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/bootstrap"
-	"github.com/SyafaHadyan/kibooz-backend/internal/healthcheck"
-	"github.com/SyafaHadyan/kibooz-backend/internal/logging"
+	"github.com/kiboozapp/kibooz-backend/internal/bootstrap"
+	"github.com/kiboozapp/kibooz-backend/internal/healthcheck"
+	"github.com/kiboozapp/kibooz-backend/internal/logging"
 )
 
 // version is set at build time with -ldflags

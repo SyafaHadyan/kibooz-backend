@@ -18,10 +18,10 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/devicetoken"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/fiber"
-	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/devicetoken"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/fiber"
+	"github.com/kiboozapp/kibooz-backend/internal/ratelimit"
 )
 
 // recordingStore counts in memory like the store of a single instance, and remembers every key it was asked for

@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/app/user/repository"
 )
 
 // The avatar is read again after an update that failed, to learn whether it was committed after all. The read has to find the address of

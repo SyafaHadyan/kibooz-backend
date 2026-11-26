@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/idempotency"
+	"github.com/kiboozapp/kibooz-backend/internal/idempotency"
 )
 
 func TestLearningModules(t *testing.T) {

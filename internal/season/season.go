@@ -16,9 +16,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/redis"
-	"github.com/SyafaHadyan/kibooz-backend/internal/ranking"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/redis"
+	"github.com/kiboozapp/kibooz-backend/internal/ranking"
 )
 
 // Interval is how often the job looks at the calendar. The look is a cheap check of the latest semester and of the classes that are left, and it bounds how many points

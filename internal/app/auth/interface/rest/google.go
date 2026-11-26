@@ -5,9 +5,9 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/dto"
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/validation"
-	"github.com/SyafaHadyan/kibooz-backend/internal/response"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/dto"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/validation"
+	"github.com/kiboozapp/kibooz-backend/internal/response"
 )
 
 func (h *AuthHandler) GoogleLogin(c fiber.Ctx) error {

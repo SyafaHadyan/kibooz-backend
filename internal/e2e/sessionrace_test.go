@@ -13,11 +13,11 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	authrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/auth/repository"
-	userrepository "github.com/SyafaHadyan/kibooz-backend/internal/app/user/repository"
-	"github.com/SyafaHadyan/kibooz-backend/internal/apperror"
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
-	"github.com/SyafaHadyan/kibooz-backend/internal/domain/entity"
+	authrepository "github.com/kiboozapp/kibooz-backend/internal/app/auth/repository"
+	userrepository "github.com/kiboozapp/kibooz-backend/internal/app/user/repository"
+	"github.com/kiboozapp/kibooz-backend/internal/apperror"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
 )
 
 // inFlightRefresh opens the transaction of a refresh and stops before it commits. It has marked the token as used, and

@@ -4,7 +4,7 @@ package clock
 import (
 	"time"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/constants"
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 // PeriodBounds returns the start of the local day, week or month of a period that contains t and the start of the next one

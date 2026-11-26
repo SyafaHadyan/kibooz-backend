@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/imageutil"
+	"github.com/kiboozapp/kibooz-backend/internal/imageutil"
 )
 
 // the benchmarks of the repository are the ones that the scheduled Benchmarks workflow compares between two commits, so a

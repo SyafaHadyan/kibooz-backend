@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/ratelimit"
+	"github.com/kiboozapp/kibooz-backend/internal/ratelimit"
 )
 
 const window = time.Minute

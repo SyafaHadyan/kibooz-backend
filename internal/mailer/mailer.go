@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/SyafaHadyan/kibooz-backend/internal/infra/env"
+	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 )
 
 // sendTimeout is how long one call to Resend may take. The request that sends the code waits for it, so it stays short.
