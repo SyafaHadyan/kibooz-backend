@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.25.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.24.0...v0.25.0) (2026-11-26)
+
+
+### Features
+
+* **auth:** replace and purge accounts that wait for their code ([#497](https://github.com/SyafaHadyan/kibooz-backend/issues/497)) ([246a7a8](https://github.com/SyafaHadyan/kibooz-backend/commit/246a7a813e11b1aca4c646a3f6408247ffd4c78c))
+* **auth:** try the mail of a code again after it failed ([3383da8](https://github.com/SyafaHadyan/kibooz-backend/commit/3383da8104b213712e5d5487b9ede2f409adf18d))
+* **auth:** try the mail of a code again after it failed ([#499](https://github.com/SyafaHadyan/kibooz-backend/issues/499)) ([7a14d3f](https://github.com/SyafaHadyan/kibooz-backend/commit/7a14d3fb205b945e873004cd20722113aa9ac526))
+* **trash:** accept claims past the daily limit with reduced points ([9024ee3](https://github.com/SyafaHadyan/kibooz-backend/commit/9024ee3ccbd930b6ee9859e99368ae6a5e0521f8))
+* **trash:** accept claims past the daily limit with reduced points ([#503](https://github.com/SyafaHadyan/kibooz-backend/issues/503)) ([57b509b](https://github.com/SyafaHadyan/kibooz-backend/commit/57b509b28d070c0ea3f3d8742708e75d457b27e7))
+
+
+### Bug Fixes
+
+* **auth:** end the mail retries after six tries and close the gaps of the retry job ([884b42d](https://github.com/SyafaHadyan/kibooz-backend/commit/884b42daedb7816741bd07aa44d11afb3f5be49f))
+* **auth:** end the mail retries of a waiting account that signed in ([ffda39a](https://github.com/SyafaHadyan/kibooz-backend/commit/ffda39a0cf4a5e434f5a06dafcc22d52328708ae))
+* **auth:** leave out the code cap for a waiting account that signed in ([616eefc](https://github.com/SyafaHadyan/kibooz-backend/commit/616eefc84bea493a281d4c5b2c9a108a9935fef5))
+* **cleanup:** queue the files of a large removal in batches ([896eb69](https://github.com/SyafaHadyan/kibooz-backend/commit/896eb694dfbcd1dbcf62d30a9db037fba4b340bd))
+* **grafana:** label a 429 of the scan claim as a rate limit ([a636dfc](https://github.com/SyafaHadyan/kibooz-backend/commit/a636dfcde3594764611f91103666fbdba653fde3))
+
 ## [0.24.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.23.0...v0.24.0) (2026-11-26)
 
 
