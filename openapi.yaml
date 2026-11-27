@@ -5951,7 +5951,7 @@ components:
         subjectCode:
           type: string
           nullable: true
-          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1]
+          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1, null]
           description: Optional curriculum subject code for the thread, or null for a general class discussion.
     ForumThread:
       type: object
@@ -5967,7 +5967,7 @@ components:
         subjectCode:
           type: string
           nullable: true
-          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1]
+          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1, null]
           description: Curriculum subject code of the thread, or null for a general class discussion.
         author:
           $ref: "#/components/schemas/ForumAuthor"
