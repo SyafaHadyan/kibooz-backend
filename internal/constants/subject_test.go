@@ -35,3 +35,20 @@ func TestParseSubjectCodeAcceptsTheSixSubjectsAndEmptyOnly(t *testing.T) {
 		require.Nil(t, parsed, raw)
 	}
 }
+
+func TestSubjectCodesAreTheOnesTheMessageNames(t *testing.T) {
+	codes := constants.SubjectCodes()
+
+	require.Len(t, codes, 6)
+	require.Equal(t, "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1", constants.SubjectCodeMessage())
+
+	for _, code := range codes {
+		require.True(t, code.Valid(), string(code))
+		require.Contains(t, constants.SubjectCodeMessage(), string(code))
+	}
+
+	codes[0] = "CHANGED"
+
+	require.Equal(t, constants.SubjectSeni, constants.SubjectCodes()[0], "the list a caller gets is a copy")
+	require.False(t, constants.SubjectCode("").Valid())
+}
