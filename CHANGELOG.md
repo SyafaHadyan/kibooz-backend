@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.26.0](https://github.com/kiboozapp/kibooz-backend/compare/v0.25.0...v0.26.0) (2026-11-27)
+
+
+### Features
+
+* **forum:** segment class forum threads by curriculum subject ([9454257](https://github.com/kiboozapp/kibooz-backend/commit/94542575ce690ad45b59ede04b7fdd4ca848d3d3))
+* **forum:** segment class forum threads by curriculum subject ([#516](https://github.com/kiboozapp/kibooz-backend/issues/516)) ([0db8d3b](https://github.com/kiboozapp/kibooz-backend/commit/0db8d3bade3dca76d6b2a9b60fa47150b3ab7219))
+
+
+### Bug Fixes
+
+* **db:** validate forum subject constraints in separate migration ([2d7d3ab](https://github.com/kiboozapp/kibooz-backend/commit/2d7d3abb254aabbbde907b8758ac7d411c5f7e8f))
+* **forum:** drop the empty filter requests that the spec refuses and tie the check to the codes ([92fa095](https://github.com/kiboozapp/kibooz-backend/commit/92fa09594e7ca09b21e1995a56c4d7fadd2ec5dc))
+* **forum:** separate index migration and allow null in OpenAPI enum ([7ec0672](https://github.com/kiboozapp/kibooz-backend/commit/7ec06720c216818a6324e13d1df1f466491c0d84))
+* **forum:** test and document the subject tags ([#518](https://github.com/kiboozapp/kibooz-backend/issues/518)) ([9254533](https://github.com/kiboozapp/kibooz-backend/commit/9254533455872c89c9f5b2a1c2eb75946bc7ed1e))
+
 ## [0.25.0](https://github.com/SyafaHadyan/kibooz-backend/compare/v0.24.0...v0.25.0) (2026-11-26)
 
 
