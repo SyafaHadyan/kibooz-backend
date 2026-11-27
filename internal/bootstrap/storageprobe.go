@@ -15,7 +15,7 @@ const (
 	storageProbeTTL = time.Minute
 	// storageProbeTimeout is how long one probe of all the buckets may take. A write and a delete in each of two buckets took about
 	// 2.5 to 2.9 seconds from the production host, which the 2 seconds of the health check never allowed. The limit stays under
-	// the 5 seconds after which the container health check and the rolling update give up on a copy.
+	// the 5 seconds after which the container health check and the rolling update give up on a copy, with room for the database and Redis.
 	storageProbeTimeout = 4 * time.Second
 )
 
