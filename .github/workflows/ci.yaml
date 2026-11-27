@@ -132,7 +132,7 @@ jobs:
           fi
 
       # The action stops at its first error on every event.
-      # Only a push fails the job, because a Codecov outage must not block a pull request.
+      # Only a push fails the job. A pull request still needs codecov/patch, so rerun this job when the upload failed.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('coverage.out') != '' }}
         continue-on-error: ${{ github.event_name != 'push' }}
