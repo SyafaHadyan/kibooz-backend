@@ -31,7 +31,7 @@
 
 [![codecov](https://codecov.io/gh/kiboozapp/kibooz-backend/branch/main/graph/badge.svg)](https://codecov.io/gh/kiboozapp/kibooz-backend)
 [![Snyk](https://snyk.io/test/github/kiboozapp/kibooz-backend/badge.svg)](https://snyk.io/test/github/kiboozapp/kibooz-backend)
-[![DeepSource](https://app.deepsource.com/gh/kiboozapp/kibooz-backend.svg/?label=active+issues&show_trend=true)](https://app.deepsource.com/gh/kiboozapp/kibooz-backend/)
+[![DeepSource](https://app.deepsource.com/gh/kiboozapp/kibooz-backend.svg/?label=active+issues&show_trend=true&token=UA7dR38DqxnS7sJA_gNazpkK)](https://app.deepsource.com/gh/kiboozapp/kibooz-backend/)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kiboozapp/kibooz-backend/badge)](https://scorecard.dev/viewer/?uri=github.com/kiboozapp/kibooz-backend)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15283/badge)](https://www.bestpractices.dev/projects/15283)
 
