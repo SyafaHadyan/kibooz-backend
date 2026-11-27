@@ -131,15 +131,16 @@ jobs:
             exit 1
           fi
 
-      # A failed upload only fails the build
-      # on main, because a Codecov outage must not block a pull request.
+      # The action stops at its first error on every event.
+      # Only a push fails the job, because a Codecov outage must not block a pull request.
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() && hashFiles('coverage.out') != '' }}
+        continue-on-error: ${{ github.event_name != 'push' }}
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.out
-          fail_ci_if_error: ${{ github.event_name == 'push' }}
+          fail_ci_if_error: true
 
       - name: Upload coverage
         if: always()
