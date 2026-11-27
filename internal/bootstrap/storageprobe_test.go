@@ -87,9 +87,11 @@ func TestStorageProbeReportsAWriteThatFailsAndKeepsItForTheTTL(t *testing.T) {
 }
 
 func TestStorageProbeIgnoresACallerThatGaveUp(t *testing.T) {
-	storage := &recordingStorage{}
+	// the storage honors the context of its call, so a probe that used the context of the caller would fail
+	storage := &slowStorage{delay: 50 * time.Millisecond}
 	now := time.Now()
-	p := probeWithClock(storage, &now)
+	p := newStorageProbe(storage)
+	p.now = func() time.Time { return now }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
