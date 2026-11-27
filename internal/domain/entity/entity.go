@@ -186,13 +186,14 @@ type LearningModule struct {
 
 // ForumPost is a thread when ParentID is nil and a reply to that thread otherwise
 type ForumPost struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	ClassID      uuid.UUID  `gorm:"type:uuid;not null"`
-	ParentID     *uuid.UUID `gorm:"type:uuid"`
-	AuthorUserID uuid.UUID  `gorm:"type:uuid;not null"`
-	Title        *string    `gorm:"size:150"`
-	Body         string     `gorm:"not null"`
-	CreatedAt    time.Time  `gorm:"autoCreateTime:false;not null"`
+	ID           uuid.UUID              `gorm:"type:uuid;primaryKey"`
+	ClassID      uuid.UUID              `gorm:"type:uuid;not null"`
+	ParentID     *uuid.UUID             `gorm:"type:uuid"`
+	AuthorUserID uuid.UUID              `gorm:"type:uuid;not null"`
+	SubjectCode  *constants.SubjectCode `gorm:"size:20"`
+	Title        *string                `gorm:"size:150"`
+	Body         string                 `gorm:"not null"`
+	CreatedAt    time.Time              `gorm:"autoCreateTime:false;not null"`
 	// EditedAt is when the author last changed the words of the post, and nil for a post that was never edited
 	EditedAt *time.Time
 }

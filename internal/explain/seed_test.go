@@ -91,9 +91,10 @@ func seedOtherTables(t *testing.T, database *gorm.DB, classes int, children int)
 			SELECT md5('s' || i)::uuid, (ARRAY['ORGANIK','ANORGANIK','B3'])[1 + (i + d) % 3]::trash_category_enum, 0.9, 5,
 				now() - make_interval(hours => d * 7 + i % 100)
 			FROM generate_series(1, ?::int) AS i, generate_series(0, 4) AS d`, []any{children}},
-		{"forum threads", `INSERT INTO forum_posts (id, class_id, parent_id, author_user_id, title, body, created_at)
-			SELECT md5('thread' || c || '-' || t)::uuid, md5('class' || c)::uuid, NULL, md5('guru' || c)::uuid, 'Thread ' || t, 'Body ' || t,
-				now() - make_interval(mins => t)
+		{"forum threads", `INSERT INTO forum_posts (id, class_id, parent_id, author_user_id, subject_code, title, body, created_at)
+			SELECT md5('thread' || c || '-' || t)::uuid, md5('class' || c)::uuid, NULL, md5('guru' || c)::uuid,
+				(ARRAY[NULL, 'SENI-A1', 'BHS-A1', 'LOG-A1', 'MOT-A1', 'AGM-A1', 'SOS-A1'])[1 + t % 7],
+				'Thread ' || t, 'Body ' || t, now() - make_interval(mins => t)
 			FROM generate_series(1, ?::int) AS c, generate_series(1, 20) AS t`, []any{classes}},
 		{"forum replies", `INSERT INTO forum_posts (id, class_id, parent_id, author_user_id, title, body, created_at)
 			SELECT md5('reply' || c || '-' || t || '-' || r)::uuid, md5('class' || c)::uuid, md5('thread' || c || '-' || t)::uuid,

@@ -103,8 +103,9 @@ type ForumAuthor struct {
 }
 
 type CreateThreadRequest struct {
-	Title string `json:"title" validate:"required,max=150"`
-	Body  string `json:"body" validate:"required,max=5000"`
+	Title       string                 `json:"title" validate:"required,max=150"`
+	Body        string                 `json:"body" validate:"required,max=5000"`
+	SubjectCode *constants.SubjectCode `json:"subjectCode"`
 }
 
 type CreateReplyRequest struct {
@@ -122,13 +123,14 @@ type UpdateReplyRequest struct {
 }
 
 type ForumThread struct {
-	ID         uuid.UUID   `json:"id"`
-	Title      string      `json:"title"`
-	Body       string      `json:"body"`
-	Author     ForumAuthor `json:"author"`
-	ReplyCount int         `json:"replyCount"`
-	CreatedAt  time.Time   `json:"createdAt"`
-	EditedAt   *time.Time  `json:"editedAt"`
+	ID          uuid.UUID              `json:"id"`
+	Title       string                 `json:"title"`
+	Body        string                 `json:"body"`
+	SubjectCode *constants.SubjectCode `json:"subjectCode"`
+	Author      ForumAuthor            `json:"author"`
+	ReplyCount  int                    `json:"replyCount"`
+	CreatedAt   time.Time              `json:"createdAt"`
+	EditedAt    *time.Time             `json:"editedAt"`
 }
 
 type ForumThreadList struct {

@@ -57,6 +57,12 @@ const (
 		(u.deleted_at IS NOT NULL) AS author_deleted, 0 AS reply_count`
 )
 
+// ThreadFilter restricts listed forum threads to one curriculum subject or general threads without a subject.
+type ThreadFilter struct {
+	SubjectCode *constants.SubjectCode
+	GeneralOnly bool
+}
+
 type ClassroomDBItf interface {
 	// TeacherOfClass returns the guru id of the account when it teaches the class, and nil otherwise
 	TeacherOfClass(ctx context.Context, userID uuid.UUID, classID uuid.UUID) (*uuid.UUID, error)
@@ -86,7 +92,7 @@ type ClassroomDBItf interface {
 	// WithVideoFileLock runs fn in a transaction that holds a lock for the video address until fn returns, so adding a video
 	// and deleting the last video of the same uploaded file never interleave. fn must use the repository it is given.
 	WithVideoFileLock(ctx context.Context, videoURL string, fn func(repo ClassroomDBItf) error) error
-	ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error)
+	ListThreads(ctx context.Context, classID uuid.UUID, filter ThreadFilter, limit int, offset int) ([]PostRow, int, error)
 	ThreadExists(ctx context.Context, classID uuid.UUID, threadID uuid.UUID) (bool, error)
 	// ClassArchived tells whether a teacher archived the class, which makes it read only
 	ClassArchived(ctx context.Context, classID uuid.UUID) (bool, error)
@@ -320,22 +326,33 @@ func (r *ClassroomDB) WithVideoFileLock(ctx context.Context, videoURL string, fn
 	})
 }
 
-func (r *ClassroomDB) ListThreads(ctx context.Context, classID uuid.UUID, limit int, offset int) ([]PostRow, int, error) {
+func (r *ClassroomDB) ListThreads(
+	ctx context.Context, classID uuid.UUID, filter ThreadFilter, limit int, offset int,
+) ([]PostRow, int, error) {
 	var total int64
 
-	err := r.db.WithContext(ctx).Model(&entity.ForumPost{}).
-		Where("class_id = ? AND parent_id IS NULL", classID).Count(&total).Error
+	countQuery := applyThreadFilter(
+		r.db.WithContext(ctx).Table("forum_posts AS p").Where("p.class_id = ? AND p.parent_id IS NULL", classID),
+		filter,
+	)
+
+	err := countQuery.Count(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
 
 	var rows []PostRow
 
-	err = r.db.WithContext(ctx).
-		Table("forum_posts AS p").
-		Select(threadColumns).
-		Joins("JOIN users AS u ON u.id = p.author_user_id").
-		Where("p.class_id = ? AND p.parent_id IS NULL", classID).
+	rowsQuery := applyThreadFilter(
+		r.db.WithContext(ctx).
+			Table("forum_posts AS p").
+			Select(threadColumns).
+			Joins("JOIN users AS u ON u.id = p.author_user_id").
+			Where("p.class_id = ? AND p.parent_id IS NULL", classID),
+		filter,
+	)
+
+	err = rowsQuery.
 		Order("p.created_at DESC, p.id DESC").
 		Limit(limit).Offset(offset).
 		Scan(&rows).Error
@@ -344,6 +361,18 @@ func (r *ClassroomDB) ListThreads(ctx context.Context, classID uuid.UUID, limit 
 	}
 
 	return rows, int(total), nil
+}
+
+func applyThreadFilter(query *gorm.DB, filter ThreadFilter) *gorm.DB {
+	if filter.GeneralOnly {
+		return query.Where("p.subject_code IS NULL")
+	}
+
+	if filter.SubjectCode != nil {
+		return query.Where("p.subject_code = ?", *filter.SubjectCode)
+	}
+
+	return query
 }
 
 func (r *ClassroomDB) ThreadExists(ctx context.Context, classID uuid.UUID, threadID uuid.UUID) (bool, error) {

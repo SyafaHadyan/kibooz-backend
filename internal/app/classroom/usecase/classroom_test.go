@@ -18,6 +18,7 @@ import (
 	"github.com/kiboozapp/kibooz-backend/internal/domain/entity"
 	"github.com/kiboozapp/kibooz-backend/internal/infra/env"
 	"github.com/kiboozapp/kibooz-backend/internal/infra/s3"
+	"github.com/kiboozapp/kibooz-backend/internal/pagination"
 )
 
 func TestIsHTTPSURL(t *testing.T) {
@@ -912,3 +913,115 @@ func (r countingRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { 
 func (r *forumRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { return r.archived, nil }
 
 func (r lockRepo) ClassArchived(context.Context, uuid.UUID) (bool, error) { return false, nil }
+
+type forumSubjectRepo struct {
+	forumRepo
+
+	filter  repository.ThreadFilter
+	rows    []repository.PostRow
+	total   int
+	created *entity.ForumPost
+}
+
+func (r *forumSubjectRepo) ListThreads(
+	_ context.Context, _ uuid.UUID, filter repository.ThreadFilter, _ int, _ int,
+) ([]repository.PostRow, int, error) {
+	r.filter = filter
+
+	return r.rows, r.total, nil
+}
+
+func (r *forumSubjectRepo) CreatePost(_ context.Context, post *entity.ForumPost) error {
+	r.created = post
+	r.post = &repository.PostRow{
+		ForumPost:  *post,
+		AuthorName: "Guru Matahari",
+		AuthorRole: constants.RoleGuru,
+	}
+
+	return nil
+}
+
+func TestForumSubjectSegmentation(t *testing.T) {
+	ctx := context.Background()
+	classID, userID, guruID := uuid.New(), uuid.New(), uuid.New()
+	seni := constants.SubjectSeni
+	clock := func() time.Time { return time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC) }
+
+	t.Run("create stores valid subjectCode and keeps nil for general threads", func(t *testing.T) {
+		repo := &forumSubjectRepo{forumRepo: forumRepo{teacher: &guruID}}
+		u := &ClassroomUseCase{repo: repo, now: clock}
+
+		withSubject, err := u.CreateThread(ctx, userID, constants.RoleGuru, classID, dto.CreateThreadRequest{
+			Title:       "Kolase Alam",
+			Body:        "Bawa daun kering besok",
+			SubjectCode: &seni,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, repo.created.SubjectCode)
+		require.Equal(t, constants.SubjectSeni, *repo.created.SubjectCode)
+		require.NotNil(t, withSubject.SubjectCode)
+		require.Equal(t, constants.SubjectSeni, *withSubject.SubjectCode)
+
+		general, err := u.CreateThread(ctx, userID, constants.RoleGuru, classID, dto.CreateThreadRequest{
+			Title: "Pengumuman Umum",
+			Body:  "Jadwal libur sekolah",
+		})
+		require.NoError(t, err)
+		require.Nil(t, repo.created.SubjectCode)
+		require.Nil(t, general.SubjectCode)
+	})
+
+	t.Run("create rejects unknown subjectCode", func(t *testing.T) {
+		invalid := constants.SubjectCode("INVALID")
+		repo := &forumSubjectRepo{forumRepo: forumRepo{teacher: &guruID}}
+		u := &ClassroomUseCase{repo: repo, now: clock}
+
+		_, err := u.CreateThread(ctx, userID, constants.RoleGuru, classID, dto.CreateThreadRequest{
+			Title:       "Judul",
+			Body:        "Isi",
+			SubjectCode: &invalid,
+		})
+
+		var appErr *apperror.Error
+
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "VALIDATION_ERROR", appErr.Code)
+		require.Contains(t, appErr.Details, "subjectCode")
+	})
+
+	t.Run("list forwards subjectCode and generalOnly filters cleanly", func(t *testing.T) {
+		title := "Diskusi Seni"
+		repo := &forumSubjectRepo{
+			forumRepo: forumRepo{parent: true},
+			total:     1,
+			rows: []repository.PostRow{{
+				ForumPost:  entity.ForumPost{ID: uuid.New(), SubjectCode: &seni, Title: &title, Body: "Bawa cat air"},
+				AuthorName: "Ibu Siti",
+				AuthorRole: constants.RoleGuru,
+			}},
+		}
+		u := &ClassroomUseCase{repo: repo, now: clock}
+
+		got, err := u.ListThreads(ctx, userID, constants.RoleWali, classID, &seni, false, pagination.Params{Page: 1, Limit: 20})
+		require.NoError(t, err)
+		require.NotNil(t, repo.filter.SubjectCode)
+		require.Equal(t, constants.SubjectSeni, *repo.filter.SubjectCode)
+		require.False(t, repo.filter.GeneralOnly)
+		require.Len(t, got.Threads, 1)
+		require.NotNil(t, got.Threads[0].SubjectCode)
+		require.Equal(t, constants.SubjectSeni, *got.Threads[0].SubjectCode)
+
+		_, err = u.ListThreads(ctx, userID, constants.RoleWali, classID, nil, true, pagination.Params{Page: 1, Limit: 20})
+		require.NoError(t, err)
+		require.Nil(t, repo.filter.SubjectCode)
+		require.True(t, repo.filter.GeneralOnly)
+
+		_, err = u.ListThreads(ctx, userID, constants.RoleWali, classID, &seni, true, pagination.Params{Page: 1, Limit: 20})
+		require.Error(t, err)
+
+		bad := constants.SubjectCode("NOPE")
+		_, err = u.ListThreads(ctx, userID, constants.RoleWali, classID, &bad, false, pagination.Params{Page: 1, Limit: 20})
+		require.Error(t, err)
+	})
+}
