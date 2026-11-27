@@ -86,19 +86,67 @@ func TestStorageProbeReportsAWriteThatFailsAndKeepsItForTheTTL(t *testing.T) {
 	require.NoError(t, p.Ping(context.Background()), "a bucket that works again is picked up")
 }
 
-func TestStorageProbeDoesNotKeepTheErrorOfACallerThatGaveUp(t *testing.T) {
-	storage := &recordingStorage{uploadErr: context.Canceled}
+func TestStorageProbeIgnoresACallerThatGaveUp(t *testing.T) {
+	// the storage honors the context of its call, so a probe that used the context of the caller would fail
+	storage := &slowStorage{delay: 50 * time.Millisecond}
 	now := time.Now()
-	p := probeWithClock(storage, &now)
+	p := newStorageProbe(storage)
+	p.now = func() time.Time { return now }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	require.Error(t, p.Ping(ctx))
+	require.NoError(t, p.Ping(ctx), "a caller that left says nothing about the bucket")
+	require.Equal(t, 1, storage.uploads, "the probe still ran")
 
-	storage.uploadErr = nil
+	require.NoError(t, p.Ping(context.Background()))
+	require.Equal(t, 1, storage.uploads, "and its answer is kept")
+}
 
-	require.NoError(t, p.Ping(context.Background()), "the next health check probes the bucket again")
+// slowStorage answers after a delay, and gives up when the context of the call ends first, like the client of a real bucket
+type slowStorage struct {
+	s3.Disabled
+
+	delay   time.Duration
+	uploads int
+}
+
+func (s *slowStorage) Upload(ctx context.Context, _ string, _ string, _ []byte) (string, error) {
+	s.uploads++
+
+	select {
+	case <-time.After(s.delay):
+		return "", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (s *slowStorage) Delete(context.Context, string) error { return nil }
+
+func TestStorageProbeIsNotCutByTheShortLimitOfTheHealthCheck(t *testing.T) {
+	storage := &slowStorage{delay: 100 * time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	require.NoError(t, newStorageProbe(storage).Ping(ctx), "a bucket that needs longer than the caller allows is still up")
+}
+
+func TestStorageProbeStopsAtItsOwnLimitAndKeepsTheFailure(t *testing.T) {
+	storage := &slowStorage{delay: time.Minute}
+	now := time.Now()
+	p := newStorageProbe(storage)
+	p.limit = 20 * time.Millisecond
+	p.now = func() time.Time { return now }
+
+	require.ErrorIs(t, p.Ping(context.Background()), context.DeadlineExceeded)
+	require.ErrorIs(t, p.Ping(context.Background()), context.DeadlineExceeded)
+	require.Equal(t, 1, storage.uploads, "a bucket that is too slow is not probed again before the ttl")
+
+	now = now.Add(storageProbeTTL + time.Second)
+
+	require.ErrorIs(t, p.Ping(context.Background()), context.DeadlineExceeded)
 	require.Equal(t, 2, storage.uploads)
 }
 

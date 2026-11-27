@@ -11,7 +11,9 @@ import (
 
 const (
 	defaultPort = "8080"
-	timeout     = 3 * time.Second
+	// timeout matches the 5 seconds of the HEALTHCHECK of the image. A check that has to run the storage write probe can take about
+	// 3 seconds, so a shorter limit would fail it.
+	timeout = 5 * time.Second
 )
 
 // URL returns the health endpoint on loopback, a port that is not a number falls back to the default
