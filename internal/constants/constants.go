@@ -217,7 +217,7 @@ const (
 var subjectCodes = []SubjectCode{SubjectSeni, SubjectBahasa, SubjectLogika, SubjectMotorik, SubjectAgama, SubjectSosial}
 
 // SubjectCodes lists the six supported curriculum domains in the order of the API docs.
-// The SQL check on forum_posts.subject_code repeats this list, and a database test fails when the two differ.
+// The SQL check on forum_posts.subject_code repeats this list, and a database test reads that check and fails when the two differ.
 func SubjectCodes() []SubjectCode {
 	return slices.Clone(subjectCodes)
 }

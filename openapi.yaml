@@ -3659,14 +3659,14 @@ components:
     SubjectCode:
       name: subjectCode
       in: query
-      description: Optional curriculum subject code to limit the listed forum threads. Omit it or leave it empty to list all threads of the class.
+      description: Optional curriculum subject code to limit the listed forum threads. Omit it to list all threads of the class.
       schema:
         type: string
         enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1]
     GeneralOnly:
       name: generalOnly
       in: query
-      description: Set true to list only general class threads without a subject tag. The spellings that Go reads as a boolean are accepted, such as `1`, `t` and `TRUE`. An empty value counts as false. Cannot be combined with subjectCode.
+      description: Set true to list only general class threads without a subject tag. Cannot be combined with subjectCode.
       schema:
         type: boolean
         default: false

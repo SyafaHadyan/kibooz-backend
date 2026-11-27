@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -398,14 +399,9 @@ func TestClassForum(t *testing.T) {
 		require.Equal(t, http.StatusCreated, general.Status, "body %v", general.Body)
 		require.Nil(t, general.data("subjectCode"))
 
-		// an empty filter lists everything, and the other spellings of true list the general threads
+		// the general list leaves the tagged thread out
 		all := call(t, http.MethodGet, forum+"?generalOnly=false", wali.Token, nil)
-		require.Equal(t, all.data("total"), call(t, http.MethodGet, forum+"?subjectCode=&generalOnly=", wali.Token, nil).data("total"))
-
 		only := call(t, http.MethodGet, forum+"?generalOnly=true", wali.Token, nil)
-		for _, spelling := range []string{"1", "t", "TRUE"} {
-			require.Equal(t, only.data("total"), call(t, http.MethodGet, forum+"?generalOnly="+spelling, wali.Token, nil).data("total"), spelling)
-		}
 
 		require.Less(t, only.data("total"), all.data("total"), "the tagged thread is not a general one")
 
@@ -416,6 +412,25 @@ func TestClassForum(t *testing.T) {
 
 		err = testDB.Exec("UPDATE forum_posts SET subject_code = 'XXX-A1' WHERE id = ?::uuid", thread).Error
 		require.ErrorContains(t, err, "forum_posts_subject_code_check")
+
+		// the check of the database names the same codes as the application, no more and no fewer
+		var definition string
+
+		require.NoError(t, testDB.Raw("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'forum_posts_subject_code_check'").Scan(&definition).Error)
+
+		var inCheck []string
+
+		for _, match := range regexp.MustCompile(`'([^']+)'`).FindAllStringSubmatch(definition, -1) {
+			inCheck = append(inCheck, match[1])
+		}
+
+		var inCode []string
+
+		for _, code := range constants.SubjectCodes() {
+			inCode = append(inCode, string(code))
+		}
+
+		require.ElementsMatch(t, inCode, inCheck, definition)
 
 		// every code that the application accepts is a code that the database accepts
 		for _, code := range constants.SubjectCodes() {
