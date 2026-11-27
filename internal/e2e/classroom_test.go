@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/kiboozapp/kibooz-backend/internal/constants"
 )
 
 func listOf(t *testing.T, res result, key string) []any {
@@ -366,6 +368,62 @@ func TestClassForum(t *testing.T) {
 			"body":        "Bad subject",
 			"subjectCode": "UNKNOWN",
 		}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
+	t.Run("the database holds the subject rules and an edit keeps the tag", func(t *testing.T) {
+		created := call(t, http.MethodPost, forum, guru.Token, map[string]any{
+			"title": "Lagu anak", "body": "Lagu apa hari ini?", "subjectCode": "MOT-A1",
+		})
+		require.Equal(t, http.StatusCreated, created.Status, "body %v", created.Body)
+
+		thread := created.data("id").(string)
+
+		// a change of the words keeps the tag, and a reply never carries one
+		edited := call(t, http.MethodPatch, forum+"/"+thread, guru.Token, map[string]any{"title": "Lagu anak baru"})
+		require.Equal(t, http.StatusOK, edited.Status, "body %v", edited.Body)
+		require.Equal(t, "MOT-A1", edited.data("subjectCode"))
+
+		reply := call(t, http.MethodPost, replies(thread), wali.Token, map[string]any{"body": "Lagu ceria"})
+		require.Equal(t, http.StatusCreated, reply.Status, "body %v", reply.Body)
+		require.NotContains(t, dig(reply.Body, "data"), "subjectCode")
+
+		// an empty tag is not a tag, a null tag is a general thread, and a tag of the wrong type is a bad body
+		call(t, http.MethodPost, forum, guru.Token, map[string]any{"title": "Empty", "body": "Empty tag", "subjectCode": ""}).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+
+		wrongType := call(t, http.MethodPost, forum, guru.Token, map[string]any{"title": "Number", "body": "Number tag", "subjectCode": 7})
+		require.Equal(t, http.StatusBadRequest, wrongType.Status, "body %v", wrongType.Body)
+
+		general := call(t, http.MethodPost, forum, guru.Token, map[string]any{"title": "Null", "body": "Null tag", "subjectCode": nil})
+		require.Equal(t, http.StatusCreated, general.Status, "body %v", general.Body)
+		require.Nil(t, general.data("subjectCode"))
+
+		// an empty filter lists everything, and the other spellings of true list the general threads
+		all := call(t, http.MethodGet, forum+"?generalOnly=false", wali.Token, nil)
+		require.Equal(t, all.data("total"), call(t, http.MethodGet, forum+"?subjectCode=&generalOnly=", wali.Token, nil).data("total"))
+
+		only := call(t, http.MethodGet, forum+"?generalOnly=true", wali.Token, nil)
+		for _, spelling := range []string{"1", "t", "TRUE"} {
+			require.Equal(t, only.data("total"), call(t, http.MethodGet, forum+"?generalOnly="+spelling, wali.Token, nil).data("total"), spelling)
+		}
+
+		require.Less(t, only.data("total"), all.data("total"), "the tagged thread is not a general one")
+
+		// the check on a reply and the check on the code hold in the database, whatever the application does
+		err := testDB.Exec(`INSERT INTO forum_posts (id, class_id, parent_id, author_user_id, subject_code, body, created_at)
+			SELECT gen_random_uuid(), class_id, id, author_user_id, 'MOT-A1', 'tagged reply', now() FROM forum_posts WHERE id = ?::uuid`, thread).Error
+		require.ErrorContains(t, err, "forum_posts_subject_reply_check")
+
+		err = testDB.Exec("UPDATE forum_posts SET subject_code = 'XXX-A1' WHERE id = ?::uuid", thread).Error
+		require.ErrorContains(t, err, "forum_posts_subject_code_check")
+
+		// every code that the application accepts is a code that the database accepts
+		for _, code := range constants.SubjectCodes() {
+			require.NoError(t, testDB.Exec("UPDATE forum_posts SET subject_code = ? WHERE id = ?::uuid", string(code), thread).Error, string(code))
+		}
+
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, forum+"/"+thread, guru.Token, nil).Status)
+		require.Equal(t, http.StatusOK, call(t, http.MethodDelete, forum+"/"+general.data("id").(string), guru.Token, nil).Status)
 	})
 
 	t.Run("a deleted account keeps its posts without its name", func(t *testing.T) {

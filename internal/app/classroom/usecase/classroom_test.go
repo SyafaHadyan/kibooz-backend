@@ -1018,10 +1018,20 @@ func TestForumSubjectSegmentation(t *testing.T) {
 		require.True(t, repo.filter.GeneralOnly)
 
 		_, err = u.ListThreads(ctx, userID, constants.RoleWali, classID, &seni, true, pagination.Params{Page: 1, Limit: 20})
-		require.Error(t, err)
+
+		var combined *apperror.Error
+
+		require.ErrorAs(t, err, &combined)
+		require.Equal(t, "VALIDATION_ERROR", combined.Code)
+		require.Equal(t, "cannot be combined with subjectCode", combined.Details["generalOnly"])
 
 		bad := constants.SubjectCode("NOPE")
 		_, err = u.ListThreads(ctx, userID, constants.RoleWali, classID, &bad, false, pagination.Params{Page: 1, Limit: 20})
-		require.Error(t, err)
+
+		var unknown *apperror.Error
+
+		require.ErrorAs(t, err, &unknown)
+		require.Equal(t, "VALIDATION_ERROR", unknown.Code)
+		require.Equal(t, constants.SubjectCodeMessage(), unknown.Details["subjectCode"])
 	})
 }
