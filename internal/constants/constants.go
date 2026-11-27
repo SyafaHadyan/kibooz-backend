@@ -197,3 +197,39 @@ const (
 	ChatKindDirect = "direct"
 	ChatKindClass  = "class"
 )
+
+// SubjectCode identifies the kindergarten thematic subject domain a forum thread belongs to.
+type SubjectCode string
+
+const (
+	SubjectSeni    SubjectCode = "SENI-A1"
+	SubjectBahasa  SubjectCode = "BHS-A1"
+	SubjectLogika  SubjectCode = "LOG-A1"
+	SubjectMotorik SubjectCode = "MOT-A1"
+	SubjectAgama   SubjectCode = "AGM-A1"
+	SubjectSosial  SubjectCode = "SOS-A1"
+)
+
+// Valid reports whether the subject code is one of the six supported curriculum domains.
+func (s SubjectCode) Valid() bool {
+	switch s {
+	case SubjectSeni, SubjectBahasa, SubjectLogika, SubjectMotorik, SubjectAgama, SubjectSosial:
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseSubjectCode accepts an empty value as no subject filter and returns false for unknown codes.
+func ParseSubjectCode(raw string) (*SubjectCode, bool) {
+	if raw == "" {
+		return nil, true
+	}
+
+	code := SubjectCode(raw)
+	if !code.Valid() {
+		return nil, false
+	}
+
+	return &code, true
+}

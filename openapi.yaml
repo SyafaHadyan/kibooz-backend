@@ -2285,9 +2285,11 @@ paths:
       tags: [Classroom]
       operationId: listThreads
       summary: List the forum threads of a class
-      description: Newest thread first. Open to the teachers of the class and the parents of a child in it.
+      description: Newest thread first. Optionally limit the list to one curriculum subject or to general class discussions. Open to the teachers of the class and the parents of a child in it.
       parameters:
         - $ref: "#/components/parameters/ClassPath"
+        - $ref: "#/components/parameters/SubjectCode"
+        - $ref: "#/components/parameters/GeneralOnly"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/Limit"
       responses:
@@ -3654,6 +3656,20 @@ components:
       schema:
         type: string
         enum: [today, week, month]
+    SubjectCode:
+      name: subjectCode
+      in: query
+      description: Optional curriculum subject code to limit the listed forum threads. Omit to list all threads of the class.
+      schema:
+        type: string
+        enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1]
+    GeneralOnly:
+      name: generalOnly
+      in: query
+      description: Set true to list only general class threads without a subject tag. Cannot be combined with subjectCode.
+      schema:
+        type: boolean
+        default: false
     ClassPath:
       name: classId
       in: path
@@ -5932,9 +5948,14 @@ components:
         body:
           type: string
           maxLength: 5000
+        subjectCode:
+          type: string
+          nullable: true
+          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1, null]
+          description: Optional curriculum subject code for the thread, or null for a general class discussion.
     ForumThread:
       type: object
-      required: [id, title, body, author, replyCount, createdAt, editedAt]
+      required: [id, title, body, subjectCode, author, replyCount, createdAt, editedAt]
       properties:
         id:
           type: string
@@ -5943,6 +5964,11 @@ components:
           type: string
         body:
           type: string
+        subjectCode:
+          type: string
+          nullable: true
+          enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1, null]
+          description: Curriculum subject code of the thread, or null for a general class discussion.
         author:
           $ref: "#/components/schemas/ForumAuthor"
         replyCount:

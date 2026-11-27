@@ -3,6 +3,7 @@ package rest
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -245,17 +246,49 @@ func (h *ClassroomHandler) ListThreads(c fiber.Ctx) error {
 		return err
 	}
 
+	subjectCode, generalOnly, err := parseThreadFilter(c)
+	if err != nil {
+		return err
+	}
+
 	page, err := pagination.Parse(c)
 	if err != nil {
 		return err
 	}
 
-	res, err := h.useCase.ListThreads(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, page)
+	res, err := h.useCase.ListThreads(c.Context(), middleware.UserIDFrom(c), middleware.RoleFrom(c), classID, subjectCode, generalOnly, page)
 	if err != nil {
 		return err
 	}
 
 	return response.JSON(c, http.StatusOK, "", res)
+}
+
+func parseThreadFilter(c fiber.Ctx) (*constants.SubjectCode, bool, error) {
+	subjectCode, ok := constants.ParseSubjectCode(c.Query("subjectCode"))
+	if !ok {
+		return nil, false, apperror.Validation(map[string]string{
+			"subjectCode": "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1",
+		})
+	}
+
+	generalOnly := false
+	if raw := c.Query("generalOnly"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, false, apperror.Validation(map[string]string{"generalOnly": "must be true or false"})
+		}
+
+		generalOnly = parsed
+	}
+
+	if generalOnly && subjectCode != nil {
+		return nil, false, apperror.Validation(map[string]string{
+			"generalOnly": "cannot be combined with subjectCode",
+		})
+	}
+
+	return subjectCode, generalOnly, nil
 }
 
 func (h *ClassroomHandler) CreateThread(c fiber.Ctx) error {

@@ -319,6 +319,55 @@ func TestClassForum(t *testing.T) {
 		call(t, http.MethodGet, replies(guruThread)+"?page=0", guru.Token, nil).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
 	})
 
+	t.Run("threads filter by curriculum subject or general pool", func(t *testing.T) {
+		seni := call(t, http.MethodPost, forum, guru.Token, map[string]any{
+			"title":       "Kolase daun",
+			"body":        "Bawa lem dan daun kering besok.",
+			"subjectCode": "SENI-A1",
+		})
+		require.Equal(t, http.StatusCreated, seni.Status, "body %v", seni.Body)
+		require.Equal(t, "SENI-A1", seni.data("subjectCode"))
+
+		bahasa := call(t, http.MethodPost, forum, wali.Token, map[string]any{
+			"title":       "Membaca nyaring",
+			"body":        "Buku cerita apa yang dipakai?",
+			"subjectCode": "BHS-A1",
+		})
+		require.Equal(t, http.StatusCreated, bahasa.Status, "body %v", bahasa.Body)
+		require.Equal(t, "BHS-A1", bahasa.data("subjectCode"))
+
+		seniList := call(t, http.MethodGet, forum+"?subjectCode=SENI-A1", wali.Token, nil)
+		require.Equal(t, http.StatusOK, seniList.Status, "body %v", seniList.Body)
+		require.EqualValues(t, 1, seniList.data("total"))
+		require.Equal(t, []string{"Kolase daun"}, titles(t, listOf(t, seniList, "threads"), "title"))
+
+		bahasaList := call(t, http.MethodGet, forum+"?subjectCode=BHS-A1", guru.Token, nil)
+		require.Equal(t, http.StatusOK, bahasaList.Status, "body %v", bahasaList.Body)
+		require.EqualValues(t, 1, bahasaList.data("total"))
+		require.Equal(t, []string{"Membaca nyaring"}, titles(t, listOf(t, bahasaList, "threads"), "title"))
+
+		generalList := call(t, http.MethodGet, forum+"?generalOnly=true", wali.Token, nil)
+		require.Equal(t, http.StatusOK, generalList.Status, "body %v", generalList.Body)
+		require.EqualValues(t, 2, generalList.data("total"))
+		require.Equal(t, []string{"Lunch box", "Field trip"}, titles(t, listOf(t, generalList, "threads"), "title"))
+
+		allList := call(t, http.MethodGet, forum+"?generalOnly=false", guru.Token, nil)
+		require.Equal(t, http.StatusOK, allList.Status, "body %v", allList.Body)
+		require.EqualValues(t, 4, allList.data("total"))
+
+		call(t, http.MethodGet, forum+"?subjectCode=UNKNOWN", guru.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, forum+"?generalOnly=maybe", guru.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodGet, forum+"?subjectCode=SENI-A1&generalOnly=true", guru.Token, nil).
+			requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+		call(t, http.MethodPost, forum, guru.Token, map[string]any{
+			"title":       "Invalid",
+			"body":        "Bad subject",
+			"subjectCode": "UNKNOWN",
+		}).requireError(t, http.StatusBadRequest, "VALIDATION_ERROR")
+	})
+
 	t.Run("a deleted account keeps its posts without its name", func(t *testing.T) {
 		require.Equal(t, http.StatusOK, deleteAccount(t, wali.Token, wali.Password).Status)
 

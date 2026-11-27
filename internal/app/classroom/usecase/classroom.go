@@ -52,7 +52,10 @@ type ClassroomUseCaseItf interface {
 	CreateVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, req dto.VideoUploadRequest) (dto.VideoUpload, error)
 	// DiscardVideoUpload deletes a file that was uploaded for a class and never added as a video, instead of waiting for the bucket to expire it
 	DiscardVideoUpload(ctx context.Context, userID uuid.UUID, classID uuid.UUID, videoURL string) error
-	ListThreads(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params) (dto.ForumThreadList, error)
+	ListThreads(
+		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID,
+		subjectCode *constants.SubjectCode, generalOnly bool, page pagination.Params,
+	) (dto.ForumThreadList, error)
 	CreateThread(ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, req dto.CreateThreadRequest) (dto.ForumThread, error)
 	ListReplies(
 		ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, threadID uuid.UUID, page pagination.Params,
@@ -523,14 +526,22 @@ func pendingVideoKeyPrefix(classID uuid.UUID) string {
 }
 
 func (u *ClassroomUseCase) ListThreads(
-	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID, page pagination.Params,
+	ctx context.Context, userID uuid.UUID, role constants.Role, classID uuid.UUID,
+	subjectCode *constants.SubjectCode, generalOnly bool, page pagination.Params,
 ) (dto.ForumThreadList, error) {
 	_, err := u.authorize(ctx, userID, role, classID)
 	if err != nil {
 		return dto.ForumThreadList{}, err
 	}
 
-	rows, total, err := u.repo.ListThreads(ctx, classID, page.Limit, page.Offset())
+	err = validateThreadFilter(subjectCode, generalOnly)
+	if err != nil {
+		return dto.ForumThreadList{}, err
+	}
+
+	filter := repository.ThreadFilter{SubjectCode: subjectCode, GeneralOnly: generalOnly}
+
+	rows, total, err := u.repo.ListThreads(ctx, classID, filter, page.Limit, page.Offset())
 	if err != nil {
 		return dto.ForumThreadList{}, apperror.Internal(err)
 	}
@@ -545,6 +556,24 @@ func (u *ClassroomUseCase) ListThreads(
 	}
 
 	return res, nil
+}
+
+func validateThreadFilter(subjectCode *constants.SubjectCode, generalOnly bool) error {
+	details := map[string]string{}
+
+	if subjectCode != nil && !subjectCode.Valid() {
+		details["subjectCode"] = "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1"
+	}
+
+	if generalOnly && subjectCode != nil {
+		details["generalOnly"] = "cannot be combined with subjectCode"
+	}
+
+	if len(details) > 0 {
+		return apperror.Validation(details)
+	}
+
+	return nil
 }
 
 func (u *ClassroomUseCase) CreateThread(
@@ -567,6 +596,10 @@ func (u *ClassroomUseCase) CreateThread(
 		details["body"] = "is required"
 	}
 
+	if req.SubjectCode != nil && !req.SubjectCode.Valid() {
+		details["subjectCode"] = "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1"
+	}
+
 	if len(details) > 0 {
 		return dto.ForumThread{}, apperror.Validation(details)
 	}
@@ -575,6 +608,7 @@ func (u *ClassroomUseCase) CreateThread(
 		ID:           uuid.New(),
 		ClassID:      classID,
 		AuthorUserID: userID,
+		SubjectCode:  req.SubjectCode,
 		Title:        &title,
 		Body:         body,
 		CreatedAt:    u.timestamp(),
@@ -1207,13 +1241,14 @@ func threadResponse(row *repository.PostRow) dto.ForumThread {
 	}
 
 	return dto.ForumThread{
-		ID:         row.ID,
-		Title:      title,
-		Body:       row.Body,
-		Author:     authorResponse(row),
-		ReplyCount: row.ReplyCount,
-		CreatedAt:  row.CreatedAt.UTC(),
-		EditedAt:   editedAt(row.EditedAt),
+		ID:          row.ID,
+		Title:       title,
+		Body:        row.Body,
+		SubjectCode: row.SubjectCode,
+		Author:      authorResponse(row),
+		ReplyCount:  row.ReplyCount,
+		CreatedAt:   row.CreatedAt.UTC(),
+		EditedAt:    editedAt(row.EditedAt),
 	}
 }
 

@@ -349,7 +349,16 @@ func runCalls(t *testing.T, logged *gorm.DB, plans io.Writer, classes int, child
 	call("classroom, count videos by address", func(ctx context.Context) error {
 		return drop(classroom.CountVideosByURL(ctx, "https://files.example.test/videos/2-1.mp4"))
 	})
-	call("classroom, threads", func(ctx context.Context) error { return drop2(classroom.ListThreads(ctx, class, 20, 0)) })
+	seni := constants.SubjectSeni
+	call("classroom, threads", func(ctx context.Context) error {
+		return drop2(classroom.ListThreads(ctx, class, classroomrepository.ThreadFilter{}, 20, 0))
+	})
+	call("classroom, threads of a subject", func(ctx context.Context) error {
+		return drop2(classroom.ListThreads(ctx, class, classroomrepository.ThreadFilter{SubjectCode: &seni}, 20, 0))
+	})
+	call("classroom, general threads", func(ctx context.Context) error {
+		return drop2(classroom.ListThreads(ctx, class, classroomrepository.ThreadFilter{GeneralOnly: true}, 20, 0))
+	})
 	call("classroom, thread exists", func(ctx context.Context) error { return drop(classroom.ThreadExists(ctx, class, thread)) })
 	call("classroom, class archived", func(ctx context.Context) error { return drop(classroom.ClassArchived(ctx, class)) })
 	call("classroom, replies", func(ctx context.Context) error { return drop2(classroom.ListReplies(ctx, thread, 20, 0)) })
