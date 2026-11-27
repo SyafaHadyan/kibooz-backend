@@ -142,7 +142,7 @@ docker compose logs --no-log-prefix -f api | jq -c 'select(.level == "ERROR")'
 docker compose logs --no-log-prefix api | jq -c 'select(.status == 429)'
 ```
 
-Startup prints the version and how long it took. A line saying that object storage is not configured means uploads are disabled on purpose. A `storage write probe failed` line means the bucket refused the health check write, which turns `/healthz` to `degraded`.
+Startup prints the version and how long it took. A line saying that object storage is not configured means uploads are disabled on purpose. A `storage write probe failed` line means the bucket refused the health check write, or did not finish a write and a delete in each bucket within 4 seconds, which turns `/healthz` to `degraded`. The answer is kept for one minute, so a first health check after that may take as long as the probe.
 
 The health check uses a database connection of its own. The requests share a pool of 25 connections, and a check on that pool would wait behind them whenever all of them are busy, so a loaded API would look like a database that is down. A `503` from `/healthz` therefore means the database cannot be reached, and a pool that is full shows in the `go_sql_*` metrics instead.
 
