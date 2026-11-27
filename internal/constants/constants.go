@@ -1,7 +1,11 @@
 // Package constants stores values shared across modules
 package constants
 
-import "time"
+import (
+	"slices"
+	"strings"
+	"time"
+)
 
 type Role string
 
@@ -210,14 +214,27 @@ const (
 	SubjectSosial  SubjectCode = "SOS-A1"
 )
 
+var subjectCodes = []SubjectCode{SubjectSeni, SubjectBahasa, SubjectLogika, SubjectMotorik, SubjectAgama, SubjectSosial}
+
+// SubjectCodes lists the six supported curriculum domains in the order of the API docs.
+// The SQL check on forum_posts.subject_code repeats this list, and a database test reads that check and fails when the two differ.
+func SubjectCodes() []SubjectCode {
+	return slices.Clone(subjectCodes)
+}
+
 // Valid reports whether the subject code is one of the six supported curriculum domains.
 func (s SubjectCode) Valid() bool {
-	switch s {
-	case SubjectSeni, SubjectBahasa, SubjectLogika, SubjectMotorik, SubjectAgama, SubjectSosial:
-		return true
-	default:
-		return false
+	return slices.Contains(subjectCodes, s)
+}
+
+// SubjectCodeMessage is the validation message for a subject code that is not supported.
+func SubjectCodeMessage() string {
+	names := make([]string, len(subjectCodes))
+	for i, code := range subjectCodes {
+		names[i] = string(code)
 	}
+
+	return "must be one of " + strings.Join(names, ", ")
 }
 
 // ParseSubjectCode accepts an empty value as no subject filter and returns false for unknown codes.

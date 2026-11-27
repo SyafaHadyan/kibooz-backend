@@ -562,7 +562,7 @@ func validateThreadFilter(subjectCode *constants.SubjectCode, generalOnly bool) 
 	details := map[string]string{}
 
 	if subjectCode != nil && !subjectCode.Valid() {
-		details["subjectCode"] = "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1"
+		details["subjectCode"] = constants.SubjectCodeMessage()
 	}
 
 	if generalOnly && subjectCode != nil {
@@ -597,7 +597,7 @@ func (u *ClassroomUseCase) CreateThread(
 	}
 
 	if req.SubjectCode != nil && !req.SubjectCode.Valid() {
-		details["subjectCode"] = "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1"
+		details["subjectCode"] = constants.SubjectCodeMessage()
 	}
 
 	if len(details) > 0 {

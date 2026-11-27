@@ -268,7 +268,7 @@ func parseThreadFilter(c fiber.Ctx) (*constants.SubjectCode, bool, error) {
 	subjectCode, ok := constants.ParseSubjectCode(c.Query("subjectCode"))
 	if !ok {
 		return nil, false, apperror.Validation(map[string]string{
-			"subjectCode": "must be one of SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1",
+			"subjectCode": constants.SubjectCodeMessage(),
 		})
 	}
 

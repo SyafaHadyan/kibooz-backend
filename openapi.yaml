@@ -3659,7 +3659,7 @@ components:
     SubjectCode:
       name: subjectCode
       in: query
-      description: Optional curriculum subject code to limit the listed forum threads. Omit to list all threads of the class.
+      description: Optional curriculum subject code to limit the listed forum threads. Omit it to list all threads of the class.
       schema:
         type: string
         enum: [SENI-A1, BHS-A1, LOG-A1, MOT-A1, AGM-A1, SOS-A1]
