@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.26.1](https://github.com/kiboozapp/kibooz-backend/compare/v0.26.0...v0.26.1) (2026-11-27)
+
+
+### Bug Fixes
+
+* **health:** give the storage probe its own 4 second limit ([4486317](https://github.com/kiboozapp/kibooz-backend/commit/4486317fe1a90d6325f7837654ab7b26a24beb70))
+* **health:** give the storage probe its own 4 second limit ([#519](https://github.com/kiboozapp/kibooz-backend/issues/519)) ([34eb736](https://github.com/kiboozapp/kibooz-backend/commit/34eb73603c07db362635f1b7c84e5f3748c9cf52))
+* **health:** let the container health check wait as long as the probe may take ([447fa0e](https://github.com/kiboozapp/kibooz-backend/commit/447fa0e470a669cf61e78b36429d4ee0b561cc56))
+* **smoke:** react to the flag only, say that the server removes the account, and document the stop ([6eb126a](https://github.com/kiboozapp/kibooz-backend/commit/6eb126a15214ae6e2f9beb4d9504879a8bf18492))
+* **smoke:** stop at the first registration when the server requires email verification ([7e5b507](https://github.com/kiboozapp/kibooz-backend/commit/7e5b507467c995653059edcf05a1e6f7d6a140eb))
+* **smoke:** stop at the first registration when the server requires email verification ([#520](https://github.com/kiboozapp/kibooz-backend/issues/520)) ([97c3aad](https://github.com/kiboozapp/kibooz-backend/commit/97c3aadb0c034b3f594cb63c5a66e11c6beac8f7))
+
 ## [0.26.0](https://github.com/kiboozapp/kibooz-backend/compare/v0.25.0...v0.26.0) (2026-11-27)
 
 
