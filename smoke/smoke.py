@@ -798,6 +798,16 @@ expect("outsider cannot read forum", call("GET", f"/classes/{cid}/forum", g2["to
 expect("delete reply", call("DELETE", f"/classes/{cid}/forum/{pid}/replies/{rid}", g1["token"]), 200)
 expect("teacher deletes thread", call("DELETE", f"/classes/{cid}/forum/{pid}", g1["token"]), 200)
 expect("deleted thread gone", call("GET", f"/classes/{cid}/forum/{pid}/replies", g1["token"]), 404, "FORUM_POST_NOT_FOUND")
+s, js = call("POST", f"/classes/{cid}/forum", g1["token"], {"title": "Smoke tagged", "body": "tagged", "subjectCode": "SENI-A1"})
+tid = dig(js, "data", "id")
+check("teacher starts a tagged thread", s == 201 and tid and dig(js, "data", "subjectCode") == "SENI-A1", f"{s} {js}")
+s, js = call("GET", f"/classes/{cid}/forum?subjectCode=SENI-A1", w2["token"])
+check("list threads of one subject", s == 200 and dig(js, "data", "total") == 1 and dig(js, "data", "threads", 0, "id") == tid, f"{s} {js}")
+s, js = call("GET", f"/classes/{cid}/forum?generalOnly=true", w2["token"])
+check("list general threads skips the tagged one", s == 200 and dig(js, "data", "total") == 0, f"{s} {js}")
+expect("subject and general only together", call("GET", f"/classes/{cid}/forum?subjectCode=SENI-A1&generalOnly=true", w2["token"]), 400, "VALIDATION_ERROR")
+expect("unknown subject is refused", call("GET", f"/classes/{cid}/forum?subjectCode=ART-A1", w2["token"]), 400, "VALIDATION_ERROR")
+expect("delete tagged thread", call("DELETE", f"/classes/{cid}/forum/{tid}", g1["token"]), 200)
 
 # ---------- chat ----------
 # The chat has a teacher and two parents of its own. The requests of g1 and w1 are counted by the limiter of the user, and the
