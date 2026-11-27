@@ -226,12 +226,13 @@ def stop_when_verification_is_on(status, js, email):
     """A server that requires the code of the email answers a registration with verificationRequired and no token. The account
     can then never sign in here and its mail goes to an address that nobody reads, so the run stops at the first one instead of
     leaving a new account behind for every registration of the script. No request tells the mode without registering, so that
-    first account cannot be avoided, and its address is printed for the clean up by hand."""
+    first account cannot be avoided. Its address is printed, and the server removes it after 7 days or it is removed by hand."""
     data = js.get("data") or {}
-    if status == 201 and (data.get("verificationRequired") or not data.get("token")):
+    if status == 201 and data.get("verificationRequired") is True:
         failed.append(
-            f"the server requires the verification of the email, so {email} was registered and can never sign in, remove it by hand "
-            "and run again with SMOKE_EMAIL_VERIFICATION=on (the input email_verification of the Smoke workflow)")
+            f"the server requires the verification of the email, so {email} was registered and can never sign in, the server removes "
+            "it after 7 days or it is removed by hand, and the run has to start again with SMOKE_EMAIL_VERIFICATION=on "
+            "(the input email_verification of the Smoke workflow)")
         sys.exit(1)
 
 
